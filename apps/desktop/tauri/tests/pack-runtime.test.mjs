@@ -2,17 +2,41 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { packRuntime } from '../pack-runtime.mjs'
+import { selectRuntimeTarget } from '../prepare-runtime.mjs'
 
 const run = promisify(execFile)
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const manager = join(repositoryRoot, 'node_modules/pnpm/bin/pnpm.cjs')
+
+test('Linux desktop keeps glibc and the sandbox launcher while excluding the incompatible musl addon', async t => {
+  const application = await mkdtemp(join(tmpdir(), 'verboo-runtime-target-'))
+  t.after(() => rm(application, { recursive: true, force: true }))
+  const bin = join(application, 'node_modules/@deepseek-ai/node-addon-system-linux-x64/bin')
+  for (const libc of ['glibc', 'musl']) {
+    await mkdir(join(bin, libc), { recursive: true })
+    await writeFile(join(bin, libc, 'system.node'), `${libc}-fixture`)
+  }
+  await writeFile(join(bin, 'landlock-run'), 'static-sandbox-fixture', { mode: 0o755 })
+  const launcherMode = (await stat(join(bin, 'landlock-run'))).mode
+  await selectRuntimeTarget(application, { platform: 'darwin', arch: 'arm64' })
+  await access(join(bin, 'musl/system.node'))
+  await selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' })
+  assert.equal(await readFile(join(bin, 'glibc/system.node'), 'utf8'), 'glibc-fixture')
+  assert.equal(await readFile(join(bin, 'landlock-run'), 'utf8'), 'static-sandbox-fixture')
+  assert.equal((await stat(join(bin, 'landlock-run'))).mode, launcherMode)
+  await assert.rejects(access(join(bin, 'musl')), { code: 'ENOENT' })
+  await selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' })
+  await rm(join(bin, 'glibc/system.node'))
+  await assert.rejects(selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' }), { code: 'ENOENT' })
+  await assert.rejects(selectRuntimeTarget(application, { platform: 'linux', arch: 'unknown' }), /unsupported/)
+})
 
 test('builds from an empty registry cache and freezes the resulting runtime', { timeout: 120000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'verboo-runtime-cache-'))

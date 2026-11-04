@@ -1,6 +1,6 @@
 /** Prepare a portable, host-target Node installation and the production profile dependency closure. */
 import { createHash } from 'node:crypto'
-import { chmod, copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -21,6 +21,26 @@ async function download(url) {
 }
 
 /**
+ * Select the glibc addon required by the official Linux Node runtime before AppImage scans ELF files.
+ * @param application - Private, installed production dependency closure.
+ * @param target - Native carrier platform and architecture; Linux desktop targets use glibc.
+ * @returns After retaining the glibc addon and the static Landlock sandbox launcher.
+ */
+export async function selectRuntimeTarget(application, { platform = process.platform, arch = process.arch } = {}) {
+  if (platform !== 'linux') return
+  if (!['x64', 'arm64'].includes(arch)) throw new Error('unsupported Linux desktop runtime target')
+  const binaries = join(application, 'node_modules', `@deepseek-ai/node-addon-system-linux-${arch}`, 'bin')
+  for (const required of ['glibc/system.node', 'landlock-run']) {
+    const file = await stat(join(binaries, required))
+    if (!file.isFile() || file.size === 0) throw new Error('required Linux desktop runtime binary is missing')
+  }
+  // The upstream package ships both libc variants. The Tauri GNU carrier and
+  // official Node distribution cannot load musl; linuxdeploy's ldd cannot scan it.
+  // Keep the independently linked Landlock launcher byte-for-byte, including its mode.
+  await rm(join(binaries, 'musl'), { recursive: true, force: true })
+}
+
+/**
  * Publish a checked runtime without modifying the development home or an earlier valid runtime.
  * @param options - Repository, desktop, output and pnpm paths owned by the launcher.
  * @returns The published runtime directory.
@@ -32,7 +52,8 @@ export async function prepareRuntime({ repository, desktop, output, packageManag
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
   try {
-    await packRuntime({ repository, staging, packageManager })
+    const application = await packRuntime({ repository, staging, packageManager })
+    await selectRuntimeTarget(application)
     const platform = process.platform
     if (!['darwin', 'linux', 'win32'].includes(platform)) throw new Error('unsupported Node runtime platform')
     const target = platform === 'win32' ? 'win' : platform

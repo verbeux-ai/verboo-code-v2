@@ -26,6 +26,8 @@ pnpm run start:desktop
 
 `pnpm run build:desktop` 为当前主机平台构建 Tauri 应用。它打包工作区依赖与 peer 闭包，保留经过审核的补丁和构建脚本权限，使用 SHA-256 验证官方独立 Node 压缩包，并在调用 Tauri 打包器前运行真实配置冒烟测试。运行时不包含开发目录或模型凭据。产物位于 `apps/desktop/.desktop-build/tauri/target/release/bundle`。
 
+Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会移除未使用的 musl 插件，并保留静态 Landlock launcher；源代码包保持完整。
+
 保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 不连接 Electron 更新服务。
 
 ## 发布流水线

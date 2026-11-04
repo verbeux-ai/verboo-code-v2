@@ -26,6 +26,8 @@ The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` ove
 
 `pnpm run build:desktop` builds a Tauri application for the current host platform. It packs the workspace dependency and peer closure, preserves reviewed patches and build-script permissions, verifies the official standalone Node archive against its SHA-256, and runs real-profile smoke tests before invoking the Tauri bundler. The runtime contains no development home or model credentials. Outputs live under `apps/desktop/.desktop-build/tauri/target/release/bundle`.
 
+Linux desktop uses the official glibc Node runtime. Staging removes the unused musl addon before AppImage scans ELF dependencies and preserves the static Landlock launcher; source packages remain intact.
+
 The retained Electron installers and updater tests are legacy tools described in the [Electron reference](../README.md). Tauri does not contact the Electron update service.
 
 ## Release pipeline
