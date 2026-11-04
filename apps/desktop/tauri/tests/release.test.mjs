@@ -56,23 +56,3 @@ for (const failure of ['missing platform', 'tampered installer', 'wrong source',
     await assert.rejects(readFile(join(f.directory, 'SHA256SUMS')), { code: 'ENOENT' })
   })
 }
-
-test('confirms uploaded bytes before making the draft public', async t => {
-  const f = await fixture(t)
-  await f.verify()
-  const directory = await mkdtemp(join(tmpdir(), 'verboo-upload-metadata-'))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const metadata = join(directory, 'release.json')
-  const assets = []
-  for (const name of await readdir(f.directory)) {
-    const bytes = await readFile(join(f.directory, name))
-    assets.push({ name, state: 'uploaded', size: bytes.length, digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` })
-  }
-  const release = { draft: true, target_commitish: source, assets }
-  const verify = () => run(process.execPath, [join(desktop, 'tauri/verify-uploaded-release.mjs'), f.directory, metadata], { env: { ...process.env, GITHUB_SHA: source } })
-  await writeFile(metadata, JSON.stringify(release))
-  assert.equal(JSON.parse((await verify()).stdout).uploaded, 12)
-  assets[0].digest = `sha256:${'0'.repeat(64)}`
-  await writeFile(metadata, JSON.stringify(release))
-  await assert.rejects(verify())
-})

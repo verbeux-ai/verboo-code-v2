@@ -28,6 +28,12 @@ pnpm run start:desktop
 
 保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 不连接 Electron 更新服务。
 
+## 发布流水线
+
+[发布工作流](../../../.github/workflows/verboo-desktop-release.yml) 会在 GitHub release 发布时运行，也支持手动创建首次发布。标签必须为 `v` 加上已提交的桌面版本。它会原生构建 macOS Apple Silicon 和 Intel DMG，以及 Linux x64 AppImage、Debian 和 RPM 安装包，并保留已有的 Windows x64 安装包。Linux 构建机需要 `musl-tools`；工作流会在打包运行时前构建完整的主机原生文件，包括 Landlock launcher。
+
+每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。macOS alpha 使用 ad-hoc 签名，未经 Apple 公证。
+
 ## 验证
 
 ```sh

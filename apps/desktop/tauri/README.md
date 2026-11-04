@@ -28,6 +28,12 @@ The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` ove
 
 The retained Electron installers and updater tests are legacy tools described in the [Electron reference](../README.md). Tauri does not contact the Electron update service.
 
+## Release pipeline
+
+The [release workflow](../../../.github/workflows/verboo-desktop-release.yml) runs when a GitHub release is published and also supports a manual first release. The tag must be `v` followed by the committed desktop version. It builds native macOS Apple Silicon and Intel DMGs and Linux x64 AppImage, Debian and RPM installers; the existing Windows x64 installer is retained. Linux builders need `musl-tools`; the workflow builds the complete host-native payload, including the Landlock launcher, before packing.
+
+Every platform records the exact source SHA, installer size and SHA-256. Publication checks the complete set, resolves lightweight or annotated tags to that SHA, and confirms GitHub’s uploaded digests. An existing release is reused; matching files are skipped, missing files can be resumed, and differing published bytes are never overwritten. Manual builds publish a draft only after verification; release-triggered builds attach to the existing release. Downloads remain in GitHub Releases and checksums are included in `SHA256SUMS`. The macOS alpha is ad-hoc signed and is not notarized by Apple.
+
 ## Validation
 
 ```sh
