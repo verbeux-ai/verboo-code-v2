@@ -97,9 +97,10 @@ const connections = z.object({
           slug: z.string(),
           name: z.string(),
           available: z.boolean(),
+          authType: z.enum(['oauth', 'credentials', 'none', 'setup']).optional(),
         }),
       )
-      .max(100),
+      .max(10000),
     accounts: z
       .array(
         z.object({
@@ -211,11 +212,12 @@ export class VerbooProduct extends TypertRemoteService {
  * @returns safe JSON text recorded by the tool pipeline.
  */
   async listAgentConnections(signal: AbortSignal): Promise<string> {
-    return JSON.stringify(
-      connections.parse(
-        await this.request('/api/me/connections', 'GET', undefined, signal),
-      ).data,
-    )
+    const data = connections.parse(
+      await this.request('/api/me/connections?catalog=all', 'GET', undefined, signal),
+    ).data
+    return JSON.stringify({ available: data.available, accounts: data.accounts,
+      publicServices: data.toolkits.filter(toolkit => toolkit.authType === 'none' && toolkit.available).map(toolkit => ({ id: `public_${toolkit.slug}`, toolkit: toolkit.slug, label: toolkit.name })),
+    })
   }
   /**
  * Discover pinned tool definitions for one owned connection.
@@ -371,12 +373,12 @@ export class VerbooProduct extends TypertRemoteService {
   getConnections(): Promise<Result<Connections>> {
     return this.result(
       async () =>
-        connections.parse(await this.request('/api/me/connections')).data,
+        connections.parse(await this.request('/api/me/connections?catalog=all')).data,
     )
   }
   /**
- * Begin hosted OAuth for one enabled toolkit.
- * @param toolkit - server-allowlisted slug.
+ * Begin hosted authorization for one enabled toolkit.
+ * @param toolkit - provider catalog slug.
  * @param label - user-facing name for this service account.
  * @returns short-lived browser link, never a service key.
  */

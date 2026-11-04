@@ -53,11 +53,12 @@ export interface Connection {
     | 'disconnected'
     | 'unknown'
 }
-/** A server-configured OAuth service available to the user. */
+/** One public Composio service; availability reflects its server-side authentication setup. */
 export interface Toolkit {
   slug: string
   name: string
   available: boolean
+  authType?: 'oauth' | 'credentials' | 'none' | 'setup' | undefined
 }
 /** The authenticated user’s external accounts and enabled services. */
 export interface Connections {

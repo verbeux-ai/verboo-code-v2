@@ -16,6 +16,13 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Key } from './locales.ts'
+import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client'
+/** Transport observations; a disconnected conversation cannot report a confirmed idle state. */
+export interface ExecutionInjected {
+  hooks: { executionConnection: ConnectionStateSource }
+}
+/** Session-scoped execution facts rendered below the composer. */
+export type ExecutionProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<'verboo'> & InjectFace<ExecutionInjected>
 /** Theme and language choices observed by product components. */
 export interface PreferenceSnapshot {
   theme: ThemePreference
@@ -65,7 +72,7 @@ export type ProductProps = PropsLocale<'verboo'> & InjectFace<ProductInjected>
 /** Product capabilities and the central page renderer. */
 export type PageProps = ProductProps & PropsRuntime<'main'>
 /** Product capabilities and the navigation renderer. */
-export type SidebarProps = ProductProps & PropsRuntime<'sidebar'>
+export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & InjectFace<ExecutionInjected>
 /** Product capabilities and the conversation introduction renderer. */
 export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
 declare module '@deepseek-ai/dsh-client-ui-slots' {

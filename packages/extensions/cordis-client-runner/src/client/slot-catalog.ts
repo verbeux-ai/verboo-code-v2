@@ -952,6 +952,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-chat ActivityPill id \'activity\'',
       'client-ui-chat UsagePill id \'usage\'',
+      'client-ui-verboo ExecutionStatus id \'verboo.execution\'',
       'client-ui-verboo StaminaDock id \'verboo.stamina\'',
     ],
     replaceRisk: 'none',

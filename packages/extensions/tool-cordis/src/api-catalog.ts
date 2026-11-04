@@ -4318,8 +4318,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote connect( toolkit: string, label: string, ): Promise< Result<{ url: string; expiresAt: string; id: ConnectionId | null }> >',
-        description: 'Begin hosted OAuth for one enabled toolkit.',
-        parameters: [{ name: 'toolkit', description: 'server-allowlisted slug.' }, { name: 'label', description: 'user-facing name for this service account.' }],
+        description: 'Begin hosted authorization for one enabled toolkit.',
+        parameters: [{ name: 'toolkit', description: 'provider catalog slug.' }, { name: 'label', description: 'user-facing name for this service account.' }],
         returns: 'short-lived browser link, never a service key.',
       },
       {
@@ -9741,7 +9741,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Toolkit',
-    declaration: 'export interface Toolkit {\n    slug: string;\n    name: string;\n    available: boolean;\n}',
+    declaration: 'export interface Toolkit {\n    slug: string;\n    name: string;\n    available: boolean;\n    authType?: \'oauth\' | \'credentials\' | \'none\' | \'setup\' | undefined;\n}',
   },
   {
     name: 'ToolMessageSource',

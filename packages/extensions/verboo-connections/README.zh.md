@@ -27,6 +27,8 @@ kind: "package-reference"
 
 `verboo` 配置会加载此扩展。它通过现有生命周期将[工具贡献](src/tools.ts)附加到每个 Agent，包括插件加载时已存在的 Agent。
 
+`connections_list` 返回用户拥有的账号和无需凭据的公共服务。公共服务 ID 使用 `public_<toolkit>`；每次执行时，后端会检查工具集无需认证的声明以及发现的工具版本。OAuth 和用户提供的凭据始终由 Composio 托管的授权流程处理。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 
@@ -64,7 +66,7 @@ Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 服务目录仅包含后端配置的 OAuth 工具包。提供方操作可能在网络故障前已提交，因此绝不自动重试写入。
+- 未提供托管授权的 OAuth 服务需要在服务器配置产品认证。提供方操作可能在网络故障前已提交，因此绝不自动重试写入。
 
 <a id="dev-note"></a>
 ### 开发备注

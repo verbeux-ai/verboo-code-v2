@@ -27,6 +27,8 @@ Let an Agent discover and execute tools using the signed-in user’s connected a
 
 The `verboo` profile mounts this extension. It attaches its [tool contribution](src/tools.ts) to each Agent through the existing lifecycle, including Agents already present when the plugin loads.
 
+`connections_list` returns owned accounts and public services that require no credentials. Public service IDs use `public_<toolkit>`; the backend checks the toolkit’s no-auth declaration and discovered tool version for each execution. OAuth and user-supplied credentials remain in Composio’s hosted authorization flow.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -64,7 +66,7 @@ Stable tools and prompt prefixes remain unchanged; user submissions and tool res
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- The service catalog is restricted to backend-configured OAuth toolkits. A provider action can commit before a network failure; writes are never retried automatically.
+- OAuth providers without managed authorization need a product auth config on the server. A provider action can commit before a network failure; writes are never retried automatically.
 
 <a id="dev-note"></a>
 ### Dev Note

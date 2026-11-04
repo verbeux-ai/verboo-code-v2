@@ -87,6 +87,7 @@ const statusKey = (status: Connection['status']): Key => status
 export function ConnectionsPage(props: PageProps) {
   const state = props.useProduct(s => s)
   const [query, setQuery] = useState('')
+  const [visibleCount, setVisibleCount] = useState(40)
   const [disconnecting, setDisconnecting] = useState<Connection | null>(null)
   const [connecting, setConnecting] = useState<Toolkit | null>(null)
   const [label, setLabel] = useState('')
@@ -111,7 +112,7 @@ export function ConnectionsPage(props: PageProps) {
   }
   const tools =
     data?.toolkits.filter(t =>
-      t.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+      `${t.name} ${t.slug}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
     ) ?? []
   const confirm = async () => {
     if (!disconnecting) return
@@ -200,23 +201,29 @@ export function ConnectionsPage(props: PageProps) {
           )}
           <section className={css.catalogSection}>
             <div className={css.catalogHead}>
-              <h2>{props.t('allTools')}</h2>
+              <div className={css.catalogTitle}>
+                <h2>{props.t('allTools')}</h2>
+                <span>{props.t('catalogCount', { count: data.toolkits.length })}</span>
+              </div>
               <label className={css.search}>
                 <Glyph name="search" size={16} />
                 <input
                   value={query}
-                  onChange={(event) =>{  setQuery(event.target.value) }}
+                  onChange={(event) => { setQuery(event.target.value); setVisibleCount(40) }}
                   placeholder={props.t('searchConnections')}
                   aria-label={props.t('searchConnections')}
                 />
               </label>
             </div>
             <div className={css.serviceGrid}>
-              {tools.map(toolkit => (
+              {tools.slice(0, visibleCount).map(toolkit => (
                 <article className={css.serviceCard} key={toolkit.slug}>
                   <ServiceIcon slug={toolkit.slug} />
-                  <h3>{toolkit.name}</h3>
-                  <button
+                  <div className={css.serviceIdentity}>
+                    <h3>{toolkit.name}</h3>
+                    {toolkit.authType && <p>{props.t(toolkit.authType === 'oauth' ? 'authOAuth' : toolkit.authType === 'none' ? 'authNone' : toolkit.authType === 'setup' ? 'authSetup' : 'authCredentials')}</p>}
+                  </div>
+                  {toolkit.authType === 'none' ? <span className={css.badge}>{props.t('publicAvailable')}</span> : <button
                     className={css.secondary}
                     disabled={!toolkit.available || state.busy !== null}
                     onClick={() => {
@@ -235,11 +242,15 @@ export function ConnectionsPage(props: PageProps) {
                     ) : (
                       <Glyph name="plus" size={15} />
                     )}{' '}
-                    {props.t(toolkit.available ? 'connect' : 'configuredSoon')}
-                  </button>
+                    {props.t(toolkit.available ? 'connect' : 'authSetup')}
+                  </button>}
                 </article>
               ))}
             </div>
+            {tools.length > 0 && <div className={css.catalogFooter}>
+              <span aria-live="polite">{props.t('catalogShowing', { shown: Math.min(visibleCount, tools.length), total: tools.length })}</span>
+              {visibleCount < tools.length && <button className={css.secondary} onClick={() => { setVisibleCount(count => count + 40) }}>{props.t('showMore')}</button>}
+            </div>}
             {tools.length === 0 && (
               <p className={css.emptyText}>{props.t('noResults')}</p>
             )}

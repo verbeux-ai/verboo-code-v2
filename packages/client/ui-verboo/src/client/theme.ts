@@ -21,6 +21,7 @@ export const tokens: ThemeTokenOverrides = {
   '--verboo-ink': pair('#232323', '#ECECEC'),
   '--verboo-muted': pair('#707070', '#AAAAAA'),
   '--verboo-faint': pair('#929292', '#828282'),
+  '--verboo-status-ink': pair('#656565', '#B0B0B0'),
   '--verboo-success': pair('#347453', '#81BB96'),
   '--verboo-error': pair('#B03846', '#E99B9B'),
   '--verboo-shadow': pair('0 12px 42px #00000014', '0 12px 42px #00000050'),

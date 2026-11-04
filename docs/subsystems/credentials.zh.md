@@ -418,8 +418,8 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote getConnections(): Promise<Result<Connections>>
 
 /**
- * Begin hosted OAuth for one enabled toolkit.
- * @param toolkit - server-allowlisted slug.
+ * Begin hosted authorization for one enabled toolkit.
+ * @param toolkit - provider catalog slug.
  * @param label - user-facing name for this service account.
  * @returns short-lived browser link, never a service key.
  */

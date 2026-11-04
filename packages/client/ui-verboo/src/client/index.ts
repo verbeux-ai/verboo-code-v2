@@ -1,5 +1,6 @@
 /** Product composition uses the Harness's public services and typed slots. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -27,6 +28,7 @@ import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { StaminaDock } from './Stamina.tsx'
+import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
@@ -58,6 +60,7 @@ export const inject = [
   'resources',
   'remoteAccess',
   'contextMenus',
+  'connection',
 ]
 /**
  * Install product UI without changing the engine, Session persistence or chat transport.
@@ -331,7 +334,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('sidebar', () =>
     ctx.slots.register(
-      { name: 'sidebar', locale: 'verboo', inject: face },
+      { name: 'sidebar', locale: 'verboo', inject: () => {
+        const product = face()
+        return { ...product, hooks: { ...product.hooks, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
+      } },
       Sidebar,
     ),
   )
@@ -385,6 +391,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ctx.slots.register(
       { name: 'conversation.chat.running.indicator' },
       RunningIndicator,
+    ),
+  )
+  ctx.slots.inject('conversation.composer.dock', () =>
+    ctx.slots.register(
+      { name: 'conversation.composer.dock', id: 'verboo.execution', order: -10, locale: 'verboo', inject: () => ({ hooks: { executionConnection: (ctx.get('connection') as ConnectionHandle).state } }) },
+      ExecutionStatus,
     ),
   )
   ctx.slots.inject('conversation.composer.dock', () =>

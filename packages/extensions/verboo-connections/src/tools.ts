@@ -25,7 +25,7 @@ export function apply(ctx: Context, config: Config): void {
       defineTool({
         name: 'connections_list',
         description:
-          'List the current Verboo user’s connected service accounts and their labels. Use only connected accounts. If several accounts match the user’s task, ask which account to use.',
+          'List the current Verboo user’s connected service accounts and public services that need no credentials. Use only connected accounts or listed public services. If several accounts match the user’s task, ask which account to use.',
         parameters: {},
         output,
         timeoutMs: config.timeoutMs,
@@ -37,12 +37,12 @@ export function apply(ctx: Context, config: Config): void {
       defineTool({
         name: 'connections_search',
         description:
-          'Find tools and their exact input schemas for one account returned by connections_list. Preserve the returned slug and version for execution.',
+          'Find tools and their exact input schemas for one account or public service returned by connections_list. Preserve the returned slug and version for execution.',
         parameters: {
           connectionId: {
             type: 'string',
             required: true,
-            description: 'Account ID returned by connections_list.',
+            description: 'Account or public service ID returned by connections_list.',
           },
           query: {
             type: 'string',

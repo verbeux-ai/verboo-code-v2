@@ -32,12 +32,19 @@ function ConversationRow({
   props: SidebarProps
   close: () => void
 }) {
+  const connection = props.useExecutionConnection(state => state)
+  const waiting = props.useSessionStatus(state => state.get(session.id)?.pendingInteraction !== undefined)
+  const state = connection === undefined ? 'connecting' : connection !== 'connected' ? 'reconnecting' : waiting ? 'waiting' : session.running ? 'working' : 'idle'
+  const label = props.t(state === 'connecting' ? 'executionConnecting' : state === 'reconnecting' ? 'executionReconnecting' : state === 'waiting' ? 'executionWaiting' : state === 'working' ? 'executionWorking' : 'executionIdle')
+  const title = session.blank ? props.t('newTask') : session.displayTitle
   const openMenu = (point: { x: number; y: number }) =>{
     props.sessionMenu(session.id, session.displayTitle, point) }
   return (
     <div
       className={css.sessionItem}
       data-active={active}
+      data-verboo-session={session.id}
+      data-state={state}
       onContextMenu={(event) => {
         event.preventDefault()
         openMenu({ x: event.clientX, y: event.clientY })
@@ -45,18 +52,23 @@ function ConversationRow({
     >
       <button
         className={css.sessionRow}
+        aria-current={active ? 'page' : undefined}
+        title={title}
         onClick={() => {
           props.openSession(session.id)
           close()
         }}
       >
-        <span className={css.sessionBullet} data-running={session.running} />
-        <span>{session.blank?props.t('newTask'):session.displayTitle}</span>
+        <span className={css.sessionTitle}>{title}</span>
+        <span className={css.sessionState}>
+          <span className={css.executionDot} aria-hidden="true" />
+          {label}
+        </span>
       </button>
       <Tooltip portal label={props.t('conversationActions')}>
         <button
           className={css.rowMore}
-          aria-label={`${props.t('conversationActions')}: ${session.displayTitle}`}
+          aria-label={`${props.t('conversationActions')}: ${title}`}
           onClick={(event) => {
             const box = event.currentTarget.getBoundingClientRect()
             openMenu({ x: box.right, y: box.bottom })

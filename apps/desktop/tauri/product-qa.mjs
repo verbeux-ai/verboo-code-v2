@@ -26,6 +26,8 @@ const toolkitNames = {
   googlecalendar: 'Google Calendar',
   linear: 'Linear',
   figma: 'Figma',
+  hackernews: 'Hacker News',
+  ...Object.fromEntries(Array.from({ length: 1709 }, (_, index) => [`service_${String(index).padStart(4, '0')}`, `Service ${String(index).padStart(4, '0')}`])),
 }
 const plan = (id, name, priceCents) => ({
   id,
@@ -59,6 +61,7 @@ const state = {
   purchased: false,
   modelRequests: [],
   finishModel: null,
+  titleSequence: 0,
   rejectDisconnect: true,
 }
 const subscription = () => ({
@@ -181,7 +184,7 @@ const server = createServer(async (req, res) => {
     }
     if (JSON.stringify(input).includes('connections_list')) {
       state.finishModel = () => { finish('Pronto. Podemos começar pelo seu projeto.'); state.finishModel = null }
-    } else finish('Projeto simples')
+    } else finish(`Acesso ao MCP GitHub via Composio e revisão completa do projeto ${++state.titleSequence}`)
     return
   }
   if (url.pathname === '/api/me/stamina') { res.end(JSON.stringify({data:[]})); return }
@@ -194,6 +197,7 @@ const server = createServer(async (req, res) => {
     return
   }
   if (url.pathname === '/api/me/connections') {
+    if (url.searchParams.get('catalog') !== 'all') throw new Error('Product client did not request the complete catalog')
     res.end(
       JSON.stringify({
         data: {
@@ -202,6 +206,7 @@ const server = createServer(async (req, res) => {
             slug,
             name,
             available: true,
+            authType: slug === 'hackernews' ? 'none' : slug.startsWith('service_') ? 'credentials' : 'oauth',
           })),
           accounts: state.accounts,
         },
@@ -379,6 +384,8 @@ try {
   await composer.fill('Vamos começar um projeto simples.')
   await composer.press('Enter')
   await page.locator('[data-verboo-running]').waitFor({ timeout: 30000 })
+  await page.locator('[data-verboo-execution=working]').waitFor()
+  await page.locator('[data-verboo-session][data-state=working]').waitFor()
   await capture('conversation-running.png')
   const inferenceDeadline = Date.now() + 30000
   while (state.finishModel === null && Date.now() < inferenceDeadline) await new Promise(resolve => setTimeout(resolve, 50))
@@ -391,14 +398,102 @@ try {
   state.finishModel()
   await page.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor()
   await page.locator('[data-chat-running]').waitFor({ state: 'hidden' })
+  await page.locator('[data-verboo-execution=idle]').waitFor()
   await capture('conversation-complete.png')
+  for (let index = 0; index < 2; index++) {
+    const previousSession = await page.locator('[data-conversation-session]').getAttribute('data-conversation-session')
+    await page.getByRole('button', { name: 'Nova conversa', exact: true }).first().click()
+    await page.waitForFunction(previous => {
+      const content = document.querySelector('[data-conversation-session]'), selected = document.querySelector('[data-verboo-session]:has([aria-current=page])')
+      return content && selected && content.getAttribute('data-conversation-session') !== previous && content.getAttribute('data-conversation-session') === selected.getAttribute('data-verboo-session')
+    }, previousSession)
+    await page.getByRole('heading', { name: 'O que vamos construir?', exact: true }).waitFor()
+    await composer.fill(`Revisar o projeto e as conexões ${index}.`)
+    await composer.press('Enter')
+    await page.locator('[data-verboo-execution=working]').waitFor()
+    const deadline = Date.now() + 30000
+    while (state.finishModel === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+    if (state.finishModel === null) throw new Error('Additional conversation did not reach inference')
+    if (index === 1) {
+      const rows = page.locator('[data-verboo-session]')
+      await page.waitForFunction(() => document.querySelectorAll('[data-verboo-session]').length >= 3)
+      await rows.filter({ has: page.locator('[aria-current=page]') }).waitFor()
+      await page.emulateMedia({ colorScheme: 'dark' })
+      const idle = page.locator('[data-verboo-session][data-state=idle]').first()
+      await idle.hover()
+      const geometry = await rows.evaluateAll(items => items.map(item => {
+        const row = item.getBoundingClientRect(), title = item.querySelector('button[title]'), menu = item.querySelector('button[aria-label]')
+        const action = menu.getBoundingClientRect(), main = title.getBoundingClientRect()
+        return { x: row.x, y: row.y, bottom: row.bottom, right: row.right, height: row.height, actionRight: action.right, mainRight: main.right, actionLeft: action.left, innerBackground: getComputedStyle(title).backgroundColor }
+      }))
+      for (let i = 0; i < geometry.length; i++) {
+        const row = geometry[i]
+        if (row.height < 44 || row.actionRight > row.right + 1 || row.mainRight > row.actionLeft + 1) throw new Error('Sidebar title/menu overlap')
+        if (i > 0 && row.y < geometry[i - 1].bottom + 2) throw new Error('Conversation rows touch or overlap')
+        if (row.innerBackground !== 'rgba(0, 0, 0, 0)') throw new Error('Nested conversation selection background')
+      }
+      await capture('sidebar-states-dark.png')
+      await page.emulateMedia({ colorScheme: 'light' })
+      await capture('sidebar-states-light.png')
+      const touch = await context.newCDPSession(page)
+      await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
+      await page.setViewportSize({ width: 390, height: 844 })
+      if (!await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) throw new Error('Touch media query was not enabled')
+      await page.locator('[data-sidebar-drawer=true][data-sidebar-collapsed=true]').waitFor()
+      await page.locator('[data-sidebar-opener]').click()
+      await page.locator('[data-verboo-shell][data-wide=true]').waitFor()
+      await page.waitForFunction(() => Math.abs(document.querySelector('[data-verboo-shell]').parentElement.getBoundingClientRect().x) < 1)
+      await capture('sidebar-states-mobile.png')
+      const mobileRows = await page.locator('[data-verboo-session]').evaluateAll(items => items.map(item => {
+        const row = item.getBoundingClientRect(), menu = item.querySelector('button[aria-label]').getBoundingClientRect()
+        return { row: row.right, menu: menu.right }
+      }))
+      if (mobileRows.some(item => item.menu > item.row + 1)) throw new Error('Mobile conversation menu overflows its row')
+      await page.getByRole('button', { name: 'Recolher navegação', exact: true }).click()
+      await touch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+      await touch.detach()
+      await page.setViewportSize({ width: 1366, height: 900 })
+    }
+    state.finishModel()
+    await page.locator('[data-verboo-execution=idle]').waitFor()
+  }
   await page.getByRole('button', { name: 'Conexões', exact: true }).click()
   await page.locator('[data-verboo-page=connections]').waitFor()
   await page.getByRole('heading', { name: 'GitHub', exact: true }).waitFor()
+  await page.getByText('1718 serviços', { exact: true }).waitFor()
+  if (await page.locator('[data-verboo-page=connections] article').count() !== 40) throw new Error('Connector catalog rendered without paging')
+  await page.getByRole('button', { name: 'Mostrar mais', exact: true }).click()
+  if (await page.locator('[data-verboo-page=connections] article').count() !== 80) throw new Error('Connector paging did not advance')
+  const search = page.getByRole('textbox', { name: 'Buscar um serviço' })
+  await search.fill('service_1708')
+  await page.getByRole('heading', { name: 'Service 1708', exact: true }).waitFor()
+  if (await page.locator('[data-verboo-page=connections] article').count() !== 1) throw new Error('Search did not cover the full connector catalog')
+  await search.fill('Hacker News')
+  await page.getByText('Não exige credenciais', { exact: true }).waitFor()
+  await page.getByText('Disponível', { exact: true }).waitFor()
+  if (await page.getByRole('button', { name: 'Conectar Hacker News', exact: true }).count()) throw new Error('Public service asks for credentials')
+  await search.fill('')
   await capture('connections-light.png')
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.waitForTimeout(200)
   await capture('connections-dark.png')
+  const catalogTouch = await context.newCDPSession(page)
+  await catalogTouch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.locator('[data-sidebar-drawer=true]').waitFor()
+  if (await page.locator('[data-sidebar-drawer=true]').getAttribute('data-sidebar-collapsed') !== 'true') {
+    await page.locator('[data-sidebar-toggle]').click()
+    await page.locator('[data-sidebar-drawer=true][data-sidebar-collapsed=true]').waitFor()
+  }
+  await page.locator('[data-verboo-shell]').waitFor({ state: 'hidden' })
+  const touchTargets = await page.locator('[data-verboo-page=connections] article button').evaluateAll(items => items.map(item => ({ width: item.getBoundingClientRect().width, height: item.getBoundingClientRect().height })))
+  if (touchTargets.some(item => item.width < 44 || item.height < 44)) throw new Error('Connector touch target is smaller than 44px')
+  await capture('connections-mobile.png')
+  const catalogOverflow = await page.locator('[data-verboo-page=connections]').evaluate(el => el.scrollWidth > el.clientWidth)
+  if (catalogOverflow) throw new Error('Connector catalog overflows on mobile')
+  await catalogTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await catalogTouch.detach()
+  await page.setViewportSize({ width: 1366, height: 900 })
   await page.emulateMedia({ colorScheme: 'light' })
   await page
     .getByRole('button', { name: 'Conectar Notion', exact: true })
@@ -472,7 +567,7 @@ try {
     throw new Error('Mobile viewport overflow')
   if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
   console.log(
-    'Actual Verboo profile browser QA: OAuth PKCE, vault, conversation, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
+    'Actual Verboo profile browser QA: OAuth PKCE, vault, conversation execution states, non-overlapping sidebar rows, 1718 searchable connectors, public services, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
   )
   console.log('Screenshots:', dir)
 } catch (error) {
