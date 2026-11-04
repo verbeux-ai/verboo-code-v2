@@ -53,11 +53,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
             libssl-dev libgtk-3-dev libayatana-appindicator3-dev build-essential \
-            pkg-config squashfs-tools desktop-file-utils libfuse2
+            pkg-config squashfs-tools desktop-file-utils libfuse2 musl-tools
       - name: Install the locked dependency graph
         run: pnpm install --frozen-lockfile
       - name: Build the product
         run: pnpm run build:artifacts
+      - name: Build all platform system binaries for distribution
+        if: runner.os != 'Windows'
+        run: pnpm --dir native/system run build:native
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
@@ -103,6 +106,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Verboo Code v2 ${VERSION}" --draft --prerelease \
             --notes-file release-assets/RELEASE.md
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" > "$RUNNER_TEMP/release.json"
+          RELEASE_API="$(gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)"
+          gh api "$RELEASE_API" > "$RUNNER_TEMP/release.json"
           node apps/desktop/tauri/verify-uploaded-release.mjs release-assets "$RUNNER_TEMP/release.json"
           gh release edit "v${VERSION}" --repo "$GITHUB_REPOSITORY" --draft=false

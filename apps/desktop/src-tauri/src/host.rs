@@ -91,11 +91,13 @@ impl HostProcess {
         home: &Path,
     ) -> Result<(Self, Receiver<HostEvent>), String> {
         fs::create_dir_all(home).map_err(|_| "host_home_unavailable")?;
-        let mut child = Command::new(&config.node)
-            .arg(&config.host)
-            .arg(&config.cli_manifest)
-            .current_dir(&config.working_directory)
-            .env("DSH_HOME", home)
+        // Windows canonicalization produces verbatim paths (\\?\C:\...).
+        // Node's entry-point resolver requires the ordinary drive/UNC form.
+        let mut child = Command::new(dunce::simplified(&config.node))
+            .arg(dunce::simplified(&config.host))
+            .arg(dunce::simplified(&config.cli_manifest))
+            .current_dir(dunce::simplified(&config.working_directory))
+            .env("DSH_HOME", dunce::simplified(home))
             .env_remove("ELECTRON_RUN_AS_NODE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

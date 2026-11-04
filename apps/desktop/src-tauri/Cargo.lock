@@ -4099,6 +4099,7 @@ dependencies = [
 name = "verboo-code-desktop"
 version = "0.2.2-alpha.3"
 dependencies = [
+ "dunce",
  "serde",
  "serde_json",
  "sys-locale",
