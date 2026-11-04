@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-04-verboo-stamina.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-04-verboo-stamina.md
+/agent-note-verboo-stamina-presentation:
+  en: 6eee7adbf920e192
+  zh: 5df5262e3ed30808
+/agent-note-verboo-stamina-presentation/problem:
+  en: 820e0d5cddf17722
+  zh: c010ccb9e0f667a6
+/agent-note-verboo-stamina-presentation/decision:
+  en: 302795b8cbd224ca
+  zh: 5b6774607489df98
+/agent-note-verboo-stamina-presentation/alternatives-considered:
+  en: afb4c66e80236a78
+  zh: dff9380b35c954cb
+/agent-note-verboo-stamina-presentation/consequences:
+  en: 41569ae9f4944cba
+  zh: eb00f0ef0c537c0e

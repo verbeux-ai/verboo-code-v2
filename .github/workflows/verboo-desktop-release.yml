@@ -1,0 +1,108 @@
+name: Release Verboo Code desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verboo-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            label: macOS-Apple-Silicon
+            bundles: dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: macOS-Intel
+            bundles: dmg
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows-x64
+            bundles: nsis
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux-x64
+            bundles: appimage,deb,rpm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+      - uses: pnpm/action-setup@v4
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          targets: ${{ matrix.target }}
+      - name: Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
+            libssl-dev libgtk-3-dev libayatana-appindicator3-dev build-essential \
+            pkg-config squashfs-tools desktop-file-utils libfuse2
+      - name: Install the locked dependency graph
+        run: pnpm install --frozen-lockfile
+      - name: Build the product
+        run: pnpm run build:artifacts
+      - name: Check the built contracts
+        run: pnpm run build:check
+      - name: Test desktop lifecycle
+        run: |
+          node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs
+          pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+      - name: Package the desktop runtime and installer
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: pnpm run build:desktop --skip-build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Collect installer artifacts
+        env:
+          RELEASE_LABEL: ${{ matrix.label }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node apps/desktop/tauri/collect-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: apps/desktop/.desktop-build/tauri/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify the complete installer set and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node apps/desktop/tauri/verify-release.mjs release-assets
+          VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("apps/desktop/src-tauri/tauri.conf.json")).version')"
+          gh release create "v${VERSION}" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Verboo Code v2 ${VERSION}" --draft --prerelease \
+            --notes-file release-assets/RELEASE.md
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}" > "$RUNNER_TEMP/release.json"
+          node apps/desktop/tauri/verify-uploaded-release.mjs release-assets "$RUNNER_TEMP/release.json"
+          gh release edit "v${VERSION}" --repo "$GITHUB_REPOSITORY" --draft=false

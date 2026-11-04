@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verboo Code</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; background: #fff; color: #242424; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+      main { display: grid; justify-items: center; gap: 28px; }
+      .brand { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+      strong { font-weight: 500; }
+      .spinner { width: 16px; height: 16px; border: 2px solid #e5e5e5; border-top-color: #777; border-radius: 50%; animation: spin 1s linear infinite; }
+      @media (prefers-color-scheme: dark) { :root { background: #212121; color: #ececec; } .spinner { border-color: #3b3b3b; border-top-color: #aaa; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <main aria-busy="true"><div class="brand"><img src="verboo-mascot.png" width="32" height="32" alt="" /><strong>Verboo Code</strong></div><div class="spinner" aria-hidden="true"></div></main>
+  </body>
+</html>

@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-09-10-desktop-web-wrapper.md) | 中文
 
-Desktop 按[当前运行时参考](../../../../apps/desktop/README.zh.md)使用 Electron 作为 Node 运行时；本文其他决策仍然适用。
+当前 [Tauri 载体](2026-11-04-tauri-desktop-carrier.zh.md)保留共享 Web 后端决策。下文 Electron 专有机制描述 [Electron 参考](../../../../apps/desktop/README.zh.md)中的旧载体。
 
 ## Problem
 

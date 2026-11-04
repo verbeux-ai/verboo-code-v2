@@ -49,6 +49,17 @@ function stateSink(): { states: Map<string, EntryStateLabel[]>; onEntryState: (n
 }
 
 describe('bootClient', () => {
+  it('rejects an inactive entry declared required by the product manifest', async () => {
+    const graph = graphOf(['product-shell'])
+    graph.entries[0]!.required = true
+    const { modules } = modulesOf(graph, { 'product-shell': { inject: ['missing-product-service'], apply: () => {} } })
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    await expect(bootClient({ ctx, modules, manifest: modules.manifest })).rejects.toThrow(
+      'product-shell (required): pending (waiting for service: missing-product-service)',
+    )
+  })
+
   it('activates every seeded row without touching the bundle transport', async () => {
     const graph = graphOf(['provider', 'consumer'])
     const { modules, loaded } = modulesOf(graph, {

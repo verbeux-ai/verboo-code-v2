@@ -14,6 +14,7 @@ kind: "package-reference"
 
 文件提及提供方同时接收当前查看的会话 ID 与收尾轮次的属主信息，因此继承历史中的链接可以指向 fork 自身。
 
+
 ## 目录
 
 - [引用预览](#reference-previews)
@@ -88,6 +89,8 @@ Chat 在 `MarkdownDelegateProvider.getTriggerProps` 接入处适配 Markdown 目
 
 <a id="completed-turn-footer"></a>
 ## 已完成轮次的页脚
+
+可选的 `conversation.chat.running.indicator` Slot 可以替换运行中的装饰。Slot 为空时保留默认动画；计时、无障碍状态和轮次中的位置仍由 Chat 管理。
 
 产物扩展可通过 `ChatNodeStore.turnDataSource` 订阅一个 Turn 中指定类型的节点数据。来源包含隐藏节点，并按锚点顺序提供其业务数据。成员关系增量更新；只有被订阅的集合才生成有序数组，其他 Turn 或类型的更新不通知该集合。
 

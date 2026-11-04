@@ -48,9 +48,9 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 
 ## 桌面应用
 
-[Electron 桌面应用](../apps/desktop/README.zh.md)在签名资源中携带精确匹配的 dsh 生产运行时，并拥有保留的 `$DSH_HOME/profiles/desktop`。共享 helper 初始化 profile 文件、协调 bundle，并解析安装与 bundle 的依赖而不替换 pnpm 拥有的包。Desktop 与 npm CLI 共享产品数据，但包、启用选择与锁文件保持独立。Desktop 内置 CLI 管理其已初始化的插件。
+[Verboo Code 桌面应用](../apps/desktop/tauri/README.zh.md)使用 Tauri 原生窗口与操作系统 WebView。私有 Node 进程启动共享 `web` 配置，负责代理、会话、工具、插件、认证、HTTP 路由和流。Tauri 仅允许应用窗口在本地 Host 的确切来源调用原生目录选择。
 
-Electron 使用 Electron Node 模式启动私有 Desktop Host。Host 调用共享 CLI profile runner 与完整 Web 应用。窗口立即加载打包 Web 资源，等待启动注入后在同一文档中激活客户端插件。Web 负责 RPC 与流；桌面载体将本地页面连接到已认证的 Host。Node IPC 承载启动注入、就绪、致命错误与关闭。Desktop 默认监听系统分配的端口，profile 配置可覆盖。壳拥有的 UI 通过内置 pnpm 执行插件事务，并遵循正常用户与 profile 配置。
+Host 绑定 `127.0.0.1` 和操作系统分配的端口，通过私有、带版本的 stdout 通道发送认证启动 URL，Tauri 不打印该 URL。退出应用时通过 stdin 请求释放配置资源并等待 Host 退出；超过期限后即使终止进程也仍报告失败。开发使用隔离目录。原生分发携带经校验和验证的独立 Node 及打包的工作区依赖和 peer 闭包。[Electron 参考](../apps/desktop/README.zh.md)描述保留的旧实现。
 
 ## 核心包
 

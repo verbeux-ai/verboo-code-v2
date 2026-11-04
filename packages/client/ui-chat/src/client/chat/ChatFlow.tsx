@@ -8,6 +8,7 @@ import { ChatGroupSeat } from './ChatGroupSeat.tsx'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { chatRenderKey } from './render-entry.ts'
 import { RunningStatus } from './RunningStatus.tsx'
+import { RunningWhaleTail } from './RunningWhaleTail.tsx'
 
 /** A local submission echo, or a Host-pending steering item without a local submission. */
 type PendingInput = ChatFlowSlotProps['pendingInputs'][number]
@@ -94,7 +95,9 @@ export const ChatFlow = memo(function ChatFlow({
   return [
     ...rows, ...leadingRows, ...openingRows,
     ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
-      holding={holding} t={t} />] : [],
+      holding={holding} indicator={renderSlot('conversation.chat.running.indicator', {}, {
+        fallback: <RunningWhaleTail />,
+      })} t={t} />] : [],
     ...pendingRows,
   ]
 })

@@ -51,7 +51,9 @@ async function expectBootFailure(setup: () => void, message: string): Promise<vo
   setup()
   const entry = new AppWebEntry(container)
   await entry.run()
-  expect(container.textContent).toContain(message)
+  expect(container.textContent).toContain('Couldn’t open Verboo Code')
+  expect(container.textContent).not.toContain(message)
+  expect(error.mock.calls.flat().map(String).join(' ')).toContain(message)
   expect(error).toHaveBeenCalledOnce()
   await entry.dispose()
 }
@@ -65,8 +67,8 @@ describe('bootstrap failure rendering', () => {
     const failure = vi.fn()
     await entry.run(failure)
     expect(failure).toHaveBeenCalledWith(new Error('web boot: window.__ModuleLoader__ bootstrap facade is missing'))
-    expect(container.textContent).toContain('Loading plugins')
-    expect(container.textContent).not.toContain('Failed to load plugins')
+    expect(container.textContent).toContain('Opening your workspace…')
+    expect(container.textContent).not.toContain('Couldn’t open Verboo Code')
     expect(container.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
     await entry.dispose()
   })
@@ -93,11 +95,12 @@ describe('bootstrap failure rendering', () => {
         expect(report).toHaveBeenCalledOnce()
         expect(String(report.mock.calls[0]![0])).toContain(`${REQUIRED_ID} (required): failed: Error: plugin activation failed`)
         expect(container.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
-        expect(container.textContent).not.toContain('Failed to load plugins')
+        expect(container.textContent).not.toContain('Couldn’t open Verboo Code')
       } else {
         expect(report).not.toHaveBeenCalled()
-        expect(container.textContent).toContain('Failed to load plugins')
-        expect(container.textContent).toContain(`${REQUIRED_ID} (required): failed: Error: plugin activation failed`)
+        expect(container.textContent).toContain('Couldn’t open Verboo Code')
+        expect(container.textContent).not.toContain(REQUIRED_ID)
+        expect(container.textContent).not.toContain('plugin activation failed')
       }
     } finally {
       await entry.dispose()
@@ -135,7 +138,7 @@ describe('bootstrap failure rendering', () => {
       expect(mounted).toHaveBeenCalledExactlyOnceWith(container)
       expect(report).not.toHaveBeenCalled()
       expect(warn).toHaveBeenCalledExactlyOnceWith('web boot: warning: 1 entry did not activate\nbroken: failed: Error: plugin activation failed')
-      expect(container.textContent).not.toContain('Failed to load plugins')
+      expect(container.textContent).not.toContain('Couldn’t open Verboo Code')
     } finally {
       await entry.dispose()
     }
@@ -328,7 +331,9 @@ it('draws the shared boot page before Host injections and resumes without replac
     await boot
     expect(create).toHaveBeenCalledOnce()
     expect(container.querySelector('[data-dsh-boot]')).toBe(page)
-    expect(container.textContent).toContain('injections consumed')
+    expect(container.textContent).toContain('Couldn’t open Verboo Code')
+    expect(container.textContent).not.toContain('injections consumed')
+    expect(error.mock.calls.flat().map(String).join(' ')).toContain('injections consumed')
   } finally {
     gate.resolve(undefined)
     await boot

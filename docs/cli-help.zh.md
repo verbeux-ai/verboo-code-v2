@@ -17,7 +17,7 @@
 - [`dsh headless`](#dsh-headless)
 - [`dsh sdk`](#dsh-sdk)
 - [`dsh sdk-minimal`](#dsh-sdk-minimal)
-- [`dsh web`](#dsh-web)
+- [`dsh verboo`](#dsh-verboo)
 
 <a id="dsh"></a>
 ## `dsh`
@@ -172,10 +172,10 @@ Example:
 
 ```
 
-<a id="dsh-web"></a>
-## `dsh web`
+<a id="dsh-verboo"></a>
+## `dsh verboo`
 
-调用方式: `dsh web --help`, `dsh --profile web --help`
+调用方式: `dsh verboo --help`, `dsh --profile verboo --help`, `dsh web --help`, `dsh --profile web --help`
 
 ```text
 Usage: dsh --profile web [options]

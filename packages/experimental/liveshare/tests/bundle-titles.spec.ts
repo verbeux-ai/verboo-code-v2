@@ -4,7 +4,7 @@ import { bundleTitleMap, bundleTitlesOf, type BundleTitleBundle } from '../src/h
 describe('bundleTitleMap', () => {
   it('maps a component row to its bundle identity and marks profile bundles as core', () => {
     const bundles: BundleTitleBundle[] = [
-      { name: '@deepseek-ai/dsh-base', meta: { title: 'DSH' }, rows: [{ moduleName: '@fixture/base-component' }] },
+      { name: '@deepseek-ai/dsh-base', meta: { title: 'Verboo Code' }, rows: [{ moduleName: '@fixture/base-component' }] },
       { name: '@fixture/forge-bundle', meta: { title: { zh: '变更请求与工作树', en: 'Change requests' } },
         rows: [{ moduleName: '@deepseek-ai/dsh-experimental-client-ui-forge' }] },
     ]
@@ -12,7 +12,7 @@ describe('bundleTitleMap', () => {
     expect(titles.get('@fixture/base-component')).toEqual({
       name: '@deepseek-ai/dsh-base',
       core: true,
-      titles: { en: 'DSH' },
+      titles: { en: 'Verboo Code' },
     })
     expect(titles.get('@deepseek-ai/dsh-experimental-client-ui-forge')).toEqual({
       name: '@fixture/forge-bundle',

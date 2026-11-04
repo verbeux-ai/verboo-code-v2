@@ -24,13 +24,13 @@ function field(text: string, rest: Partial<SettingsFieldState> = {}): SettingsFi
 /** Each official provider's registered description; the page shows the active language's entry. */
 const DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
   'deepseek-search-api': {
-    en: 'Search API description. Uses the DeepSeek account of the current conversation, or a DeepSeek API key, and may incur API charges.',
-    zh: 'Search API 说明。使用当前会话的 DeepSeek 账号或 DeepSeek API Key，可能产生计费',
+    en: 'Search API description. Uses the Verboo Code account of the current conversation, or a DeepSeek API key, and may incur API charges.',
+    zh: 'Search API 说明。使用当前会话的 Verboo 账号或 DeepSeek API Key，可能产生计费',
   },
   'http': { en: 'Direct fetch description.', zh: '本机获取说明' },
   'deepseek-fetch-api': {
-    en: 'Fetch API description. Uses the DeepSeek account of the current conversation, or a DeepSeek API key, may incur API charges.',
-    zh: 'Fetch API 说明。使用当前会话的 DeepSeek 账号或 DeepSeek API Key，可能产生计费',
+    en: 'Fetch API description. Uses the Verboo Code account of the current conversation, or a DeepSeek API key, may incur API charges.',
+    zh: 'Fetch API 说明。使用当前会话的 Verboo 账号或 DeepSeek API Key，可能产生计费',
   },
 }
 

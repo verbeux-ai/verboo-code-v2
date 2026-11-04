@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.3/tauri-desktop/guide.md
+/:
+  en: 764577bb2b0d687f
+  zh: 77d53265ad26822b
+/tauri-desktop-development:
+  en: 8860da3bf0cf0561
+  zh: 1919a42562bc5693
+/tauri-desktop-development/change:
+  en: 95abea8ba84088f8
+  zh: cd6a9fa92a64ac4d
+/tauri-desktop-development/migration:
+  en: 80677e242cb840bb
+  zh: 0017d2ee0c4c0aae

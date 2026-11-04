@@ -63,6 +63,8 @@ export interface WebBootEntry {
   inject?: string[]
   /** Stage-one prefetch mark: load the script for factory registration during module-face boot. */
   immediately?: boolean
+  /** An inactive entry rejects client startup. */
+  required?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
 }
@@ -130,6 +132,8 @@ export interface BootPluginRow {
   inject: string[]
   /** Stage-one prefetch tier (false when the wire omits it). */
   immediately: boolean
+  /** Whether activation is required for a usable client. */
+  required?: boolean
 }
 
 /** The parsed boot manifest: one wire, two consumer views. */
@@ -184,11 +188,15 @@ export function parseDshClient(pkgName: string, value: unknown): DshClientManife
   if (decl.immediately !== undefined && typeof decl.immediately !== 'boolean') {
     throw new Error(`client-modules: ${pkgName} dsh.client.immediately must be a boolean`)
   }
+  if (decl.required !== undefined && typeof decl.required !== 'boolean') {
+    throw new Error(`client-modules: ${pkgName} dsh.client.required must be a boolean`)
+  }
   return {
     platform: decl.platform,
     ...(inject !== undefined ? { inject } : {}),
     ...(external !== undefined ? { external } : {}),
     ...(decl.immediately !== undefined ? { immediately: decl.immediately } : {}),
+    ...(decl.required !== undefined ? { required: decl.required } : {}),
   }
 }
 
@@ -264,6 +272,9 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
+    if (row.required !== undefined && typeof row.required !== 'boolean') {
+      throw new Error(`client-modules: boot manifest entry ${where} required must be a boolean`)
+    }
     moduleFields.push({
       id: row.id,
       url: row.url,
@@ -275,6 +286,7 @@ export function parseBootManifest(wire: unknown): BootManifest {
       id: row.id,
       inject: inject === undefined ? [] : [...inject],
       immediately: row.immediately === true,
+      ...(row.required === true ? { required: true } : {}),
     })
   }
 

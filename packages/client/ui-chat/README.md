@@ -12,6 +12,7 @@ Desktop product events use the optional [product analytics service](../product-a
 
 Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and process visibility without hiding Assistant replies; Verbose keeps completed-turn process rows visible. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
 
+
 File-mention providers receive the viewed Session ID with the closing-turn owner, so links into inherited history can address the fork itself.
 
 ## Table of Contents
@@ -88,6 +89,8 @@ Preference menus restore focus to their trigger without scrolling before publish
 
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
+
+The optional `conversation.chat.running.indicator` Slot replaces the running decoration. An empty Slot retains the default animation; the clock, accessible status and Turn placement stay owned by Chat.
 
 Artifact extensions can subscribe to one Turn and Node kind through `ChatNodeStore.turnDataSource`. The source includes hidden Nodes and exposes their business data in anchor order. Membership updates incrementally; only observed collections materialize ordered arrays, and unrelated Turns or kinds do not notify them.
 

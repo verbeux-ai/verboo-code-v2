@@ -283,7 +283,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.composer': { kind: 'chain'; scope: 'session'; owner: ComposerChainProps }
     /** Workspace picker shown by the blank-session Hero. */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
-    /** Brand mark shown before the blank-session headline. */
+    /** Replace the blank-session introduction; without a registration the original headline and brand mark are rendered. */
+    'conversation.hero.intro': { kind: 'single'; scope: 'root' }
+    /** Render the brand mark before the default blank-session headline; without a registration the default artwork is shown. */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe'; owner: HeroAgentPresetOwnerProps }
@@ -363,6 +365,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         'conversation.composer': { kind: 'chain'; scope: 'session' }
         'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe' }
         'conversation.input.dock': { kind: 'list'; scope: 'session' }
+        'conversation.hero.intro': { kind: 'single'; scope: 'root' }
+        /** Render the brand mark before the default blank-session headline; without a registration the default artwork is shown. */
         'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
         'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
         'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }

@@ -80,14 +80,14 @@ Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下�
 
 拆分 Host/Client tsconfig 的包有七个：`api/remotes`、`api/gateway`、`api/session-controller`、`api/workspace-controller`、`client/connection`、`session-query/session-log-export` 与 `experimental/liveshare-protocol`。`api/remotes` 的 Host 入口进入 Host Typert 图，而 Client 入口导入生成的 `/remote` 声明；`session-log-export` 则让 Node archive 生产代码不进入浏览器 controller；`liveshare-protocol` 把 Node 线路编解码放在 Host leaf、浏览器查看页载体放在 Client leaf。每个拆分包根 `tsconfig.json` 因此只作为 solution，两个 aggregate 和直接消费方分别引用 `tsconfig.host.json` 或 `tsconfig.client.json`。workspace `constraints` 门禁遍历可达的 Project Reference 图，并按各引用 project 自身的 compiler face 检查：只有单一配置的目标可由任一 face 引用，拆分配置的目标则必须引用匹配的 leaf，不得引用 solution 根或另一侧 leaf；该门禁按「两个 leaf 配置同时存在」自动发现拆分包，所以新拆分的包会自动纳入管辖。[`api-remotes` README](../packages/api/remotes/README.zh.md) 与 [`session-log-export` README](../packages/session-query/session-log-export/README.zh.md)分别说明其拆分。
 
-`pnpm run build:artifacts` 产出全部产物，只检查并编译各 compiler face 的包 reference。Client 编译等待 Host 和 Desktop 的 bundle 完成：拆分 compiler face 会重写这些 bundle 步骤读取的共享 `lib/types` 文件。Client bundle 在 Client 编译后执行。产物步骤顺序为：
+`pnpm run build:artifacts` 产出全部产物，只检查并编译各 compiler face 的包 reference。Client 编译在读取共享 `lib/types` 文件的 Host 与旧 Electron 兼容打包之后执行。仅桌面命令会请求 Tauri 编译 Rust。Client bundle 在 Client 编译后执行。产物步骤顺序为：
 
 ```sh
 pnpm run build:native-system
 pnpm exec tsx scripts/generate-typert.ts
 tsc -b <tsconfig.host.json references>
 tsdown --env.DSH_BUILD_FACE host
-pnpm --filter @deepseek-ai/dsh-desktop run bundle
+pnpm --filter @deepseek-ai/dsh-desktop run bundle:electron
 tsc -b <tsconfig.client.json references>
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
@@ -108,7 +108,7 @@ pnpm run build:web
 
 PR 产物 builder 运行 `build:artifacts`；必需的 Linux 与 Windows 普通构建以及公开 `typecheck` 还检查仓库级测试和脚本 program。CI benchmark 准备阶段还对其临时 library 输出使用 `--noCheck`，由这些必需构建负责诊断；其他产物 builder 保留包检查（[理由](../.agents/notes/implemented/process/2026-10-05-pr-artifact-typechecks.zh.md)）。
 
-两次 tsdown 都匹配 `vendor/*`、`packages/*/*` 与 `apps/cli`，Host 阶段另外匹配 `apps/desktop-host`；两者都不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。tsdown 并发构建匹配到的 workspace 成员；`apps/desktop` 的主进程 bundle 需要从工作区 devDependencies 的 `lib/` 产物内联这些包，因此在 Host 阶段之后单独一步打 bundle（[Desktop README](../apps/desktop/README.zh.md#bundled-workspace-dependencies)）。
+两次 tsdown 都匹配 `vendor/*`、`packages/*/*` 与 `apps/cli`，Host 阶段另外匹配 `apps/desktop-host`；两者都不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。tsdown 并发构建匹配到的 workspace 成员；独立兼容步骤保留旧 Electron 测试产物。Tauri 桌面命令独立编译原生应用（[桌面参考](../apps/desktop/tauri/README.zh.md)）。
 
 Typert 通过 `tsconfig.host.json` 分析 Host 类型，在包编译之前生成 Host 反射和 Host-for-Client Remote 声明。仅源码的 [`generate-typert.ts`](../scripts/generate-typert.ts) 阶段拒绝依赖构建产物的工作区导入，包括经由依赖回到生成声明的元数据依赖。Host tsdown 转换源码装饰器，但不重复生成元数据；Client tsdown 同样使用已有元数据。`pnpm run typecheck` 生成元数据，按 reference 顺序编译 Host 与 Client 包，并在每个 aggregate 的包编译完成后以 `tsc -b` 检查它。该命令跳过 native addon、bundle、Web 和 client build record。`lint`、`lint:fix` 与 `doc-typecheck` 通过 `compile-referenced-projects.ts host-contracts` 准备元数据与 Host 包声明；生成失败时不启动依赖它的编译。这些仅生成声明的命令不更新运行时 bundle；启动或测试构建产物之前应运行 `build:artifacts`。
 
@@ -194,16 +194,16 @@ pnpm run demo:ptc -- "summarize this workspace"
 
 ### 应用命令
 
-Web 与 Desktop 共用同一对命令。`start:*` 启动上一次 `pnpm run build` 或 `build:artifacts` 的产物；`dev:*` 先执行 `build:artifacts` 再启动。Web 还会在源码修改时持续重建 client bundle，因为它的 Host 从源码运行，而浏览器加载的是构建产物：
+Web 与 Desktop 共用同一对命令。`start:*` 启动上一次 `pnpm run build` 或 `build:artifacts` 的产物；`dev:*` 先执行 `build:artifacts` 再启动。两个开发命令都会在源码修改时重建 client bundle；Tauri 还会重建 Rust 源码变更：
 
 ```sh
 pnpm run start:web       # serve built Web artifacts through the source launcher (the same launch as pnpm dsh web)
 pnpm run dev:web         # build, serve, and rebuild Web client bundles on source edits
-pnpm run start:desktop   # launch built Desktop artifacts
-pnpm run dev:desktop     # build, then launch Desktop
+pnpm run start:desktop   # launch Tauri with the built shared application
+pnpm run dev:desktop     # build, watch the client and Rust, and launch Tauri
 ```
 
-Web 命令后面的参数会传给 `dsh web`，例如 `pnpm run dev:web --no-open --port 3081`；`dev:web` 还接受 `--skip-build` 复用现有产物树，以及 `--no-serve` 只运行重建 watcher、配合别处启动的服务器。两个 Web 命令使用正常的 Harness home，而 Desktop 命令使用 [Desktop README](../apps/desktop/README.zh.md) 描述的隔离开发 home。根目录 `Makefile` 以 `make web`、`make dev-web`、`make desktop`、`make dev-desktop` 和 `make build` 命名同一套命令；`ARGS='--no-open'` 用于转发参数。
+Web 命令后面的参数会传给 `dsh web`，例如 `pnpm run dev:web --no-open --port 3081`；`dev:web` 还接受 `--skip-build` 复用现有产物树，以及 `--no-serve` 只运行重建 watcher、配合别处启动的服务器。两个 Web 命令使用正常的 Harness home，而 Desktop 命令使用 [Tauri 桌面参考](../apps/desktop/tauri/README.zh.md) 描述的隔离开发 home。根目录 `Makefile` 以 `make web`、`make dev-web`、`make desktop`、`make dev-desktop` 和 `make build` 命名同一套命令；`ARGS='--no-open'` 用于转发参数。
 
 ### TODO 标记
 

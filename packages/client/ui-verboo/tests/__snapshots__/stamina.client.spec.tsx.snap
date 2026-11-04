@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`public stamina presentation > localizes the public reading and recovery in en 1`] = `"StaminaUnlimited50% remainingLimit for new requests: 67 tok/sStamina is recovering while no requests are running.Your usage over the period also affects this limit. Running responses keep the speed set at their start."`;
+
+exports[`public stamina presentation > localizes the public reading and recovery in pt 1`] = `"StaminaUnlimited50% restanteLimite para novas requisições: 67 tok/sA stamina está recuperando sem requisições em andamento.O uso no período também afeta esse limite. Respostas em andamento mantêm a velocidade definida no início."`;
+
+exports[`public stamina presentation > localizes the public reading and recovery in zh 1`] = `"耐力Unlimited剩余 50%新请求上限：67 词元/秒没有进行中的请求时，耐力正在恢复周期内的用量也会影响此上限。进行中的响应保持开始时设定的速度。"`;

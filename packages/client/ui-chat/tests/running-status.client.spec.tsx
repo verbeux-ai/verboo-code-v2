@@ -24,6 +24,17 @@ function statusHarness(startTime?: number) {
 }
 
 describe('RunningStatus', () => {
+  it('replaces only the decoration while preserving the accessible status and clock', () => {
+    const view = render(<RunningStatus startTime={1_000} paused={false} t={t}
+      indicator={<span aria-hidden="true" data-product-indicator />} />)
+    expect(view.container.querySelector('[data-product-indicator]')).not.toBeNull()
+    expect(view.container.querySelector('svg')).toBeNull()
+    expect(view.getByRole('status').textContent).toBe(zh['chat.deepDiving'])
+    const initial = view.container.textContent
+    act(() => { vi.advanceTimersByTime(2_000) })
+    expect(view.container.textContent).not.toBe(initial)
+  })
+
   it('waits for an open Turn start before allocating its clock', () => {
     const view = statusHarness()
     expect(view.content()?.textContent).toBe('深度求索中')

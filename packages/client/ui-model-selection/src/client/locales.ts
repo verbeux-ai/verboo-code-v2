@@ -10,7 +10,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'provider.account': 'DeepSeek 账号',
+  'provider.account': 'Verboo 账号',
   'command.label': '模型',
   'command.description': '选择本会话使用的模型',
   'option.loadError': '目录加载失败：{message}',
@@ -25,7 +25,7 @@ export const zh = {
   'effort.providerDefault': 'Default',
   'status.loading': '正在刷新模型列表…',
   'error.action': '模型操作失败：{message}',
-  'error.sessionInUse': '当前会话已被占用，可能是其他正在运行的 DSH 导致的（如其他 dsh web、桌面端），请退出其他正在运行的 DSH 后重试。',
+  'error.sessionInUse': '此对话已在另一个窗口中打开。请关闭其他窗口，然后重试。',
   'action.reload': '重新加载',
   'warning.groupLoad': '{name} 加载失败：{message}',
   'search.placeholder': '搜索模型…',
@@ -40,7 +40,7 @@ export type ModelKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'provider.account': 'DeepSeek Account',
+  'provider.account': 'Verboo Code',
   'command.label': 'Model',
   'command.description': 'Select the model for this conversation',
   'option.loadError': 'Catalog failed to load: {message}',
@@ -55,7 +55,7 @@ export const en = {
   'effort.providerDefault': 'Default',
   'status.loading': 'Refreshing model list…',
   'error.action': 'Model operation failed: {message}',
-  'error.sessionInUse': 'This session is already in use, possibly by another running DSH instance (such as dsh web or the desktop app). Quit other running DSH instances and try again.',
+  'error.sessionInUse': 'This conversation is open in another window. Close the other window and try again.',
   'action.reload': 'Reload',
   'warning.groupLoad': '{name} failed to load: {message}',
   'search.placeholder': 'Search models…',
@@ -67,7 +67,7 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
-  'provider.account': 'DeepSeek アカウント',
+  'provider.account': 'Verboo アカウント',
   'command.label': 'モデル',
   'command.description': 'この会話で使用するモデルを選択',
   'option.loadError': 'カタログの読み込みに失敗しました: {message}',
@@ -82,7 +82,7 @@ export const ja = {
   'effort.providerDefault': 'デフォルト',
   'status.loading': 'モデル一覧を更新中…',
   'error.action': 'モデル操作に失敗しました: {message}',
-  'error.sessionInUse': 'このセッションは既に使用中です。別の DSH インスタンス（dsh web やデスクトップアプリなど）が実行中の可能性があります。他の DSH インスタンスを終了してから再試行してください。',
+  'error.sessionInUse': 'この会話は別のウィンドウで開かれています。他のウィンドウを閉じて、もう一度お試しください。',
   'action.reload': '再読み込み',
   'warning.groupLoad': '{name} の読み込みに失敗しました: {message}',
   'search.placeholder': 'モデルを検索…',
@@ -94,7 +94,7 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
-  'provider.account': 'Cuenta DeepSeek',
+  'provider.account': 'Cuenta Verboo',
   'command.label': 'modelo',
   'command.description': 'Selecciona el modelo para esta conversación',
   'option.loadError': 'No se pudo cargar el catálogo: {message}',
@@ -109,7 +109,7 @@ export const es = {
   'effort.providerDefault': 'Predeterminado',
   'status.loading': 'Lista de modelos refrescante...',
   'error.action': 'Error en la operación del modelo: {message}',
-  'error.sessionInUse': 'Esta sesión ya está en uso, posiblemente por otra instancia de DSH en ejecución (como la web dsh o la aplicación de escritorio). Salga de otras instancias de DSH en ejecución y vuelva a intentarlo.',
+  'error.sessionInUse': 'Esta conversación está abierta en otra ventana. Cierra la otra ventana e inténtalo de nuevo.',
   'action.reload': 'recargar',
   'warning.groupLoad': '{name} no pudo cargar: {message}',
   'search.placeholder': 'Buscar modelos…',
@@ -121,7 +121,7 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
-  'provider.account': 'Compte DeepSeek',
+  'provider.account': 'Compte Verboo',
   'command.label': 'Modèle',
   'command.description': 'Sélectionnez le modèle pour cette conversation',
   'option.loadError': 'Échec du chargement du catalogue : {message}',
@@ -136,7 +136,7 @@ export const fr = {
   'effort.providerDefault': 'Par défaut',
   'status.loading': 'Liste des modèles actualisée…',
   'error.action': "Échec de l'opération du modèle : {message}",
-  'error.sessionInUse': "Cette session est déjà utilisée, éventuellement par une autre instance DSH en cours d'exécution (telle que le Web dsh ou l'application de bureau). Quittez les autres instances DSH en cours d'exécution et réessayez.",
+  'error.sessionInUse': 'Cette conversation est ouverte dans une autre fenêtre. Fermez cette fenêtre, puis réessayez.',
   'action.reload': 'Recharger',
   'warning.groupLoad': 'Échec du chargement de {name} : {message}',
   'search.placeholder': 'Rechercher des modèles…',
@@ -148,7 +148,7 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
-  'provider.account': 'DeepSeek-Konto',
+  'provider.account': 'Verboo-Konto',
   'command.label': 'Modell',
   'command.description': 'Wählen Sie das Modell für dieses Gespräch aus',
   'option.loadError': 'Katalog konnte nicht geladen werden: {message}',
@@ -163,7 +163,7 @@ export const de = {
   'effort.providerDefault': 'Standard',
   'status.loading': 'Erfrischende Modellliste…',
   'error.action': 'Modellvorgang fehlgeschlagen: {message}',
-  'error.sessionInUse': 'Diese Sitzung wird bereits verwendet, möglicherweise von einer anderen laufenden DSH-Instanz (z. B. dsh Web oder der Desktop-App). Beenden Sie andere laufende DSH-Instanzen und versuchen Sie es erneut.',
+  'error.sessionInUse': 'Diese Unterhaltung ist in einem anderen Fenster geöffnet. Schließe das andere Fenster und versuche es erneut.',
   'action.reload': 'Neu laden',
   'warning.groupLoad': '{name} konnte nicht geladen werden: {message}',
   'search.placeholder': 'Modelle suchen…',
@@ -175,7 +175,7 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
-  'provider.account': 'DeepSeek Аккаунт',
+  'provider.account': 'Аккаунт Verboo',
   'command.label': 'Модель',
   'command.description': 'Выберите модель для этого разговора',
   'option.loadError': 'Не удалось загрузить каталог: {message}.',
@@ -190,7 +190,7 @@ export const ru = {
   'effort.providerDefault': 'По умолчанию',
   'status.loading': 'Обновление списка моделей…',
   'error.action': 'Не удалось выполнить операцию модели: {message}.',
-  'error.sessionInUse': 'Этот сеанс уже используется, возможно, другим работающим экземпляром DSH (например, веб-сайтом dsh или настольным приложением). Закройте другие работающие экземпляры DSH и повторите попытку.',
+  'error.sessionInUse': 'Этот разговор открыт в другом окне. Закройте другое окно и повторите попытку.',
   'action.reload': 'Перезагрузить',
   'warning.groupLoad': '{name} не удалось загрузить: {message}',
   'search.placeholder': 'Поиск моделей…',
@@ -202,7 +202,7 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
-  'provider.account': 'DeepSeek Conta',
+  'provider.account': 'Conta Verboo',
   'command.label': 'Modelo',
   'command.description': 'Selecione o modelo para esta conversa',
   'option.loadError': 'Falha ao carregar o catálogo: {message}',
@@ -217,7 +217,7 @@ export const pt = {
   'effort.providerDefault': 'Padrão',
   'status.loading': 'Atualizando lista de modelos…',
   'error.action': 'Falha na operação do modelo: {message}',
-  'error.sessionInUse': 'Esta sessão já está em uso, possivelmente por outra instância DSH em execução (como dsh web ou aplicativo de desktop). Saia de outras instâncias DSH em execução e tente novamente.',
+  'error.sessionInUse': 'Esta conversa está aberta em outra janela. Feche a outra janela e tente novamente.',
   'action.reload': 'Recarregar',
   'warning.groupLoad': '{name} falhou ao carregar: {message}',
   'search.placeholder': 'Pesquisar modelos…',

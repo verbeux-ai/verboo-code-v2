@@ -1,96 +1,45 @@
-# DeepSeek Harness
+# Verboo Code
 
 [English](README.md) | 中文
 
-DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
-
-它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。
-
-文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
-
-## 开发者预览
-
-DeepSeek Harness 处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
-
-运行本项目前，请阅读[安全说明](SAFETY.zh.md)。
+Verboo Code 是基于 Tauri 的桌面编程应用，提供 Verboo 登录、账号模型、项目与工具连接。它使用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 引擎及其 Cordis 插件架构。
 
 <a id="run"></a>
 
-## 运行
-
-### 通过 `npm` 运行
-
-安装 `Node.js`，然后运行：
-
-```sh
-npx @deepseek-ai/dsh web
-```
-
-该命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.zh.md)。
-
 <a id="run-from-source"></a>
-
-### 从源码运行
-
-如需从仓库源码运行：
-
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
-```
-
-`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
-
-## 社区与支持
-
-- 通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。
-- 为你的插件仓库添加 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题，便于被发现。
-- 欢迎加入 DeepSeek Harness 企微群！扫描下方二维码填写入群问卷，小助手会定期发送入群邀请。
-
-<table>
-  <thead>
-    <tr>
-      <th align="center">入群问卷</th>
-      <th align="center">微信公众号</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><a href="https://trtgsjkv6r.feishu.cn/share/base/form/shrcnIt5twSVdLGD52KJBckGCgg"><img src="https://cdn.deepseek.com/harness/readme/community-wecom-survey.png" alt="DeepSeek Harness 入群问卷二维码" width="180" height="180"></a></td>
-      <td align="center"><img src="https://cdn.deepseek.com/harness/readme/community-wechat-official-account.png" alt="DeepSeek Harness 团队微信公众号二维码" width="180" height="180"></td>
-    </tr>
-  </tbody>
-</table>
-
-## 参与贡献
-
-参见 [CONTRIBUTING.md](CONTRIBUTING.zh.md)。
 
 ## 开发
 
-请先阅读[开发指南](docs/development.zh.md)与[架构文档](docs/architecture.zh.md)。
+安装 Node.js 24.9 或更高版本、pnpm、Rust 以及 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：
 
-`pnpm run dev:web` 会在一个终端里完成构建、启动，并在源码修改时重建 client bundle；`make help` 列出 Web 与 Desktop 对应的 Make target。完整表格见开发指南的「应用命令」一节。
-
-面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
-
-## 引用
-
-```bibtex
-@misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
-  author={DeepSeek-AI},
-  year={2026},
-  publisher={GitHub},
-  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
-}
+```sh
+git clone https://github.com/verbeux-ai/verboo-code-v2.git
+cd verboo-code-v2
+pnpm install
+pnpm run dev:desktop
 ```
+
+在系统浏览器使用 Verboo 账号登录。模型访问权限与订阅状态来自 Verboo API。Composio 服务凭据仅属于中央后端，桌面客户端不会接收这些凭据。
+
+执行 `pnpm run build:artifacts` 后，可运行浏览器预览：
+
+```sh
+pnpm dsh --profile verboo --no-open
+```
+
+原始上游 Web 组合仍可通过 `pnpm dsh --profile web --no-open` 运行。各配置使用独立的组合文件。上游更新见[产品 bundle](packages/bundle/verboo-app/README.zh.md)，原生构建见[桌面运行](apps/desktop/tauri/README.zh.md)。
+
+## 产品包
+
+- [界面](packages/client/ui-verboo/README.zh.md)：引导、紫色配色、项目导航、方案与连接。
+- [账号](packages/credentials/verboo-account/README.zh.md)：OAuth PKCE、加密凭据与账号授权推理。
+- [产品 API](packages/api/verboo-product/README.zh.md)：可安全展示的账号数据与受信任的浏览器流程。
+- [连接](packages/extensions/verboo-connections/README.zh.md)：供 Agent 使用的用户所属外部工具。
+
+## 贡献
+
+阅读 [AGENTS.md](AGENTS.md)、[架构](docs/architecture.zh.md)、[开发指南](docs/development.zh.md)和[安全说明](SAFETY.zh.md)。内部 `@deepseek-ai` 包名标识上游组件，并为更新及已保存的 Session 保持稳定。
 
 ## 许可证
 
-[MIT](LICENSE)
-
-第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[MIT](LICENSE)。保留上游版权声明。字体与图标许可证记录在[产品素材许可证](packages/client/ui-verboo/LICENSES.md)。

@@ -15,6 +15,8 @@ export const PACKAGE_ASSET_SEGMENT = 'assets'
 
 /** Media type served for each supported asset extension, keyed by the lowercase extension with its dot. */
 export const PACKAGE_ASSET_MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
+  ['.woff2', 'font/woff2'],
+  ['.woff', 'font/woff'],
   ['.svg', 'image/svg+xml'],
   ['.png', 'image/png'],
   ['.webp', 'image/webp'],

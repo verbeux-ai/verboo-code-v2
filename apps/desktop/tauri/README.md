@@ -1,0 +1,40 @@
+# Verboo Code desktop
+
+English | [中文](README.zh.md)
+
+## Development
+
+Install Node.js, the pinned pnpm version, Rust 1.97 or newer and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). From the repository root, run:
+
+```sh
+pnpm run dev:desktop
+```
+
+The command builds the shared application, starts the client rebuild watchers and launches Tauri. Rust owns the native window and a private Node process running the product `verboo` profile. The Host binds only `127.0.0.1` on an OS-assigned port, authenticates the WebView with its per-launch browser cookie, and retains the existing session, tool, model and plugin services. The WebView first commits a document on the Host origin, then exchanges the launch token from that origin so WebKit preserves the authenticated redirect with `SameSite=Strict` cookies. Native directory selection uses the Tauri dialog plugin. Native permissions are restricted to the owned window and the exact Host origin; links cannot navigate that window to another origin.
+
+After building the repository, reuse its artifacts with:
+
+```sh
+pnpm run start:desktop
+```
+
+`pnpm run dev:desktop --skip-build` also reuses artifacts and starts the client watchers. Tauri rebuilds Rust source changes. Client changes rebuild through the same watched bundles used by Web. Closing the application requests profile disposal and waits for the Node process to exit; exceeding the shutdown deadline fails visibly instead of reporting a clean stop.
+
+The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` overrides it. Generated configuration contains paths, never credentials. Build outputs and development state are gitignored.
+
+## Native distribution
+
+`pnpm run build:desktop` builds a Tauri application for the current host platform. It packs the workspace dependency and peer closure, preserves reviewed patches and build-script permissions, verifies the official standalone Node archive against its SHA-256, and runs real-profile smoke tests before invoking the Tauri bundler. The runtime contains no development home or model credentials. Outputs live under `apps/desktop/.desktop-build/tauri/target/release/bundle`.
+
+The retained Electron installers and updater tests are legacy tools described in the [Electron reference](../README.md). Tauri does not contact the Electron update service.
+
+## Validation
+
+```sh
+node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+```
+
+The bridge tests cover cached and asynchronous client mounting without Electron markers. The Node integration tests exercise the real profile's authenticated HTML and assets, repeated shutdown, startup failure and parent disconnection. Rust tests reject remote or malformed bootstrap URLs.
+
+The product Client entry is required during boot, and native readiness requires the Verboo navigation to mount. A generic Harness root cannot report successful product startup. Run `node apps/desktop/tauri/product-qa.mjs` from the repository root after building for browser QA with a temporary profile and OS credential, external HTTP fixtures, OAuth PKCE, model selection, plans, connections, dialogs and both themes. `VERBOO_QA_OUTPUT` selects the screenshot directory; `VERBOO_QA_CHROME` selects a browser executable.

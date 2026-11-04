@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Verboo Code",
+  "version": "0.2.2-alpha.3",
+  "identifier": "ai.verbeux.verboo-code",
+  "build": {
+    "frontendDist": "../tauri/ui",
+    "additionalWatchFolders": [
+      "../tauri/bridge.js",
+      "../tauri/host.mjs"
+    ]
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": []
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../.desktop-build/tauri/runtime/": "runtime/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

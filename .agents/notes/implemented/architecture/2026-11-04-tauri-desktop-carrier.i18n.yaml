@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-04-tauri-desktop-carrier.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-04-tauri-desktop-carrier.md
+/agent-note-tauri-desktop-carrier-with-a-node-profile-host:
+  en: 56cce3b67e847102
+  zh: 1e7c9bf6f96e1d21
+/agent-note-tauri-desktop-carrier-with-a-node-profile-host/problem:
+  en: 9d81e980905d5539
+  zh: eeaf01825d6a5c46
+/agent-note-tauri-desktop-carrier-with-a-node-profile-host/decision:
+  en: cbdfb7733fcd731a
+  zh: ea4c83c8236430cd
+/agent-note-tauri-desktop-carrier-with-a-node-profile-host/alternatives-considered:
+  en: c8a11837e9cceb84
+  zh: 89369779b114ae80
+/agent-note-tauri-desktop-carrier-with-a-node-profile-host/consequences:
+  en: d1b8c9116b20e694
+  zh: 20f792c9aa0b8522

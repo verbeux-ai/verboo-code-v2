@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
+  "description": "Verboo Code Tauri desktop application with the shared Node agent host",
   "version": "0.2.2-alpha.3",
   "private": true,
   "license": "MIT",
@@ -11,12 +11,12 @@
   "main": "lib/main.js",
   "scripts": {
     "test:installer": "node scripts/test-windows-installer.mjs",
-    "build": "tsc -b && pnpm run bundle",
-    "bundle": "tsdown --config-loader native",
-    "dev": "tsx scripts/dev.ts",
-    "start": "tsx scripts/dev.ts --skip-build",
-    "test:updates:channels": "pnpm run build && node scripts/test-update-channels.mjs",
-    "test:updates:local": "pnpm run build && node scripts/test-local-updater.mjs",
+    "build": "node tauri/launch.mjs build",
+    "bundle": "node tauri/launch.mjs native-build",
+    "dev": "node tauri/launch.mjs dev",
+    "start": "node tauri/launch.mjs start",
+    "test:updates:channels": "pnpm run build:electron && node scripts/test-update-channels.mjs",
+    "test:updates:local": "pnpm run build:electron && node scripts/test-local-updater.mjs",
     "prepare:runtime": "tsx scripts/prepare-runtime.ts",
     "render:tray-icon": "tsx scripts/render-tray-icon.ts",
     "prepare:primary-runtime": "tsx scripts/prepare-primary-runtime.ts",
@@ -26,7 +26,7 @@
     "prepare:dsh": "tsx scripts/prepare-dsh.ts",
     "prepare:package": "tsx scripts/package-target.ts --prepare-only",
     "verify:mac-signature": "node scripts/verify-macos-signature.mjs",
-    "package": "tsx scripts/package-target.ts",
+    "package": "node tauri/launch.mjs build",
     "check:package": "tsx scripts/package-target.ts --check",
     "restore:mac-proxy": "tsx scripts/macos-notarization-proxy.ts",
     "package:dir": "tsx scripts/package-target.ts --dir",
@@ -45,7 +45,15 @@
     "upload:latest:mac:arm64": "tsx scripts/upload-target.ts mac-arm64 --latest",
     "upload:latest:mac:x64": "tsx scripts/upload-target.ts mac-x64 --latest",
     "upload:latest:win:x64": "tsx scripts/upload-target.ts win-x64 --latest",
-    "purge:latest": "tsx scripts/upload-target.ts --latest --purge-only"
+    "purge:latest": "tsx scripts/upload-target.ts --latest --purge-only",
+    "dev:electron": "pnpm --workspace-root run build:artifacts && pnpm run build:electron && tsx scripts/dev.ts --skip-build",
+    "start:electron": "tsx scripts/dev.ts --skip-build",
+    "build:tauri": "node tauri/launch.mjs build",
+    "prepare:tauri": "node tauri/launch.mjs prepare",
+    "build:electron": "tsc -b && pnpm run bundle:electron",
+    "bundle:electron": "tsdown --config-loader native",
+    "package:electron": "tsx scripts/package-target.ts",
+    "test:tauri": "node --test tauri/tests/bridge.test.mjs tauri/tests/host.test.mjs && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
@@ -90,6 +98,7 @@
     "zod": "4.4.3",
     "@deepseek-ai/dsh-util-file-drag": "workspace:*",
     "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
-    "tencentcloud-sdk-nodejs-teo": "4.1.330"
+    "tencentcloud-sdk-nodejs-teo": "4.1.330",
+    "@tauri-apps/cli": "2.12.4"
   }
 }

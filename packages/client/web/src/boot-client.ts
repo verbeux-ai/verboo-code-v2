@@ -15,9 +15,9 @@ export type EntryStateLabel = (typeof STATE_LABELS)[keyof typeof STATE_LABELS] |
 /**
  * Entry names whose presence defines a usable Web client.
  *
- * The list is global rather than page or profile metadata. A name absent from
- * the boot manifest does not affect startup; a listed entry that is present
- * must activate. The list covers the module system, Session control, the
+ * These framework requirements supplement entries marked required by product
+ * package metadata. A name absent from the boot manifest does not affect
+ * startup; a listed entry that is present must activate. The list covers the module system, Session control, the
  * renderer and application frame, and the Session view with its sidebar. It is
  * the minimum fatal set: an entry that a listed entry waits on leaves it
  * inactive, so that entry's failure also rejects startup.
@@ -74,7 +74,7 @@ export async function bootClient(options: ClientBootOptions): Promise<void> {
   }
 
   await loader.await()
-  await assertEntriesActive(ctx, options.modules)
+  await assertEntriesActive(ctx, options.modules, undefined, new Set(manifest.plugins.filter(row => row.required).map(row => row.id)))
 }
 
 /**
@@ -89,6 +89,7 @@ export async function bootClient(options: ClientBootOptions): Promise<void> {
  *   failed to import or was rejected at creation (its module exports no plugin); like the
  *   Host audit's `failed to import`, both are reported as an import failure.
  * @param warn - sink for the optional-entry warning.
+ * @param requiredEntries - additional entries whose activation the product requires.
  * @returns resolves after any optional-entry warning.
  * @throws {Error} rejects when a required entry is inactive, listing every non-active entry with its
  *   reason and marking the required ones; no warning is written in that case.
@@ -97,6 +98,7 @@ export async function assertEntriesActive(
   ctx: Context,
   modules: Pick<ClientModuleLoader, 'importError'>,
   warn: (message: string) => void = (message) => { console.warn(message) },
+  requiredEntries: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const failures: { name: string; reason: string }[] = []
   for (const entry of ctx.loader.entries()) {
@@ -123,7 +125,7 @@ export async function assertEntriesActive(
     }
   }
   if (failures.length === 0) return
-  const isRequired = (name: string): boolean => requiredClientEntryNames.has(name)
+  const isRequired = (name: string): boolean => requiredClientEntryNames.has(name) || requiredEntries.has(name)
   const required = failures.filter(({ name }) => isRequired(name)).length
   if (required > 0) {
     const lines = failures.map(({ name, reason }) => `${name}${isRequired(name) ? ' (required)' : ''}: ${reason}`)

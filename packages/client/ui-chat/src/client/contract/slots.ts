@@ -378,7 +378,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps,
 /** Full props of the Chat-owned flow renderer. */
 export type ChatFlowSlotProps =
   PropsRuntime<'conversation.chat.flow'>
-  & PropsRenderSlots<'conversation.chat.node'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.running.indicator'>
   & PropsRenderFactories
   & PropsStore<ChatStore>
   & InjectFace<ChatFlowDataInjected>
@@ -435,6 +435,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: ChatFlowHookContext
       inject: ChatFlowInjected
     }
+    /** Decorative running indicator; an empty slot retains the default animation. */
+    'conversation.chat.running.indicator': { kind: 'single'; scope: 'session' }
     /**
      * Final Chat node renderer, keyed by `ChatNodeKind`. The component receives
      * the typed node, shared Chat actions, and Turn-data hook. Reusing a key

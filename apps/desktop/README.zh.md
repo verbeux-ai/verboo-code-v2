@@ -6,6 +6,8 @@ description: "Desktop 在原生应用中运行 Harness 工作区。本参考文�
 
 [English](README.md) | 中文
 
+> 当前 Verboo Code 桌面应用使用 Tauri。开发与构建参见 [Tauri 参考](tauri/README.zh.md)。本文描述保留的 Electron 实现及旧安装器测试。
+
 ## 概述
 
 Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用行为、开发与集成；打包、Windows 签名和发布指南分别维护构建与发布操作。
@@ -190,7 +192,7 @@ macOS 和 Linux 从图形界面启动的程序只继承会话管理器提供的�
 `dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
 
 ```sh
-pnpm run dev:desktop
+pnpm --filter @deepseek-ai/dsh-desktop run dev:electron
 ```
 
 开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
@@ -198,7 +200,7 @@ pnpm run dev:desktop
 显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
 ```sh
-pnpm run start:desktop
+pnpm --filter @deepseek-ai/dsh-desktop run start:electron
 ```
 
 桌面包准备过程按安装包目标的操作系统和架构筛选可选原生包。Windows 的包集合不包含 macOS Computer Use tarball，即使输入包是在 macOS 上打包的。

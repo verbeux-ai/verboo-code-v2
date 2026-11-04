@@ -1,0 +1,3 @@
+[build]
+# Keep generated Rust resources out of source-only documentation and package scans.
+target-dir = "apps/desktop/.desktop-build/tauri/target"

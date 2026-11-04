@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-09-10-desktop-web-wrapper.zh.md)
 
-Desktop uses Electron as its Node runtime under the [current runtime reference](../../../../apps/desktop/README.md); other decisions in this note remain applicable.
+The current [Tauri carrier](2026-11-04-tauri-desktop-carrier.md) retains the shared Web backend decision. Electron-specific mechanisms below describe the retained legacy carrier under the [Electron reference](../../../../apps/desktop/README.md).
 
 ## Problem
 

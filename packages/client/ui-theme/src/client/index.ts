@@ -193,6 +193,7 @@ export class ThemeRuntime {
   /** Override layers by source; seq (monotonic) is the stacking order. */
   private readonly overrides = new Map<string, { seq: number; tokens: ThemeTokenOverrides }>()
   private overrideSeq = 0
+  private readonly iconOverrides = new Map<string, { seq: number; icons: IconReplacements }>()
 
   /**
    * @param ctx - owning context (change events are emitted on it; the
@@ -396,6 +397,23 @@ export class ThemeRuntime {
     }
   }
 
+  /**
+   * Apply a removable product icon layer without replacing the user’s theme preference.
+   * @param source - owning contribution identity.
+   * @param icons - trusted complete SVG documents keyed by known sprite symbols.
+   * @returns disposer restoring the previous effective icon layer.
+   */
+  overrideIcons(source: string, icons: IconReplacements): () => void {
+    const layer = { seq: this.overrideSeq++, icons: validateIcons({ id: source, colorScheme: 'light', tokens: {}, icons }) ?? {} }
+    this.iconOverrides.set(source, layer)
+    this.publish()
+    return () => {
+      if (this.iconOverrides.get(source) !== layer) return
+      this.iconOverrides.delete(source)
+      this.publish()
+    }
+  }
+
   private buildSnapshot(): ThemeSnapshot {
     const resolvedId = this.preference === 'system'
       ? (this.media?.matches === true ? 'dark' : 'light')
@@ -422,14 +440,18 @@ export class ThemeRuntime {
    * Without layers the registered definition passes through by identity.
    */
   private composeActive(active: ThemeDefinition): ThemeDefinition {
-    if (this.overrides.size === 0) return active
+    if (this.overrides.size === 0 && this.iconOverrides.size === 0) return active
     const tokens: ThemeTokens = { ...active.tokens }
     for (const layer of [...this.overrides.values()].sort((a, b) => a.seq - b.seq)) {
       for (const [name, modes] of Object.entries(layer.tokens)) {
         tokens[name] = modes[active.colorScheme]
       }
     }
-    return Object.freeze({ ...active, tokens: Object.freeze(tokens) })
+    let icons: IconReplacements = { ...active.icons }
+    for (const layer of [...this.iconOverrides.values()].sort((a, b) => a.seq - b.seq)) {
+      icons = { ...icons, ...layer.icons }
+    }
+    return Object.freeze({ ...active, tokens: Object.freeze(tokens), icons: Object.freeze(icons) })
   }
 
   private publish(): void {

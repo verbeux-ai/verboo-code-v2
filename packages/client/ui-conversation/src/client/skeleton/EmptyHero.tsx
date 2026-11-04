@@ -134,7 +134,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   return (
     <div className={css.root}>
       <div className={css.stack}>
-        <div className={css.headline}>
+        {renderSlot('conversation.hero.intro', {}, { fallback: <div className={css.headline}>
           {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
           <span
             className={css.fishHitbox}
@@ -155,7 +155,8 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
             <span>{t('hero.headline')}</span>
             <span className={css.previewBadge}>{t('hero.preview')}</span>
           </span>
-        </div>
+        </div>,
+        })}
         <div className={css.body}>
           {/* The composer remains mounted outside this component. */}
         </div>

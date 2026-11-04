@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { removeOwnedStyles } from '../src/client/entry-lifecycle.ts'
-import { readRelease } from '../src/client/manifest.ts'
+import { readRelease, parseDshClient } from '../src/client/manifest.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -679,6 +679,18 @@ describe('failure modes', () => {
 })
 
 describe('boot manifest wire', () => {
+  it('preserves required product entries and rejects non-boolean declarations', () => {
+    expect(parseDshClient('product', { platform: 'web', required: true })).toMatchObject({ required: true })
+    expect(() => parseDshClient('product', { platform: 'web', required: 'true' })).toThrow('required must be a boolean')
+    const graph = {
+      rev: 'graph',
+      entries: [{ id: 'product', url: '/product', rev: '1', required: true }],
+      batches: [{ phase: 'application', url: '/batch', rev: '1', entries: ['product'] }],
+    }
+    expect(parseBootManifest(graph).plugins[0]?.required).toBe(true)
+    expect(() => parseBootManifest({ ...graph, entries: [{ ...graph.entries[0], required: 'true' }] })).toThrow('required must be a boolean')
+  })
+
   it('normalizes absent shared-module fields and carries the declared ones', () => {
     const manifest = parseBootManifest({
       rev: 'graph',

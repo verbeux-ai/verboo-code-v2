@@ -1,0 +1,57 @@
+# Product-owned layer. Keep the base/web bundle files unchanged when updating Harness.
+- id: system-prompt
+  config:
+    identity: You are Verboo Code, a coding assistant.
+- id: deepseek-account
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-pi-ai
+  disabled: true
+- id: llm-deepseek
+  disabled: true
+- id: agent-default-model
+  config:
+    provider: deepseek-account
+    model: jev-router
+- id: ui-sidebar
+  disabled: true
+- id: ui-settings-account
+  disabled: true
+- id: ui-settings-models
+  disabled: true
+- id: ui-settings-general
+  disabled: true
+- id: entry-customization
+  disabled: true
+- id: ui-agent-preset
+  disabled: true
+- id: ui-plugin-manager
+  disabled: true
+- id: ui-settings-plugin-inventory
+  disabled: true
+- id: ui-settings-plugins
+  disabled: true
+- id: ui-brand-official
+  disabled: true
+- id: ui-settings-web-search
+  disabled: true
+
+- insert:
+    - id: verboo-account
+      name: '@deepseek-ai/dsh-verboo-account'
+      config:
+        apiOrigin: !!js process.env.VERBOO_API_ORIGIN || 'https://code.verboo.ai'
+        routerBaseURL: !!js process.env.VERBOO_ROUTER_BASE_URL || 'https://code.verboo.ai/router/v1'
+        clientId: !!js process.env.VERBOO_OAUTH_CLIENT_ID || 'verboo-code-cli'
+        allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
+    - id: verboo-product
+      name: '@deepseek-ai/dsh-api-verboo-product'
+      config:
+        apiOrigin: !!js process.env.VERBOO_API_ORIGIN || 'https://code.verboo.ai'
+        routerBaseURL: !!js process.env.VERBOO_ROUTER_BASE_URL || 'https://code.verboo.ai/router/v1'
+        allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
+    - id: verboo-connections
+      name: '@deepseek-ai/dsh-verboo-connections'
+    - id: ui-verboo
+      name: '@deepseek-ai/dsh-client-ui-verboo'

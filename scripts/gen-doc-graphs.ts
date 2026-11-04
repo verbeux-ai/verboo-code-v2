@@ -108,6 +108,11 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'verbooProduct', pkg: 'api-verboo-product', title: 'Verboo account product API', mode: 'service',
+    consumers: ['client-ui-verboo', 'verboo-connections'],
+    note: 'Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API.',
+  },
+  {
     key: 'actionCards',
     pkg: 'action-cards',
     title: 'Optional action cards',

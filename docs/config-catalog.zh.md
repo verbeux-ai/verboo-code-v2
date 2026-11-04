@@ -339,6 +339,27 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-product -->
+<a id="deepseek-aidsh-api-verboo-product"></a>
+
+## `@deepseek-ai/dsh-api-verboo-product`
+
+- `inject`: `deepseekAccount`
+- `source`: [`packages/api/verboo-product/src/index.ts:30`](../packages/api/verboo-product/src/index.ts)
+
+```ts config-catalog
+/** Public product deployment configuration; provider credentials remain server-side. */
+export interface Config {
+  /** Origin of the authenticated Verboo product API. */
+  apiOrigin?: string
+  /** Inference gateway used to resolve the owning account grant. */
+  routerBaseURL?: string
+  /** Allow cleartext loopback endpoints for local integration fixtures. */
+  allowLoopbackHttp?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-product -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-controller -->
 <a id="deepseek-aidsh-api-workspace-controller"></a>
 
@@ -3847,8 +3868,10 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
 export interface Config {
-  /** Include the fixed DeepSeek Harness identity before the deployment persona (default true). */
+  /** Include the deployment identity before the persona (default true). */
   includeHarnessIdentity?: boolean
+  /** Deployment identity before scoped persona text; defaults to the upstream Harness opener. */
+  identity?: string
   /** Include optional runtime-context snapshots in model history (default true); required context remains. */
   includeRuntimeContext?: boolean
   /**
@@ -4632,6 +4655,56 @@ export type ApprovalPolicy = 'ask' | 'never'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-user-approval -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-verboo-account -->
+<a id="deepseek-aidsh-verboo-account"></a>
+
+## `@deepseek-ai/dsh-verboo-account`
+
+- `inject`: `credentials` · `authorization` · `llm`
+- `source`: [`packages/credentials/verboo-account/src/config.ts:5`](../packages/credentials/verboo-account/src/config.ts)
+
+```ts config-catalog
+/** Public endpoints and bounded account request lifetimes. */
+export interface Config {
+  /** Origin of the Verboo account and OAuth API. */
+  apiOrigin?: string
+  /** Trusted inference gateway for account grant resolution. */
+  routerBaseURL?: string
+  /** Registered public OAuth client identifier. */
+  clientId?: string
+  /** Allow cleartext loopback endpoints for local integration fixtures. */
+  allowLoopbackHttp?: boolean
+  /** Maximum duration in milliseconds of one account HTTP attempt. */
+  requestTimeoutMs?: number
+  /** Maximum duration in milliseconds of one browser login attempt. */
+  attemptTimeoutMs?: number
+  /** Maximum age in milliseconds of a validated model catalog. */
+  catalogMaxAgeMs?: number
+  /** Context window used when the model catalog omits the limit. */
+  fallbackContextWindow?: number
+  /** Output token limit used when the model catalog omits the limit. */
+  fallbackMaxOutputTokens?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-account -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-verboo-connections -->
+<a id="deepseek-aidsh-verboo-connections"></a>
+
+## `@deepseek-ai/dsh-verboo-connections`
+
+- `inject`: `agents` · `verbooProduct`
+- `source`: [`packages/extensions/verboo-connections/src/index.ts:10`](../packages/extensions/verboo-connections/src/index.ts)
+
+```ts config-catalog
+/** Bounded execution time for a connected service tool. */
+export interface Config {
+  /** Maximum duration in milliseconds of one connected service tool execution. */
+  timeoutMs: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-connections -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web -->
 <a id="deepseek-aidsh-web"></a>
 
@@ -4954,6 +5027,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-user-questions` | — | [`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-verboo` | — | [`packages/client/ui-verboo/src/index.ts`](../packages/client/ui-verboo/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workflow-run` | — | [`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workspace` | — | [`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts) |
 | `@deepseek-ai/dsh-command-compact` | `commands` · `compaction` | [`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts) |
@@ -5007,6 +5081,7 @@ export interface Config {
 | `@deepseek-ai/dsh-tool-working-directory` | `tools` · `workingDirectory` | [`packages/session/tool-working-directory/src/index.ts`](../packages/session/tool-working-directory/src/index.ts) |
 | `@deepseek-ai/dsh-tools` | `systemPrompt` | [`packages/core/tools/src/index.ts`](../packages/core/tools/src/index.ts) |
 | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
+| `@deepseek-ai/dsh-verboo-app` | — | [`packages/bundle/verboo-app/src/index.ts`](../packages/bundle/verboo-app/src/index.ts) |
 | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
 | `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
 <!-- END GENERATED config-catalog:no-config -->

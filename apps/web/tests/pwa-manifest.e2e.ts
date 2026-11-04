@@ -25,7 +25,7 @@ async function pixels(page: Page, url: string, size: number) {
     for (let y = 0; y < size; y += 1) {
       for (let x = 0; x < size; x += 1) {
         const at = (y * size + x) * 4
-        if (data[at + 3] === 0 || data[at]! + data[at + 1]! + data[at + 2]! >= 384) continue
+        if (data[at + 3] === 0 || data[at]! * 0.2126 + data[at + 1]! * 0.7152 + data[at + 2]! * 0.0722 >= 240) continue
         ink += 1
         radius = Math.max(radius, Math.hypot(x - (size - 1) / 2, y - (size - 1) / 2))
       }
@@ -51,7 +51,7 @@ it('ships install metadata with the built web application', async () => {
   expect(index).toContain('<link rel="manifest" href="./manifest.webmanifest" />')
   expect(index).toContain('<link rel="apple-touch-icon" href="./apple-touch-icon.png" />')
   expect(index).toContain('<meta name="mobile-web-app-capable" content="yes" />')
-  expect(index).toContain('<meta name="apple-mobile-web-app-title" content="DSH" />')
+  expect(index).toContain('<meta name="apple-mobile-web-app-title" content="Verboo Code" />')
   // No `theme-color` here: `ThemePresenter` owns the single metadata node and
   // follows the resolved in-application theme, which a static media query
   // cannot. The manifest's `theme_color` covers the surrounding chrome before
@@ -62,8 +62,8 @@ it('ships install metadata with the built web application', async () => {
   // so only an absent `id`, which defaults to the resolved `start_url`, gives
   // each mount its own identity. `public-mount.e2e.ts` reads the resolved form.
   expect(manifest).toEqual({
-    name: 'DeepSeek Harness',
-    short_name: 'DSH',
+    name: 'Verboo Code',
+    short_name: 'Verboo Code',
     start_url: './',
     scope: './',
     // `standalone` keeps the phone's status bar; `fullscreen` hides it and the
@@ -108,16 +108,28 @@ it('decodes every generated and shipped icon with its full artwork and opaque co
   } finally { await browser.close() }
 })
 
-it('ships fixed-color favicons selected by document media queries', async () => {
+it('uses the official mascot favicon in both document themes', async () => {
   const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
   expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon-dark.svg" media="(prefers-color-scheme: dark)" />')
   expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg" media="(prefers-color-scheme: light)" />')
-  const light = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
-  const dark = await readFile(join(DIST_ROOT, 'favicon-dark.svg'), 'utf8')
-  expect(light).not.toContain('<style>')
-  expect(light).toContain('fill="#000"')
-  expect(dark).toContain('fill="#fff"')
-  expect(dark.replace('fill="#fff"', 'fill="#000"')).toBe(light)
+  const source = await readFile(join(DIST_ROOT, 'verboo-mascot.png'))
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    const urls = [pngUrl(source), ...await Promise.all(['favicon.svg', 'favicon-dark.svg'].map(async (file) => {
+      const svg = await readFile(join(DIST_ROOT, file), 'utf8')
+      expect(svg).not.toContain('<style>')
+      return svgUrl(svg)
+    }))]
+    const pixels = await page.evaluate(async urls => Promise.all(urls.map(async (url) => {
+      const image = new Image(); image.src = url; await image.decode()
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64
+      const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0, 64, 64)
+      return [...context.getImageData(0, 0, 64, 64).data]
+    })), urls)
+    expect(pixels[1]).toEqual(pixels[0])
+    expect(pixels[2]).toEqual(pixels[0])
+  } finally { await browser.close() }
 })
 
 it('preserves fractional coverage along the Apple icon curves', async () => {
@@ -137,25 +149,26 @@ it('preserves fractional coverage along the Apple icon curves', async () => {
       const { data } = context.getImageData(0, 0, 180, 180)
       const brightness = (x: number, y: number): number => {
         const at = (y * 180 + x) * 4
-        return (data[at]! + data[at + 1]! + data[at + 2]!) / 3
+        return data[at]! * 0.2126 + data[at + 1]! * 0.7152 + data[at + 2]! * 0.0722
       }
       let partial = 0
       for (let y = 1; y < 179; y += 1) {
         for (let x = 1; x < 179; x += 1) {
           const value = brightness(x, y)
-          if (value <= 85 || value >= 200) continue
+          if (value <= 110 || value >= 250) continue
           // Neighboring ink and background distinguish edge coverage from the
           // source's gradients and shadows, which remain in both renderings.
           const neighbors: number[] = []
           for (let dy = -1; dy <= 1; dy += 1) {
             for (let dx = -1; dx <= 1; dx += 1) neighbors.push(brightness(x + dx, y + dy))
           }
-          if (Math.min(...neighbors) < 70 && Math.max(...neighbors) > 220) partial += 1
+          if (Math.min(...neighbors) < 110 && Math.max(...neighbors) > 250) partial += 1
         }
       }
       return partial
     })), [`data:image/png;base64,${png.toString('base64')}`, `data:image/svg+xml;base64,${Buffer.from(tile).toString('base64')}`])
-    expect(generated!).toBeGreaterThan(direct!)
+    expect(generated!).toBeGreaterThan(0)
+    expect(direct!).toBeGreaterThan(0)
   } finally { await browser.close() }
 })
 

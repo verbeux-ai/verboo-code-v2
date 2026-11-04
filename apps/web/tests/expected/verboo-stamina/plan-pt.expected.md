@@ -1,0 +1,7 @@
+- region "Stamina":
+  - heading "Stamina" [level=2]
+  - text: Unlimited 50% restante
+  - 'progressbar "Stamina: Unlimited"'
+  - paragraph: "Limite para novas requisições: {{throughput}} tok/s"
+  - paragraph: A stamina recupera quando todas as requisições terminarem.
+  - paragraph: O uso no período também afeta esse limite. Respostas em andamento mantêm a velocidade definida no início.

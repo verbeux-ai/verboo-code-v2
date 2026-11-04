@@ -22,6 +22,22 @@ const make = (host = stubConfigForm<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
+  it('layers product icons over both palettes and removes contributions on disposal', () => {
+    const { theme } = make()
+    const key = 'dsw-icon-new-chat-outline-regular' as const
+    const original = theme.getTheme().active.icons?.[key]
+    const first = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M1 1h2"/></svg>'
+    const second = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h3"/></svg>'
+    const stale = theme.overrideIcons('product', { [key]: first })
+    const dispose = theme.overrideIcons('product', { [key]: second })
+    stale()
+    expect(theme.getTheme().active.icons?.[key]).toBe(second)
+    theme.setTheme('dark')
+    expect(theme.getTheme().active.icons?.[key]).toBe(second)
+    dispose()
+    expect(theme.getTheme().active.icons?.[key]).toBe(original)
+  })
+
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()

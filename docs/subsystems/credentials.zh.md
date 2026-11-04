@@ -367,6 +367,82 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 
+<a id="ctxverbooproduct--verbooproduct"></a>
+
+### `ctx.verbooProduct` — `VerbooProduct`
+
+Every request captures its owning login before I/O and fences its response.
+
+```ts cordis-catalog
+/**
+ * Read account-scoped connections for an Agent tool.
+ * @param signal - tool cancellation.
+ * @returns safe JSON text recorded by the tool pipeline.
+ */
+async listAgentConnections(signal: AbortSignal): Promise<string>
+
+/**
+ * Discover pinned tool definitions for one owned connection.
+ * @param connectionId - opaque account identity.
+ * @param query - capability description.
+ * @param signal - tool cancellation.
+ * @returns public tool schema JSON.
+ */
+async searchAgentConnections( connectionId: string, query: string, signal: AbortSignal, ): Promise<string>
+
+/**
+ * Execute exactly one provider action; never retry a write or expose service credentials.
+ * @param input - discovered tool, version, owned connection and arguments.
+ * @param signal - tool cancellation.
+ * @returns the provider's exact JSON text, including wide integers.
+ */
+async executeAgentConnection( input: { connectionId: string slug: string version: string arguments: Record<string, unknown> }, signal: AbortSignal, ): Promise<string>
+
+/**
+ * Read subscriptions and available recurring plans from the authoritative API.
+ * @returns display-safe plan projections.
+ */
+@Remote getPlans(): Promise<Result<Plans>>
+
+/**
+ * Read stamina only for plans where the server has enrolled this account.
+ * @param signal - cancellation of the owning Client read.
+ * @returns public percentages and next-request ceilings; older APIs without stamina return an empty list.
+ */
+@Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>
+
+/**
+ * Read only this authenticated user's connections.
+ * @returns credential-free states and configured toolkits.
+ */
+@Remote getConnections(): Promise<Result<Connections>>
+
+/**
+ * Begin hosted OAuth for one enabled toolkit.
+ * @param toolkit - server-allowlisted slug.
+ * @param label - user-facing name for this service account.
+ * @returns short-lived browser link, never a service key.
+ */
+@Remote connect( toolkit: string, label: string, ): Promise< Result<{ url: string; expiresAt: string; id: ConnectionId | null }> >
+
+/**
+ * Disconnect only an account owned by the authenticated user.
+ * @param id - opaque connection ID.
+ * @returns after server confirmation.
+ */
+@Remote disconnect(id: ConnectionId): Promise<Result<null>>
+
+/**
+ * Construct a trusted official checkout handoff. Payment and upgrades remain owned by the Verboo website.
+ * @param planId - catalog or owned plan.
+ * @param purchase - open the website's subscribe flow.
+ * @returns public URL without credentials.
+ */
+@Remote billingURL( planId: PlanId | null, purchase: boolean, ): Promise<Result<string>>
+```
+
+Source: [`packages/api/verboo-product/src/index.ts`](../../packages/api/verboo-product/src/index.ts)
+
 <a id="authorization-events"></a>
 
 ### `authorization/*` events

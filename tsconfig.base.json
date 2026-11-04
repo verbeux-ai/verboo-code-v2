@@ -28,6 +28,11 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-api-verboo-product": ["./packages/api/verboo-product/src/index.ts"],
+      "@deepseek-ai/dsh-api-verboo-product/types": ["./packages/api/verboo-product/src/types.ts"],
+      "@deepseek-ai/dsh-client-ui-verboo": ["./packages/client/ui-verboo/src/index.ts"],
+      "@deepseek-ai/dsh-client-ui-verboo/client": ["./packages/client/ui-verboo/src/client/index.ts"],
+      "@deepseek-ai/dsh-client-ui-verboo/src/*": ["./packages/client/ui-verboo/src/*"],
       "@deepseek-ai/dsh-client-ui-file-actions": ["./packages/client/ui-file-actions/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-file-actions/client": ["./packages/client/ui-file-actions/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-file-actions/types": ["./packages/client/ui-file-actions/src/types.ts"],
@@ -603,6 +608,9 @@
       "@deepseek-ai/dsh-tools": ["./packages/core/tools/src"],
       "@deepseek-ai/dsh-user-approval": ["./packages/interaction/user-approval/src"],
       "@deepseek-ai/dsh-user-questions": ["./packages/interaction/user-questions/src"],
+      "@deepseek-ai/dsh-verboo-account": ["./packages/credentials/verboo-account/src"],
+      "@deepseek-ai/dsh-verboo-app": ["./packages/bundle/verboo-app/src"],
+      "@deepseek-ai/dsh-verboo-connections": ["./packages/extensions/verboo-connections/src"],
       "@deepseek-ai/dsh-web": ["./packages/web/web/src"],
       "@deepseek-ai/dsh-web-app": ["./packages/bundle/web-app/src"],
       "@deepseek-ai/dsh-web-deepseek-api": ["./packages/web/web-deepseek-api/src"],

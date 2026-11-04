@@ -1,0 +1,7 @@
+{
+  "authenticationRequired": 401,
+  "authenticatedPage": 200,
+  "javascriptAndStylesheets": 4,
+  "shutdownExit": 0,
+  "events": ["ready", "stopped"]
+}

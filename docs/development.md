@@ -76,14 +76,14 @@ Host and Client stay two aggregate programs because both sides declaration-merge
 
 Seven packages split Host and Client tsconfigs: `api/remotes`, `api/gateway`, `api/session-controller`, `api/workspace-controller`, `client/connection`, `session-query/session-log-export`, and `experimental/liveshare-protocol`. `api/remotes`' Host entry participates in the Host Typert graph while its Client entry imports generated `/remote` declarations; `session-log-export` keeps Node archive production out of its browser controller; `liveshare-protocol` keeps the Node wire codecs on its Host leaf and the browser viewer carrier on its Client leaf. Each split package-root `tsconfig.json` is therefore only a solution, and the two aggregates and direct consumers reference `tsconfig.host.json` or `tsconfig.client.json` respectively. The workspace `constraints` gate walks the reachable Project Reference graph and checks each referencing project's own compiler face: a single-config target remains valid from either face, while a split target must name the matching leaf rather than its solution root or opposite leaf; it discovers split packages from the presence of both leaf configs, so a new split joins the gate automatically. The [`api-remotes` README](../packages/api/remotes/README.md) and [`session-log-export` README](../packages/session-query/session-log-export/README.md) explain their splits.
 
-`pnpm run build:artifacts` emits every artifact, checking and compiling only the package references of each compiler face. Client compilation waits for Host and Desktop bundling to finish: split compiler faces rewrite shared `lib/types` files read by those bundles. Client bundling follows Client compilation. The artifact order is:
+`pnpm run build:artifacts` emits every artifact, checking and compiling only the package references of each compiler face. Client compilation follows Host and legacy Electron compatibility bundling, which read shared `lib/types` files. Tauri compiles Rust only when a desktop command requests it. Client bundling follows Client compilation. The artifact order is:
 
 ```sh
 pnpm run build:native-system
 pnpm exec tsx scripts/generate-typert.ts
 tsc -b <tsconfig.host.json references>
 tsdown --env.DSH_BUILD_FACE host
-pnpm --filter @deepseek-ai/dsh-desktop run bundle
+pnpm --filter @deepseek-ai/dsh-desktop run bundle:electron
 tsc -b <tsconfig.client.json references>
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
@@ -104,7 +104,7 @@ Choose the command by what the change needs:
 
 PR artifact builders run `build:artifacts`; required Linux and Windows normal builds and public `typecheck` also check the repository-wide test and script programs. CI benchmark preparation additionally uses `--noCheck` for its disposable library outputs, relying on those required builds for diagnostics; other artifact builders keep package checking ([rationale](../.agents/notes/implemented/process/2026-10-05-pr-artifact-typechecks.md)).
 
-Both tsdown passes match `vendor/*`, `packages/*/*`, and `apps/cli`; the Host pass also matches `apps/desktop-host`. They neither scan build artifacts to discover Client packages nor maintain a Host/Client package filter list. Package-local tsdown configs select entries for the current phase through `DSH_BUILD_FACE`: an ordinary Client plugin produces both its Node loader and browser bundle during the Client phase; `api-remotes` uses `hostPhase: true` to produce its Host entry early and only its browser bundle during the Client phase. Tsdown consumes only the JavaScript emitted to `lib/types` by the preceding tsc phase. Tsdown builds the matched workspace members concurrently, so `apps/desktop`, whose main bundle inlines workspace devDependencies from their `lib/` output, bundles in its own step after the Host pass ([Desktop README](../apps/desktop/README.md#bundled-workspace-dependencies)).
+Both tsdown passes match `vendor/*`, `packages/*/*`, and `apps/cli`; the Host pass also matches `apps/desktop-host`. They neither scan build artifacts to discover Client packages nor maintain a Host/Client package filter list. Package-local tsdown configs select entries for the current phase through `DSH_BUILD_FACE`: an ordinary Client plugin produces both its Node loader and browser bundle during the Client phase; `api-remotes` uses `hostPhase: true` to produce its Host entry early and only its browser bundle during the Client phase. Tsdown consumes only the JavaScript emitted to `lib/types` by the preceding tsc phase. Tsdown builds the matched workspace members concurrently. The separate compatibility step preserves the legacy Electron test artifacts. Tauri desktop commands compile the native application independently ([desktop reference](../apps/desktop/tauri/README.md)).
 
 Typert analyzes Host types through `tsconfig.host.json` and generates Host reflection and Host-for-Client Remote declarations before package compilation. The source-only [`generate-typert.ts`](../scripts/generate-typert.ts) pass rejects workspace imports that require built output, including metadata dependencies that return to generated declarations. Host tsdown lowers source decorators without generating metadata again; Client tsdown also consumes the existing metadata. `pnpm run typecheck` generates metadata, compiles Host and Client packages in reference order, and checks each aggregate with `tsc -b` after its package compilation. It skips the native addon, bundles, Web, and the client build record. `lint`, `lint:fix`, and `doc-typecheck` prepare metadata and Host package declarations through `compile-referenced-projects.ts host-contracts`; generation failure stops dependent compilation. These declaration-only commands do not update runtime bundles: run `build:artifacts` before launching or testing built output.
 
@@ -189,16 +189,16 @@ pnpm run demo:ptc -- "summarize this workspace"
 
 ### Application commands
 
-Web and Desktop share one command pair. `start:*` launches the artifacts of a prior `pnpm run build` or `build:artifacts`; `dev:*` runs `build:artifacts` first and then launches. Web additionally keeps client bundles rebuilt on source edits, because its Host runs from source while the browser loads built bundles:
+Web and Desktop share one command pair. `start:*` launches the artifacts of a prior `pnpm run build` or `build:artifacts`; `dev:*` runs `build:artifacts` first and then launches. Both development commands rebuild client bundles on source edits; Tauri also rebuilds Rust source changes:
 
 ```sh
 pnpm run start:web       # serve built Web artifacts through the source launcher (the same launch as pnpm dsh web)
 pnpm run dev:web         # build, serve, and rebuild Web client bundles on source edits
-pnpm run start:desktop   # launch built Desktop artifacts
-pnpm run dev:desktop     # build, then launch Desktop
+pnpm run start:desktop   # launch Tauri with the built shared application
+pnpm run dev:desktop     # build, watch the client and Rust, and launch Tauri
 ```
 
-Arguments after a Web command reach `dsh web`, for example `pnpm run dev:web --no-open --port 3081`; `dev:web` also accepts `--skip-build` to reuse the existing artifact tree and `--no-serve` to run only the rebuild watchers beside a server started elsewhere. Both Web commands use the normal Harness home, while the Desktop commands use the isolated development home described in the [Desktop README](../apps/desktop/README.md). The root `Makefile` names the same commands as `make web`, `make dev-web`, `make desktop`, `make dev-desktop`, and `make build`; `ARGS='--no-open'` forwards options.
+Arguments after a Web command reach `dsh web`, for example `pnpm run dev:web --no-open --port 3081`; `dev:web` also accepts `--skip-build` to reuse the existing artifact tree and `--no-serve` to run only the rebuild watchers beside a server started elsewhere. Both Web commands use the normal Harness home, while the Desktop commands use the isolated development home described in the [Tauri desktop reference](../apps/desktop/tauri/README.md). The root `Makefile` names the same commands as `make web`, `make dev-web`, `make desktop`, `make dev-desktop`, and `make build`; `ARGS='--no-open'` forwards options.
 
 ### TODO markers
 

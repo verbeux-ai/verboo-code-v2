@@ -1,6 +1,6 @@
 {
-  "name": "DeepSeek Harness",
-  "short_name": "DSH",
+  "name": "Verboo Code",
+  "short_name": "Verboo Code",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

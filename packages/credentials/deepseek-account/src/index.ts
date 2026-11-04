@@ -1,6 +1,6 @@
 /** Account Service Definition shared by platform, API, and model consumers. */
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountUserId, AccountView, SignInAttemptId } from './types.ts'
+import type { AccountBonusBatch, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountSessionId, AccountUserId, AccountView, SignInAttemptId } from './types.ts'
 export type { AccountBonusBatch, AccountBonusNotification, AccountBonusOrderId, AccountClientMetadata, AccountDetails, AccountProfile, AccountUserId, AccountWallet, AccountLinks, AccountView, SignInAttemptId, SignInAttemptView, SignInErrorCode } from './types.ts'
 export { isRunningAccountTask, installAccountTaskCancellation } from './account-tasks.ts'
 
@@ -22,6 +22,8 @@ export interface PlatformSession {
   readonly token: string
   /** Stable issuer account ID from the last successful profile read; null requires disposable browser storage. */
   readonly userId: AccountUserId | null
+  /** Host-only login identity for binding prepared requests across token refresh. */
+  readonly sessionId?: AccountSessionId
   /** Optional dist query value selecting the embedded frontend deployment. */
   readonly embeddedPageDist?: string
   /** Host-only deployment request headers; the consuming client adds its own dynamic identity, and neither reaches renderer bootstrap. */

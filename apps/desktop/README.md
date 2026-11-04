@@ -6,6 +6,8 @@ description: "Desktop runs the Harness workspace in a native application. This r
 
 English | [中文](README.zh.md)
 
+> The current Verboo Code desktop uses Tauri. See the [Tauri reference](tauri/README.md) for development and builds. This document describes the retained Electron implementation and its legacy installer tests.
+
 ## Summary
 
 Desktop runs the Harness workspace in a native application. This reference covers application behavior, development and integration; the packaging, Windows signing and publication guides own build and release operations.
@@ -190,7 +192,7 @@ The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R else
 `dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built CLI and private Desktop Host packages with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
 
 ```sh
-pnpm run dev:desktop
+pnpm --filter @deepseek-ai/dsh-desktop run dev:electron
 ```
 
 Development Harness state defaults to `apps/desktop/.desktop-build/development/home`, the disposable npm project lives at `apps/desktop/.desktop-build/development/project`, and Electron browser data lives at `apps/desktop/.desktop-build/development/electron-user-data`. Sessions, settings, credentials, package links, and browser data therefore stay out of the user's normal Harness home. An explicit `DSH_HOME` replaces only the development Harness home. Renderer DevTools opens automatically; Main, Renderer, and dsh Host debugging listen on ports 9229, 9222, and 9230. `DSH_DESKTOP_MAIN_INSPECT_PORT`, `DSH_DESKTOP_RENDERER_DEBUG_PORT`, and `DSH_DESKTOP_HOST_INSPECT_PORT` replace those ports, while `DSH_DESKTOP_OPEN_DEVTOOLS=0` keeps the detached Renderer tools closed.
@@ -198,7 +200,7 @@ Development Harness state defaults to `apps/desktop/.desktop-build/development/h
 After an explicit build, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again:
 
 ```sh
-pnpm run start:desktop
+pnpm --filter @deepseek-ai/dsh-desktop run start:electron
 ```
 
 Desktop package preparation filters optional native packages by the installer target’s OS and architecture. Windows package sets omit the macOS Computer Use tarball, including when their inputs were packed on macOS.

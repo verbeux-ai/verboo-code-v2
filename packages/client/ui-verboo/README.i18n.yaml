@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-verboo/README.md
+/:
+  en: 641e11d6455846e2
+  zh: 73e90e3865a21c80
+/deepseek-ai-dsh-client-ui-verboo:
+  en: a468c087da75759a
+  zh: e7c4415fb71f36ce
+/deepseek-ai-dsh-client-ui-verboo/summary:
+  en: bf1240e7e0fc2445
+  zh: 95397204419b229d
+/deepseek-ai-dsh-client-ui-verboo/table-of-contents:
+  en: 23386452a66b2fbd
+  zh: c188905e2c80a74d
+/deepseek-ai-dsh-client-ui-verboo/use-this-package:
+  en: 02058e0f4dc6ad92
+  zh: 7b8d0781404b4650
+/deepseek-ai-dsh-client-ui-verboo/understand-the-implementation:
+  en: b485f58095d99787
+  zh: 7d32350eb0ace354
+/deepseek-ai-dsh-client-ui-verboo/further-exploration:
+  en: aa4b91925a8a4149
+  zh: b06ee5cbc0378929
+/deepseek-ai-dsh-client-ui-verboo/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-client-ui-verboo/model-experience/product-integration:
+  en: e4b4b7973e495a62
+  zh: 658ad0d57ec52b75
+/deepseek-ai-dsh-client-ui-verboo/model-experience/product-integration/what-the-model-sees:
+  en: 769fdec4b13e44c0
+  zh: 0f5ac9ac1422e36a
+/deepseek-ai-dsh-client-ui-verboo/model-experience/product-integration/token-effect:
+  en: 9cfa7bea36f75426
+  zh: 24a9a4484e475dff
+/deepseek-ai-dsh-client-ui-verboo/model-experience/product-integration/kv-cache-effect:
+  en: f316215a6c4a1353
+  zh: 96509f35cef2649a
+/deepseek-ai-dsh-client-ui-verboo/known-limitations-and-deferred-work:
+  en: 4352506ace14f10f
+  zh: 624d2942a1b1549e
+/deepseek-ai-dsh-client-ui-verboo/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

@@ -34,8 +34,12 @@ export interface AccountLinks {
   readonly usageUrl: string
   readonly topUpUrl: string
 }
+/** Opaque public revision of the stored credential, unrelated to its token or actor identity. */
+export type AccountCredentialRevision = Branded<'AccountCredentialRevision'>
 /** Stored-account presence is not a claim that the server has validated its token. */
 export interface AccountView {
+  /** Changes whenever the stored credential changes; clients discard prior account-bound reads. */
+  readonly credentialRevision?: AccountCredentialRevision
   readonly status: 'signed-out' | 'credential-stored'
   readonly links: AccountLinks
   readonly attempt: SignInAttemptView | null
@@ -43,6 +47,8 @@ export interface AccountView {
 
 /** Platform account identifier supplied by the current-user endpoint. */
 export type AccountUserId = Branded<'AccountUserId'>
+/** Host-only identity of one login, stable through token refresh and replaced on account changes. */
+export type AccountSessionId = Branded<'AccountSessionId'>
 /** Display identity; contacts retain Platform masking. */
 export interface AccountProfile {
   readonly id: AccountUserId | null

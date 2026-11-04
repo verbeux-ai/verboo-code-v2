@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write apps/desktop/tauri/README.md
+/verboo-code-desktop:
+  en: 2e276a6644b09f3f
+  zh: c26f6bf3ce0b961a
+/verboo-code-desktop/development:
+  en: 91977c4eae73418e
+  zh: 2b80ee28d682cd5f
+/verboo-code-desktop/native-distribution:
+  en: 2662b627ac35ca3c
+  zh: f5e394a1db61226a
+/verboo-code-desktop/validation:
+  en: 7ce7de46fcd7f5f7
+  zh: 39e7464374ca2c3d

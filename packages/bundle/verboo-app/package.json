@@ -1,0 +1,44 @@
+{
+  "name": "@deepseek-ai/dsh-verboo-app",
+  "version": "0.2.2-alpha.3",
+  "private": true,
+  "description": "Verboo Code desktop product layer over the upstream Web Harness",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@deepseek-ai/dsh-verboo-account": "workspace:*",
+    "@deepseek-ai/dsh-api-verboo-product": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-verboo": "workspace:*",
+    "@deepseek-ai/dsh-verboo-connections": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}

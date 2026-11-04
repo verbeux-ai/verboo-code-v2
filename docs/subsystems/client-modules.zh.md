@@ -33,6 +33,8 @@ interface WebBootEntry {
   inject?: string[]
   /** Stage-one prefetch mark: load the script for factory registration during module-face boot. */
   immediately?: boolean
+  /** An inactive entry rejects client startup. */
+  required?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
 }

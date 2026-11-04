@@ -1097,7 +1097,7 @@ it('places account and official models before third-party models', async () => {
 
 it.each([en, zh])('localizes the account group while preserving external names', (copy) => {
   const groups = ['deepseek-account', 'custom'].map(id => ({
-    id, name: id === 'deepseek-account' ? 'DeepSeek Account' : 'My Gateway',
+    id, name: id === 'deepseek-account' ? 'Verboo Code' : 'My Gateway',
     models: [{ id: 'model', name: 'Model' }],
   }))
   render(<ModelSelect renderSlot={renderLabel} locked={false} available
@@ -1109,7 +1109,7 @@ it.each([en, zh])('localizes the account group while preserving external names',
 })
 
 it('restores the account model name after login without changing the saved route', () => {
-  const groups = [{ id: 'deepseek-account', name: 'DeepSeek Account', models: [
+  const groups = [{ id: 'deepseek-account', name: 'Verboo Code', models: [
     { id: 'deepseek-flash', name: 'DeepSeek Flash', reasoning },
   ] }]
   const selected = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' }

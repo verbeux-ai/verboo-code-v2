@@ -48,9 +48,9 @@ The Python SDK follows the same application architecture. Its runtime wheel pack
 
 ## Desktop application
 
-The [Electron desktop application](../apps/desktop/README.md) ships its exact dsh production runtime in signed resources and owns the reserved `$DSH_HOME/profiles/desktop`. Shared helpers initialize profile files, reconcile bundles, and resolve installation and bundle dependencies without replacing pnpm-owned packages. Desktop and npm CLI share product data but keep packages, activation, and lockfiles separate. Desktop’s bundled CLI manages its initialized plugins.
+The [Verboo Code desktop application](../apps/desktop/tauri/README.md) uses Tauri for native windows and the operating system WebView. A private Node process launches the shared `web` profile; it owns agents, sessions, tools, plugins, authentication, HTTP routes and streaming. Tauri admits native directory selection only from its owned window at the exact local Host origin.
 
-Electron starts the private Desktop Host in Electron Node mode. The Host invokes the shared CLI profile runner and complete Web application. The window immediately loads packaged Web assets and waits for boot injections before activating client plugins in the same document. Web owns RPC and streams; the desktop carrier connects the local page to the authenticated Host. Node IPC carries boot injections, readiness, fatal errors, and shutdown. Desktop listens on an OS-assigned port by default; profile configuration can override it. Shell-owned UI runs plugin transactions through bundled pnpm with normal user and profile configuration.
+The Host binds `127.0.0.1` on an OS-assigned port and sends its authenticated bootstrap URL over a private, versioned stdout channel. Tauri never prints that URL. Closing the app requests profile disposal over stdin and waits for the Host process; a missed deadline remains a failure after process termination. Development uses an isolated home. Native distribution carries a checksum-verified standalone Node binary and a packed workspace dependency and peer closure. The [Electron reference](../apps/desktop/README.md) describes the retained legacy implementation.
 
 ## Core packages
 

@@ -389,6 +389,6 @@ export class BrowserAuth {
     })
     res.end(req.method === 'HEAD'
       ? undefined
-      : 'dsh web authentication required; reopen the URL printed by dsh web.\n')
+      : 'Verboo Code authentication required. Reopen the link provided when starting the app.\n')
   }
 }

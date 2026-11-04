@@ -10,11 +10,11 @@ help:
 	@echo "make build        pnpm run build           complete repository build"
 	@echo "make clean        pnpm run clean           remove build outputs and safe deleted-package residue"
 	@echo "make web          pnpm run start:web       serve the built Web artifacts from source"
-	@echo "make desktop      pnpm run start:desktop   launch the built Desktop artifacts"
+	@echo "make desktop      pnpm run start:desktop   launch Tauri with built shared artifacts"
 	@echo "make dev-web      pnpm run dev:web         build, serve, and rebuild Web on source edits"
-	@echo "make dev-desktop  pnpm run dev:desktop     build, then launch Desktop"
+	@echo "make dev-desktop  pnpm run dev:desktop     build, watch client and Rust, and launch Tauri"
 	@echo "ARGS='--no-open --port 3081' forwards options to the launched application;"
-	@echo "the Web commands accept dsh web flags, the Desktop launcher accepts none."
+	@echo "the Web commands accept dsh web flags, the Desktop launcher accepts Tauri development flags."
 
 build:
 	$(PNPM) run build

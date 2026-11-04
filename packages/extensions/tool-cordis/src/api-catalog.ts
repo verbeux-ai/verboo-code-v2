@@ -4276,6 +4276,67 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'verbooProduct',
+    summary: 'Every request captures its owning login before I/O and fences its response.',
+    description: 'Every request captures its owning login before I/O and fences its response.',
+    methods: [
+      {
+        signature: 'async listAgentConnections(signal: AbortSignal): Promise<string>',
+        description: 'Read account-scoped connections for an Agent tool.',
+        parameters: [{ name: 'signal', description: 'tool cancellation.' }],
+        returns: 'safe JSON text recorded by the tool pipeline.',
+      },
+      {
+        signature: 'async searchAgentConnections( connectionId: string, query: string, signal: AbortSignal, ): Promise<string>',
+        description: 'Discover pinned tool definitions for one owned connection.',
+        parameters: [{ name: 'connectionId', description: 'opaque account identity.' }, { name: 'query', description: 'capability description.' }, { name: 'signal', description: 'tool cancellation.' }],
+        returns: 'public tool schema JSON.',
+      },
+      {
+        signature: 'async executeAgentConnection( input: { connectionId: string slug: string version: string arguments: Record<string, unknown> }, signal: AbortSignal, ): Promise<string>',
+        description: 'Execute exactly one provider action; never retry a write or expose service credentials.',
+        parameters: [{ name: 'input', description: 'discovered tool, version, owned connection and arguments.' }, { name: 'signal', description: 'tool cancellation.' }],
+        returns: 'the provider\'s exact JSON text, including wide integers.',
+      },
+      {
+        signature: '@Remote getPlans(): Promise<Result<Plans>>',
+        description: 'Read subscriptions and available recurring plans from the authoritative API.',
+        parameters: [],
+        returns: 'display-safe plan projections.',
+      },
+      {
+        signature: '@Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>',
+        description: 'Read stamina only for plans where the server has enrolled this account.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'public percentages and next-request ceilings; older APIs without stamina return an empty list.',
+      },
+      {
+        signature: '@Remote getConnections(): Promise<Result<Connections>>',
+        description: 'Read only this authenticated user\'s connections.',
+        parameters: [],
+        returns: 'credential-free states and configured toolkits.',
+      },
+      {
+        signature: '@Remote connect( toolkit: string, label: string, ): Promise< Result<{ url: string; expiresAt: string; id: ConnectionId | null }> >',
+        description: 'Begin hosted OAuth for one enabled toolkit.',
+        parameters: [{ name: 'toolkit', description: 'server-allowlisted slug.' }, { name: 'label', description: 'user-facing name for this service account.' }],
+        returns: 'short-lived browser link, never a service key.',
+      },
+      {
+        signature: '@Remote disconnect(id: ConnectionId): Promise<Result<null>>',
+        description: 'Disconnect only an account owned by the authenticated user.',
+        parameters: [{ name: 'id', description: 'opaque connection ID.' }],
+        returns: 'after server confirmation.',
+      },
+      {
+        signature: '@Remote billingURL( planId: PlanId | null, purchase: boolean, ): Promise<Result<string>>',
+        description: 'Construct a trusted official checkout handoff. Payment and upgrades remain owned by the Verboo website.',
+        parameters: [{ name: 'planId', description: 'catalog or owned plan.' }, { name: 'purchase', description: 'open the website\'s subscribe flow.' }],
+        returns: 'public URL without credentials.',
+      },
+    ],
+  },
+  {
     key: 'web',
     summary: 'The web access service.',
     description: 'The web access service. Registered as `ctx.web` (one instance per context) and exposed to Clients as the `web` Remote namespace (`listProviders`).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
@@ -5431,6 +5492,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AccountClientMetadata {\n    readonly version: string;\n    readonly locale: string;\n    readonly timezoneOffsetSeconds: number;\n}',
   },
   {
+    name: 'AccountCredentialRevision',
+    declaration: 'export type AccountCredentialRevision = Branded<\'AccountCredentialRevision\'>;',
+  },
+  {
     name: 'AccountDetails',
     declaration: 'export interface AccountDetails {\n    readonly profile: {\n        readonly status: \'ready\';\n        readonly value: AccountProfile;\n    } | {\n        readonly status: \'failed\';\n    };\n    readonly balance: {\n        readonly status: \'ready\';\n        readonly value: readonly AccountWallet[];\n        readonly bonusWallets: readonly AccountWallet[];\n    } | {\n        readonly status: \'failed\';\n    };\n}',
   },
@@ -5443,12 +5508,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n    readonly avatarUrl?: string | null;\n}',
   },
   {
+    name: 'AccountSessionId',
+    declaration: 'export type AccountSessionId = Branded<\'AccountSessionId\'>;',
+  },
+  {
     name: 'AccountUserId',
     declaration: 'export type AccountUserId = Branded<\'AccountUserId\'>;',
   },
   {
     name: 'AccountView',
-    declaration: 'export interface AccountView {\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
+    declaration: 'export interface AccountView {\n    readonly credentialRevision?: AccountCredentialRevision;\n    readonly status: \'signed-out\' | \'credential-stored\';\n    readonly links: AccountLinks;\n    readonly attempt: SignInAttemptView | null;\n}',
   },
   {
     name: 'AccountWallet',
@@ -5935,6 +6004,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
   },
   {
+    name: 'Connection',
+    declaration: 'export interface Connection {\n    id: ConnectionId;\n    toolkit: string;\n    label: string;\n    status: \'connected\' | \'pending\' | \'expired\' | \'failed\' | \'disconnected\' | \'unknown\';\n}',
+  },
+  {
     name: 'ConnectionAdmission',
     declaration: 'export type ConnectionAdmission = {\n    readonly peer: PeerScope;\n    readonly release: () => Promise<void>;\n} | {\n    readonly rejection: 401 | 403 | 409;\n};',
   },
@@ -5949,6 +6022,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionFetchRoute',
     declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
+  },
+  {
+    name: 'ConnectionId',
+    declaration: 'export type ConnectionId = Branded<\'VerbooConnectionId\'>;',
   },
   {
     name: 'ConnectionIndexRequest',
@@ -5989,6 +6066,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionRpcResult',
     declaration: 'export type ConnectionRpcResult<T> = {\n    readonly ok: true;\n    readonly value: T;\n} | {\n    readonly ok: false;\n    readonly error: ConnectionRpcFailure;\n};',
+  },
+  {
+    name: 'Connections',
+    declaration: 'export interface Connections {\n    available: boolean;\n    toolkits: Toolkit[];\n    accounts: Connection[];\n}',
   },
   {
     name: 'ConnectionTrustRequest',
@@ -7495,8 +7576,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PiAiRequestHeaderContext extends Readonly<Pick<GenerateOptions<string>, \'provider\' | \'model\' | \'sessionId\' | \'purpose\'>> {\n    readonly baseURL: string;\n}',
   },
   {
+    name: 'Plan',
+    declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
+  },
+  {
+    name: 'PlanId',
+    declaration: 'export type PlanId = Branded<\'VerbooPlanId\'>;',
+  },
+  {
+    name: 'Plans',
+    declaration: 'export interface Plans {\n    subscriptions: Subscription[];\n    catalog: Plan[];\n}',
+  },
+  {
     name: 'PlatformSession',
-    declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly userId: AccountUserId | null;\n    readonly embeddedPageDist?: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
+    declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly userId: AccountUserId | null;\n    readonly sessionId?: AccountSessionId;\n    readonly embeddedPageDist?: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'PluginChange',
@@ -7657,6 +7750,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PrincipalMap',
     declaration: 'export interface PrincipalMap {\n    owner: {\n        readonly kind: \'owner\';\n    };\n}',
+  },
+  {
+    name: 'ProductError',
+    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'contract_error\';',
   },
   {
     name: 'ProductEvent',
@@ -8025,6 +8122,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RestoreWorktreeRequest',
     declaration: 'export interface RestoreWorktreeRequest {\n    path: string;\n    branch: string;\n    baseCommit: string;\n    repositoryRoot: string;\n}',
+  },
+  {
+    name: 'Result',
+    declaration: 'export type Result<T> = {\n    ok: true;\n    data: T;\n} | {\n    ok: false;\n    code: ProductError;\n};',
   },
   {
     name: 'ResumeAgentOptions',
@@ -9163,6 +9264,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type StagedAttachment = {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n} | {\n    readonly type: \'image\';\n    readonly attachment: ImageAttachmentRef;\n    readonly encodedBytes: number;\n};',
   },
   {
+    name: 'StaminaStatus',
+    declaration: 'export interface StaminaStatus {\n    groupId: PlanId;\n    groupName: string;\n    remainingPercent: number;\n    nextOutputTps: number;\n    recovering: boolean;\n    fullAt: string | null;\n    accountingPending: boolean;\n    asOf: string;\n}',
+  },
+  {
     name: 'StopShareRequest',
     declaration: 'export interface StopShareRequest {\n    readonly shareId: string;\n}',
   },
@@ -9341,6 +9446,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubprocessTerminalSpawnSpec',
     declaration: 'export interface SubprocessTerminalSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    env?: Record<string, string> | undefined;\n    rows: number;\n    cols: number;\n    terminalType: string;\n    shellActivity?: boolean | undefined;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n}',
+  },
+  {
+    name: 'Subscription',
+    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
     name: 'SurfaceEvent',
@@ -9629,6 +9738,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolInfo',
     declaration: 'export interface ToolInfo {\n    name: string;\n    description: string;\n}',
+  },
+  {
+    name: 'Toolkit',
+    declaration: 'export interface Toolkit {\n    slug: string;\n    name: string;\n    available: boolean;\n}',
   },
   {
     name: 'ToolMessageSource',
@@ -9944,7 +10057,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebBootEntry',
-    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
+    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    required?: boolean;\n    external?: string[];\n}',
   },
   {
     name: 'WebBootGraph',

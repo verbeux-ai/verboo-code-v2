@@ -1,77 +1,45 @@
-# DeepSeek Harness
+# Verboo Code
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+Verboo Code is a Tauri desktop coding app with Verboo login, account models, projects and connected tools. It uses the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) engine and its Cordis plugin architecture.
 
-It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
+<a id="run"></a>
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
-
-## Developer preview
-
-DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
-
-Review the [safety notice](SAFETY.md) before running the project.
-
-## Run
-
-### Run from `npm`
-
-Install `Node.js`, then run:
-
-```sh
-npx @deepseek-ai/dsh web
-```
-
-The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
-
-### Run from source
-
-To run from a repository checkout:
-
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
-```
-
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
-
-## Community and support
-
-- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/4MrtZUhpxg">DeepSeek Harness Discord community</a>.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+<a id="run-from-source"></a>
 
 ## Development
 
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+Install Node.js 24.9 or newer, pnpm, Rust and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/), then run:
 
-`pnpm run dev:web` builds, serves, and rebuilds client bundles on source edits in one terminal, and `make help` lists the matching Make targets for Web and Desktop; the guide's application commands section owns the full table.
-
-For agents, follow [AGENTS.md](AGENTS.md).
-
-## Citation
-
-```bibtex
-@misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
-  author={DeepSeek-AI},
-  year={2026},
-  publisher={GitHub},
-  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
-}
+```sh
+git clone https://github.com/verbeux-ai/verboo-code-v2.git
+cd verboo-code-v2
+pnpm install
+pnpm run dev:desktop
 ```
+
+Sign in with your Verboo account in the system browser. Model access and subscription state come from the Verboo API. Composio service credentials belong only to the central backend; the desktop never receives them.
+
+For a browser preview after `pnpm run build:artifacts`, run:
+
+```sh
+pnpm dsh --profile verboo --no-open
+```
+
+The original upstream Web composition remains available as `pnpm dsh --profile web --no-open`. Profiles use separate composition files. See the [product bundle](packages/bundle/verboo-app/README.md) for upstream updates and the [desktop runtime](apps/desktop/tauri/README.md) for native builds.
+
+## Product packages
+
+- [Interface](packages/client/ui-verboo/README.md): onboarding, purple palette, project navigation, plans and connections.
+- [Account](packages/credentials/verboo-account/README.md): OAuth PKCE, encrypted grants and account-authorized inference.
+- [Product API](packages/api/verboo-product/README.md): display-safe account data and trusted browser handoffs.
+- [Connections](packages/extensions/verboo-connections/README.md): user-owned external tools for Agents.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md), the [architecture](docs/architecture.md), the [development guide](docs/development.md) and [safety notice](SAFETY.md). Internal `@deepseek-ai` package names identify upstream components and remain stable for updates and saved Sessions.
 
 ## License
 
-[MIT](LICENSE)
-
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Upstream copyright notices remain intact. Font and icon licenses are recorded in [product asset licenses](packages/client/ui-verboo/LICENSES.md).

@@ -1,22 +1,7 @@
 /**
- * Render the install icons of the Web application from the official
- * application tile.
- *
- * A browser installs a Web App only with a raster 192px and a 512px icon, masks
- * the icon it puts on the home screen, and has no manifest support for iOS,
- * which reads `apple-touch-icon` instead. The whale favicon is the bare mark
- * drawn edge to edge: handed to a launcher directly it loses its fins to the
- * mask, and it carries neither the tile nor a background of its own. This
- * script rasterizes the official application tile (`apps/desktop/resources/icon.svg`,
- * the artwork the desktop application ships) into the committed PNGs under
- * `public/`. Every variant crops the tile's drop shadow, which belongs to a
- * desktop window rather than a launcher; the maskable variant additionally
- * scales the whale inside the safe zone a platform mask may crop, leaving the
- * tile's own gradient to fill the icon so no mask meets a seam.
- *
- * The committed PNGs are the output; rerun
- * `pnpm --filter @deepseek-ai/dsh-web-frontend run render:app-icons` after the
- * tile artwork changes.
+ * Render Verboo Code install icons from its official mascot tile.
+ * The opaque tile supports app launchers; maskable variants keep the mascot
+ * inside the platform safe zone. Rerun render:app-icons after artwork changes.
  * @module render-app-icons
  */
 
@@ -25,8 +10,8 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 
-/** Vector source owned by the desktop application; 1104 units square with the tile inset. */
-export const TILE_SOURCE = fileURLToPath(new URL('../../desktop/resources/icon.svg', import.meta.url))
+/** Product-owned source document with the official Verboo Code mascot. */
+export const TILE_SOURCE = fileURLToPath(new URL('../brand/icon.svg', import.meta.url))
 
 /** Directory the generated PNGs are committed to. */
 export const ICON_OUTPUT_DIRECTORY = fileURLToPath(new URL('../public/', import.meta.url))
@@ -34,8 +19,8 @@ export const ICON_OUTPUT_DIRECTORY = fileURLToPath(new URL('../public/', import.
 /** Tile edge in source units; every render density is expressed against it. */
 const TILE_EDGE = 1024
 
-/** Tile inset in the source canvas: the drop shadow occupies the surrounding band. */
-const TILE_INSET = { x: 40, y: 32 } as const
+/** Origin of the square source canvas. */
+const TILE_INSET = { x: 0, y: 0 } as const
 
 /** Tile centre in source units, the fixed point of the maskable scale. */
 const TILE_CENTER = { x: TILE_INSET.x + TILE_EDGE / 2, y: TILE_INSET.y + TILE_EDGE / 2 } as const
@@ -47,12 +32,10 @@ const SOURCE_DENSITY = 72
 const RENDER_SCALE = 4
 
 /**
- * Fraction of a maskable icon the artwork keeps: the platform may crop the
- * border outside it. The tile's own ink reaches 0.461 of its edge from the
- * centre, so 0.868 is the largest scale a circular mask still shows whole;
- * `pwa-manifest.e2e.ts` checks the committed artwork against that circle.
+ * Fraction of the tile occupied by maskable artwork. Browser acceptance checks
+ * the rendered mascot against the platform's guaranteed circle.
  */
-export const MASKABLE_ARTWORK_SCALE = 0.82
+export const MASKABLE_ARTWORK_SCALE = 0.8
 
 /** Radius a platform mask is guaranteed to show, as a fraction of the icon edge. */
 export const MASKABLE_SAFE_RADIUS_RATIO = 0.4
@@ -60,11 +43,8 @@ export const MASKABLE_SAFE_RADIUS_RATIO = 0.4
 /** Root element of the source document, rewritten to crop the canvas to the tile. */
 const SOURCE_ROOT = /^<svg[^>]*>/u
 
-/** The tile group's drop shadow; stripped because a launcher icon has no window around it. */
-const TILE_SHADOW_GROUP = '<g filter="url(#filter0_d_1637_371)">'
-
-/** The whale group inside the tile; the only element a maskable icon scales. */
-const TILE_ARTWORK_GROUP = '<g filter="url(#filter1_ddi_1637_371)">'
+/** Only the mascot scales; the opaque tile always fills the canvas. */
+const TILE_ARTWORK_GROUP = '<g data-app-artwork="verboo">'
 
 /** One committed install icon: the manifest or link member it serves and its edge in pixels. */
 export interface AppIconVariant {
@@ -106,24 +86,23 @@ function reparent(source: string): string {
   const trimmed = source.trim()
   const root = SOURCE_ROOT.exec(trimmed)
   if (root === null) throw new Error('app icons: the tile source has no root element')
-  if (!trimmed.includes(TILE_SHADOW_GROUP)) throw new Error('app icons: the tile source has no shadowed tile group')
   if (!trimmed.includes(TILE_ARTWORK_GROUP)) throw new Error('app icons: the tile source has no artwork group')
-  return `${croppedRoot()}${trimmed.slice(root[0].length).replace(TILE_SHADOW_GROUP, '<g>')}`
+  return `${croppedRoot()}${trimmed.slice(root[0].length)}`
 }
 
 /**
  * Rewrite the tile source so the icon canvas is exactly the tile.
  * @param source - complete `icon.svg` document.
- * @returns an SVG document whose 1024-unit square is the tile without its shadow.
+ * @returns an SVG document whose 1024-unit square is the opaque tile.
  */
 export function tileDocument(source: string): string {
   return reparent(source)
 }
 
 /**
- * Rewrite the tile source into a maskable icon. The tile keeps its own gradient
+ * Rewrite the tile source into a maskable icon. The tile keeps its opaque background
  * and extent, so the icon's border is the real tile rather than an extension;
- * only the whale scales into the safe zone a platform mask may crop.
+ * only the mascot scales into the safe zone a platform mask may crop.
  * @param source - complete `icon.svg` document.
  * @returns an SVG document whose artwork survives a circular mask whole.
  */

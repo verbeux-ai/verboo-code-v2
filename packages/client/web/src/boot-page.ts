@@ -6,6 +6,12 @@
 import type { LoaderEntryState } from './loader-status.ts'
 import css from './boot-page.module.css'
 
+const bootCopy = {
+  en: { loading: 'Opening your workspace…', failed: 'Couldn’t open Verboo Code', explanation: 'Reload the app to try again.', retry: 'Try again' },
+  pt: { loading: 'Abrindo sua área de trabalho…', failed: 'Não foi possível abrir o Verboo Code', explanation: 'Recarregue o aplicativo para tentar novamente.', retry: 'Tentar novamente' },
+  zh: { loading: '正在打开工作区…', failed: '无法打开 Verboo Code', explanation: '请重新加载应用并重试。', retry: '重试' },
+}
+
 /** Create a div with one module class and optional text. */
 function div(className: string | undefined, text?: string): HTMLDivElement {
   const el = document.createElement('div')
@@ -25,6 +31,7 @@ export class BootPage {
   private readonly active = new Set<string>()
   private total = 0
   private failure: string | undefined
+  private readonly copy = navigator.language.startsWith('pt') ? bootCopy.pt : navigator.language.startsWith('zh') ? bootCopy.zh : bootCopy.en
 
   /**
    * Build and attach the boot page.
@@ -34,10 +41,10 @@ export class BootPage {
     this.root = div(css.boot)
     this.root.dataset.dshBoot = ''
     this.card = div(css.card)
-    this.wordmark = div(css.wordmark, 'HARNESS')
+    this.wordmark = div(css.wordmark, 'Verboo Code')
     this.spinner = div(css.spinner)
     this.spinner.dataset.dshBootSpinner = ''
-    this.hint = div(css.hint, 'Loading plugins…')
+    this.hint = div(css.hint, this.copy.loading)
     this.card.append(this.wordmark, this.spinner, this.hint)
     this.root.append(this.card)
     container.append(this.root)
@@ -89,9 +96,13 @@ export class BootPage {
       return
     }
     const report = div(css.failed)
-    report.append(div(css.failedTitle, 'Failed to load plugins'))
-    for (const id of failed) report.append(div(css.failedItem, id))
-    if (this.failure !== undefined) report.append(div(css.failedItem, this.failure))
+    report.append(div(css.failedTitle, this.copy.failed))
+    report.append(div(css.failedItem, this.copy.explanation))
+    const retry = document.createElement('button')
+    retry.className = css.retry ?? ''
+    retry.textContent = this.copy.retry
+    retry.addEventListener('click', () => { location.reload() })
+    report.append(retry)
     this.card.replaceChildren(this.wordmark, report)
   }
 

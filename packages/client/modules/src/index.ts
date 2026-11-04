@@ -61,6 +61,7 @@ interface WebBootRowFields {
   /** Module specifiers the package requests from the module table. */
   external: string[]
   immediately: boolean
+  required?: boolean
 }
 
 /** Filesystem baseline captured before a client artifact snapshot is read. */
@@ -534,6 +535,7 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
     rev,
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
+    ...(fields.required ? { required: true } : {}),
     ...(fields.external.length > 0 ? { external: fields.external } : {}),
   }
 }
@@ -913,6 +915,7 @@ export class ClientModuleRegistry extends Service {
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
       external: decl.external ?? [],
       immediately: decl.immediately === true,
+      ...(decl.required === true ? { required: true } : {}),
     }
     return { packageName, meta }
   }

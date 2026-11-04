@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.3/verboo-product/guide.md
+/:
+  en: 0c83b81333303f5d
+  zh: cdfd2b09ebb6828b
+/verboo-code-product-profile:
+  en: 47f15e9cce4f64c6
+  zh: 662afdaa8f88d559
+/verboo-code-product-profile/change:
+  en: 902c2451c73bc917
+  zh: ae61be794b4014bd
+/verboo-code-product-profile/migration:
+  en: 18f6e690f3013cca
+  zh: 2b43caa9d1850e6b

@@ -99,7 +99,7 @@ describe('shareableViewerCatalog', () => {
     ])
   })
 
-  it('excludes DSH core services and LiveShare management', () => {
+  it('excludes Verboo Code core services and LiveShare management', () => {
     for (const namespace of ['session', 'workspaceFiles', 'settings', 'credentials', 'terminal', 'pluginManager', 'liveshareShares']) {
       expect(EXCLUDED_SHARE_NAMESPACES.has(namespace)).toBe(true)
     }

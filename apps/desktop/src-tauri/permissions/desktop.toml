@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "desktop-native"
+description = "Native directory selection and startup diagnostics for the owned local application window."
+commands.allow = ["pick_directory", "desktop_info", "client_ready", "client_diagnostic"]

@@ -88,6 +88,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   cordisInspect: 'extensions.md',
   authorization: 'credentials.md',
   deepseekAccount: 'credentials.md',
+  verbooProduct: 'credentials.md',
   credentials: 'credentials.md',
   credentialsController: 'credentials.md',
   settingsController: 'settings.md',
@@ -985,6 +986,13 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  Result: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  PlanId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  Plans: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  ConnectionId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  Connections: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  StaminaStatus: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
   ActionCardResult: 'packages/experimental/action-cards/README.md',

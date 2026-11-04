@@ -18,6 +18,20 @@ async function personaText(ctx: Context, scope?: ScopeKey): Promise<string | und
 }
 
 describe('the persona row', () => {
+  it('keeps the deployment identity when a preset replaces the persona', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt, { identity: 'You are Verboo Code.' })
+      const key: ScopeKey = { agent: 'product-persona' }
+      const scope = createScope(ctx, key)
+      await scope.ctx.plugin(Persona, { prefix: 'Use the selected coding model.' })
+      expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: key })))
+        .toBe('You are Verboo Code.\n\nUse the selected coding model.')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('shadows and interpolates the environment per scope, restoring both defaults on disposal', async () => {
     const ctx = new Context()
     try {
