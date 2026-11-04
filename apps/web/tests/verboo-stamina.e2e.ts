@@ -53,7 +53,7 @@ async function platformFixture() {
       respond(res, 200, { data: [] })
       return
     }
-    if (req.url === '/api/me/connections') {
+    if (req.url === '/api/me/connections?catalog=all') {
       respond(res, 200, { data: { available: false, toolkits: [], accounts: [] } })
       return
     }
@@ -81,6 +81,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   let failures = 0
   async function navigate(name: RegExp) {
     await page.setViewportSize({ width: 1280, height: 960 })
+    await expect.poll(() => page.locator('[data-sidebar-drawer]').count()).toBe(0)
     const button = page.getByRole('button', { name }).first()
     await button.click()
   }
@@ -170,13 +171,23 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   it('mounts the stamina contribution below the real conversation composer', async () => {
     await page.setViewportSize({ width: 1280, height: 960 })
     await navigate(/^(Workspace|Área de trabalho)$/)
-    await page.getByRole('button', { name: basename(scaffold.workspaceCwd), exact: true }).click()
+    await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
     const dock = page.locator('[data-composer-dock] [data-verboo-stamina]')
     await dock.getByRole('progressbar').waitFor()
     expect(await dock.getByRole('progressbar').getAttribute('value')).toBe('50')
     await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-composer-dock] [data-verboo-stamina]', scaffold.workspaceCwd), MODE)
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 960 })
+      if (width === 390) {
+        await page.locator('[data-sidebar-drawer]').waitFor()
+        const collapse = page.getByRole('button', { name: /^(Collapse navigation|Recolher navegação)$/ }).first()
+        if (await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').count() === 0) await collapse.click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+      }
+      await expect.poll(() => dock.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+      })).toBe(true)
       await expect.poll(async () => {
         const box = await dock.boundingBox()
         return box === null ? Infinity : box.y + box.height

@@ -1,6 +1,6 @@
 /** Prepare a portable, host-target Node installation and the production profile dependency closure. */
 import { createHash } from 'node:crypto'
-import { chmod, copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -21,7 +21,7 @@ async function download(url) {
 }
 
 /**
- * Select the glibc addon required by the official Linux Node runtime before AppImage scans ELF files.
+ * Select the GNU/Linux addons required by the official Node runtime before AppImage scans ELF files.
  * @param application - Private, installed production dependency closure.
  * @param target - Native carrier platform and architecture; Linux desktop targets use glibc.
  * @returns After retaining the glibc addon and the static Landlock sandbox launcher.
@@ -38,6 +38,22 @@ export async function selectRuntimeTarget(application, { platform = process.plat
   // official Node distribution cannot load musl; linuxdeploy's ldd cannot scan it.
   // Keep the independently linked Landlock launcher byte-for-byte, including its mode.
   await rm(join(binaries, 'musl'), { recursive: true, force: true })
+  const exists = async path => {
+    try { await stat(path); return true } catch (error) { if (error.code === 'ENOENT') return false; throw error }
+  }
+  const koffi = join(application, 'node_modules', `@koromix/koffi-linux-${arch}`)
+  if (await exists(koffi)) {
+    const addon = await stat(join(koffi, `linux_${arch}/koffi.node`))
+    if (!addon.isFile() || addon.size === 0) throw new Error('required glibc FFI addon is missing')
+    await rm(join(koffi, `musl_${arch}`), { recursive: true, force: true })
+  }
+  const pty = join(application, 'node_modules/node-pty/prebuilds')
+  if (await exists(pty)) {
+    const targets = await readdir(pty)
+    const addon = await stat(join(pty, `linux-${arch}/pty.node`))
+    if (!addon.isFile() || addon.size === 0) throw new Error('required Linux terminal addon is missing')
+    for (const target of targets) if (target !== `linux-${arch}`) await rm(join(pty, target), { recursive: true, force: true })
+  }
 }
 
 /**

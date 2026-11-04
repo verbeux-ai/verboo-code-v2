@@ -22,11 +22,11 @@ jobs:
           - runner: macos-15
             target: aarch64-apple-darwin
             label: macOS-Apple-Silicon
-            bundles: dmg
+            bundles: app
           - runner: macos-15-intel
             target: x86_64-apple-darwin
             label: macOS-Intel
-            bundles: dmg
+            bundles: app
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             label: Windows-x64
@@ -94,7 +94,13 @@ jobs:
       - name: Package the desktop runtime and installer
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Create and verify the macOS disk image
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node apps/desktop/tauri/package-macos.mjs
       - name: Verify the installed Windows runtime
         if: runner.os == 'Windows'
         shell: pwsh
