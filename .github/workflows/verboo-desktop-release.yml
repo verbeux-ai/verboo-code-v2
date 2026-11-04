@@ -37,9 +37,6 @@ jobs:
             bundles: appimage,deb,rpm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,14 +72,15 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: |
-          node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs
-          pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
-          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs
+      - name: Prepare native test resources
+        run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
+      - name: Test native process ownership
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Package the desktop runtime and installer
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: pnpm run build:desktop --skip-build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Collect installer artifacts
         env:
           RELEASE_LABEL: ${{ matrix.label }}
