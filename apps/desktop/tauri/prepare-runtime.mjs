@@ -1,6 +1,7 @@
 /** Prepare a portable, host-target Node installation and the production profile dependency closure. */
 import { createHash } from 'node:crypto'
-import { chmod, copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { globSync } from 'node:fs'
+import { chmod, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -38,6 +39,18 @@ export async function selectRuntimeTarget(application, { platform = process.plat
   // official Node distribution cannot load musl; linuxdeploy's ldd cannot scan it.
   // Keep the independently linked Landlock launcher byte-for-byte, including its mode.
   await rm(join(binaries, 'musl'), { recursive: true, force: true })
+  for (const relative of globSync(`node_modules/**/@koromix/koffi-linux-${arch}`, { cwd: application })) {
+    const directory = join(application, relative)
+    const gnu = await stat(join(directory, `linux_${arch}`, 'koffi.node'))
+    if (!gnu.isFile() || gnu.size === 0) throw new Error('required glibc FFI binary is missing')
+    await rm(join(directory, `musl_${arch}`), { recursive: true, force: true })
+  }
+  for (const relative of globSync('node_modules/**/node-pty/prebuilds', { cwd: application })) {
+    const directory = join(application, relative)
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name !== `linux-${arch}`) await rm(join(directory, entry.name), { recursive: true })
+    }
+  }
 }
 
 /**

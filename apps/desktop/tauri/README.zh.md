@@ -26,13 +26,15 @@ pnpm run start:desktop
 
 `pnpm run build:desktop` 为当前主机平台构建 Tauri 应用。它打包工作区依赖与 peer 闭包，保留经过审核的补丁和构建脚本权限，使用 SHA-256 验证官方独立 Node 压缩包，并在调用 Tauri 打包器前运行真实配置冒烟测试。运行时不包含开发目录或模型凭据。产物位于 `apps/desktop/.desktop-build/tauri/target/release/bundle`。
 
-Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会移除未使用的 musl 插件，并保留静态 Landlock launcher；源代码包保持完整。
+Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会保留 glibc 系统和 FFI 插件、主机 PTY 预构建文件以及静态 Landlock launcher。未使用的 musl 和其他平台 PTY 二进制文件仅从暂存目录中移除，源代码包保持完整。
 
 保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 不连接 Electron 更新服务。
 
 ## 发布流水线
 
 [发布工作流](../../../.github/workflows/verboo-desktop-release.yml) 会在 GitHub release 发布时运行，也支持手动创建首次发布。标签必须为 `v` 加上已提交的桌面版本。它会原生构建 macOS Apple Silicon 和 Intel DMG，以及 Linux x64 AppImage、Debian 和 RPM 安装包，并保留已有的 Windows x64 安装包。Linux 构建机需要 `musl-tools`；工作流会在打包运行时前构建完整的主机原生文件，包括 Landlock launcher。
+
+macOS 使用 Tauri 构建已签名的应用，再通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
 
 每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。macOS alpha 使用 ad-hoc 签名，未经 Apple 公证。
 

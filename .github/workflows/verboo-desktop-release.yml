@@ -22,11 +22,11 @@ jobs:
           - runner: macos-15
             target: aarch64-apple-darwin
             label: macOS-Apple-Silicon
-            bundles: dmg
+            bundles: app
           - runner: macos-15-intel
             target: x86_64-apple-darwin
             label: macOS-Intel
-            bundles: dmg
+            bundles: app
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             label: Windows-x64
@@ -86,7 +86,7 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs
       - name: Prepare native test resources
         run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
       - name: Test native process ownership
@@ -94,7 +94,13 @@ jobs:
       - name: Package the desktop runtime and installer
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: '1'
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Create and verify the macOS disk image without mounting it
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node apps/desktop/tauri/create-dmg.mjs
       - name: Verify the installed Windows runtime
         if: runner.os == 'Windows'
         shell: pwsh
