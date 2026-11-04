@@ -1,4 +1,4 @@
-name: Release Verboo Code desktop
+name: Diagnose Verboo Code Linux installer
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verboo-desktop-release
+  group: verboo-desktop-linux-diagnostic
   cancel-in-progress: false
 
 jobs:
@@ -17,18 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            label: macOS-Apple-Silicon
-            bundles: dmg
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            label: macOS-Intel
-            bundles: dmg
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: Windows-x64
-            bundles: nsis
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             label: Linux-x64
@@ -37,6 +25,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 4b37024ce608c8ce70177a1bfab5622a82186320
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
@@ -79,37 +69,14 @@ jobs:
         env:
           RELEASE_LABEL: ${{ matrix.label }}
           RELEASE_TARGET: ${{ matrix.target }}
-        run: node apps/desktop/tauri/collect-release.mjs
+        run: >-
+          node --input-type=module -e "import { execFileSync } from 'node:child_process';
+          process.env.GITHUB_SHA = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          if (process.env.GITHUB_SHA !== '4b37024ce608c8ce70177a1bfab5622a82186320') throw Error('Unexpected diagnostic source');
+          await import('./apps/desktop/tauri/collect-release.mjs')"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.label }}
           path: apps/desktop/.desktop-build/tauri/release-assets/*
           if-no-files-found: error
           retention-days: 14
-
-  publish:
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          merge-multiple: true
-          path: release-assets
-      - name: Verify the complete installer set and publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          node apps/desktop/tauri/verify-release.mjs release-assets
-          VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("apps/desktop/src-tauri/tauri.conf.json")).version')"
-          gh release create "v${VERSION}" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Verboo Code v2 ${VERSION}" --draft --prerelease \
-            --notes-file release-assets/RELEASE.md
-          RELEASE_API="$(gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)"
-          gh api "$RELEASE_API" > "$RUNNER_TEMP/release.json"
-          node apps/desktop/tauri/verify-uploaded-release.mjs release-assets "$RUNNER_TEMP/release.json"
-          gh release edit "v${VERSION}" --repo "$GITHUB_REPOSITORY" --draft=false
