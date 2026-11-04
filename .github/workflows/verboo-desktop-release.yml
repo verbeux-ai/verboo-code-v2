@@ -94,13 +94,13 @@ jobs:
       - name: Package the desktop runtime and installer
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
-          NO_STRIP: '1'
+          NO_STRIP: 'true'
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Create and verify the macOS disk image without mounting it
         if: runner.os == 'macOS'
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: node apps/desktop/tauri/create-dmg.mjs
+        run: node apps/desktop/tauri/package-macos.mjs
       - name: Verify the installed Windows runtime
         if: runner.os == 'Windows'
         shell: pwsh

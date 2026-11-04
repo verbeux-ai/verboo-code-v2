@@ -59,7 +59,7 @@
 .executionStatus[data-verboo-execution='working'] .executionDot,.executionStatus[data-verboo-execution='starting'] .executionDot { animation:verboo-pulse 1.5s ease-in-out infinite; }
 .sessionItem[data-active='true'] { background:var(--verboo-active); }
 .sessionItem[data-active='true'] .sessionRow { color:var(--verboo-ink); }
-.sessionRow:focus-visible,.rowMore:focus-visible,.projectStart:focus-visible,.projectGroup summary:focus-visible { outline:2px solid var(--verboo-accent); outline-offset:-2px; }
+.sessionRow:focus-visible,.rowMore:focus-visible,.projectStart:focus-visible,.projectGroup summary:focus-visible { outline:2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset:-2px; }
 .executionStatus { display:flex; align-items:center; gap:6px; min-width:0; color:var(--verboo-muted); font-size:11px; line-height:18px; }
 .executionStatus[data-verboo-execution='error'] { color:var(--verboo-error); }
 :global([data-composer-dock]):has(.executionStatus) { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; }

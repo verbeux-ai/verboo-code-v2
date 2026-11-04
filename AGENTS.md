@@ -4,7 +4,7 @@ DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.
 
 ## Verboo Code interface
 
-Keep Verboo Code compact and neutral; use purple accents. Conversations use one line, with a working-only spinner before titles. Follow [product UI rules](packages/client/ui-verboo/AGENTS.md).
+Keep Verboo Code compact and neutral, with purple accents. Use one line per conversation and a spinner only while working. Follow [product rules](packages/client/ui-verboo/AGENTS.md).
 
 ## Pre-stable APIs and released Session data
 

@@ -22,7 +22,7 @@ async function download(url) {
 }
 
 /**
- * Select the glibc addon required by the official Linux Node runtime before AppImage scans ELF files.
+ * Select the GNU/Linux addons required by the official Linux Node runtime before AppImage scans ELF files.
  * @param application - Private, installed production dependency closure.
  * @param target - Native carrier platform and architecture; Linux desktop targets use glibc.
  * @returns After retaining the glibc addon and the static Landlock sandbox launcher.
@@ -47,6 +47,8 @@ export async function selectRuntimeTarget(application, { platform = process.plat
   }
   for (const relative of globSync('node_modules/**/node-pty/prebuilds', { cwd: application })) {
     const directory = join(application, relative)
+    const addon = await stat(join(directory, `linux-${arch}`, 'pty.node'))
+    if (!addon.isFile() || addon.size === 0) throw new Error('required Linux terminal addon is missing')
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.isDirectory() && entry.name !== `linux-${arch}`) await rm(join(directory, entry.name), { recursive: true })
     }

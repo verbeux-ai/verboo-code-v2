@@ -3,9 +3,7 @@ import { constants } from 'node:fs'
 import { cp, link, lstat, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { basename, dirname, join, resolve } from 'node:path'
-import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { basename, dirname, join } from 'node:path'
 
 const run = promisify(execFile)
 
@@ -44,19 +42,4 @@ export async function createDiskImage({ application, destination, name, signal }
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
-}
-
-async function main() {
-  const target = process.env.RELEASE_TARGET
-  if (!['aarch64-apple-darwin', 'x86_64-apple-darwin'].includes(target)) throw new Error('Native macOS release target is required')
-  const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  const configuration = JSON.parse(await readFile(join(desktop, 'src-tauri/tauri.conf.json'), 'utf8'))
-  const bundle = join(desktop, '.desktop-build/tauri/target', target, 'release/bundle')
-  const destination = join(bundle, 'dmg', `Verboo-Code-${configuration.version}-${target}.dmg`)
-  await createDiskImage({ application: join(bundle, 'macos', `${configuration.productName}.app`), destination, name: configuration.productName })
-  console.log(`Verboo Code: verified macOS installer ${basename(destination)}`)
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { console.error(error instanceof Error ? error.message : 'macOS packaging failed'); process.exitCode = 1 })
 }
