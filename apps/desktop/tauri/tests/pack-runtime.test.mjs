@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
-import { access, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -24,15 +24,17 @@ test('Linux desktop keeps glibc and the sandbox launcher while excluding the inc
     await writeFile(join(bin, libc, 'system.node'), `${libc}-fixture`)
   }
   await writeFile(join(bin, 'landlock-run'), 'static-sandbox-fixture', { mode: 0o755 })
-  const ffi = join(application, 'node_modules/@koromix/koffi-linux-x64')
-  const pty = join(application, 'node_modules/node-pty/prebuilds')
-  for (const target of ['linux_x64', 'musl_x64']) {
-    await mkdir(join(ffi, target), { recursive: true })
-    await writeFile(join(ffi, target, 'koffi.node'), `${target}-ffi`)
+  for (const prefix of ['node_modules', 'node_modules/fixture/node_modules']) {
+    const ffi = join(application, prefix, '@koromix/koffi-linux-x64')
+    for (const variant of ['linux_x64', 'musl_x64']) {
+      await mkdir(join(ffi, variant), { recursive: true })
+      await writeFile(join(ffi, variant, 'koffi.node'), variant)
+    }
   }
-  for (const target of ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win32-x64']) {
+  const pty = join(application, 'node_modules/node-pty/prebuilds')
+  for (const target of ['linux-x64', 'linux-arm64', 'darwin-x64', 'win32-x64']) {
     await mkdir(join(pty, target), { recursive: true })
-    await writeFile(join(pty, target, 'pty.node'), `${target}-pty`)
+    await writeFile(join(pty, target, 'pty.node'), target)
   }
   const launcherMode = (await stat(join(bin, 'landlock-run'))).mode
   await selectRuntimeTarget(application, { platform: 'darwin', arch: 'arm64' })
@@ -41,12 +43,18 @@ test('Linux desktop keeps glibc and the sandbox launcher while excluding the inc
   assert.equal(await readFile(join(bin, 'glibc/system.node'), 'utf8'), 'glibc-fixture')
   assert.equal(await readFile(join(bin, 'landlock-run'), 'utf8'), 'static-sandbox-fixture')
   assert.equal((await stat(join(bin, 'landlock-run'))).mode, launcherMode)
-  assert.equal(await readFile(join(ffi, 'linux_x64/koffi.node'), 'utf8'), 'linux_x64-ffi')
-  assert.equal(await readFile(join(pty, 'linux-x64/pty.node'), 'utf8'), 'linux-x64-pty')
-  await assert.rejects(access(join(ffi, 'musl_x64')), { code: 'ENOENT' })
-  for (const target of ['linux-arm64', 'darwin-arm64', 'win32-x64']) await assert.rejects(access(join(pty, target)), { code: 'ENOENT' })
   await assert.rejects(access(join(bin, 'musl')), { code: 'ENOENT' })
+  for (const prefix of ['node_modules', 'node_modules/fixture/node_modules']) {
+    const ffi = join(application, prefix, '@koromix/koffi-linux-x64')
+    assert.equal(await readFile(join(ffi, 'linux_x64/koffi.node'), 'utf8'), 'linux_x64')
+    await assert.rejects(access(join(ffi, 'musl_x64')), { code: 'ENOENT' })
+  }
+  assert.deepEqual(await readdir(pty), ['linux-x64'])
+  assert.equal(await readFile(join(pty, 'linux-x64/pty.node'), 'utf8'), 'linux-x64')
   await selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' })
+  await rm(join(pty, 'linux-x64/pty.node'))
+  await assert.rejects(selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' }), { code: 'ENOENT' })
+  await writeFile(join(pty, 'linux-x64/pty.node'), 'linux-x64')
   await rm(join(bin, 'glibc/system.node'))
   await assert.rejects(selectRuntimeTarget(application, { platform: 'linux', arch: 'x64' }), { code: 'ENOENT' })
   await assert.rejects(selectRuntimeTarget(application, { platform: 'linux', arch: 'unknown' }), /unsupported/)

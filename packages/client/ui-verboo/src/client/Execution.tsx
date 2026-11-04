@@ -3,9 +3,9 @@ import type { ExecutionProps } from './contracts.ts'
 import css from './Product.module.css'
 
 /**
- * Persistent, accessible execution state beside the active conversation's composer.
+ * Accessible execution feedback beside the composer, with no idle chrome.
  * @param props - Renderer-bound Session, interaction and transport selectors.
- * @returns A localized live status that never reports confirmed idle while disconnected.
+ * @returns A localized live status when work or attention is pending; nothing while idle.
  */
 export function ExecutionStatus(props: Pick<ExecutionProps, 'useExecutionConnection' | 'useSession' | 'useSessionStatus' | 'sessionId' | 't'>) {
   const connection = props.useExecutionConnection(state => state)
@@ -18,7 +18,8 @@ export function ExecutionStatus(props: Pick<ExecutionProps, 'useExecutionConnect
           : session.awaitingFirstTurn ? 'starting'
             : session.running ? 'working'
               : session.lastAgentError !== null || session.promptError !== null ? 'error' : 'idle'
-  const labels = { connecting: 'executionConnecting', reconnecting: 'executionReconnecting', error: 'executionError', loading: 'loading', waiting: 'executionWaiting', starting: 'executionStarting', working: 'executionWorking', idle: 'executionIdle' } as const
+  if (state === 'idle') return null
+  const labels = { connecting: 'executionConnecting', reconnecting: 'executionReconnecting', error: 'executionError', loading: 'loading', waiting: 'executionWaiting', starting: 'executionStarting', working: 'executionWorking' } as const
   return (
     <div className={css.executionStatus} data-verboo-execution={state} role="status" aria-live="polite" aria-atomic="true">
       <span className={css.executionDot} aria-hidden="true" />

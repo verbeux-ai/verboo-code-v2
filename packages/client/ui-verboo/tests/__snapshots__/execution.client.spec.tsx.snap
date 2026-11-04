@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`conversation execution state > announces changes accessibly in en 1`] = `"Idle"`;
+exports[`conversation execution state > announces changes accessibly in en 1`] = `"Working"`;
 
-exports[`conversation execution state > announces changes accessibly in pt 1`] = `"Parado"`;
+exports[`conversation execution state > announces changes accessibly in pt 1`] = `"Trabalhando"`;
 
-exports[`conversation execution state > announces changes accessibly in zh 1`] = `"空闲"`;
+exports[`conversation execution state > announces changes accessibly in zh 1`] = `"正在处理"`;

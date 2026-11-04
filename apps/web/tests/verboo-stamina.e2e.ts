@@ -181,8 +181,8 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       if (width === 390) {
         await page.locator('[data-sidebar-drawer]').waitFor()
         const collapse = page.getByRole('button', { name: /^(Collapse navigation|Recolher navegação)$/ }).first()
-        if (await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').count() === 0) await collapse.click()
-        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor()
+        if (await page.locator('[data-sidebar-drawer][data-sidebar-collapsed=true]').count() === 0) await collapse.click()
+        await page.locator('[data-sidebar-drawer][data-sidebar-collapsed=true]').waitFor()
       }
       await expect.poll(() => dock.evaluate((element) => {
         const box = element.getBoundingClientRect()

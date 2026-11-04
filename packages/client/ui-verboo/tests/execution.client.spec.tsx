@@ -33,16 +33,18 @@ function fixture(locale = 'pt') {
   return { reading, props }
 }
 describe('conversation execution state', () => {
-  it('keeps a visible idle state and switches to working when the Session starts', () => {
+  it('occupies no space while idle and shows feedback only when the Session starts', () => {
     const { reading, props } = fixture()
     const view = render(<ExecutionStatus {...props} />)
-    expect(screen.getByRole('status').textContent).toBe('Parado')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(view.container.innerHTML).toBe('')
     reading.session = { ...reading.session, running: true }
     view.rerender(<ExecutionStatus {...props} />)
     expect(screen.getByRole('status').textContent).toBe('Trabalhando')
     reading.session = { ...reading.session, running: false }
     view.rerender(<ExecutionStatus {...props} />)
-    expect(screen.getByRole('status').textContent).toBe('Parado')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(view.container.innerHTML).toBe('')
   })
   it('keeps a still-running Session working when a previous action reports an error', () => {
     const { reading, props } = fixture()
@@ -62,7 +64,7 @@ describe('conversation execution state', () => {
     reading.connection = 'connected'
     reading.session = { ...reading.session, running: false }
     view.rerender(<ExecutionStatus {...props} />)
-    expect(screen.getByRole('status').textContent).toBe('Parado')
+    expect(screen.queryByRole('status')).toBeNull()
   })
   it('distinguishes awaiting a user decision, first turn admission, loading and a failed run', () => {
     const { reading, props } = fixture()
@@ -83,7 +85,8 @@ describe('conversation execution state', () => {
     expect(view.container.textContent).not.toContain('not exposed')
   })
   it.each(['pt', 'en', 'zh'])('announces changes accessibly in %s', (locale) => {
-    const { props } = fixture(locale)
+    const { props, reading } = fixture(locale)
+    reading.session = { ...reading.session, running: true }
     render(<ExecutionStatus {...props} />)
     expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
     expect(screen.getByRole('status').textContent).toMatchSnapshot()

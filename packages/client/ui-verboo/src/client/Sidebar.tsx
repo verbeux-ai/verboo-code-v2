@@ -35,7 +35,6 @@ function ConversationRow({
   const connection = props.useExecutionConnection(state => state)
   const waiting = props.useSessionStatus(state => state.get(session.id)?.pendingInteraction !== undefined)
   const state = connection === undefined ? 'connecting' : connection !== 'connected' ? 'reconnecting' : waiting ? 'waiting' : session.running ? 'working' : 'idle'
-  const label = props.t(state === 'connecting' ? 'executionConnecting' : state === 'reconnecting' ? 'executionReconnecting' : state === 'waiting' ? 'executionWaiting' : state === 'working' ? 'executionWorking' : 'executionIdle')
   const title = session.blank ? props.t('newTask') : session.displayTitle
   const openMenu = (point: { x: number; y: number }) =>{
     props.sessionMenu(session.id, session.displayTitle, point) }
@@ -59,11 +58,12 @@ function ConversationRow({
           close()
         }}
       >
+        {state === 'working' && (
+          <span className={css.sessionActivity} role="status" aria-label={props.t('executionWorking')}>
+            <Glyph name="loader-circle" size={12} />
+          </span>
+        )}
         <span className={css.sessionTitle}>{title}</span>
-        <span className={css.sessionState}>
-          <span className={css.executionDot} aria-hidden="true" />
-          {label}
-        </span>
       </button>
       <Tooltip portal label={props.t('conversationActions')}>
         <button
