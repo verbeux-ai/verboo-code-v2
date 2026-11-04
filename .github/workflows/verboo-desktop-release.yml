@@ -29,14 +29,28 @@ jobs:
             target: x86_64-pc-windows-msvc
             label: Windows-x64
             bundles: nsis
+            directory: 'D:\v'
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             label: Linux-x64
             bundles: appimage,deb,rpm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory || github.workspace }}
     steps:
       - uses: actions/checkout@v4
+      - name: Use a short Windows source path for NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          if (Test-Path 'D:\v') { throw 'The private Windows build directory already exists' }
+          git clone --no-hardlinks $env:GITHUB_WORKSPACE 'D:\v'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C 'D:\v' checkout --detach $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
@@ -46,7 +60,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/desktop/src-tauri -> ../.desktop-build/tauri/target
+          workspaces: ${{ matrix.directory || github.workspace }}/apps/desktop/src-tauri -> ../.desktop-build/tauri/target
           key: ${{ matrix.target }}
           cache-on-failure: true
       - name: Linux system dependencies
@@ -75,6 +89,28 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Verify the installed Windows runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem 'apps/desktop/.desktop-build/tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          $destination = Join-Path $env:RUNNER_TEMP ('verboo-install-' + [guid]::NewGuid().ToString('N'))
+          try {
+            $installed = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
+            if ($installed.ExitCode -ne 0) { throw "Windows installation failed: $($installed.ExitCode)" }
+            $runtime = Join-Path $destination 'runtime'
+            $env:VERBOO_TEST_CLI_MANIFEST = Join-Path $runtime 'application/node_modules/@deepseek-ai/dsh/package.json'
+            $env:VERBOO_TEST_HOST_MODULE = Join-Path $runtime 'host.mjs'
+            & (Join-Path $runtime 'node.exe') --test 'apps/desktop/tauri/tests/host.test.mjs'
+            if ($LASTEXITCODE -ne 0) { throw 'Installed Windows profile smoke failed' }
+          } finally {
+            $uninstaller = Join-Path $destination 'uninstall.exe'
+            if (Test-Path $uninstaller) {
+              $uninstalled = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+              if ($uninstalled.ExitCode -ne 0) { throw "Windows uninstallation failed: $($uninstalled.ExitCode)" }
+            }
+          }
       - name: Collect installer artifacts
         env:
           RELEASE_LABEL: ${{ matrix.label }}
@@ -83,7 +119,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.label }}
-          path: apps/desktop/.desktop-build/tauri/release-assets/*
+          path: ${{ matrix.directory || github.workspace }}/apps/desktop/.desktop-build/tauri/release-assets/*
           if-no-files-found: error
           retention-days: 14
 
