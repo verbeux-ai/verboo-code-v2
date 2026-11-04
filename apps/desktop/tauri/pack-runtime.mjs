@@ -4,6 +4,7 @@ import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { basename, dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 async function run(command, args, cwd) {
   await new Promise((resolve, reject) => {
@@ -24,7 +25,7 @@ function supported(values, current) {
  * @param options - Source repository, private staging directory and pinned package manager.
  * @returns The generated npm-project directory.
  */
-export async function packRuntime({ repository, staging, packageManager }) {
+export async function packRuntime({ repository, staging, packageManager, registry = 'https://registry.npmjs.org', storeDir }) {
   const require = createRequire(join(repository, 'package.json'))
   const yaml = require('js-yaml')
   const policy = yaml.load(readFileSync(join(repository, 'pnpm-workspace.yaml'), 'utf8'))
@@ -52,7 +53,11 @@ export async function packRuntime({ repository, staging, packageManager }) {
   const application = join(staging, 'application')
   const tarballs = join(application, 'packages')
   await mkdir(tarballs, { recursive: true })
-  await run(process.execPath, [packageManager, ...[...selected.keys()].sort().flatMap(name => ['--filter', name]),
+  const userconfig = join(staging, 'pnpm-userconfig')
+  await writeFile(userconfig, '')
+  const configuration = [`--config.registry=${registry}`, `--config.userconfig=${userconfig}`,
+    ...(storeDir ? [`--config.store-dir=${storeDir}`, `--config.cache-dir=${join(staging, 'registry-cache')}`] : [])]
+  await run(process.execPath, [packageManager, ...configuration, ...[...selected.keys()].sort().flatMap(name => ['--filter', name]),
     '--recursive', 'pack', '--workspace-concurrency=4', '--pack-destination', tarballs], repository)
   const dependencies = {}
   for (const manifest of selected.values()) {
@@ -79,16 +84,38 @@ export async function packRuntime({ repository, staging, packageManager }) {
     const specifier = dependencies[name]
     if (specifier !== undefined) allowBuilds[`${name}@${specifier}`] = allowed
   }
+  const patchVersions = {}
+  for (const spec of Object.keys(patches)) {
+    const separator = spec.lastIndexOf('@')
+    const name = spec.slice(0, separator)
+    const version = spec.slice(separator + 1)
+    if (separator <= 0 || (patchVersions[name] && patchVersions[name] !== version)) throw new Error('runtime patch versions require review')
+    patchVersions[name] = version
+  }
   await writeFile(join(application, 'pnpm-workspace.yaml'), yaml.dump({
     packages: [],
     nodeLinker: 'hoisted',
-    overrides: { ...policy.overrides, ...dependencies },
+    overrides: { ...policy.overrides, ...patchVersions, ...dependencies },
     allowBuilds,
     minimumReleaseAgeExclude: policy.minimumReleaseAgeExclude,
     patchedDependencies: patches,
     // The Host closure excludes desktop installer and test dependencies that own other reviewed patches.
     allowUnusedPatches: true,
   }))
-  await run(process.execPath, [packageManager, 'install', '--prod', '--offline', '--config.package-import-method=clone-or-copy'], application)
+  // A frozen workspace install need not populate registry metadata. Resolve a
+  // separate runtime lock before materialization so a fresh builder works too.
+  await run(process.execPath, [packageManager, ...configuration, 'install', '--prod', '--lockfile-only', '--prefer-offline'], application)
+  const bytes = readFileSync(join(application, 'pnpm-lock.yaml'))
+  const lock = yaml.load(bytes.toString('utf8'))
+  const reviewed = yaml.load(readFileSync(join(repository, 'pnpm-lock.yaml'), 'utf8'))
+  for (const spec of Object.keys(patches)) {
+    const name = spec.slice(0, spec.lastIndexOf('@'))
+    const present = Object.keys(lock.packages ?? {}).filter(key => key.startsWith(`${name}@`))
+    if (present.length === 0) continue
+    if (present.some(key => key !== spec && !key.startsWith(`${spec}(`))
+      || lock.patchedDependencies?.[spec] !== reviewed.patchedDependencies?.[spec]) throw new Error('runtime patch differs from reviewed workspace bytes')
+  }
+  console.log(`Verboo Code: runtime lock SHA-256 ${createHash('sha256').update(bytes).digest('hex')}`)
+  await run(process.execPath, [packageManager, ...configuration, 'install', '--prod', '--frozen-lockfile', '--prefer-offline', '--config.package-import-method=clone-or-copy'], application)
   return application
 }

@@ -47,6 +47,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.0
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> ../.desktop-build/tauri/target
+          key: ${{ matrix.target }}
+          cache-on-failure: true
       - name: Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -65,7 +70,7 @@ jobs:
         run: pnpm run build:check
       - name: Test desktop lifecycle
         run: |
-          node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs
+          node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs
           pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Package the desktop runtime and installer
