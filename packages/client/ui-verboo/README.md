@@ -29,7 +29,7 @@ The `verboo` profile mounts this plugin. `refreshIntervalMs` controls visible-wi
 
 Server-selected accounts see stamina below the conversation composer and on My plan. Both views share one account-addressed resource, pause reads while hidden or offline, and retain the last confirmed value with a notice after failures. Account changes discard old responses. Percentages and next-request ceilings come from the server; ongoing responses retain their admitted speed. The interface exposes no budget or pricing data.
 
-Conversation rows reserve a separate menu column and keep long titles on one line, with execution state below. The composer also shows idle, working, pending user interaction, startup, reconnection and failure states from the existing Session and transport services. A missing connection never reports confirmed idle. Connections searches the complete server catalog by name or slug and renders forty results at a time; public services are available without a sign-in flow.
+Conversation rows are compact and single-line, reserve a separate menu column and truncate long titles. A small spinner precedes the title only while that conversation is working; inactive rows have no status text or indicator space. The composer shows work, pending user interaction, startup, reconnection and failure feedback from the existing Session and transport services, and occupies no space while idle. Connections searches the complete server catalog by name or slug and renders forty results at a time; public services are available without a sign-in flow.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

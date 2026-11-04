@@ -53,7 +53,7 @@ async function platformFixture() {
       respond(res, 200, { data: [] })
       return
     }
-    if (req.url === '/api/me/connections') {
+    if (req.url?.split('?')[0] === '/api/me/connections') {
       respond(res, 200, { data: { available: false, toolkits: [], accounts: [] } })
       return
     }

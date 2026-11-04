@@ -398,7 +398,8 @@ try {
   state.finishModel()
   await page.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor()
   await page.locator('[data-chat-running]').waitFor({ state: 'hidden' })
-  await page.locator('[data-verboo-execution=idle]').waitFor()
+  await page.locator('[data-verboo-session]:has([aria-current=page])[data-state=idle]').waitFor()
+  if (await page.locator('[data-verboo-execution]').count()) throw new Error('Idle composer occupies space')
   await capture('conversation-complete.png')
   for (let index = 0; index < 2; index++) {
     const previousSession = await page.locator('[data-conversation-session]').getAttribute('data-conversation-session')
@@ -423,13 +424,14 @@ try {
       await idle.hover()
       const geometry = await rows.evaluateAll(items => items.map(item => {
         const row = item.getBoundingClientRect(), title = item.querySelector('button[title]'), menu = item.querySelector('button[aria-label]')
-        const action = menu.getBoundingClientRect(), main = title.getBoundingClientRect()
-        return { x: row.x, y: row.y, bottom: row.bottom, right: row.right, height: row.height, actionRight: action.right, mainRight: main.right, actionLeft: action.left, innerBackground: getComputedStyle(title).backgroundColor }
+        const action = menu.getBoundingClientRect(), main = title.getBoundingClientRect(), indicator = item.querySelector('[role=status]')
+        return { x: row.x, y: row.y, bottom: row.bottom, right: row.right, height: row.height, actionRight: action.right, mainRight: main.right, actionLeft: action.left, innerBackground: getComputedStyle(title).backgroundColor, working: item.getAttribute('data-state') === 'working', indicator: indicator !== null, title: title.textContent }
       }))
       for (let i = 0; i < geometry.length; i++) {
         const row = geometry[i]
-        if (row.height < 44 || row.actionRight > row.right + 1 || row.mainRight > row.actionLeft + 1) throw new Error('Sidebar title/menu overlap')
-        if (i > 0 && row.y < geometry[i - 1].bottom + 2) throw new Error('Conversation rows touch or overlap')
+        if (row.height < 28 || row.height > 32 || row.actionRight > row.right + 1 || row.mainRight > row.actionLeft + 1) throw new Error('Sidebar density or title/menu overlap')
+        if (i > 0 && row.y < geometry[i - 1].bottom) throw new Error('Conversation rows overlap')
+        if (row.indicator !== row.working || /Idle|Parado/.test(row.title)) throw new Error('Inactive sidebar chrome or missing working indicator')
         if (row.innerBackground !== 'rgba(0, 0, 0, 0)') throw new Error('Nested conversation selection background')
       }
       await capture('sidebar-states-dark.png')
@@ -455,7 +457,8 @@ try {
       await page.setViewportSize({ width: 1366, height: 900 })
     }
     state.finishModel()
-    await page.locator('[data-verboo-execution=idle]').waitFor()
+    await page.locator('[data-verboo-session]:has([aria-current=page])[data-state=idle]').waitFor()
+    if (await page.locator('[data-verboo-session] [role=status]').count()) throw new Error('Conversation spinner remained after completion')
   }
   await page.getByRole('button', { name: 'Conexões', exact: true }).click()
   await page.locator('[data-verboo-page=connections]').waitFor()
