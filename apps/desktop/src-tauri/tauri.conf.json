@@ -24,7 +24,7 @@
       "../.desktop-build/tauri/runtime/": "runtime/"
     },
     "macOS": {
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "13.5",
       "signingIdentity": "-"
     },
     "icon": [

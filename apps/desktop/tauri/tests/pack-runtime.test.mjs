@@ -44,7 +44,7 @@ test('builds from an empty registry cache and freezes the resulting runtime', { 
     await writeFile(join(directory, 'package/package.json'), JSON.stringify(manifest))
     await writeFile(join(directory, 'package/index.js'), 'module.exports = "locked-runtime-fixture"\n')
     const archive = join(directory, 'package.tgz')
-    await run('tar', ['-czf', archive, '-C', directory, 'package'])
+    await run('tar', ['-czf', 'package.tgz', 'package'], { cwd: directory })
     const bytes = await readFile(archive)
     packages.set(name, { version, manifest, bytes, integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` })
   }
