@@ -33,12 +33,16 @@ import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
+import { BrandMark } from './Brand.tsx'
+import { PlanPage } from './Plans.tsx'
 import {
   ConnectionsPage,
-  PlanPage,
   PreferencesPage,
   Feedback,
 } from './Pages.tsx'
+
+/** Product replacement for optional diagnostic readouts. */
+function OmittedDiagnostic() { return null }
 
 declare global {
   var __VERBOO_DESKTOP__:
@@ -393,6 +397,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       RunningIndicator,
     ),
   )
+  ctx.slots.inject('conversation.chat.assistant.mark', () =>
+    ctx.slots.register({ name: 'conversation.chat.assistant.mark' }, BrandMark),
+  )
+  ctx.slots.inject('conversation.input.context', () =>
+    ctx.slots.register({ name: 'conversation.input.context' }, OmittedDiagnostic),
+  )
+  ctx.slots.inject('conversation.composer.dock', function* () {
+    for (const id of ['activity', 'usage']) {
+      yield ctx.slots.register({ name: 'conversation.composer.dock', id, priority: -100 }, OmittedDiagnostic)
+    }
+  })
   ctx.slots.inject('conversation.composer.dock', () =>
     ctx.slots.register(
       { name: 'conversation.composer.dock', id: 'verboo.execution', order: -10, locale: 'verboo', inject: () => ({ hooks: { executionConnection: (ctx.get('connection') as ConnectionHandle).state } }) },

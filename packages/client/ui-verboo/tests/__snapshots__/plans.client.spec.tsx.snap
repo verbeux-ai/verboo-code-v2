@@ -1,0 +1,7 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`subscription comparison > localizes the comparison and billing controls in en 1`] = `"Plans & subscriptionChoose the plan that fits the way you work.Your subscriptionsProActiveNext renewal Dec 4, 2026R$249.00/ monthManage subscriptionExplore plansMonthlyAnnuallyProR$249.00/ monthCurrent planDescription: ProMaxR$499.00/ monthChoose planDescription: MaxSecure checkout and subscription management in your browser."`;
+
+exports[`subscription comparison > localizes the comparison and billing controls in pt 1`] = `"Planos e assinaturaEscolha o plano para o seu ritmo de trabalho.Suas assinaturasProAtivoPróxima renovação 4 de dez. de 2026R$ 249,00/ mêsGerenciar assinaturaConheça os planosMensalAnualProR$ 249,00/ mêsPlano atualDescription: ProMaxR$ 499,00/ mêsEscolher planoDescription: MaxPagamento seguro e gerenciamento da assinatura no navegador."`;
+
+exports[`subscription comparison > localizes the comparison and billing controls in zh 1`] = `"方案与订阅选择适合你工作节奏的方案。你的订阅Pro有效下次续订 2026年12月4日R$249.00/ 月管理订阅浏览订阅月付年付ProR$249.00/ 月当前订阅Description: ProMaxR$499.00/ 月选择订阅Description: Max在浏览器中安全结账并管理订阅。"`;

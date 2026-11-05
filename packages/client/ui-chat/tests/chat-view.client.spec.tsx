@@ -446,6 +446,7 @@ function makeHarness(
   const useOriginRenderer = bindSnapshotSelector(originRenderer)
   let nodeSlotOverride: NodeRenderer | undefined
   let imageSlotOverride: ImageRenderer | undefined
+  let assistantMark: string | undefined
   const renderImages = (name: string, owner: object, options?: { fallback?: React.ReactNode }) => {
     if ((name !== 'conversation.chat.user.images' && name !== 'conversation.chat.message.images') || !isImageOwner(owner)) {
       throw new Error(`Unexpected Chat image Slot: ${name}`)
@@ -453,7 +454,8 @@ function makeHarness(
     return imageSlotOverride?.(owner) ?? options?.fallback ?? null
   }
   const renderAssistantSlot: React.ComponentProps<typeof AssistantNodeView>['renderSlot'] = (name, owner, options) =>
-    name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoningSlot(name, owner, options)
+    name === 'conversation.chat.assistant.mark' ? assistantMark ?? null :
+      name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoningSlot(name, owner, options)
   const renderNodeSlot: NodeRenderer = (key, owner, opts) => {
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key, owner, opts)
     return <HarnessChatNode standard={props} owner={owner}
@@ -589,6 +591,7 @@ function makeHarness(
     setFoldedReplies: (replies: FoldedReplies) => { foldedReplies.set(replies) },
     setNodeRenderer: (renderer: NodeRenderer) => { nodeSlotOverride = renderer },
     setImageRenderer: (renderer: ImageRenderer) => { imageSlotOverride = renderer },
+    setAssistantMark: (mark: string) => { assistantMark = mark },
     setOriginRenderer: (renderer: UserChainRenderer | undefined) => { originRenderer.set({ renderer }) },
   }
 }
@@ -710,6 +713,14 @@ function formatRunDuration(ms: number, t: Parameters<typeof durationParts>[1]): 
 }
 
 describe('Chat node rendering', () => {
+
+  it('offers an optional product mark beside replies without replacing Assistant content', () => {
+    const h = makeHarness({ nodes: [assistant(1, 'Assistant answer')] })
+    h.setAssistantMark('Product mark')
+    render(<ChatView {...h.props} />)
+    expect(screen.getByText('Product mark')).toBeTruthy()
+    expect(screen.getByText('Assistant answer')).toBeTruthy()
+  })
 
   it('adapts Markdown targets with the original Session and resolves file paths when each gesture begins', () => {
     const h = makeHarness()

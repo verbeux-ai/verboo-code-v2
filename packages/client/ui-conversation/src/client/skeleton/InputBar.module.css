@@ -25,7 +25,7 @@
    padding (ui-chat StatsPills `.pill`, ContextMeter `.trigger`). A minimum,
    not a fixed height, so taller readings still size the row. */
 .root:not(.hero) > .dock {
-  min-height: calc(22px + var(--dsh-content-font-delta-secondary, 0px));
+  min-height: var(--dsh-composer-dock-min-height, calc(22px + var(--dsh-content-font-delta-secondary, 0px)));
 }
 
 .hero .dock:empty {
@@ -69,7 +69,7 @@
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-panel);
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-elevation-soft);
+  box-shadow: var(--dsw-elevation-soft), var(--dsh-composer-focus-ring, 0 0 0 0 transparent);
   /* The draft text follows the Settings font-size preference (the textarea,
      mirror, and backdrop all inherit from here, so the three layers stay in
      step); the line height keeps the default 10px leading via the shared px
@@ -83,6 +83,11 @@
      (see ui-theme styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.card:focus-within {
+  --dsw-elevation-stroke-color: var(--dsh-composer-focus-stroke-color, var(--dsw-alias-border-l2));
+  --dsh-composer-focus-ring: 0 0 0 var(--dsh-composer-focus-ring-width, 0px) color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)) 10%, transparent);
 }
 
 @media (pointer: coarse) {

@@ -31,6 +31,10 @@ Server-selected accounts see stamina below the conversation composer and on My p
 
 Conversation rows are compact and single-line, reserve a separate menu column and truncate long titles. A small spinner precedes the title only while that conversation is working; inactive rows have no status text or indicator space. The composer shows work, pending user interaction, startup, reconnection and failure feedback from the existing Session and transport services, and occupies no space while idle. Connections searches the complete server catalog by name or slug and renders forty results at a time; public services are available without a sign-in flow.
 
+Plans appear in comparable cards with server prices, full descriptions and one action per plan. Billing-period tabs appear only when the catalog offers both periods. Previous canceled or expired subscriptions stay collapsed; payment issues remain visible. Unknown catalog prices open the website without implying a free offer. Purchases and management retain the authenticated browser flow.
+
+The product follows the Verboo Code web app with a neutral near-black dark palette, a `verboo:code` wordmark, local Nunito fonts, purple user messages and restrained control accents. The Assistant mark uses a Chat slot; composer focus and bubble foreground use optional theme tokens. No service or account credentials are included in these assets.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

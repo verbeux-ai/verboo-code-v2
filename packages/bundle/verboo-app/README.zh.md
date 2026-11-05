@@ -27,6 +27,8 @@ kind: "package-bundle"
 
 构建仓库后，使用 `pnpm dsh --profile verboo --no-open` 预览浏览器界面，或使用 `pnpm run dev:desktop` 进行 Tauri 开发。此配置按顺序叠加基础、Web 与产品 bundle。
 
+产品使用精简 Chat 详情，并省略诊断用 Trajectory 视图。界面通过类型化 Slot 覆盖活动与词元统计底栏单元，并替换上下文用量控件。权限、模型选择、处理状态和账号耐力仍保留各自的控件。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

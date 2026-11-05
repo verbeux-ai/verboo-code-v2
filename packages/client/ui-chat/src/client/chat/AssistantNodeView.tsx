@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo } from 'react'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatFileMentions, ChatNodeViewProps, PresentationInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
+import css from './AssistantNodeView.module.css'
 
 /** Business readers owned by the assistant renderer's existing Slot registration. */
 export interface AssistantNodeInjected extends PresentationInjected {
@@ -12,7 +13,7 @@ export interface AssistantNodeInjected extends PresentationInjected {
 }
 
 type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<AssistantNodeInjected>
-  & PropsRenderSlots<'conversation.chat.reasoning.body' | 'conversation.chat.message.images'>
+  & PropsRenderSlots<'conversation.chat.assistant.mark' | 'conversation.chat.reasoning.body' | 'conversation.chat.message.images'>
 
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
@@ -47,21 +48,24 @@ export const AssistantNodeView = memo(function AssistantNodeView({
     && !turnProcess.open
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
   return (
-    <AssistantMarkdown
-      blocks={data.blocks}
-      groupPart={groupPart}
-      useDisclosure={useDisclosure}
-      streaming={data.status === 'running'}
-      textInteractionSource={data.status === 'settled' && data.finalNode?.messageId !== undefined}
-      interrupted={data.status === 'interrupted'}
-      loadImage={loadImage}
-      reasoningHidden={reasoningHidden}
-      useGroupAction={useGroupAction}
-      usePresentation={usePresentation}
-      renderSlot={renderSlot}
-      revealProcess={revealProcess}
-      mentions={mentions}
-      t={t}
-    />
+    <div className={css.message}>
+      <div className={css.mark} data-chat-assistant-mark>{groupPart !== 'reasoning' && renderSlot('conversation.chat.assistant.mark', {})}</div>
+      <div className={css.content}><AssistantMarkdown
+        blocks={data.blocks}
+        groupPart={groupPart}
+        useDisclosure={useDisclosure}
+        streaming={data.status === 'running'}
+        textInteractionSource={data.status === 'settled' && data.finalNode?.messageId !== undefined}
+        interrupted={data.status === 'interrupted'}
+        loadImage={loadImage}
+        reasoningHidden={reasoningHidden}
+        useGroupAction={useGroupAction}
+        usePresentation={usePresentation}
+        renderSlot={renderSlot}
+        revealProcess={revealProcess}
+        mentions={mentions}
+        t={t}
+      /></div>
+    </div>
   )
 })

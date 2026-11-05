@@ -332,11 +332,21 @@ export function Sidebar(props: SidebarProps) {
           }}
           aria-label={t('newTask')}
         >
-          <Glyph name="plus" />
+          <span className={css.newTaskIcon}><Glyph name="plus" size={14} /></span>
           {wide && <span>{t('newTask')}</span>}
         </button>
       </Tooltip>
       <nav className={css.navigation} aria-label={t('navigation')}>
+        <Tooltip portal label={t('searchProjects')} disabled={wide}>
+          <button className={css.navRow} aria-label={t('searchProjects')} aria-pressed={searching}
+            onClick={() => {
+              if (!wide) toggleSidebar()
+              setSearching(!searching)
+            }}>
+            <Glyph name="search" />
+            {wide && <span>{t('searchShort')}</span>}
+          </button>
+        </Tooltip>
         <Tooltip portal label={t('workspace')} disabled={wide}>
           <button
             className={css.navRow}
@@ -395,18 +405,6 @@ export function Sidebar(props: SidebarProps) {
             </p>
           )}
           <div className={css.sectionActions}>
-            <Tooltip portal label={t('searchProjects')}>
-              <button
-                className={css.iconButton}
-                aria-label={t('searchProjects')}
-                onClick={() => {
-                  if (!wide) toggleSidebar()
-                  setSearching(!searching)
-                }}
-              >
-                <Glyph name="search" size={14} />
-              </button>
-            </Tooltip>
             {wide && (
               <Tooltip
                 portal
@@ -439,6 +437,7 @@ export function Sidebar(props: SidebarProps) {
         {searching && wide && (
           <label className={css.projectSearch}>
             <input
+              autoFocus
               value={query}
               placeholder={t('searchProjects')}
               aria-label={t('searchProjects')}

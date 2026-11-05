@@ -61,6 +61,7 @@ function snapshotOf(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
 }
 
 interface BenchOptions {
+  contextEntry?: React.ReactNode
   planEntry?: React.ReactNode
   /** The `plan` projection value the standard-kit useProjection serves. */
   plan?: { active: boolean; pending: boolean }
@@ -166,7 +167,7 @@ function bench(over?: BenchOptions) {
   const busyEnter = createSnapshotStore<'queue' | 'steer'>(over?.busyEnter ?? 'queue')
   const stopShortcut = createSnapshotStore<readonly string[]>(['Esc', 'Esc'])
   const slotCalls: { key: string; owner: unknown }[] = []
-  const renderSlot = ((key: string, owner: object) => {
+  const renderSlot = ((key: string, owner: object, options?: { fallback?: React.ReactNode }) => {
     slotCalls.push({ key, owner })
     if (key === 'conversation.input.overlay') return over?.overlay ?? null
     if (key === 'conversation.input.left') return over?.leftItems ?? null
@@ -176,6 +177,7 @@ function bench(over?: BenchOptions) {
     if (key === 'conversation.input.permission') return over?.permissionEntry ?? null
     if (key === 'conversation.input.model') return over?.modelEntry ?? null
     if (key === 'conversation.input.activity') return over?.activityEntry?.(owner as InputActivityOwnerProps) ?? null
+    if (key === 'conversation.input.context') return over?.contextEntry !== undefined ? over.contextEntry : options?.fallback ?? null
     return null
   }) as never
   const props: InputBarProps = {
@@ -2076,7 +2078,7 @@ describe('command launcher chrome and control seats', () => {
       'conversation.input.overlay', 'conversation.input.attachments',
       'conversation.input.permission', 'conversation.input.plan', 'conversation.input.left',
       'conversation.input.right', 'conversation.input.model', 'conversation.input.activity',
-      'conversation.composer.dock',
+      'conversation.composer.dock', 'conversation.input.context',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
     expect(view.queryByLabelText('Model')).toBeNull()
@@ -2169,6 +2171,16 @@ it('lets a toolbar activity replace accessories without replacing the draft edit
   expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()
   fireEvent.click(view.getByRole('button', { name: 'close activity' }))
   expect(view.getByRole('button', { name: 'model choice' })).toBeTruthy()
+})
+
+it('allows a product context control to replace the meter without replacing the composer', () => {
+  const { view } = bench({ draft: 'keep this draft', contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+    contextEntry: <span>Product context control</span>,
+  })
+  expect(view.getByText('Product context control')).toBeTruthy()
+  expect(view.queryByRole('button', { name: '上下文已用 25%' })).toBeNull()
+  expect(view.getByRole('textbox').textContent).toBe('keep this draft')
+  expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()
 })
 
 it('places context usage below the composer and hides it until the activity closes', () => {

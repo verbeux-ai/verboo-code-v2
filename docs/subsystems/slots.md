@@ -150,6 +150,7 @@ Factory: conversation.content [ConversationContent]
 │     │        ├─ key=steering [UserMessageNodeView]
 │     │        │  └─ calls Factory: conversation.chat.user.content
 │     │        ├─ key=assistant-step [AssistantNodeView / AssistantMarkdown]
+│     │        │  ├─ conversation.chat.assistant.mark
 │     │        │  ├─ conversation.chat.message.images [MessageImages]
 │     │        │  └─ conversation.chat.reasoning.body [DefaultReasoningBody]
 │     │        │     └─ calls Factory: conversation.chat.reasoning.content
@@ -177,6 +178,7 @@ Factory: conversation.content [ConversationContent]
 │  │  └─ conversation.input.model.label
 │  ├─ conversation.input.overlay
 │  ├─ conversation.composer.dock
+│  ├─ conversation.input.context
 │  ├─ conversation.input.left
 │  └─ conversation.input.right
 ├─ conversation.input.dock

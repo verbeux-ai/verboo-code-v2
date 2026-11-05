@@ -132,6 +132,10 @@ Send 和 Stop 按钮禁用时不显示提示气泡，轮次结束后由 Stop 切
 
 在获得焦点的 Chat 或 Composer 中连续独立按下两次 Esc，可停止当前运行轮次并保留排队消息。间隔由 shortcuts 插件的 `stopSequenceMs` 配置决定，默认 500 ms。菜单、审批、模态层、终端、内嵌网页、输入法、重复按键，以及输入区域、Session 或轮次变化会清空序列。快捷键与 Stop 按钮调用同一作用域取消操作。插件将 Stop 注册为 `input` 展示分组中的固定操作。该注册使普通 Esc 不能分配给可编辑快捷键，并为 Stop 按钮的悬停和键盘聚焦提示提供 `Esc Esc` 序列。
 
+产品可通过主题覆盖设置 `--dsh-composer-focus-stroke-color` 和 `--dsh-composer-focus-ring-width`。仅获得焦点的输入框使用这些值；未覆盖时，描边与阴影保持不变。
+
+可选的 `conversation.input.context` Slot 可替换内置上下文用量控件；未注册条目时仍使用原控件。产品省略这些读数时，可用 `--dsh-composer-dock-min-height` 覆盖默认预留的一行统计高度。
+
 <a id="temporary-composer-entries"></a>
 ## 临时 composer entry
 

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const root = process.cwd(),
@@ -41,7 +41,13 @@ const plan = (id, name, priceCents) => ({
   newAcquisitionEnabled: true,
   apiOnly: false,
 })
-const plans = [plan(id, 'Verboo Pro', 14900), plan(other, 'Verboo Max', 29900)]
+const plans = [
+  plan(other, 'Verboo Max', 29900),
+  plan(id, 'Verboo Pro', 14900),
+  { ...plan('00000000-0000-4000-8000-000000000004', 'Lite', 9900), description: 'Uso limitado com franquia semanal, renovada a cada 7 dias a partir do primeiro uso. Após esgotar a franquia, novas requisições aguardam a renovação. Inclui todos os modelos disponíveis e até 8 requisições simultâneas.' },
+  { ...plan('00000000-0000-4000-8000-000000000005', 'Ultra', 129900), description: 'Para os projetos que precisam de mais capacidade.' },
+  { ...plan('00000000-0000-4000-8000-000000000006', 'Plano personalizado', 0), description: '', currency: 'USD' },
+]
 const requests = []
 const state = {
   accounts: [
@@ -189,7 +195,10 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === '/api/me/stamina') { res.end(JSON.stringify({data:[]})); return }
   if (url.pathname === '/api/me/subscriptions') {
-    res.end(JSON.stringify({ data: [subscription()] }))
+    res.end(JSON.stringify({ data: [subscription(), {
+      ...subscription(), id: '00000000-0000-4000-8000-000000000007',
+      group: { name: 'Plano anterior' }, status: 'canceled',
+    }] }))
     return
   }
   if (url.pathname === '/api/marketplace') {
@@ -280,10 +289,22 @@ child.stderr.on('data', () => {})
 let browser
 let page
 const errors = []
+const contrastReadings = {}
+function contrastRatio(foreground, background) {
+  const luminance = color => {
+    if (!/^rgb\(/.test(color)) throw new Error('Contrast measurement requires an opaque RGB color')
+    const channels = color.match(/[\d.]+/g).map(Number).slice(0, 3).map(value => value / 255)
+      .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+    return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
+  }
+  const levels = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+  return (levels[0] + .05) / (levels[1] + .05)
+}
 async function capture(name) {
+  await page.evaluate(() => document.fonts.ready)
   const text = await page.locator('body').innerText()
   if (/\bDSH\b|DeepSeek Harness|\bdsh web\b/.test(text)) throw new Error('Legacy branding is visible on ' + name)
-  await page.screenshot({ path: join(dir, name) })
+  await page.screenshot({ path: join(dir, name), animations: 'disabled' })
 }
 try {
   const ready = await new Promise((resolve, reject) => {
@@ -350,6 +371,11 @@ try {
   await page
     .locator('[data-verboo-onboarding]')
     .waitFor({ state: 'visible', timeout: 30000 })
+  const localFont = await page.evaluate(async () => {
+    const faces = await document.fonts.load('14px "Verboo Nunito"')
+    return faces.length > 0 && faces.every(face => face.status === 'loaded')
+  })
+  if (!localFont) throw new Error('The product Nunito font did not load from the local app')
   await page.waitForTimeout(1000)
   await capture('onboarding-light.png')
   await page.emulateMedia({ colorScheme: 'dark' })
@@ -381,6 +407,14 @@ try {
   await capture('workspace-light.png')
   await page.emulateMedia({colorScheme:'dark'}); await page.waitForTimeout(250); await capture('workspace-dark.png'); await page.emulateMedia({colorScheme:'light'})
   const composer = page.locator('[data-composer-card] [contenteditable=true]')
+  const placeholderText = await composer.getAttribute('data-placeholder')
+  if (!placeholderText) throw new Error('Composer placeholder is missing')
+  const placeholderColors = await page.locator('[data-composer-card]').getByText(placeholderText, { exact: true }).evaluate(el => ({
+    foreground: getComputedStyle(el).color,
+    background: getComputedStyle(el.closest('[data-composer-card]')).backgroundColor,
+  }))
+  contrastReadings.placeholderLight = contrastRatio(placeholderColors.foreground, placeholderColors.background)
+  if (contrastReadings.placeholderLight < 4.5) throw new Error('Composer placeholder contrast is below 4.5:1')
   await composer.fill('Vamos começar um projeto simples.')
   await composer.press('Enter')
   await page.locator('[data-verboo-running]').waitFor({ timeout: 30000 })
@@ -401,6 +435,30 @@ try {
   await page.locator('[data-verboo-session]:has([aria-current=page])[data-state=idle]').waitFor()
   if (await page.locator('[data-verboo-execution]').count()) throw new Error('Idle composer occupies space')
   await capture('conversation-complete.png')
+  await page.locator('[data-chat-assistant-mark] img').first().waitFor()
+  if (await page.locator('[data-composer-stat]').count()) throw new Error('Diagnostic statistics remain in the product composer')
+  if (await page.locator('[data-composer-dock]').getByRole('button', { name: /contexto|context used/i }).count()) throw new Error('Context diagnostics remain in the product composer')
+  if (await page.getByRole('tab', { name: /Trajetória|Trajectory/ }).count()) throw new Error('Diagnostic views remain in the product header')
+  const bubbleColors = await page.locator('[data-message-bubble]').first().evaluate(el => {
+    const style = getComputedStyle(el)
+    return { foreground: style.color, fill: style.backgroundColor }
+  })
+  const bubbleFill = bubbleColors.fill.match(/[\d.]+/g).map(Number)
+  contrastReadings.userMessage = contrastRatio(bubbleColors.foreground, bubbleColors.fill)
+  if (bubbleColors.foreground !== 'rgb(255, 255, 255)' || !(bubbleFill[2] > bubbleFill[0] && bubbleFill[0] > bubbleFill[1]) || contrastReadings.userMessage < 4.5) throw new Error('User message lost the Verboo surface or readable foreground')
+  await composer.click()
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await capture('conversation-dark.png')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await capture('conversation-light.png')
+  const findConversation = page.getByRole('button', { name: 'Buscar projeto ou conversa', exact: true })
+  await findConversation.click()
+  const conversationSearch = page.getByRole('textbox', { name: 'Buscar projeto ou conversa', exact: true })
+  await conversationSearch.fill('verboo-no-matching-project')
+  if (await page.locator('[data-verboo-session]').count()) throw new Error('Project search did not filter conversations')
+  await conversationSearch.fill('')
+  await findConversation.click()
+  await page.locator('[data-verboo-session]').first().waitFor()
   for (let index = 0; index < 2; index++) {
     const previousSession = await page.locator('[data-conversation-session]').getAttribute('data-conversation-session')
     await page.getByRole('button', { name: 'Nova conversa', exact: true }).first().click()
@@ -544,8 +602,47 @@ try {
   await page.waitForTimeout(250)
   if (await page.getByText('Conexão removida.', { exact: true }).count()) throw new Error('Connection feedback survived page navigation')
   await capture('plan-light.png')
+  const planPage = page.locator('[data-verboo-page=plan]')
+  const planButtonColors = await planPage.locator('[data-current=false] button').evaluateAll(items => items.map(el => ({
+    foreground: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor,
+  })))
+  contrastReadings.planButtons = Math.min(...planButtonColors.map(colors => contrastRatio(colors.foreground, colors.background)))
+  if (!planButtonColors.length || contrastReadings.planButtons < 4.5) throw new Error('Plan action contrast is below 4.5:1')
+  if (await planPage.getByRole('tablist').count()) throw new Error('Billing switch is shown without annual offers')
+  if (!await planPage.getByRole('button', { name: 'Plano atual: Verboo Pro', exact: true }).isDisabled()) throw new Error('Current plan can be repurchased')
+  if (await planPage.locator('details').evaluate(el => el.open)) throw new Error('Subscription history is expanded by default')
+  const cards = await planPage.locator('[data-current]').evaluateAll(items => items.map(el => {
+    const box = el.getBoundingClientRect(), button = el.querySelector('button').getBoundingClientRect()
+    return { top: box.top, right: box.right, left: box.left, width: box.width, buttonTop: button.top, buttonRight: button.right }
+  }))
+  if (cards.length !== 4 || cards.some(item => item.width < 200 || item.buttonRight > item.right)) throw new Error('Plan cards are missing or overflow')
+  if (cards.some(item => Math.abs(item.top - cards[0].top) > 1 || Math.abs(item.buttonTop - cards[0].buttonTop) > 1)) throw new Error('Desktop plan comparison or actions are not aligned')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await capture('plan-dark.png')
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await capture('plan-compact.png')
+  const planTouch = await context.newCDPSession(page)
+  await planTouch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.locator('[data-sidebar-drawer=true][data-sidebar-collapsed=true]').waitFor()
+  await page.locator('[data-verboo-shell]').waitFor({ state: 'hidden' })
+  for (const theme of ['dark', 'light']) {
+    await page.emulateMedia({ colorScheme: theme })
+    await capture(`plan-mobile-${theme}.png`)
+    if (await planPage.evaluate(el => el.scrollWidth > el.clientWidth)) throw new Error('Plan comparison overflows on mobile')
+    const targets = await planPage.locator('button:visible').evaluateAll(items => items.map(el => el.getBoundingClientRect().height))
+    if (targets.some(height => height < 44)) throw new Error('Subscription action is smaller than a touch target')
+  }
+  await planTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await planTouch.detach()
+  await page.setViewportSize({ width: 1366, height: 900 })
+  const managementPopup = page.waitForEvent('popup')
+  await planPage.getByRole('button', { name: 'Gerenciar assinatura: Verboo Pro', exact: true }).click()
+  const management = await managementPopup
+  await management.waitForURL(u => u.pathname === '/pt/plans')
+  await management.close()
   const popup = page.waitForEvent('popup')
-  await page.getByRole('button', { name: 'Fazer upgrade', exact: true }).click()
+  await planPage.getByRole('button', { name: 'Escolher plano: Verboo Max', exact: true }).click()
   const checkout = await popup
   await checkout.waitForURL((u) => u.pathname === '/pt/plans')
   await checkout.waitForLoadState('domcontentloaded')
@@ -569,6 +666,8 @@ try {
   )
     throw new Error('Mobile viewport overflow')
   if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+  await writeFile(join(dir, 'contrast.json'), JSON.stringify(contrastReadings, null, 2) + '\n')
+  console.log('Measured contrast:', JSON.stringify(contrastReadings))
   console.log(
     'Actual Verboo profile browser QA: OAuth PKCE, vault, conversation execution states, non-overlapping sidebar rows, 1718 searchable connectors, public services, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
   )

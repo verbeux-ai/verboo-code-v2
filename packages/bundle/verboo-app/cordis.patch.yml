@@ -26,6 +26,12 @@
   disabled: true
 - id: ui-agent-preset
   disabled: true
+- id: ui-trajectory
+  disabled: true
+- id: ui-chat
+  config:
+    transcriptView: compact
+    performanceUsage: compact
 - id: ui-plugin-manager
   disabled: true
 - id: ui-settings-plugin-inventory

@@ -461,6 +461,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: UserBeforeOwnerProps
     }
+    /** Optional product mark beside an Assistant reply; absent entries reserve no space. */
+    'conversation.chat.assistant.mark': { kind: 'single'; scope: 'session' }
     /**
      * Renderer for one consecutive group of durable message images. The owner
      * supplies image references, an authorized loader, and alignment. A

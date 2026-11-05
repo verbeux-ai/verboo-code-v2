@@ -47,3 +47,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Nunito
+
+Nunito by The Nunito Project Authors is distributed under the SIL Open Font License 1.1. The Latin and Latin Extended variable fonts are served locally from `apps/web/public/fonts/`; the complete license and copyright are included in `apps/web/public/fonts/OFL-Nunito.txt`. Source: https://github.com/googlefonts/nunito.

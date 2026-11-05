@@ -13,17 +13,19 @@ export function Brand({
     <div
       className={css.brand}
       data-large={large || undefined}
+      role="img"
       aria-label={t('product')}
     >
       <img
         src={mascot}
-        width={large ? 30 : 24}
-        height={large ? 30 : 24}
+        width={large ? 32 : 26}
+        height={large ? 32 : 26}
         alt=""
         draggable={false}
       />
-      <span className={css.wordmark}>
+      <span className={css.wordmark} aria-hidden="true">
         {t('brand')}
+        <span className={css.brandColon}>:</span>
         <span className={css.code}>{t('code')}</span>
       </span>
     </div>

@@ -46,7 +46,7 @@ describe('docked composer seat styles', () => {
 describe('composer statistics row styles', () => {
   it('reserves one reading row in the docked composer only', () => {
     expect(rule(inputBarCss, '.root:not(.hero) > .dock'))
-      .toContain('min-height: calc(22px + var(--dsh-content-font-delta-secondary, 0px))')
+      .toContain('min-height: var(--dsh-composer-dock-min-height, calc(22px + var(--dsh-content-font-delta-secondary, 0px)))')
     expect(rule(inputBarCss, '.hero .dock:empty')).toMatch(/display:\s*none;/)
   })
 

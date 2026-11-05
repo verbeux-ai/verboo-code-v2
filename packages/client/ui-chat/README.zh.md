@@ -52,6 +52,8 @@ Session 作用域的 `conversation.chat.user.content` Factory 只渲染用户内
 
 设置 → 通用设置 → 网页链接默认打开方式控制普通点击 Chat HTTP(S) 链接时的目标：「应用内侧边栏」（默认）打开新的右侧 Sidebar Browser tab，「默认浏览器」打开外部标签页。该设置项位于快捷键之后，仅在 Sidebar Browser 可用时显示。若 Sidebar Browser 未注册，两种选择均使用外部浏览器；带修饰键的点击保留原生行为。已认证浏览器的 `ui-chat.linkOpening` 偏好在 Host 上持久化，设置无法持久化写入时仅在当前进程内生效。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
+Assistant 节点在回复正文旁拥有可选的 Session 作用域 `conversation.chat.assistant.mark` Slot。产品可注册装饰性标志，无需替换 Markdown 或推理渲染器。仅包含推理的分组片段不显示标志；空 Slot 不预留列空间。
+
 <a id="system-prompt-row"></a>
 ## Chat 隐藏的行
 

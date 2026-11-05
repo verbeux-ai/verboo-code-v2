@@ -132,6 +132,10 @@ When another writer owns the Session, the send-error toast asks the user to quit
 
 Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. The plugin registers Stop as a fixed action in the `input` display group. Its registration reserves plain Escape against editable shortcuts and supplies the `Esc Esc` sequence shown in the Stop button’s hover and keyboard-focus tooltip.
 
+Products may set `--dsh-composer-focus-stroke-color` and `--dsh-composer-focus-ring-width` through theme overrides. Only the focused composer consumes them; without overrides, its stroke and elevation remain unchanged.
+
+The optional `conversation.input.context` slot replaces the built-in context meter; without a registration, the original meter remains. `--dsh-composer-dock-min-height` may override the default one-row statistics reservation when a product omits those readings.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 
