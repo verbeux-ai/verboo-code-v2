@@ -34,7 +34,7 @@ Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖�
 
 [发布工作流](../../../.github/workflows/verboo-desktop-release.yml) 会在 GitHub release 发布时运行，也支持手动创建首次发布。标签必须为 `v` 加上已提交的桌面版本。它会原生构建 macOS Apple Silicon 和 Intel DMG，以及 Linux x64 AppImage、Debian 和 RPM 安装包，并保留已有的 Windows x64 安装包。Linux 构建机需要 `musl-tools`；工作流会在打包运行时前构建完整的主机原生文件，包括 Landlock launcher。
 
-macOS 使用 Tauri 构建已签名的应用，再通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
+macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式也嵌入相同的显示名称。打包时会先校验 `CFBundleName`、`CFBundleDisplayName` 和 `CFBundleExecutable`，再检查签名，并通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
 
 每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。macOS alpha 使用 ad-hoc 签名，未经 Apple 公证。
 

@@ -14,6 +14,11 @@ if (!['aarch64-apple-darwin', 'x86_64-apple-darwin'].includes(target)) throw new
 const configuration = JSON.parse(await readFile(join(desktop, 'src-tauri/tauri.conf.json'), 'utf8'))
 const bundle = join(desktop, '.desktop-build/tauri/target', target, 'release/bundle')
 const app = join(bundle, 'macos', `${configuration.productName}.app`)
+const { stdout } = await run('plutil', ['-convert', 'json', '-o', '-', join(app, 'Contents/Info.plist')], { timeout: 10_000 })
+const identity = JSON.parse(stdout)
+if (['CFBundleName', 'CFBundleDisplayName', 'CFBundleExecutable'].some(key => identity[key] !== configuration.productName)) {
+  throw new Error('macOS application identity does not match the product name')
+}
 await run('codesign', ['--verify', '--deep', '--strict', app], { timeout: 300_000 })
 const suffix = target.startsWith('aarch64') ? 'aarch64' : 'x64'
 const destination = join(bundle, 'dmg', `${configuration.productName}_${configuration.version}_${suffix}.dmg`)
