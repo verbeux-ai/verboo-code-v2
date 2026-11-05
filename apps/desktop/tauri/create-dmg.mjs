@@ -27,7 +27,7 @@ export async function createDiskImage({ application, destination, name, signal }
   try {
     const contents = join(staging, 'contents')
     await mkdir(contents)
-    await cp(application, join(contents, basename(application)), { recursive: true, mode: constants.COPYFILE_FICLONE })
+    await cp(application, join(contents, basename(application)), { recursive: true, mode: constants.COPYFILE_FICLONE, verbatimSymlinks: true })
     await symlink('/Applications', join(contents, 'Applications'))
     const image = join(staging, 'installer.dmg')
     signal?.throwIfAborted()
