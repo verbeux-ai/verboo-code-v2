@@ -168,33 +168,57 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       }
     }
   })
-  it('mounts the stamina contribution below the real conversation composer', async () => {
+  it('places compact liquid stamina immediately before the model selector', async () => {
     await page.setViewportSize({ width: 1280, height: 960 })
     await navigate(/^(Workspace|Área de trabalho)$/)
     await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
-    const dock = page.locator('[data-composer-dock] [data-verboo-stamina]')
-    await dock.getByRole('progressbar').waitFor()
-    expect(await dock.getByRole('progressbar').getAttribute('value')).toBe('50')
-    await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-composer-dock] [data-verboo-stamina]', scaffold.workspaceCwd), MODE)
+    const meter = page.getByRole('meter', { name: /^(Stamina|耐力)$/ })
+    const liquid = meter.locator('[data-verboo-stamina-liquid]')
+    const model = page.locator('[data-slot="conversation.input.model"] button[aria-haspopup="menu"]').first()
+    const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
+    await meter.waitFor()
+    expect(await liquid.isVisible()).toBe(true)
+    expect(await meter.getAttribute('aria-valuenow')).toBe('50')
+    expect(await meter.textContent()).toBe('')
+    expect(await primary.locator('[data-verboo-stamina-liquid]').count()).toBe(0)
+    expect(await page.locator('[data-composer-dock] [data-verboo-stamina]').count()).toBe(0)
+    await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-verboo-stamina][role="meter"]', scaffold.workspaceCwd), MODE)
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 960 })
       if (width === 390) {
-        await page.locator('[data-sidebar-drawer]').waitFor()
-        const collapse = page.getByRole('button', { name: /^(Collapse navigation|Recolher navegação)$/ }).first()
-        if (await page.locator('[data-sidebar-drawer][data-sidebar-collapsed=true]').count() === 0) await collapse.click()
+        const drawer = page.locator('[data-sidebar-drawer]')
+        await drawer.waitFor()
+        if (await drawer.getAttribute('data-sidebar-collapsed') !== 'true') {
+          await page.getByRole('button', { name: /^(Collapse navigation|Recolher navegação|Collapse sidebar|Recolher barra lateral)$/ }).first().click()
+        }
         await page.locator('[data-sidebar-drawer][data-sidebar-collapsed=true]').waitFor()
       }
-      await expect.poll(() => dock.evaluate((element) => {
-        const box = element.getBoundingClientRect()
-        return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
-      })).toBe(true)
       await expect.poll(async () => {
-        const box = await dock.boundingBox()
-        return box === null ? Infinity : box.y + box.height
-      }).toBeLessThanOrEqual(960)
-      const box = await dock.boundingBox()
-      expect(box!.x).toBeGreaterThanOrEqual(0)
-      expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+        const bounds = await meter.boundingBox()
+        const selector = await model.boundingBox()
+        const send = await primary.boundingBox()
+        return bounds !== null && selector !== null && send !== null
+          && bounds.x >= 0 && bounds.y + bounds.height <= 960
+          && bounds.x + bounds.width <= selector.x
+          && selector.x + selector.width <= send.x
+          && send.x + send.width <= width
+          && Math.abs(bounds.y + bounds.height / 2 - selector.y - selector.height / 2) <= 1
+      }).toBe(true)
+      expect(await meter.evaluate((node) => {
+        const box = node.getBoundingClientRect()
+        return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+      })).toBe(true)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await meter.hover()
+      const tooltip = page.getByRole('tooltip')
+      await tooltip.waitFor()
+      expect(await tooltip.textContent()).toBe('Stamina')
+      const tip = await tooltip.boundingBox()
+      expect(tip!.x).toBeGreaterThanOrEqual(0)
+      expect(tip!.x + tip!.width).toBeLessThanOrEqual(width)
+      expect(await tooltip.evaluate(node => node.closest('[data-composer-card]') === null)).toBe(true)
+      await page.keyboard.press('Escape')
+      await tooltip.waitFor({ state: 'hidden' })
       await page.screenshot({ path: join(ARTIFACTS, `composer-${width}.png`), animations: 'disabled' })
     }
     await navigate(/^(My plan|Meu plano)$/)

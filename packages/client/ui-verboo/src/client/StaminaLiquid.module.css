@@ -1,0 +1,65 @@
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 32px;
+  border-radius: var(--dsw-radius-sm);
+}
+.indicator:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+.liquid {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--verboo-stamina-empty, var(--verboo-subtle));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--verboo-accent-solid) 25%, transparent);
+  pointer-events: none;
+}
+.water {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  background: var(--verboo-accent-solid);
+  transition: height 700ms ease;
+}
+.water[data-waves]::before,
+.water[data-waves]::after {
+  content: '';
+  position: absolute;
+  left: -50%;
+  top: -3px;
+  width: 200%;
+  height: 7px;
+  border-radius: 45%;
+  background: var(--verboo-accent-solid);
+  animation: stamina-wave 4s ease-in-out infinite alternate;
+}
+.water[data-waves]::before {
+  top: -5px;
+  opacity: 0.35;
+  animation-direction: alternate-reverse;
+  animation-duration: 5.5s;
+}
+.liquid[data-stale] .water {
+  background: color-mix(in srgb, var(--verboo-accent-solid) 60%, var(--verboo-muted));
+}
+.liquid[data-stale] .water::before,
+.liquid[data-stale] .water::after {
+  background: inherit;
+}
+@keyframes stamina-wave {
+  from { transform: translateX(-3px) rotate(-5deg); }
+  to { transform: translateX(3px) rotate(5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .water { transition: none; }
+  .water[data-waves]::before,
+  .water[data-waves]::after { animation: none; }
+}

@@ -1,4 +1,1 @@
-- region "Stamina":
-  - text: Unlimited 50% restante
-  - 'progressbar "Stamina: Unlimited"'
-  - paragraph: "Limite para novas requisições: {{throughput}} tok/s"
+- meter "Stamina"
