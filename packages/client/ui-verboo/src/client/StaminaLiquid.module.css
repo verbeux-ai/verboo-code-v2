@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 28px;
+  width: 68px;
   height: 32px;
   border-radius: var(--dsw-radius-sm);
 }
@@ -13,10 +13,10 @@
 }
 .liquid {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 64px;
+  height: 8px;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: 999px;
   corner-shape: round;
   background: var(--verboo-stamina-empty, var(--verboo-subtle));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--verboo-accent-solid) 25%, transparent);
@@ -24,25 +24,25 @@
 }
 .water {
   position: absolute;
-  inset-inline: 0;
-  bottom: 0;
+  inset-block: 0;
+  left: 0;
   background: var(--verboo-accent-solid);
-  transition: height 700ms ease;
+  transition: width 700ms ease;
 }
 .water[data-waves]::before,
 .water[data-waves]::after {
   content: '';
   position: absolute;
-  left: -50%;
-  top: -3px;
-  width: 200%;
-  height: 7px;
+  right: -2px;
+  top: -50%;
+  width: 4px;
+  height: 200%;
   border-radius: 45%;
   background: var(--verboo-accent-solid);
   animation: stamina-wave 4s ease-in-out infinite alternate;
 }
 .water[data-waves]::before {
-  top: -5px;
+  right: -3px;
   opacity: 0.35;
   animation-direction: alternate-reverse;
   animation-duration: 5.5s;
@@ -55,8 +55,8 @@
   background: inherit;
 }
 @keyframes stamina-wave {
-  from { transform: translateX(-3px) rotate(-5deg); }
-  to { transform: translateX(3px) rotate(5deg); }
+  from { transform: translateY(-2px) rotate(-5deg); }
+  to { transform: translateY(2px) rotate(5deg); }
 }
 @media (prefers-reduced-motion: reduce) {
   .water { transition: none; }

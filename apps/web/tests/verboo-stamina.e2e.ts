@@ -168,7 +168,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       }
     }
   })
-  it('places compact liquid stamina immediately before the model selector', async () => {
+  it('places a horizontal stamina bar immediately before the model selector', async () => {
     await page.setViewportSize({ width: 1280, height: 960 })
     await navigate(/^(Workspace|Área de trabalho)$/)
     await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
@@ -178,6 +178,9 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
     await meter.waitFor()
     expect(await liquid.isVisible()).toBe(true)
+    const bar = await liquid.boundingBox()
+    expect(bar!.width).toBeGreaterThanOrEqual(bar!.height * 4)
+    expect(bar!.height).toBeLessThanOrEqual(12)
     expect(await meter.getAttribute('aria-valuenow')).toBe('50')
     expect(await meter.textContent()).toBe('')
     expect(await primary.locator('[data-verboo-stamina-liquid]').count()).toBe(0)
@@ -219,6 +222,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       expect(await tooltip.evaluate(node => node.closest('[data-composer-card]') === null)).toBe(true)
       await page.keyboard.press('Escape')
       await tooltip.waitFor({ state: 'hidden' })
+      await page.locator('[data-composer-card]').screenshot({ path: join(ARTIFACTS, `composer-bar-${width}.png`), animations: 'disabled' })
       await page.screenshot({ path: join(ARTIFACTS, `composer-${width}.png`), animations: 'disabled' })
     }
     await navigate(/^(My plan|Meu plano)$/)

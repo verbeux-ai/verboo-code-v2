@@ -42,7 +42,7 @@ export function StaminaLiquid({ remainingPercent, stale }: { remainingPercent: n
         className={css.water}
         data-stamina-water
         data-waves={remainingPercent > 0 && remainingPercent < 100 || undefined}
-        style={{ height: `${remainingPercent}%` }}
+        style={{ width: `${remainingPercent}%` }}
       />
     </span>
   )
