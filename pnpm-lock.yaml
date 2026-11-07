@@ -1479,9 +1479,6 @@ importers:
 
   packages/api/remotes:
     dependencies:
-      '@deepseek-ai/dsh-api-verboo-mcp':
-        specifier: workspace:*
-        version: link:../verboo-mcp
       '@deepseek-ai/dsh-deque':
         specifier: workspace:*
         version: link:../../util/deque
@@ -1519,6 +1516,9 @@ importers:
       '@deepseek-ai/dsh-api-terminal-controller':
         specifier: workspace:*
         version: link:../terminal-controller
+      '@deepseek-ai/dsh-api-verboo-mcp':
+        specifier: workspace:*
+        version: link:../verboo-mcp
       '@deepseek-ai/dsh-api-verboo-product':
         specifier: workspace:*
         version: link:../verboo-product
