@@ -2,9 +2,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-verboo-product'
+import type {} from '@deepseek-ai/dsh-api-verboo-mcp'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { installMcpTools } from './mcp-tools.ts'
 import type { Config } from './index.ts'
-export const inject = ['tools', 'verbooProduct']
+export const inject = ['tools', 'verbooProduct', 'verbooMcp']
 const output = {
   schema: { type: 'json' } as const,
   render: (_args: unknown, value: JsonValue) => [
@@ -82,4 +84,5 @@ export function apply(ctx: Context, config: Config): void {
       }),
     )
   }, 'Verboo: connected service tools')
+  installMcpTools(ctx, config.timeoutMs)
 }

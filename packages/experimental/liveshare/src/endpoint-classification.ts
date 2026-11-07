@@ -215,6 +215,11 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'mcpManager/probe': 'owner-only', // owner MCP server management
   'mcpManager/restart': 'owner-only', // owner MCP server management
   'mcpManager/watch': 'owner-only', // owner MCP server management
+  'verbooMcp/list': 'owner-only', // owner-defined MCP servers and their live state
+  'verbooMcp/probe': 'owner-only', // owner-defined MCP servers and their live state
+  'verbooMcp/removeServer': 'owner-only', // owner-defined MCP servers and their live state
+  'verbooMcp/save': 'owner-only', // owner-defined MCP servers and their live state
+  'verbooMcp/setEnabled': 'owner-only', // owner-defined MCP servers and their live state
   'commands/execute': 'owner-only', // owner executes a slash command
   'permissionPresets/catalog': 'owner-only', // owner permission presets
   'userQuestions/answer': 'owner-only', // owner answers a pending question

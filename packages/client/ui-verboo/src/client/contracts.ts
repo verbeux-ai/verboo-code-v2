@@ -13,6 +13,7 @@ import type {
   PlanId,
   StaminaStatus,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type { McpServerInput } from '@deepseek-ai/dsh-api-verboo-mcp/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Key } from './locales.ts'
@@ -60,6 +61,18 @@ export interface ProductInjected {
   connect(slug: string, label: string): Promise<boolean>
   reopenConnection(id: ConnectionId): void
   disconnect(id: ConnectionId): Promise<boolean>
+  /** Re-read every user-defined MCP server and its live connection state. */
+  loadMcpServers(): void
+  /** Create or replace one user-defined MCP server. */
+  saveMcpServer(input: McpServerInput): Promise<boolean>
+  /** Remove one user-defined MCP server and withdraw its tools. */
+  deleteMcpServer(name: string): Promise<boolean>
+  /** Connect or disconnect one stored definition without editing it. */
+  setMcpEnabled(name: string, enabled: boolean): Promise<boolean>
+  /** Test a definition without saving it. */
+  probeMcpServer(input: McpServerInput): Promise<boolean>
+  /** Drop the last probe outcome. */
+  clearMcpProbe(): void
   billing(id: PlanId | null, purchase: boolean): void
   dismiss(): void
   setTheme(theme: 'light' | 'dark' | 'system'): void

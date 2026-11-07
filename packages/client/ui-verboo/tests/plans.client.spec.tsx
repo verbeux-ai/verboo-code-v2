@@ -27,6 +27,7 @@ function fixture(locale = 'pt') {
     loadingPlans: false, loadingConnections: false, busy: null, handoff: null,
     handoffUntil: 0, connectedTarget: null, feedback: null, modelFailed: false,
     initializingModel: false, browserBlocked: false, navigationFailed: false, authorizationIds: [],
+    mcpServers: null, loadingMcp: false, mcpFailed: false, mcpProbe: null, probingMcp: false, mcpError: null,
   }
   const copy: Readonly<Record<string, string>> = locale === 'pt' ? pt : locale === 'zh' ? zh : en
   const props: ComponentProps<typeof PlanPage> = {

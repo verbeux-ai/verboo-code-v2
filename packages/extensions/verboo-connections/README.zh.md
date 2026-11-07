@@ -29,6 +29,8 @@ kind: "package-reference"
 
 `connections_list` 返回用户拥有的账号和无需凭据的公共服务。公共服务 ID 使用 `public_<toolkit>`；每次执行时，后端会检查工具集无需认证的声明以及发现的工具版本。OAuth 和用户提供的凭据始终由 Composio 托管的授权流程处理。
 
+同一贡献还通过 `ctx.verbooMcp` 安装 [MCP 服务器工具](src/mcp-tools.ts)。`mcp_servers_list` 读取账号自己的服务器、各自暴露的工具，以及无法连接时的阻塞原因。`mcp_server_save` 与 `mcp_server_remove` 修改该集合，二者都会先通过 `ctx.approval` 询问人类：stdio 服务器会在 Host 上运行命令，移除则会在对话中途撤回工具。未组合应答器，或会话的回答不是 `allowed-once` 时，写入会被拒绝并说明原因，使 Agent 停止而不是重试。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 
@@ -52,11 +54,11 @@ Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查�
 
 #### 模型看到什么
 
-`connections_list`、`connections_search` 与 `connections_execute` 用于列出账号、发现工具定义并执行所选操作。工具定义与结果由现有工具管道记录。
+`connections_list`、`connections_search` 与 `connections_execute` 用于列出账号、发现工具定义并执行所选操作。`mcp_servers_list`、`mcp_server_save` 与 `mcp_server_remove` 用于读取和修改账号自己的 MCP 服务器。保存或移除只有经人类批准后才会到达模型；被拒绝时返回可操作的代码而不是改动结果。工具定义与结果由现有工具管道记录。
 
 #### Token 影响
 
-请求包含三个稳定的工具定义。搜索最多返回六个定义，执行结果追加到对话记录。
+请求包含六个稳定的工具定义。搜索最多返回六个定义，执行结果追加到对话记录。每个已启用的 MCP 服务器会增加它公布的工具定义。
 
 #### KV Cache 影响
 
@@ -67,6 +69,7 @@ Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查�
 <a id="known-limitations-and-deferred-work"></a>
 
 - 未提供托管授权的 OAuth 服务需要在服务器配置产品认证。提供方操作可能在网络故障前已提交，因此绝不自动重试写入。
+- 从对话中添加的 MCP 服务器属于 Host 而非该对话，并会保持启用，直到使用者将其停用或移除。
 
 <a id="dev-note"></a>
 ### 开发备注

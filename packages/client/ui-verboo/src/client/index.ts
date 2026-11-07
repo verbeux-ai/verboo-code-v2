@@ -35,11 +35,8 @@ import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
 import { BrandMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
-import {
-  ConnectionsPage,
-  PreferencesPage,
-  Feedback,
-} from './Pages.tsx'
+import { PreferencesPage, Feedback } from './Pages.tsx'
+import { ConnectionsPage } from './Connections.tsx'
 
 /** Product replacement for optional diagnostic readouts. */
 function OmittedDiagnostic() { return null }
@@ -61,6 +58,7 @@ export const inject = [
   'remote.account',
   'remote.session',
   'remote.verboo',
+  'remote.verbooMcp',
   'resources',
   'remoteAccess',
   'contextMenus',
@@ -167,6 +165,26 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       disconnect: async (id) => {
         const r = await ctx.remote.verboo.disconnect(id)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
+      },
+      mcpServers: async () => {
+        const r = await ctx.remote.verbooMcp.list()
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      saveMcpServer: async (input) => {
+        const r = await ctx.remote.verbooMcp.save(input)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      deleteMcpServer: async (name) => {
+        const r = await ctx.remote.verbooMcp.removeServer(name)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      setMcpEnabled: async (name, enabled) => {
+        const r = await ctx.remote.verbooMcp.setEnabled(name, enabled)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      probeMcpServer: async (input, signal) => {
+        const r = await ctx.remote.verbooMcp.probe(input, signal)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
         const r = await ctx.remote.verboo.billingURL(id, purchase)
@@ -277,6 +295,14 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     reopenConnection: (id) => {
       void model.reopenConnection(id)
     },
+    loadMcpServers: () => {
+      void model.loadMcpServers()
+    },
+    saveMcpServer: input => model.saveMcpServer(input),
+    deleteMcpServer: name => model.deleteMcpServer(name),
+    setMcpEnabled: (name, enabled) => model.setMcpEnabled(name, enabled),
+    probeMcpServer: input => model.probeMcpServer(input),
+    clearMcpProbe: () =>{  model.clearMcpProbe() },
     billing: (id, purchase) => {
       try {
         if (model.state.getSnapshot().busy !== null) return
@@ -488,6 +514,14 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         )
           void model.loadConnections()
         if (state.handoff === 'billing') void model.loadPlans()
+        if (
+          state.mcpServers?.some(
+            server =>
+              server.status.state === 'connecting' ||
+              server.status.state === 'reconnecting',
+          ) === true
+        )
+          void model.loadMcpServers()
       }
       timer = setTimeout(tick, config.refreshIntervalMs)
     }

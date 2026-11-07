@@ -1479,6 +1479,9 @@ importers:
 
   packages/api/remotes:
     dependencies:
+      '@deepseek-ai/dsh-api-verboo-mcp':
+        specifier: workspace:*
+        version: link:../verboo-mcp
       '@deepseek-ai/dsh-deque':
         specifier: workspace:*
         version: link:../../util/deque
@@ -1885,6 +1888,52 @@ importers:
       '@deepseek-ai/dsh-working-directory':
         specifier: workspace:*
         version: link:../../session/working-directory
+
+  packages/api/verboo-mcp:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-verboo-product':
+        specifier: workspace:*
+        version: link:../verboo-product
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:*
+        version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:*
+        version: link:../../mcp/mcp-client
+      '@deepseek-ai/dsh-mcp-manager':
+        specifier: workspace:*
+        version: link:../../mcp/mcp-manager
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:*
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:*
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-json':
+        specifier: workspace:*
+        version: link:../../storage/storage-json
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      '@modelcontextprotocol/client':
+        specifier: 2.2.0
+        version: 2.2.0
 
   packages/api/verboo-product:
     dependencies:
@@ -2976,6 +3025,9 @@ importers:
 
   packages/bundle/verboo-app:
     dependencies:
+      '@deepseek-ai/dsh-api-verboo-mcp':
+        specifier: workspace:*
+        version: link:../../api/verboo-mcp
       '@deepseek-ai/dsh-api-verboo-product':
         specifier: workspace:*
         version: link:../../api/verboo-product
@@ -7136,6 +7188,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../api/session-controller
+      '@deepseek-ai/dsh-api-verboo-mcp':
+        specifier: workspace:*
+        version: link:../../api/verboo-mcp
       '@deepseek-ai/dsh-api-verboo-product':
         specifier: workspace:*
         version: link:../../api/verboo-product
@@ -12093,6 +12148,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:*
         version: link:../../core/agent
+      '@deepseek-ai/dsh-api-verboo-mcp':
+        specifier: workspace:*
+        version: link:../../api/verboo-mcp
       '@deepseek-ai/dsh-api-verboo-product':
         specifier: workspace:*
         version: link:../../api/verboo-product
@@ -12102,6 +12160,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:*
+        version: link:../../interaction/user-approval
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:*
         version: link:../../util/values

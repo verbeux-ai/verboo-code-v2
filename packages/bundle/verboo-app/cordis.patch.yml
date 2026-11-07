@@ -59,5 +59,9 @@
         allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
     - id: verboo-connections
       name: '@deepseek-ai/dsh-verboo-connections'
+    # User-defined MCP servers: durable definitions, credential references and
+    # one live registration per enabled server on the shared mcp-manager fleet.
+    - id: verboo-mcp
+      name: '@deepseek-ai/dsh-api-verboo-mcp'
     - id: ui-verboo
       name: '@deepseek-ai/dsh-client-ui-verboo'

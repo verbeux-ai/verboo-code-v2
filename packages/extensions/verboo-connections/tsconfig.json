@@ -31,6 +31,12 @@
     },
     {
       "path": "../../core/agent"
+    },
+    {
+      "path": "../../api/verboo-mcp"
+    },
+    {
+      "path": "../../interaction/user-approval"
     }
   ]
 }

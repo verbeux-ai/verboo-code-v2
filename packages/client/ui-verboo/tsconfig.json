@@ -91,6 +91,9 @@
     },
     {
       "path": "../ui-chat/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/verboo-mcp"
     }
   ]
 }

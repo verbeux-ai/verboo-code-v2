@@ -12,6 +12,12 @@ import type {
   PlanId,
   Result,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type {
+  CustomMcpServerView,
+  McpResult,
+  McpServerInput,
+  McpServerProbe,
+} from '@deepseek-ai/dsh-api-verboo-mcp/types'
 
 /** Account-owned display data and progress without credentials. */
 export interface ProductSnapshot {
@@ -25,6 +31,9 @@ export interface ProductSnapshot {
     | 'disconnect'
     | 'sign-out'
     | 'global'
+    | 'mcp-save'
+    | 'mcp-delete'
+    | 'mcp-toggle'
     | null
   starting: boolean
   plans: Plans | null
@@ -41,12 +50,21 @@ export interface ProductSnapshot {
     toolkit: string
     label: string
   } | null
-  feedback: 'connectionSuccess' | 'disconnectSuccess' | null
+  feedback: 'connectionSuccess' | 'disconnectSuccess' | 'mcpSaved' | 'mcpDeleted' | 'mcpTick' | null
   modelFailed: boolean
   initializingModel: boolean
   browserBlocked: boolean
   navigationFailed: boolean
   authorizationIds: ConnectionId[]
+  /** User-defined MCP servers with their live state; `null` until the first read settles. */
+  mcpServers: CustomMcpServerView[] | null
+  loadingMcp: boolean
+  mcpFailed: boolean
+  /** Result of the last connection test, shown in the editor; `null` when none ran. */
+  mcpProbe: McpServerProbe | null
+  probingMcp: boolean
+  /** Host-supplied reason the last MCP write or read failed; `null` when none did. */
+  mcpError: string | null
 }
 /** Host calls and external navigation required by the product presenter. */
 export interface ProductApi {
@@ -99,6 +117,36 @@ export interface ProductApi {
    * @returns after model setup succeeds or its retry state is published.
    */
   initializeModel(this: void): Promise<boolean>
+  /**
+   * Read every user-defined MCP server with its live connection state.
+   * @returns the owned definitions, or a credential-free failure category.
+   */
+  mcpServers(this: void): Promise<McpResult<CustomMcpServerView[]>>
+  /**
+   * Create or replace one user-defined MCP server.
+   * @param input - complete definition; non-empty header and env values are stored as credentials.
+   * @returns the stored definition with its live state.
+   */
+  saveMcpServer(this: void, input: McpServerInput): Promise<McpResult<CustomMcpServerView>>
+  /**
+   * Remove one user-defined MCP server and withdraw its tools.
+   * @param name - server key.
+   * @returns after the Host confirms removal.
+   */
+  deleteMcpServer(this: void, name: string): Promise<McpResult<null>>
+  /**
+   * Connect or disconnect one stored definition without editing it.
+   * @param name - server key.
+   * @param enabled - whether the server should hold a live connection.
+   * @returns the stored definition with its live state.
+   */
+  setMcpEnabled(this: void, name: string, enabled: boolean): Promise<McpResult<CustomMcpServerView>>
+  /**
+   * Test a definition without saving it.
+   * @param input - complete definition to try.
+   * @returns the probe outcome, including advertised tool names.
+   */
+  probeMcpServer(this: void, input: McpServerInput, signal?: AbortSignal): Promise<McpResult<McpServerProbe>>
 }
 const initial = (): ProductSnapshot => ({
   view: null,
@@ -123,6 +171,12 @@ const initial = (): ProductSnapshot => ({
   browserBlocked: false,
   navigationFailed: false,
   authorizationIds: [],
+  mcpServers: null,
+  loadingMcp: false,
+  mcpFailed: false,
+  mcpProbe: null,
+  probingMcp: false,
+  mcpError: null,
 })
 
 /** Each account generation owns its outstanding reads and actions. */
@@ -135,6 +189,9 @@ export class ProductModel {
   private profileRequest: Promise<void> | undefined
   private planRequest: Promise<void> | undefined
   private connectionRequest: Promise<void> | undefined
+  private mcpRequest: Promise<void> | undefined
+  /** Bumped by every MCP write, so a read that started before it never publishes. */
+  private mcpRead = 0
   private initiated: SignInAttemptId | undefined
   private opened: SignInAttemptId | undefined
   private disposed = false
@@ -185,6 +242,7 @@ export class ProductModel {
     this.profileRequest = undefined
     this.planRequest = undefined
     this.connectionRequest = undefined
+    this.mcpRequest = undefined
     this.state.set(initial())
   }
   /**
@@ -222,6 +280,7 @@ export class ProductModel {
       this.profileRequest = undefined
       this.planRequest = undefined
       this.connectionRequest = undefined
+      this.mcpRequest = undefined
     }
     this.patch({
       view,
@@ -245,6 +304,12 @@ export class ProductModel {
           authorizationIds: [],
           navigationFailed: false,
           browserBlocked: false,
+          mcpServers: null,
+          loadingMcp: false,
+          mcpFailed: false,
+          mcpProbe: null,
+          probingMcp: false,
+          mcpError: null,
         }
         : {}),
     })
@@ -379,11 +444,13 @@ export class ProductModel {
           this.generation++
           this.planRequest = undefined
           this.connectionRequest = undefined
+          this.mcpRequest = undefined
           this.patch({ plans: null, connections: null })
         }
         this.patch({ profile, accountFailed: false })
         void this.loadPlans()
         void this.loadConnections()
+        void this.loadMcpServers()
         if (previous === null) void this.initializeModel()
       } catch (_error) {
         if (generation === this.generation) this.patch({ accountFailed: true })
@@ -491,6 +558,152 @@ export class ProductModel {
     )
   }
   /**
+   * Read the owned MCP definitions and join a read already in flight.
+   * @returns after the current account's definition read settles.
+   */
+  loadMcpServers(): Promise<void> {
+    if (this.mcpRequest) return this.mcpRequest
+    const generation = this.generation
+    const read = ++this.mcpRead
+    this.patch({ loadingMcp: true, mcpFailed: false })
+    const task = (async () => {
+      try {
+        const result = await this.api.mcpServers()
+        if (generation !== this.generation || read !== this.mcpRead) return
+        if (result.ok)
+          this.patch({ mcpServers: result.data, loadingMcp: false, mcpError: null })
+        else
+          this.patch({ mcpFailed: true, loadingMcp: false, mcpError: result.message })
+      } catch (_error) {
+        if (generation === this.generation && read === this.mcpRead)
+          this.patch({ mcpFailed: true, loadingMcp: false })
+      }
+    })().finally(() => {
+      if (this.mcpRequest === task) this.mcpRequest = undefined
+    })
+    this.mcpRequest = task
+    return task
+  }
+  /**
+   * Re-read after a write. A read already in flight started before the write,
+   * so it must not publish its stale answer.
+   * @returns after the fresh read settles.
+   */
+  private reloadMcpServers(): Promise<void> {
+    this.mcpRead += 1
+    this.mcpRequest = undefined
+    return this.loadMcpServers()
+  }
+  /**
+   * Create or replace one definition, then reconcile the confirmed list.
+   * @param input - complete definition; secret values are stored by the Host.
+   * @returns whether the Host stored the definition.
+   */
+  async saveMcpServer(input: McpServerInput): Promise<boolean> {
+    if (this.state.getSnapshot().busy !== null) return false
+    const generation = this.generation
+    this.patch({ busy: 'mcp:save', actionFailed: null, feedback: null, mcpProbe: null })
+    try {
+      const result = await this.api.saveMcpServer(input)
+      if (generation !== this.generation) return false
+      if (!result.ok) {
+        this.patch({ actionFailed: 'mcp-save', mcpError: result.message })
+        return false
+      }
+      this.patch({ feedback: 'mcpSaved', mcpProbe: null, mcpError: null })
+      await this.reloadMcpServers()
+      return true
+    } catch (_error) {
+      if (generation === this.generation) this.patch({ actionFailed: 'mcp-save' })
+      return false
+    } finally {
+      if (generation === this.generation) this.patch({ busy: null })
+    }
+  }
+  /**
+   * Remove one definition and withdraw its tools.
+   * @param name - server key.
+   * @returns whether the Host confirmed removal.
+   */
+  async deleteMcpServer(name: string): Promise<boolean> {
+    if (this.state.getSnapshot().busy !== null) return false
+    const generation = this.generation
+    this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null })
+    try {
+      const result = await this.api.deleteMcpServer(name)
+      if (generation !== this.generation) return false
+      if (!result.ok) {
+        this.patch({ actionFailed: 'mcp-delete', mcpError: result.message })
+        return false
+      }
+      this.patch({ feedback: 'mcpDeleted', mcpProbe: null, mcpError: null })
+      await this.reloadMcpServers()
+      return true
+    } catch (_error) {
+      if (generation === this.generation) this.patch({ actionFailed: 'mcp-delete' })
+      return false
+    } finally {
+      if (generation === this.generation) this.patch({ busy: null })
+    }
+  }
+  /**
+   * Connect or disconnect one stored definition without editing it.
+   * @param name - server key.
+   * @param enabled - whether the server should hold a live connection.
+   * @returns whether the Host applied the change.
+   */
+  async setMcpEnabled(name: string, enabled: boolean): Promise<boolean> {
+    if (this.state.getSnapshot().busy !== null) return false
+    const generation = this.generation
+    this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null })
+    try {
+      const result = await this.api.setMcpEnabled(name, enabled)
+      if (generation !== this.generation) return false
+      if (!result.ok) {
+        this.patch({ actionFailed: 'mcp-toggle', mcpError: result.message })
+        return false
+      }
+      this.patch({ feedback: enabled ? 'mcpTick' : null, mcpError: null })
+      await this.reloadMcpServers()
+      return true
+    } catch (_error) {
+      if (generation === this.generation) this.patch({ actionFailed: 'mcp-toggle' })
+      return false
+    } finally {
+      if (generation === this.generation) this.patch({ busy: null })
+    }
+  }
+  /**
+   * Test one definition without saving it.
+   * @param input - complete definition to try.
+   * @returns whether the probe ran; its outcome is published either way.
+   */
+  async probeMcpServer(input: McpServerInput): Promise<boolean> {
+    if (this.state.getSnapshot().probingMcp) return false
+    const generation = this.generation
+    this.patch({ probingMcp: true, mcpProbe: null, mcpError: null })
+    try {
+      const result = await this.api.probeMcpServer(input)
+      if (generation !== this.generation) return false
+      this.patch(
+        result.ok
+          ? { probingMcp: false, mcpProbe: result.data, mcpError: null }
+          : { probingMcp: false, mcpProbe: null, mcpError: result.message },
+      )
+      return result.ok
+    } catch (_error) {
+      if (generation === this.generation)
+        this.patch({ probingMcp: false, mcpProbe: null, mcpError: null })
+      return false
+    }
+  }
+  /**
+   * Drop the last probe outcome when the editor closes or its definition changes.
+   */
+  clearMcpProbe(): void {
+    this.patch({ mcpProbe: null, mcpError: null })
+  }
+  /**
    * Expire completed browser handoff budgets before scheduling another read.
    * @param now - current wall-clock milliseconds.
    * @returns whether a bounded reconciliation is still active.
@@ -503,7 +716,12 @@ export class ProductModel {
       this.state.getSnapshot().handoff !== null ||
       (now < this.pendingUntil &&
         state.connections?.accounts.some(a => a.status === 'pending') ===
-          true)
+          true) ||
+      state.mcpServers?.some(
+        server =>
+          server.status.state === 'connecting' ||
+          server.status.state === 'reconnecting',
+      ) === true
     )
   }
   private async action(
