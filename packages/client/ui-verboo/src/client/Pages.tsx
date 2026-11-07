@@ -3,9 +3,10 @@ import { Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PageProps, ProductProps } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
 import { PageHead } from './PageParts.tsx'
+import { StaminaDebugToggle, type StaminaDebugProps } from './StaminaDebug.tsx'
 import css from './Product.module.css'
 /** Preferences are an ordinary page. Destructive session changes use one accessible confirmation. */
-export function PreferencesPage(props: PageProps) {
+export function PreferencesPage(props: PageProps & StaminaDebugProps) {
   const state = props.useProduct(s => s)
   const preference = props.usePreferences(s => s)
   const [signOut, setSignOut] = useState(false)
@@ -77,6 +78,7 @@ export function PreferencesPage(props: PageProps) {
             ))}
           </select>
         </div>
+        <StaminaDebugToggle {...props} />
         <button className={css.helpLink} onClick={props.help}>
           {props.t('help')}
           <Glyph name="arrow-up-right" size={16} />

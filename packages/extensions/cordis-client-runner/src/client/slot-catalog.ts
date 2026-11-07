@@ -995,6 +995,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-chat UsagePill id \'usage\'',
       'client-ui-verboo OmittedDiagnostic',
       'client-ui-verboo ExecutionStatus id \'verboo.execution\'',
+      'client-ui-verboo StaminaDebug id \'verboo.stamina-debug\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer.dock\', () => ctx.slots.register(\n      { name: \'conversation.composer.dock\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

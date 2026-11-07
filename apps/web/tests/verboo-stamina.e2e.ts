@@ -17,10 +17,14 @@ const PLAN = '00000000-0000-4000-8000-000000000001'
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const EXPECTED = join(ROOT, 'apps/web/tests/expected/verboo-stamina')
 const MODE = webSnapshotMode()
+const DEBUG = process.env.VERBOO_STAMINA_DEBUG_QA === '1'
 const ARTIFACTS = process.env.STAMINA_QA_DIR ?? join(tmpdir(), 'verboo-stamina-v2-qa')
 
 async function platformFixture() {
-  const state = { enrolled: true, down: false, holdNext: false, reads: 0, held: undefined as (() => void) | undefined }
+  const state = {
+    enrolled: true, down: false, holdNext: false, reads: 0,
+    level: undefined as number | undefined, held: undefined as (() => void) | undefined,
+  }
   const respond = (res: ServerResponse, status: number, body: unknown) => {
     if (res.destroyed) return
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
@@ -34,7 +38,7 @@ async function platformFixture() {
     if (req.url === '/api/me/stamina') {
       state.reads++
       const row = {
-        groupId: PLAN, groupName: 'Unlimited', remainingPercent: account === ACCOUNT_A ? 50 : 100,
+        groupId: PLAN, groupName: 'Unlimited', remainingPercent: state.level ?? (account === ACCOUNT_A ? 50 : 100),
         nextOutputTps: account === ACCOUNT_A ? 67 : 200, recovering: false, fullAt: null,
         accountingPending: false, asOf: new Date().toISOString(),
       }
@@ -98,9 +102,6 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     apiOrigin: ${JSON.stringify(platform.origin)}
     routerBaseURL: ${JSON.stringify(platform.origin + '/router/v1')}
     allowLoopbackHttp: true
-- id: ui-verboo
-  config:
-    staminaRefreshIntervalMs: 1000
 - id: agent-default-model
   config:
     provider: deepseek-official
@@ -113,15 +114,14 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
         apiOrigin: ${JSON.stringify(platform.origin)}
 `)
     scaffold = await launchWebScaffold({
-      profile: { hmr: false, packages: [] },
+      profile: { hmr: false, packages: [{ dir: join(ROOT, 'packages/bundle/verboo-app'), enabled: true }] },
       welcomeNoticePending: true,
       replayFixture: join(ROOT, 'apps/web/tests/fixtures/model-badge/session.v4.jsonl'),
       replayProvidersOnly: true,
       replayProviders: ['deepseek-account', 'deepseek-official'].map(id => ({
         id, name: 'Verboo Code fixture', models: [{ id: 'deepseek-v4-flash', name: 'Fixture model', contextWindow: 128000 }],
       })),
-      extraOverlayPath: [join(ROOT, 'packages/bundle/verboo-app/cordis.patch.yml'), join(ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), overlay],
-      extraInstallAnchors: [join(ROOT, 'packages/bundle/verboo-app/package.json')],
+      extraOverlayPath: [join(ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), overlay],
     })
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
     await seedSession(scaffold, await readFile(session, 'utf8'), 'stamina-history')
@@ -130,6 +130,14 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     page.setDefaultTimeout(10000)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
+    if (DEBUG) {
+      await page.getByRole('button', { name: /^(Preferences|Preferências)$/ }).click()
+      await page.getByRole('checkbox', { name: 'Stamina (debug)' }).click()
+      await page.waitForFunction(() => {
+        const input = document.querySelector<HTMLInputElement>('input[type=checkbox]')
+        return input?.checked && !input.disabled
+      })
+    }
   }, 120000)
   afterEach(async ({ task }) => {
     if (task.result?.state !== 'fail' || !page) return
@@ -184,6 +192,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     expect(await primary.isDisabled()).toBe(true)
     expect(await page.locator('[data-slot="conversation.input.right"] [data-verboo-stamina]').count()).toBe(0)
     expect(await primary.textContent()).toBe('')
+    expect(await page.locator('[data-verboo-stamina-debug]').count()).toBe(DEBUG ? 1 : 0)
     await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-composer-primary]', scaffold.workspaceCwd), MODE)
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 960 })
@@ -252,4 +261,46 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await expect.poll(() => region.getByRole('progressbar').getAttribute('value')).toBe('100')
     expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
   })
+  it.skipIf(!DEBUG)('shows exact server percentages and fresh timestamps in debug mode', async () => {
+    await navigate(/^(Workspace|Área de trabalho)$/)
+    await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
+    const debug = page.locator('[data-verboo-stamina-debug]')
+    await debug.waitFor()
+    try {
+      platform.state.level = 99.9987654321
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('99.9987654321%')
+      const previous = await debug.locator('time').first().getAttribute('datetime')
+      await debug.getByRole('button', { name: /^(Refresh|Atualizar)$/ }).click()
+      await expect.poll(() => debug.locator('time').first().getAttribute('datetime'), { timeout: 10000 }).not.toBe(previous)
+      platform.state.level = 25.125
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('25.125%')
+      expect(await debug.textContent()).not.toMatch(/tok\/s|tokens\/s|\bTPS\b/)
+      const liquid = page.locator('[data-verboo-stamina-liquid]')
+      await expect.poll(async () => {
+        const water = await liquid.locator('[data-stamina-water]').boundingBox()
+        const circle = await liquid.boundingBox()
+        return water!.height / circle!.height
+      }).toBeCloseTo(0.25125, 2)
+      await page.screenshot({ path: join(ARTIFACTS, 'debug-server-reading.png'), animations: 'disabled' })
+      await page.setViewportSize({ width: 390, height: 960 })
+      await page.locator('[data-sidebar-drawer][data-sidebar-collapsed]').waitFor({ state: 'attached' })
+      const debugBox = await debug.boundingBox()
+      expect(debugBox!.x).toBeGreaterThanOrEqual(0)
+      expect(debugBox!.x + debugBox!.width).toBeLessThanOrEqual(390)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.screenshot({ path: join(ARTIFACTS, 'debug-server-reading-compact.png'), animations: 'disabled' })
+      await navigate(/^(Preferences|Preferências)$/)
+      const toggle = page.getByRole('checkbox', { name: 'Stamina (debug)' })
+      await toggle.click()
+      await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
+      await page.reload({ waitUntil: 'load' })
+      await navigate(/^(Preferences|Preferências)$/)
+      await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
+      await toggle.click()
+      await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(true)
+    } finally {
+      platform.state.level = undefined
+    }
+  })
+
 })

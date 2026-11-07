@@ -3,9 +3,9 @@ import type { ExecutionProps } from './contracts.ts'
 import css from './Product.module.css'
 
 /**
- * Accessible execution feedback beside the composer, with no idle chrome.
+ * Accessible connection and attention feedback without duplicating normal work.
  * @param props - Renderer-bound Session, interaction and transport selectors.
- * @returns A localized live status when work or attention is pending; nothing while idle.
+ * @returns A localized status for connection or attention; nothing for normal work or idle.
  */
 export function ExecutionStatus(props: Pick<ExecutionProps, 'useExecutionConnection' | 'useSession' | 'useSessionStatus' | 'sessionId' | 't'>) {
   const connection = props.useExecutionConnection(state => state)
@@ -18,7 +18,7 @@ export function ExecutionStatus(props: Pick<ExecutionProps, 'useExecutionConnect
           : session.awaitingFirstTurn ? 'starting'
             : session.running ? 'working'
               : session.lastAgentError !== null || session.promptError !== null ? 'error' : 'idle'
-  if (state === 'idle') return null
+  if (state === 'idle' || state === 'working') return null
   const labels = { connecting: 'executionConnecting', reconnecting: 'executionReconnecting', error: 'executionError', loading: 'loading', waiting: 'executionWaiting', starting: 'executionStarting', working: 'executionWorking' } as const
   return (
     <div className={css.executionStatus} data-verboo-execution={state} role="status" aria-live="polite" aria-atomic="true">

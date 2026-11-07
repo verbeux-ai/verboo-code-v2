@@ -94,6 +94,9 @@
     },
     {
       "path": "../../api/verboo-mcp"
+    },
+    {
+      "path": "../ui-settings/tsconfig.client.json"
     }
   ]
 }

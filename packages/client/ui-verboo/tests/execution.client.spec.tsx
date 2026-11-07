@@ -33,24 +33,24 @@ function fixture(locale = 'pt') {
   return { reading, props }
 }
 describe('conversation execution state', () => {
-  it('occupies no space while idle and shows feedback only when the Session starts', () => {
+  it('keeps idle and normal work out of the composer status area', () => {
     const { reading, props } = fixture()
     const view = render(<ExecutionStatus {...props} />)
     expect(screen.queryByRole('status')).toBeNull()
     expect(view.container.innerHTML).toBe('')
     reading.session = { ...reading.session, running: true }
     view.rerender(<ExecutionStatus {...props} />)
-    expect(screen.getByRole('status').textContent).toBe('Trabalhando')
+    expect(screen.queryByRole('status')).toBeNull()
     reading.session = { ...reading.session, running: false }
     view.rerender(<ExecutionStatus {...props} />)
     expect(screen.queryByRole('status')).toBeNull()
     expect(view.container.innerHTML).toBe('')
   })
-  it('keeps a still-running Session working when a previous action reports an error', () => {
+  it('does not flash a previous run error while the current Session is running', () => {
     const { reading, props } = fixture()
     reading.session = { ...reading.session, running: true, lastAgentError: 'previous run error' }
     render(<ExecutionStatus {...props} />)
-    expect(screen.getByRole('status').textContent).toBe('Trabalhando')
+    expect(screen.queryByRole('status')).toBeNull()
   })
   it('never claims confirmed idle or working while reconnecting', () => {
     const { reading, props } = fixture()
@@ -87,6 +87,7 @@ describe('conversation execution state', () => {
   it.each(['pt', 'en', 'zh'])('announces changes accessibly in %s', (locale) => {
     const { props, reading } = fixture(locale)
     reading.session = { ...reading.session, running: true }
+    reading.waiting = true
     render(<ExecutionStatus {...props} />)
     expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
     expect(screen.getByRole('status').textContent).toMatchSnapshot()

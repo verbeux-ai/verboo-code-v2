@@ -6,3 +6,5 @@ Match the Verboo Code web app's visual identity: near-black neutral surfaces, lo
 
 
 Show stamina as water inside the existing Send/Stop button, with a thin purple circular ring around it. Keep the arrow, actions, disabled state and keyboard focus owned by the composer. Do not add a separate stamina bar or control beside the model. Keep inference speeds and rate ceilings out of the interface, tooltips and accessibility labels. Respect reduced motion.
+
+Keep the normal Working label out of the composer; retain waiting, connection and error feedback. Opt-in staminaDebug diagnostics may show exact server percentages, plan names and server reading times, but never inference rates or financial reserves. Normal mode keeps these diagnostics hidden.

@@ -28,6 +28,8 @@ import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
+import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
@@ -48,6 +50,7 @@ declare global {
 }
 export const inject = [
   'slots',
+  'configForms',
   'layout',
   'uiWorkspace',
   'workspaces',
@@ -326,6 +329,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       )
     },
   })
+  const debugConfig = ctx.configForms.get<Pick<Config, 'staminaDebug'>>('ui-verboo')
+  const debugActions: StaminaDebugInjected = {
+    hooks: { staminaDebug: debugConfig },
+    refreshStamina: () => { stamina.refresh() },
+    async setStaminaDebug(enabled) {
+      try { return await debugConfig.set('staminaDebug', enabled) }
+      catch (_error) { return false } // The toggle reports an unsuccessful Host write inline.
+    },
+  }
+  const debugFace = () => {
+    const product = face()
+    return { ...product, ...debugActions, hooks: { ...product.hooks, ...debugActions.hooks } }
+  }
   ctx.remoteAccess.whenAccess('account/watch', function* () {
     const stream = ctx.remote.$stream<AccountView>({
       name: 'verboo-account',
@@ -446,6 +462,15 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       StaminaButtonFill,
     ),
   )
+  ctx.slots.inject('conversation.composer.dock', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.composer.dock', id: 'verboo.stamina-debug', order: 20, locale: 'verboo',
+        inject: debugFace,
+      },
+      StaminaDebug,
+    ),
+  )
   ctx.slots.inject('main', function* () {
     yield ctx.slots.register(
       {
@@ -465,7 +490,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         name: 'main',
         key: 'verboo.preferences',
         locale: 'verboo',
-        inject: face,
+        inject: debugFace,
       },
       PreferencesPage,
     )
