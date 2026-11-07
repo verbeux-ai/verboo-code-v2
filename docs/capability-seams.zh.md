@@ -9,10 +9,12 @@
 
 ```mermaid
 flowchart LR
-  pkg_api_verboo_product["api-verboo-product"]
-  svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
+  pkg_api_verboo_mcp["api-verboo-mcp"]
+  svc_verbooMcp["ctx.verbooMcp<br/>Verboo account MCP servers"]
   pkg_client_ui_verboo["client-ui-verboo"]
   pkg_verboo_connections["verboo-connections"]
+  pkg_api_verboo_product["api-verboo-product"]
+  svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -336,6 +338,7 @@ flowchart LR
   pkg_api_settings_controller --> svc_credentialsController
   pkg_api_settings_controller --> svc_settingsController
   pkg_api_terminal_controller --> svc_terminalController
+  pkg_api_verboo_mcp --> svc_verbooMcp
   pkg_api_verboo_product --> svc_verbooProduct
   pkg_api_workspace_controller --> svc_directoryPickerController
   pkg_api_workspace_controller --> svc_workspaceController
@@ -634,6 +637,8 @@ flowchart LR
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
+  svc_verbooMcp --> pkg_client_ui_verboo
+  svc_verbooMcp --> pkg_verboo_connections
   svc_verbooProduct --> pkg_client_ui_verboo
   svc_verbooProduct --> pkg_verboo_connections
   svc_web --> pkg_tool_web
@@ -658,6 +663,7 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | 按账号存储服务器定义，并协调使用凭据的 MCP 注册。 |
 | `ctx.verbooProduct` | `service` | [`api-verboo-product`](../packages/api/verboo-product) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | 读取当前账号的方案和连接，并将已连接工具的操作交给 Verboo 中央 API。 |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | 负责卡片工具、卡片状态、用户操作和状态通知；各卡片种类注册自己的动作和处理器。 |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | 读取官方插件卡片的当前目录文本，并在用户点击后通过配置插件管理器启用该插件。 |

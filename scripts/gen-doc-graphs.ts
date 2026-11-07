@@ -108,6 +108,11 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'verbooMcp', pkg: 'api-verboo-mcp', title: 'Verboo account MCP servers', mode: 'service',
+    consumers: ['client-ui-verboo', 'verboo-connections'],
+    note: 'Stores account-owned server definitions and reconciles their credential-backed MCP registrations.',
+  },
+  {
     key: 'verbooProduct', pkg: 'api-verboo-product', title: 'Verboo account product API', mode: 'service',
     consumers: ['client-ui-verboo', 'verboo-connections'],
     note: 'Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API.',

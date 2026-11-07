@@ -205,6 +205,65 @@ register(server: string, provider: McpResourceProvider): () => void
 
 Source: [`packages/mcp/mcp-resources/src/index.ts`](../../packages/mcp/mcp-resources/src/index.ts)
 
+<a id="ctxverboomcp--verboomcpservers"></a>
+
+### `ctx.verbooMcp` — `VerbooMcpServers`
+
+The user-defined MCP server service. Definitions live in a `per-record` storage domain; each mounted definition owns one `ctx.mcpManager.register()` disposer, so reconciliation adds and withdraws servers without touching manager-configured ones.
+
+```ts cordis-catalog
+/**
+ * Mount every enabled definition and withdraw every disabled or removed one.
+ * @returns after the manager accepted every registration change.
+ */
+async reconcile(): Promise<void>
+
+/**
+ * List this account's definitions with their live state.
+ * @returns every stored definition in name order.
+ */
+@Remote('list') async listFromClient(): Promise<McpResult<CustomMcpServerView[]>>
+
+/**
+ * Create or replace one definition.
+ * @param input - submitted definition; non-empty header and environment values are stored as credentials.
+ * @returns the stored definition with its live state.
+ */
+@Remote('save') async saveFromClient(input: McpServerInput): Promise<McpResult<CustomMcpServerView>>
+
+/**
+ * Connect or disconnect one stored definition without editing it.
+ * @param name - server key.
+ * @param enabled - whether the definition should hold a live connection.
+ * @returns the stored definition with its live state.
+ */
+@Remote('setEnabled') async setEnabledFromClient( name: string, enabled: boolean, ): Promise<McpResult<CustomMcpServerView>>
+
+/**
+ * Remove one definition and withdraw its tools.
+ * @param name - server key.
+ * @returns `null` after the Host confirmed removal.
+ */
+@Remote('removeServer') async removeFromClient(name: string): Promise<McpResult<null>>
+
+/**
+ * Test one definition without saving it.
+ * @param input - submitted definition; its secret values are used for this probe only.
+ * @param signal - caller cancellation.
+ * @returns the probe outcome, including advertised tool names.
+ */
+@Remote('probe') async probeFromClient( input: McpServerInput, signal: AbortSignal, ): Promise<McpResult<McpServerProbe>>
+
+/**
+ * The definitions as the Agent tool layer reports them, each with the
+ * blocking condition when it is unusable.
+ * @returns one summary per stored definition in name order.
+ */
+async summaries(): Promise<VerbooMcpServerSummary[]>
+```
+
+Source: [`packages/api/verboo-mcp/src/index.ts`](../../packages/api/verboo-mcp/src/index.ts)
+
 <a id="mcp-manager-events"></a>
 
 ### `mcp-manager/*` events

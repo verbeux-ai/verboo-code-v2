@@ -29,6 +29,8 @@
     // under its own tsconfig boundary.
     "paths": {
       "@deepseek-ai/dsh-api-verboo-product": ["./packages/api/verboo-product/src/index.ts"],
+      "@deepseek-ai/dsh-api-verboo-mcp": ["./packages/api/verboo-mcp/src/index.ts"],
+      "@deepseek-ai/dsh-api-verboo-mcp/types": ["./packages/api/verboo-mcp/src/types.ts"],
       "@deepseek-ai/dsh-api-verboo-product/types": ["./packages/api/verboo-product/src/types.ts"],
       "@deepseek-ai/dsh-client-ui-verboo": ["./packages/client/ui-verboo/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-verboo/client": ["./packages/client/ui-verboo/src/client/index.ts"],

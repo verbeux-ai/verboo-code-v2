@@ -4276,6 +4276,55 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'verbooMcp',
+    summary: 'The user-defined MCP server service.',
+    description: 'The user-defined MCP server service. Definitions live in a `per-record` storage domain; each mounted definition owns one `ctx.mcpManager.register()` disposer, so reconciliation adds and withdraws servers without touching manager-configured ones.',
+    methods: [
+      {
+        signature: 'async reconcile(): Promise<void>',
+        description: 'Mount every enabled definition and withdraw every disabled or removed one.',
+        parameters: [],
+        returns: 'after the manager accepted every registration change.',
+      },
+      {
+        signature: '@Remote(\'list\') async listFromClient(): Promise<McpResult<CustomMcpServerView[]>>',
+        description: 'List this account\'s definitions with their live state.',
+        parameters: [],
+        returns: 'every stored definition in name order.',
+      },
+      {
+        signature: '@Remote(\'save\') async saveFromClient(input: McpServerInput): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Create or replace one definition.',
+        parameters: [{ name: 'input', description: 'submitted definition; non-empty header and environment values are stored as credentials.' }],
+        returns: 'the stored definition with its live state.',
+      },
+      {
+        signature: '@Remote(\'setEnabled\') async setEnabledFromClient( name: string, enabled: boolean, ): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Connect or disconnect one stored definition without editing it.',
+        parameters: [{ name: 'name', description: 'server key.' }, { name: 'enabled', description: 'whether the definition should hold a live connection.' }],
+        returns: 'the stored definition with its live state.',
+      },
+      {
+        signature: '@Remote(\'removeServer\') async removeFromClient(name: string): Promise<McpResult<null>>',
+        description: 'Remove one definition and withdraw its tools.',
+        parameters: [{ name: 'name', description: 'server key.' }],
+        returns: '`null` after the Host confirmed removal.',
+      },
+      {
+        signature: '@Remote(\'probe\') async probeFromClient( input: McpServerInput, signal: AbortSignal, ): Promise<McpResult<McpServerProbe>>',
+        description: 'Test one definition without saving it.',
+        parameters: [{ name: 'input', description: 'submitted definition; its secret values are used for this probe only.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the probe outcome, including advertised tool names.',
+      },
+      {
+        signature: 'async summaries(): Promise<VerbooMcpServerSummary[]>',
+        description: 'The definitions as the Agent tool layer reports them, each with the blocking condition when it is unusable.',
+        parameters: [],
+        returns: 'one summary per stored definition in name order.',
+      },
+    ],
+  },
+  {
     key: 'verbooProduct',
     summary: 'Every request captures its owning login before I/O and fences its response.',
     description: 'Every request captures its owning login before I/O and fences its response.',
@@ -6268,6 +6317,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CuaSystemPermissionState {\n    accessibility: boolean;\n    screenRecording: boolean;\n    helper: CuaPermissionProcess;\n    parent: CuaPermissionProcess;\n    launchApplication?: {\n        name: string;\n        path: string;\n        icon?: string | undefined;\n    } | undefined;\n}',
   },
   {
+    name: 'CustomMcpServer',
+    declaration: 'export interface CustomMcpServer {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headerNames: string[];\n    command: string;\n    args: string[];\n    envNames: string[];\n    enabled: boolean;\n    credentialRefs: string[];\n    createdAt: string;\n    updatedAt: string;\n}',
+  },
+  {
+    name: 'CustomMcpServerView',
+    declaration: 'export interface CustomMcpServerView extends CustomMcpServer {\n    status: CustomMcpStatus;\n}',
+  },
+  {
+    name: 'CustomMcpStatus',
+    declaration: 'export interface CustomMcpStatus {\n    state: \'connected\' | \'connecting\' | \'reconnecting\' | \'waiting-credentials\' | \'disabled\' | \'failed\' | \'unknown\';\n    toolCount: number;\n    lastError: string;\n    missing: string[];\n}',
+  },
+  {
     name: 'DailyInput',
     declaration: 'export interface DailyInput {\n    readonly time: string;\n    readonly time_zone: string;\n}',
   },
@@ -7268,8 +7329,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
   },
   {
+    name: 'McpServerInput',
+    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headers: Record<string, string>;\n    command: string;\n    args: string[];\n    env: Record<string, string>;\n    enabled: boolean;\n}',
+  },
+  {
+    name: 'McpServerProbe',
+    declaration: 'export interface McpServerProbe {\n    ok: boolean;\n    stage: \'connect\' | \'list\' | null;\n    message: string | null;\n    serverName: string | null;\n    serverVersion: string | null;\n    toolNames: string[];\n    truncated: boolean;\n    durationMs: number;\n}',
+  },
+  {
     name: 'McpServerRegistration',
     declaration: 'export type McpServerRegistration = Omit<EntryInput, \'enabled\'>;',
+  },
+  {
+    name: 'McpTransport',
+    declaration: 'export type McpTransport = \'stdio\' | \'streamable-http\';',
   },
   {
     name: 'Mergeability',
@@ -10034,6 +10107,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends MessageBase {\n    readonly role: \'user\';\n}',
+  },
+  {
+    name: 'VerbooMcpServerSummary',
+    declaration: 'export interface VerbooMcpServerSummary {\n    name: string;\n    transport: McpTransport;\n    target: string;\n    enabled: boolean;\n    state: string;\n    toolCount: number;\n    problem: string;\n}',
   },
   {
     name: 'VerifiedWebhookDelivery',

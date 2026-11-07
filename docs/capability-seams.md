@@ -7,10 +7,12 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
-  pkg_api_verboo_product["api-verboo-product"]
-  svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
+  pkg_api_verboo_mcp["api-verboo-mcp"]
+  svc_verbooMcp["ctx.verbooMcp<br/>Verboo account MCP servers"]
   pkg_client_ui_verboo["client-ui-verboo"]
   pkg_verboo_connections["verboo-connections"]
+  pkg_api_verboo_product["api-verboo-product"]
+  svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -334,6 +336,7 @@ flowchart LR
   pkg_api_settings_controller --> svc_credentialsController
   pkg_api_settings_controller --> svc_settingsController
   pkg_api_terminal_controller --> svc_terminalController
+  pkg_api_verboo_mcp --> svc_verbooMcp
   pkg_api_verboo_product --> svc_verbooProduct
   pkg_api_workspace_controller --> svc_directoryPickerController
   pkg_api_workspace_controller --> svc_workspaceController
@@ -632,6 +635,8 @@ flowchart LR
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
+  svc_verbooMcp --> pkg_client_ui_verboo
+  svc_verbooMcp --> pkg_verboo_connections
   svc_verbooProduct --> pkg_client_ui_verboo
   svc_verbooProduct --> pkg_verboo_connections
   svc_web --> pkg_tool_web
@@ -656,6 +661,7 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Stores account-owned server definitions and reconciles their credential-backed MCP registrations. |
 | `ctx.verbooProduct` | `service` | [`api-verboo-product`](../packages/api/verboo-product) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |

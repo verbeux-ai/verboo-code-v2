@@ -339,6 +339,31 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-mcp -->
+<a id="deepseek-aidsh-api-verboo-mcp"></a>
+
+## `@deepseek-ai/dsh-api-verboo-mcp`
+
+- `inject`: `credentials` · `mcpManager` · `storageDomain`
+- `source`: [`packages/api/verboo-mcp/src/index.ts:59`](../packages/api/verboo-mcp/src/index.ts)
+
+```ts config-catalog
+/** Resolved user-defined MCP server configuration. */
+export interface Config {
+  /** Budget for one connection attempt plus its initial tool discovery. */
+  startupTimeoutMs?: number
+  /** Budget for one tool call on a user-defined server. */
+  toolCallTimeoutMs?: number
+  /** Budget for one probe, including tool listing. */
+  probeTimeoutMs?: number
+  /** Most tool names one probe reports back. */
+  probeMaxToolNames?: number
+  /** Highest number of definitions one account may store. */
+  maxServers?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-mcp -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-product -->
 <a id="deepseek-aidsh-api-verboo-product"></a>
 
