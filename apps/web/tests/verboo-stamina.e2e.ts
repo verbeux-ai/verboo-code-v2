@@ -152,6 +152,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       const region = page.locator('[data-verboo-page="plan"] [data-verboo-stamina]')
       await region.getByRole('progressbar').waitFor()
       expect(await region.getByRole('progressbar').getAttribute('value')).toBe('50')
+      expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
       await compareOrRefreshGolden(join(EXPECTED, `plan-${locale}.expected.md`), await captureStableAria(page, '[data-verboo-page="plan"] [data-verboo-stamina]', scaffold.workspaceCwd), MODE)
       for (const theme of ['light', 'dark'] as const) {
         await page.emulateMedia({ colorScheme: theme })
@@ -168,24 +169,22 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       }
     }
   })
-  it('places a horizontal stamina bar immediately before the model selector', async () => {
-    await page.setViewportSize({ width: 1280, height: 960 })
+  it('surrounds Send with a purple ring while retaining the water inside', async () => {
+    await navigate(/^(Preferences|Preferências)$/)
+    await page.getByLabel(/^(Language|Idioma)$/).selectOption('en')
     await navigate(/^(Workspace|Área de trabalho)$/)
     await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
-    const meter = page.getByRole('meter', { name: /^(Stamina|耐力)$/ })
-    const liquid = meter.locator('[data-verboo-stamina-liquid]')
+    const primary = page.locator('[data-composer-primary]')
+    const liquid = primary.locator('[data-verboo-stamina-liquid]')
+    const ring = primary.locator('[data-stamina-ring]')
     const model = page.locator('[data-slot="conversation.input.model"] button[aria-haspopup="menu"]').first()
-    const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
-    await meter.waitFor()
-    expect(await liquid.isVisible()).toBe(true)
-    const bar = await liquid.boundingBox()
-    expect(bar!.width).toBeGreaterThanOrEqual(bar!.height * 4)
-    expect(bar!.height).toBeLessThanOrEqual(12)
-    expect(await meter.getAttribute('aria-valuenow')).toBe('50')
-    expect(await meter.textContent()).toBe('')
-    expect(await primary.locator('[data-verboo-stamina-liquid]').count()).toBe(0)
-    expect(await page.locator('[data-composer-dock] [data-verboo-stamina]').count()).toBe(0)
-    await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-verboo-stamina][role="meter"]', scaffold.workspaceCwd), MODE)
+    const editor = page.locator('[data-composer-card]').getByRole('textbox')
+    await liquid.waitFor()
+    expect(await primary.getAttribute('aria-label')).toBe('Send message')
+    expect(await primary.isDisabled()).toBe(true)
+    expect(await page.locator('[data-slot="conversation.input.right"] [data-verboo-stamina]').count()).toBe(0)
+    expect(await primary.textContent()).toBe('')
+    await compareOrRefreshGolden(join(EXPECTED, 'composer.expected.md'), await captureStableAria(page, '[data-composer-primary]', scaffold.workspaceCwd), MODE)
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 960 })
       if (width === 390) {
@@ -197,33 +196,31 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
         await page.locator('[data-sidebar-drawer][data-sidebar-collapsed=true]').waitFor()
       }
       await expect.poll(async () => {
-        const bounds = await meter.boundingBox()
+        const button = await primary.boundingBox()
+        const water = await liquid.boundingBox()
+        const outline = await ring.boundingBox()
         const selector = await model.boundingBox()
-        const send = await primary.boundingBox()
-        return bounds !== null && selector !== null && send !== null
-          && bounds.x >= 0 && bounds.y + bounds.height <= 960
-          && bounds.x + bounds.width <= selector.x
-          && selector.x + selector.width <= send.x
-          && send.x + send.width <= width
-          && Math.abs(bounds.y + bounds.height / 2 - selector.y - selector.height / 2) <= 1
+        return button !== null && water !== null && outline !== null && selector !== null
+          && button.width === 42 && button.height === 42
+          && water.width === 34 && water.height === 34
+          && outline.width === 42 && outline.height === 42
+          && selector.x + selector.width <= button.x
+          && button.x + button.width <= width && button.y + button.height <= 960
       }).toBe(true)
-      expect(await meter.evaluate((node) => {
+      expect(await ring.evaluate(node => parseFloat(getComputedStyle(node).borderTopWidth))).toBeGreaterThanOrEqual(1)
+      expect(await primary.evaluate((node) => {
         const box = node.getBoundingClientRect()
         return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
       })).toBe(true)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await meter.hover()
-      const tooltip = page.getByRole('tooltip')
-      await tooltip.waitFor()
-      expect(await tooltip.textContent()).toBe('Stamina')
-      const tip = await tooltip.boundingBox()
-      expect(tip!.x).toBeGreaterThanOrEqual(0)
-      expect(tip!.x + tip!.width).toBeLessThanOrEqual(width)
-      expect(await tooltip.evaluate(node => node.closest('[data-composer-card]') === null)).toBe(true)
-      await page.keyboard.press('Escape')
-      await tooltip.waitFor({ state: 'hidden' })
-      await page.locator('[data-composer-card]').screenshot({ path: join(ARTIFACTS, `composer-bar-${width}.png`), animations: 'disabled' })
-      await page.screenshot({ path: join(ARTIFACTS, `composer-${width}.png`), animations: 'disabled' })
+      expect(await liquid.locator('[data-stamina-water]').evaluate(node => (node as HTMLElement).style.height)).toBe('50%')
+      await editor.fill('Unsent ring fixture draft')
+      await page.keyboard.press('Tab')
+      await primary.focus()
+      expect(await primary.evaluate(node => node.matches(':focus-visible'))).toBe(true)
+      await editor.fill('')
+      await primary.screenshot({ path: join(ARTIFACTS, `send-ring-${width}.png`), animations: 'disabled' })
+      await page.locator('[data-composer-card]').screenshot({ path: join(ARTIFACTS, `composer-ring-${width}.png`), animations: 'disabled' })
     }
     await navigate(/^(My plan|Meu plano)$/)
   })
@@ -253,7 +250,6 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await expect.poll(() => region.getByRole('progressbar').getAttribute('value')).toBe('100')
     platform.state.held!()
     await expect.poll(() => region.getByRole('progressbar').getAttribute('value')).toBe('100')
-    expect(await region.textContent()).toContain('200 tok/s')
-    expect(await region.textContent()).not.toContain('67 tok/s')
+    expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
   })
 })

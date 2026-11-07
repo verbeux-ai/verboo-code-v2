@@ -1,4 +1,4 @@
-/** Stamina displays the server's next-request ceiling separately from observed generation speed. */
+/** Plan stamina exposes reserves and recovery while keeping inference rates private. */
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PageProps, ProductProps } from './contracts.ts'
 import type { StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
@@ -49,11 +49,9 @@ export function StaminaDisplay({ rows, failed, compact, locale, ...props }: Pick
             <span>{props.t('staminaRemaining', { percent: number.format(row.remainingPercent) })}</span>
           </div>
           <progress className={css.bar} max={100} value={row.remainingPercent} aria-label={`${props.t('staminaTitle')}: ${row.groupName}`} />
-          <p className={css.ceiling}>{props.t('staminaNextLimit', { tps: number.format(row.nextOutputTps) })}</p>
           {!compact && <>
             <p className={css.description}>{props.t(row.recovering ? 'staminaRecovering' : row.remainingPercent >= 100 ? 'staminaFull' : 'staminaInUse')}</p>
             {row.recovering && row.fullAt !== null && <p className={css.description}>{props.t('staminaFullAt', { time: new Intl.DateTimeFormat(locale, { timeStyle: 'medium' }).format(new Date(row.fullAt)) })}</p>}
-            <p className={css.description}>{props.t('staminaExplanation')}</p>
           </>}
           {row.accountingPending && <p className={css.description} role="status">{props.t('staminaPending')}</p>}
         </div>

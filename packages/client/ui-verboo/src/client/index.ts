@@ -27,7 +27,7 @@ export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
-import { StaminaIndicator } from './StaminaLiquid.tsx'
+import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
@@ -440,10 +440,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ExecutionStatus,
     ),
   )
-  ctx.slots.inject('conversation.input.right', () =>
+  ctx.slots.inject('conversation.input.primary.background', () =>
     ctx.slots.register(
-      { name: 'conversation.input.right', id: 'verboo.stamina', order: 100, locale: 'verboo', inject: face },
-      StaminaIndicator,
+      { name: 'conversation.input.primary.background', locale: 'verboo', inject: face },
+      StaminaButtonFill,
     ),
   )
   ctx.slots.inject('main', function* () {

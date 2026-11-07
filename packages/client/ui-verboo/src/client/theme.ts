@@ -6,6 +6,7 @@ const pair = (light: string, dark = light) => ({ light, dark })
 const systemFont = "'Verboo Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 /** Product colors preserve readable neutral surfaces in both user-selected themes. */
 export const tokens: ThemeTokenOverrides = {
+  '--dsh-composer-primary-size': pair('42px'),
   '--verboo-accent': pair('#8E22D3', '#C078FF'),
   '--verboo-accent-solid': pair('hsl(275.9406 99.0196% 58%)'),
   '--verboo-on-accent': pair('#FFFFFF'),

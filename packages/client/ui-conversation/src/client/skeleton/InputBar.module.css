@@ -401,11 +401,14 @@
    #679EFE dark — the info-fill pair (500→400), NOT button-primary (ink);
    white glyph; empty text = 0.4 opacity. */
 .primary {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: grid;
   place-items: center;
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: var(--dsh-composer-primary-size, 34px);
+  height: var(--dsh-composer-primary-size, 34px);
   border: none;
   border-radius: 999px;
   corner-shape: round;
@@ -438,6 +441,18 @@
   opacity: 1;
   cursor: progress;
 }
+
+.primaryBackground {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.primary > svg { position: relative; z-index: 1; }
+.primary:has([data-composer-primary-visual]):disabled { opacity: 1; }
+.primary:has([data-composer-primary-visual]):disabled:not([data-sending]) > svg { opacity: 0.4; }
 
 .sendingSpinner {
   animation: input-sending 800ms linear infinite;

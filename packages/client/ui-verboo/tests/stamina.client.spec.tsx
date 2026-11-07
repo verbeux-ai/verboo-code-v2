@@ -24,11 +24,11 @@ function props(locale = 'pt'): ComponentProps<typeof StaminaDisplay> {
 }
 
 describe('public stamina presentation', () => {
-  it('shows stamina and the next-request limit without exposing financial reserves', () => {
+  it('shows stamina without exposing inference rates or financial reserves', () => {
     render(<StaminaDisplay {...props()} />)
     expect(screen.getByRole('progressbar', { name: 'Stamina: Unlimited' }).getAttribute('value')).toBe('50')
-    expect(screen.getByText('Limite para novas requisições: 67 tok/s')).toBeTruthy()
-    expect(screen.getByText(/Respostas em andamento mantêm a velocidade/)).toBeTruthy()
+    expect(screen.queryByText(/tok\/s|tokens\/s|t\/s|词元\/秒/i)).toBeNull()
+    expect(screen.getByText('Stamina disponível')).toBeTruthy()
     expect(screen.queryByText(/USD|US\$|budget/i)).toBeNull()
   })
   it('keeps the confirmed reading visible and provides a retry action after failure', () => {
@@ -53,10 +53,10 @@ describe('public stamina presentation', () => {
     view.rerender(<StaminaDisplay {...input} rows={undefined} failed compact />)
     expect(view.container.textContent).toBe('')
   })
-  it('keeps zero stamina usable at the server-provided 5 TPS floor', () => {
+  it('keeps zero stamina visible without exposing the server rate floor', () => {
     render(<StaminaDisplay {...props()} rows={[{ ...reading, remainingPercent: 0, nextOutputTps: 5, accountingPending: true }]} />)
     expect(screen.getByRole('progressbar').getAttribute('value')).toBe('0')
-    expect(screen.getByText('Limite para novas requisições: 5 tok/s')).toBeTruthy()
+    expect(screen.queryByText(/tok\/s|tokens\/s|t\/s|词元\/秒/i)).toBeNull()
     expect(screen.getByRole('status').textContent).toContain('uso está sendo confirmado')
   })
   it.each(['pt', 'en', 'zh'])('localizes the public reading and recovery in %s', (locale) => {

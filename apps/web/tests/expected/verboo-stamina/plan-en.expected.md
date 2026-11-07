@@ -2,6 +2,4 @@
   - heading "Stamina" [level=2]
   - text: Unlimited 50% remaining
   - 'progressbar "Stamina: Unlimited"'
-  - paragraph: "Limit for new requests: {{throughput}} tok/s"
-  - paragraph: Stamina recovers after all running requests finish.
-  - paragraph: Your usage over the period also affects this limit. Running responses keep the speed set at their start.
+  - paragraph: Stamina available

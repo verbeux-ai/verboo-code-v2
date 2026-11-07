@@ -319,6 +319,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.input.right': { kind: 'list'; scope: 'session' }
     /**
+     * Non-interactive decoration behind the primary action, clipped to its circle. A painted
+     * contribution carries data-composer-primary-visual; the carrier keeps its own semantics.
+     */
+    'conversation.input.primary.background': { kind: 'single'; scope: 'session-maybe' }
+    /**
      * Compact action after the model selector; it can expand across the toolbar while retaining the
      * editor and submit action, and fixed overlays must portal to the document body because the
      * docked composer contains them.
@@ -608,6 +613,7 @@ export type ComposerBarProps =
     | 'conversation.input.left' | 'conversation.input.plan'
     | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity'
     | 'conversation.composer.dock' | 'conversation.input.context'
+    | 'conversation.input.primary.background'
   >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>

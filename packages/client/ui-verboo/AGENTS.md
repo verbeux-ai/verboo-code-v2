@@ -4,4 +4,5 @@ Keep the product compact and neutral, with purple reserved for accents. Sidebar 
 
 Match the Verboo Code web app's visual identity: near-black neutral surfaces, local Nunito text, the official mark with a `verboo:code` wordmark, purple user messages and small purple controls. Keep plan comparison in clear cards and ended subscriptions collapsed. Use typed slots and optional theme tokens for product styling so upstream renderers remain replaceable.
 
-In the Chat composer, show stamina as a compact horizontal liquid bar immediately to the left of the model selector, in the same toolbar row. Keep visible numbers and labels out of this indicator. Preserve the Send/Stop button's own appearance and actions.
+
+Show stamina as water inside the existing Send/Stop button, with a thin purple circular ring around it. Keep the arrow, actions, disabled state and keyboard focus owned by the composer. Do not add a separate stamina bar or control beside the model. Keep inference speeds and rate ceilings out of the interface, tooltips and accessibility labels. Respect reduced motion.

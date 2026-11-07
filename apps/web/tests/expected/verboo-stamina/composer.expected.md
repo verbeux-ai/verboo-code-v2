@@ -1,1 +1,1 @@
-- meter "Stamina"
+- button "Send message" [disabled]

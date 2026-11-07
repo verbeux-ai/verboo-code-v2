@@ -536,12 +536,16 @@ export const InputBar = memo(function InputBar({
                   type="button"
                   className={css.primary}
                   aria-label={primaryLabel}
+                  data-composer-primary
                   aria-busy={sending}
                   data-sending={sending ? '' : undefined}
                   disabled={primaryDisabled}
                   onMouseDown={keepFocus}
                   onClick={onPrimary}
                 >
+                  <span className={css.primaryBackground} data-composer-primary-background aria-hidden="true">
+                    {renderSlot('conversation.input.primary.background', {})}
+                  </span>
                   {primaryStops ? (
                     <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
