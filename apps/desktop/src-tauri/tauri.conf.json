@@ -39,6 +39,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY1OEE2NkVGNjdGN0VGRkQKUldUOTcvZG43MmFLOWVweVY1dzN3THgxSVFuN2UvYSs1UnljQkVDd0lFT2NEZTNNQ0JjZUJkMGoK",
+      "requireSignedVersion": true,
       "endpoints": [
         "https://raw.githubusercontent.com/verbeux-ai/verboo-code-v2/update-feed/latest.json"
       ],
