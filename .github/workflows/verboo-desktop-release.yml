@@ -38,6 +38,9 @@ jobs:
             bundles: appimage,deb
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     defaults:
       run:
         working-directory: ${{ matrix.directory || github.workspace }}
@@ -95,8 +98,6 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Create and verify the macOS disk image without mounting it
         if: runner.os == 'macOS'
