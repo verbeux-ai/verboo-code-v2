@@ -2,6 +2,7 @@
 
 mod host;
 mod locale;
+mod update;
 
 use host::{authenticated_url, HostEvent, HostProcess, RuntimeConfig, STARTUP_DEADLINE};
 use std::{
@@ -161,6 +162,7 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             pick_directory,
@@ -285,6 +287,7 @@ fn main() {
                     return;
                 }
                 eprintln!("Verboo Code: tauri_host_ready");
+                update::spawn(&app);
                 while events.recv().is_ok() {}
                 if !state.quitting.load(Ordering::SeqCst) {
                     startup_failure(&app, &state, "host_disconnected");

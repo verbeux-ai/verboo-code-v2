@@ -110,7 +110,7 @@ export async function publishRelease({ spec, directory, github, upload }) {
 }
 
 // GitHub writes are attempted once; another run reconciles provider state before writing again.
-async function github(method, path, body) {
+export async function github(method, path, body) {
   const budget = AbortSignal.timeout(35_000)
   const safe = method === 'GET'
   for (let attempt = 0; attempt < (safe ? 3 : 1); attempt++) {

@@ -28,7 +28,15 @@ pnpm run start:desktop
 
 Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会保留 glibc 系统和 FFI 插件、主机 PTY 预构建文件以及静态 Landlock launcher。未使用的 musl 和其他平台 PTY 二进制文件仅从暂存目录中移除，源代码包保持完整。
 
-保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 不连接 Electron 更新服务。
+保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 改用自带的更新器，不再连接 Electron 更新服务。
+
+## 更新
+
+Tauri 更新器随应用一起发布：Host 开始提供产品页面后，它每次启动读取一次更新源，确认后在原位置安装新版本。Linux 替换 AppImage，Windows 以 `passive` 模式复用 NSIS 安装器，macOS 用归档的 `.app` 替换应用包。Debian 和 RPM 安装继续由包管理器更新。开发构建从不检查更新，因此检出目录不会自行安装发布版本。
+
+`bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名，发布工作流使用 `TAURI_SIGNING_PRIVATE_KEY` 签名。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
+
+更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。拒绝某个版本的用户不会再被同一版本打扰。
 
 ## 发布流水线
 

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-11-07-tauri-desktop-updates.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-07-tauri-desktop-updates.md
+/agent-note-desktop-updates-from-a-branch-hosted-feed:
+  en: 0032271fb05a42ad
+  zh: dce626fbbf55e2a3
+/agent-note-desktop-updates-from-a-branch-hosted-feed/problem:
+  en: dbe5f75c3bc05195
+  zh: 127087373447a264
+/agent-note-desktop-updates-from-a-branch-hosted-feed/decision:
+  en: 563c7dae3589044d
+  zh: 484597d3ed73f1f6
+/agent-note-desktop-updates-from-a-branch-hosted-feed/decision/three-platform-mechanisms-one-flow:
+  en: 03e0a46ffb994255
+  zh: b0b2aa7a22559ca3
+/agent-note-desktop-updates-from-a-branch-hosted-feed/decision/native-offer-not-client-ui:
+  en: bfe5d7e26bd7c052
+  zh: 57d6f1c8fd6c092a
+/agent-note-desktop-updates-from-a-branch-hosted-feed/decision/the-feed-lives-on-a-branch:
+  en: 246ed722443bd4f7
+  zh: a62d7c2168d9d070
+/agent-note-desktop-updates-from-a-branch-hosted-feed/alternatives-considered:
+  en: 48f50a9fbe7e8921
+  zh: a55569df90b3d68c
+/agent-note-desktop-updates-from-a-branch-hosted-feed/consequences:
+  en: f3f34dfc8afbdaf6
+  zh: fd29669dbcc28364
