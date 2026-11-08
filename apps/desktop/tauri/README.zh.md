@@ -10,7 +10,7 @@
 pnpm run dev:desktop
 ```
 
-该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源提交文档，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
+该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。打包后的 Windows 应用是 GUI 程序，因此 Host 控制台进程以 `CREATE_NO_WINDOW` 创建；否则 Windows 会在产品窗口旁打开一个终端窗口。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源提交文档，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
 
 仓库构建完成后，可复用产物：
 

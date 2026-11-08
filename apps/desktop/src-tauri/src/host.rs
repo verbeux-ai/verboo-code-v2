@@ -10,8 +10,17 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 const PROTOCOL: &str = "VERBOO_HOST_V1\t";
+
+/// Windows starts a console application without a console window when the child
+/// is created with this flag. The release application is built as a GUI program,
+/// so without it the Host's Node process opens a console window beside the
+/// product window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub const STARTUP_DEADLINE: Duration = Duration::from_secs(60);
 const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -93,7 +102,8 @@ impl HostProcess {
         fs::create_dir_all(home).map_err(|_| "host_home_unavailable")?;
         // Windows canonicalization produces verbatim paths (\\?\C:\...).
         // Node's entry-point resolver requires the ordinary drive/UNC form.
-        let mut child = Command::new(dunce::simplified(&config.node))
+        let mut command = Command::new(dunce::simplified(&config.node));
+        command
             .arg(dunce::simplified(&config.host))
             .arg(dunce::simplified(&config.cli_manifest))
             .current_dir(dunce::simplified(&config.working_directory))
@@ -101,9 +111,10 @@ impl HostProcess {
             .env_remove("ELECTRON_RUN_AS_NODE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|_| "host_spawn_failed")?;
+            .stderr(Stdio::inherit());
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let mut child = command.spawn().map_err(|_| "host_spawn_failed")?;
         let input = child.stdin.take();
         let output = child.stdout.take().ok_or("host_output_unavailable")?;
         let (sender, receiver) = mpsc::channel();
@@ -184,6 +195,15 @@ mod tests {
         ] {
             assert_eq!(authenticated_url(&address).unwrap_err(), "host_url_invalid");
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn hides_the_host_console_window() {
+        // Win32 CREATE_NO_WINDOW, the documented value. The release application is
+        // a GUI program, so the Host's console process would otherwise open a
+        // visible console window beside the product window.
+        assert_eq!(CREATE_NO_WINDOW, 0x0800_0000);
     }
 
     #[test]

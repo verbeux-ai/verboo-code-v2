@@ -10,7 +10,7 @@ Verboo Code 需要 Tauri 桌面应用，同时保留现有代理、插件、会�
 
 ## Decision
 
-Tauri 负责原生窗口与操作系统 WebView。私有独立 Node 进程运行叠加在共享 Web 与 base bundle 上的产品 `verboo` 配置。带版本的 stdout 通道报告就绪状态，不把启动凭据打印到原生日志；stdin 负责正常关闭。Rust 在导航前验证本地启动来源，只授予应用窗口在该来源使用原生目录选择的权限。初始 Host 文档在令牌交换前建立同站上下文，使打包后的 WebKit 保持现有 Strict Cookie 策略。客户端沿用 Web 键盘与账号适配器，不设置 Electron 专有文档标记。
+Tauri 负责原生窗口与操作系统 WebView。私有独立 Node 进程运行叠加在共享 Web 与 base bundle 上的产品 `verboo` 配置。打包后的 Windows 应用是 GUI 程序，因此该控制台进程以不显示控制台窗口的方式创建。带版本的 stdout 通道报告就绪状态，不把启动凭据打印到原生日志；stdin 负责正常关闭。Rust 在导航前验证本地启动来源，只授予应用窗口在该来源使用原生目录选择的权限。初始 Host 文档在令牌交换前建立同站上下文，使打包后的 WebKit 保持现有 Strict Cookie 策略。客户端沿用 Web 键盘与账号适配器，不设置 Electron 专有文档标记。
 
 产品层提供 Verboo OAuth、中性编辑器界面、订阅和按用户隔离的服务连接。它通过组合 ID 替换提供方与界面入口；可选的开场与运行指示器 Slot，以及可移除的主题和图标覆盖，使共享 Chat 引擎保持可复用。Composio 凭据只保存在中央后端，后端从已认证账号确定各连接的所有者。
 
