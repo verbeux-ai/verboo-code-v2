@@ -25,14 +25,27 @@ const TOOLKITS: ReadonlyArray<readonly [string, string]> = [
   ['intercom', 'Intercom'], ['zendesk', 'Zendesk'],
 ]
 
+/** The one-pixel PNG this fixture serves as the catalog mark. */
+const MARK_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
 /** Loopback product API: one connected account, one expired one, and a catalog across categories. */
 async function platformFixture() {
-  const state = { connectionsDown: false }
+  const state = { connectionsDown: false, origin: '' }
   const respond = (res: ServerResponse, status: number, body: unknown) => {
     if (res.destroyed) return
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
   }
   const server = createServer((req, res) => {
+    // The brand mark is a public asset the browser loads without the Host
+    // credential, so it answers before the authenticated API routes.
+    if (req.url === '/catalog-mark.png') {
+      if (res.destroyed) return
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' }).end(MARK_BYTES)
+      return
+    }
     if (req.headers.authorization?.startsWith('Bearer stamina-fixture:') !== true) {
       respond(res, 401, { error: 'unauthorized' })
       return
@@ -43,7 +56,11 @@ async function platformFixture() {
         data: {
           available: true,
           toolkits: [
-            ...TOOLKITS.map(([slug, name]) => ({ slug, name, available: true, authType: 'oauth' })),
+            // The catalog marks one service so the page can show it beside the name.
+            ...TOOLKITS.map(([slug, name]) => ({
+              slug, name, available: true, authType: 'oauth',
+              ...(slug === 'googledrive' ? { logo: `${state.origin}/catalog-mark.png` } : {}),
+            })),
             { slug: 'searxng', name: 'SearXNG', available: true, authType: 'none' },
           ],
           accounts: [
@@ -62,9 +79,10 @@ async function platformFixture() {
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('loopback API did not start')
+  state.origin = `http://127.0.0.1:${address.port}`
   return {
     state,
-    origin: `http://127.0.0.1:${address.port}`,
+    origin: state.origin,
     close: () => new Promise<void>((resolve, reject) => {
       server.close((error) => { if (error) reject(error); else resolve() })
       server.closeAllConnections()
@@ -184,6 +202,22 @@ describe.skipIf(MODE === 'record')('Verboo Connections page in the built applica
     expect(await catalogSection().getByRole('heading', { name: 'Stripe' }).count()).toBe(0)
     await pageRegion().getByLabel('Buscar um serviço').fill('')
     await expect.poll(() => catalogSection().getByRole('heading', { name: 'GitHub' }).count()).toBe(0)
+  })
+
+  it('shows the catalog brand mark beside the service and on its account', async () => {
+    await pageRegion().getByRole('group', { name: 'Filtrar por categoria' })
+      .getByRole('button', { name: /Produtividade/ }).click()
+    await pageRegion().getByLabel('Buscar um serviço').fill('drive')
+    const card = catalogSection().locator('article').filter({ hasText: 'Google Drive' }).first()
+    await expect.poll(() => card.count()).toBe(1)
+    // The mark the catalog carried is loaded, not merely referenced.
+    const mark = card.locator('img')
+    expect(await mark.count()).toBe(1)
+    expect(await mark.getAttribute('src')).toContain('/catalog-mark.png')
+    await expect.poll(() => mark.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
+    // The adjacent name labels it, so the mark stays out of the accessibility tree.
+    expect(await mark.getAttribute('alt')).toBe('')
+    expect(await mark.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('creates a server, then edits it with its key shown and its value blank', async () => {

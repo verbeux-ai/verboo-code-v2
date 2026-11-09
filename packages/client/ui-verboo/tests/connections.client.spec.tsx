@@ -364,3 +364,86 @@ describe('english copy', () => {
     expect(screen.getByText('Pick a category to see its services.')).toBeTruthy()
   })
 })
+
+describe('service brand marks', () => {
+  /** The card head holding the service icon, for one revealed service. */
+  const serviceHead = (name: string) =>
+    screen.getByRole('heading', { name }).closest('div')!.parentElement!
+
+  /** Reveal one catalog service by name and return its card. */
+  const openService = (name: string) => {
+    const { props } = fixture()
+    render(<ConnectionsPage {...props} />)
+    fireEvent.change(screen.getByPlaceholderText('Buscar um serviço'), { target: { value: name } })
+    return screen.getByRole('heading', { name }).closest('article')!
+  }
+
+  it('shows the catalog mark instead of the product glyph', () => {
+    const { props } = fixture('pt', {
+      connections: {
+        available: true,
+        toolkits: [{ ...toolkit('googledrive', 'Google Drive'), logo: 'https://logos.test/drive.svg' }],
+        accounts: [],
+      },
+    })
+    render(<ConnectionsPage {...props} />)
+    fireEvent.change(screen.getByPlaceholderText('Buscar um serviço'), { target: { value: 'drive' } })
+    const head = serviceHead('Google Drive')
+    const mark = head.querySelector('img')!
+    expect(mark.getAttribute('src')).toBe('https://logos.test/drive.svg')
+    // The adjacent service name labels it, so the mark is decorative.
+    expect(mark.getAttribute('alt')).toBe('')
+    expect(mark.getAttribute('aria-hidden')).toBe('true')
+    expect(head.querySelector('svg')).toBeNull()
+  })
+
+  it('keeps the product glyph when the catalog carries no mark', () => {
+    openService('GitHub')
+    const head = serviceHead('GitHub')
+    expect(head.querySelector('img')).toBeNull()
+    expect(head.querySelector('svg')).not.toBeNull()
+  })
+
+  it('falls back to the glyph when the mark cannot be loaded', () => {
+    const { props } = fixture('pt', {
+      connections: {
+        available: true,
+        toolkits: [{ ...toolkit('googledrive', 'Google Drive'), logo: 'https://logos.test/missing.svg' }],
+        accounts: [],
+      },
+    })
+    render(<ConnectionsPage {...props} />)
+    fireEvent.change(screen.getByPlaceholderText('Buscar um serviço'), { target: { value: 'drive' } })
+    const head = serviceHead('Google Drive')
+    fireEvent.error(head.querySelector('img')!)
+    expect(head.querySelector('img')).toBeNull()
+    expect(head.querySelector('svg')).not.toBeNull()
+  })
+
+  it('shows the mark beside an owned account', () => {
+    const { props } = fixture('pt', {
+      connections: {
+        available: true,
+        toolkits: [{ ...toolkit('github', 'GitHub'), logo: 'https://logos.test/github.svg' }],
+        accounts: [account('connection-1', 'github', 'Work')],
+      },
+    })
+    render(<ConnectionsPage {...props} />)
+    const section = screen.getByRole('heading', { name: 'Contas conectadas' }).closest('section')!
+    expect(section.querySelector('img')?.getAttribute('src')).toBe('https://logos.test/github.svg')
+  })
+
+  it('names the account service from the catalog inside the same row', () => {
+    const { props } = fixture('pt', {
+      connections: {
+        available: true,
+        toolkits: [toolkit('github', 'GitHub')],
+        accounts: [account('connection-1', 'github', 'Work'), account('connection-2', 'mystery', 'Other')],
+      },
+    })
+    render(<ConnectionsPage {...props} />)
+    expect(screen.getByText('GitHub')).not.toBeNull()
+    // A toolkit the catalog no longer lists keeps its raw slug.
+    expect(screen.getByText('mystery')).not.toBeNull()
+  })
+})

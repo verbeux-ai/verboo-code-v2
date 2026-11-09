@@ -62,6 +62,8 @@ export interface Toolkit {
   slug: string
   name: string
   available: boolean
+  /** Absolute URL of the service's brand mark, when the catalog carries one. */
+  logo?: string | undefined
   authType?: 'oauth' | 'credentials' | 'none' | 'setup' | undefined
 }
 /** The authenticated user’s external accounts and enabled services. */

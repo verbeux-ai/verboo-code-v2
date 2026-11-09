@@ -77,10 +77,32 @@ const serviceGlyphs: Record<string, GlyphName> = {
 }
 
 /** Service mark with a stable square so catalog rows and account rows align. */
-function ServiceIcon({ slug }: { slug: string }) {
+/**
+ * Show the catalog's brand mark for one service, falling back to the product
+ * glyph when the catalog carries no mark or it fails to load. The adjacent
+ * service name is the accessible label, so the mark is decorative.
+ */
+function ServiceIcon({ slug, logo }: { slug: string; logo?: string | undefined }) {
+  const [unavailable, setUnavailable] = useState(false)
+  if (logo === undefined || logo === '' || unavailable) {
+    return (
+      <span className={css.serviceIcon}>
+        <Glyph name={serviceGlyphs[slug] ?? 'cable'} size={22} />
+      </span>
+    )
+  }
   return (
     <span className={css.serviceIcon}>
-      <Glyph name={serviceGlyphs[slug] ?? 'cable'} size={22} />
+      <img
+        className={css.serviceLogo}
+        src={logo}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => { setUnavailable(true) }}
+      />
     </span>
   )
 }
@@ -469,6 +491,12 @@ export function ConnectionsPage(props: PageProps) {
   const catalogSize = data?.toolkits.length ?? 0
 
   const toolkits: readonly Toolkit[] = data?.toolkits ?? noToolkits
+  // One index serves every account row, which otherwise searches the whole
+  // catalog for its name and brand mark.
+  const toolkitsBySlug = useMemo(
+    () => new Map(toolkits.map(toolkit => [toolkit.slug, toolkit] as const)),
+    [toolkits],
+  )
   const categoryCounts = useMemo(() => {
     const counts = new Map<CategoryId, number>()
     for (const toolkit of toolkits) {
@@ -762,12 +790,11 @@ export function ConnectionsPage(props: PageProps) {
           <div className={css.connectedList}>
             {data.accounts.map(account => (
               <div className={css.connectedRow} key={account.id}>
-                <ServiceIcon slug={account.toolkit} />
+                <ServiceIcon slug={account.toolkit} logo={toolkitsBySlug.get(account.toolkit)?.logo} />
                 <div className={css.connectionIdentity}>
                   <span>{account.label}</span>
                   <span className={css.connectionService}>
-                    {data.toolkits.find(toolkit => toolkit.slug === account.toolkit)?.name
-                      ?? account.toolkit}
+                    {toolkitsBySlug.get(account.toolkit)?.name ?? account.toolkit}
                   </span>
                   <StatusPill
                     tone={accountTones[account.status]}
@@ -1015,7 +1042,7 @@ export function ConnectionsPage(props: PageProps) {
             {visibleToolkits.slice(0, visibleCount).map(toolkit => (
               <article className={css.serviceCard} key={toolkit.slug}>
                 <div className={css.serviceCardHead}>
-                  <ServiceIcon slug={toolkit.slug} />
+                  <ServiceIcon slug={toolkit.slug} logo={toolkit.logo} />
                   <div className={css.serviceIdentity}>
                     <h3>{toolkit.name}</h3>
                     <p>{t(categoryKeys[categoryOf(toolkit.slug)])}</p>

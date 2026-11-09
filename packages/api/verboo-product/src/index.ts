@@ -99,6 +99,13 @@ const connections = z.object({
           name: z.string(),
           available: z.boolean(),
           authType: z.enum(['oauth', 'credentials', 'none', 'setup']).optional(),
+          // A catalog entry without a mark, and a blank or null one, all mean the
+          // same thing to the Client, so the parse resolves them to absent. The
+          // scheme is restricted because the URL reaches an <img> source.
+          logo: z
+            .union([z.url({ protocol: /^https?$/ }).max(2048), z.literal('')])
+            .nullish()
+            .transform(value => (value === null || value === '' ? undefined : value)),
         }),
       )
       .max(10000),
@@ -176,6 +183,10 @@ export class VerbooProduct extends TypertRemoteService {
       if (catalogRead) observe(identity, 'catalog', 'succeeded')
       return value
     } catch (error) {
+      // The HTTP client above converts every transport, status, parse, and
+      // timeout failure into an AccountRequestError before it returns here, so
+      // a foreign throwable can only come from a broken seam implementation.
+      /* v8 ignore next -- the HTTP client converts every failure into AccountRequestError */
       const safe =
         error instanceof AccountRequestError
           ? error
