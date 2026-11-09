@@ -41,6 +41,7 @@ const id = z
 const plan = z.object({
   id,
   name: z.string(),
+  slug: z.string().min(1).optional(),
   description: z.string(),
   priceCents: z.number().int().nonnegative(),
   currency: z.string().regex(/^[A-Za-z]{3}$/),
@@ -55,7 +56,7 @@ const subscriptions = z.object({
       z.object({
         id: z.uuid(),
         groupId: id,
-        group: z.object({ name: z.string() }).nullish(),
+        group: z.object({ name: z.string(), slug: z.string().min(1).optional() }).nullish(),
         status: z.string(),
         currentPeriodEnd: z.string().nullish(),
         cancelAtPeriodEnd: z.boolean(),
@@ -317,6 +318,7 @@ export class VerbooProduct extends TypertRemoteService {
             id: s.id,
             planId: s.groupId,
             name: s.group?.name ?? s.groupId,
+            ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
             status: s.status,
             renewsAt: s.currentPeriodEnd ?? null,
             cancelAtEnd: s.cancelAtPeriodEnd,
@@ -341,6 +343,7 @@ export class VerbooProduct extends TypertRemoteService {
           .map(p => ({
             id: p.id,
             name: p.name,
+            ...(p.slug === undefined ? {} : { slug: p.slug }),
             description: p.description,
             priceCents: p.priceCents,
             currency: p.currency,

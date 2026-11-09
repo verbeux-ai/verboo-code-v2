@@ -27,7 +27,7 @@ Read the signed-in user’s plans and connections, open a trusted commercial han
 
 The `verboo` profile mounts this service beside the account provider. Its [Config](src/index.ts) accepts the public API origin, router URL and explicit development loopback setting. Composio project credentials belong only to the central backend.
 
-Stamina reads return the primary percentage and next-request TPS only for server-enrolled plans. An empty list hides the feature; HTTP404 also supports older deployments without this endpoint. Other failures remain failures, and account replacement invalidates pending reads. Budgets, costs and tariffs never enter this projection.
+Stamina reads return the primary percentage and next-request TPS only for server-enrolled plans. An empty list hides the feature; HTTP404 also supports older deployments without this endpoint. Other failures remain failures, and account replacement invalidates pending reads. Budgets, costs and tariffs never enter this projection. Plans and subscriptions preserve optional server routing slugs so the Client can join a model route to its group ID; older API projections may omit them.
 
 Connections requests opt into the complete provider catalog with `catalog=all` and accept up to 10,000 toolkit records, including authorization method and server configuration requirements. Older APIs may omit this metadata. Agent listing returns only owned accounts and public services (`public_<slug>`), keeping the full discovery catalog out of model input. The backend revalidates public services as requiring no credentials before tool search or execution.
 

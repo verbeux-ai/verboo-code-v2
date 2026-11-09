@@ -15,7 +15,7 @@ const row: StaminaStatus = {
 }
 function fixture(): ComponentProps<typeof StaminaDebugReading> {
   return {
-    rows: [row], failed: false, locale: 'en', refresh: vi.fn(),
+    group: { id: row.groupId, slug: 'pro', name: 'Pro' }, reading: row, failed: false, locale: 'en', refresh: vi.fn(),
     t: (key, values) => {
       const template = labels[key]
       if (template === undefined) throw new Error(`Missing test translation: ${key}`)
@@ -33,24 +33,26 @@ describe('opt-in stamina diagnostics', () => {
     expect(view.getByRole('status').getAttribute('aria-live')).toBe('off')
     fireEvent.click(view.getByRole('button', { name: 'Refresh' }))
     expect(props.refresh).toHaveBeenCalledOnce()
-    view.rerender(<StaminaDebugReading {...props} rows={[{ ...row, remainingPercent: 99.987654321 }]} />)
+    view.rerender(<StaminaDebugReading {...props} reading={{ ...row, remainingPercent: 99.987654321 }} />)
     expect(view.container.textContent).toContain('99.987654321%')
     expect(view.container.textContent).not.toContain('99.9987654321%')
   })
   it('retains the confirmed value during failures and exposes pending accounting', () => {
-    const view = render(<StaminaDebugReading {...fixture()} rows={[{ ...row, accountingPending: true }]} failed />)
+    const view = render(<StaminaDebugReading {...fixture()} reading={{ ...row, accountingPending: true }} failed />)
     expect(view.container.textContent).toContain('99.9987654321%')
     expect(view.container.textContent).toContain(en.staminaStale)
     expect(view.container.textContent).toContain(en.staminaDebugPending)
   })
   it('never invents a full reading when data is unknown or no enrollment is returned', () => {
     const props = fixture()
-    const view = render(<StaminaDebugReading {...props} rows={undefined} />)
+    const view = render(<StaminaDebugReading {...props} group={null} reading={undefined} />)
     expect(view.container.textContent).toContain(en.staminaDebugEmpty)
     expect(view.container.textContent).not.toContain('%')
-    view.rerender(<StaminaDebugReading {...props} rows={[]} />)
+    view.rerender(<StaminaDebugReading {...props} group={{ id: row.groupId, name: 'Max', slug: 'max' }} reading={undefined} />)
     expect(view.container.textContent).not.toContain('%')
-    view.rerender(<StaminaDebugReading {...props} rows={undefined} failed />)
+    expect(view.container.textContent).toContain('Max: no stamina reading for this group')
+    expect(view.container.textContent).not.toContain('Pro')
+    view.rerender(<StaminaDebugReading {...props} group={null} reading={undefined} failed />)
     expect(view.container.textContent).toContain(en.staminaDebugFailed)
   })
 })

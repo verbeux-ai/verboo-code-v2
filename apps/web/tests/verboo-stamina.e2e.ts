@@ -1,7 +1,7 @@
 /** Built Verboo composition with a borrowed recorded Session and a loopback-only product API. */
 import { createServer, type ServerResponse } from 'node:http'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -14,6 +14,7 @@ import {
 const ACCOUNT_A = '00000000-0000-4000-8000-000000000002'
 const ACCOUNT_B = '00000000-0000-4000-8000-000000000003'
 const PLAN = '00000000-0000-4000-8000-000000000001'
+const OTHER_PLAN = '00000000-0000-4000-8000-000000000004'
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const EXPECTED = join(ROOT, 'apps/web/tests/expected/verboo-stamina')
 const MODE = webSnapshotMode()
@@ -22,7 +23,7 @@ const ARTIFACTS = process.env.STAMINA_QA_DIR ?? join(tmpdir(), 'verboo-stamina-v
 
 async function platformFixture() {
   const state = {
-    enrolled: true, down: false, holdNext: false, reads: 0,
+    enrolled: true, down: false, holdNext: false, reads: 0, includeOther: false, omitSelected: false,
     level: undefined as number | undefined, held: undefined as (() => void) | undefined,
   }
   const respond = (res: ServerResponse, status: number, body: unknown) => {
@@ -42,7 +43,11 @@ async function platformFixture() {
         nextOutputTps: account === ACCOUNT_A ? 67 : 200, recovering: false, fullAt: null,
         accountingPending: false, asOf: new Date().toISOString(),
       }
-      const reply = () => { respond(res, state.down ? 503 : 200, state.down ? { error: 'unavailable' } : { data: state.enrolled ? [row] : [] }) }
+      const readings = state.enrolled ? [
+        ...state.omitSelected ? [] : [row],
+        ...state.includeOther ? [{ ...row, groupId: OTHER_PLAN, groupName: 'Testes', remainingPercent: 7.75 }] : [],
+      ] : []
+      const reply = () => { respond(res, state.down ? 503 : 200, state.down ? { error: 'unavailable' } : { data: readings }) }
       if (state.holdNext) {
         state.holdNext = false
         state.held = reply
@@ -50,7 +55,10 @@ async function platformFixture() {
       return
     }
     if (req.url === '/api/me/subscriptions') {
-      respond(res, 200, { data: [{ id: PLAN, groupId: PLAN, group: { name: 'Unlimited' }, status: 'active', cancelAtPeriodEnd: false, management: { changePlan: false }, billing: null }] })
+      respond(res, 200, { data: [
+        { id: PLAN, groupId: PLAN, group: { name: 'Unlimited', slug: 'unlimited' }, status: 'active', cancelAtPeriodEnd: false, management: { changePlan: false }, billing: null },
+        { id: OTHER_PLAN, groupId: OTHER_PLAN, group: { name: 'Testes', slug: 'testes' }, status: 'active', cancelAtPeriodEnd: false, management: { changePlan: false }, billing: null },
+      ] })
       return
     }
     if (req.url?.startsWith('/api/marketplace')) {
@@ -89,6 +97,15 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     const button = page.getByRole('button', { name }).first()
     await button.click()
   }
+  async function openConversation() {
+    await navigate(/^(Workspace|Área de trabalho)$/)
+    await page.locator('[data-verboo-session="stamina-history"]').getByRole('button').first().click()
+  }
+  async function chooseModel(name: string) {
+    await page.getByRole('button', { name: /^Select model/ }).click()
+    await page.getByRole('menuitem', { name: /^Model/ }).click()
+    await page.getByRole('menuitemradio', { name, exact: true }).click()
+  }
   beforeAll(async () => {
     platform = await platformFixture()
     directory = await mkdtemp(join(tmpdir(), 'verboo-stamina-browser-'))
@@ -104,8 +121,8 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     allowLoopbackHttp: true
 - id: agent-default-model
   config:
-    provider: deepseek-official
-    model: deepseek-v4-flash
+    provider: deepseek-account
+    model: unlimited/deepseek-v4-flash
 - insert:
     - id: stamina-fixture-account
       name: ${JSON.stringify(fileURLToPath(new URL('./fixtures/verboo-stamina/account.mjs', import.meta.url)))}
@@ -118,9 +135,15 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       welcomeNoticePending: true,
       replayFixture: join(ROOT, 'apps/web/tests/fixtures/model-badge/session.v4.jsonl'),
       replayProvidersOnly: true,
-      replayProviders: ['deepseek-account', 'deepseek-official'].map(id => ({
-        id, name: 'Verboo Code fixture', models: [{ id: 'deepseek-v4-flash', name: 'Fixture model', contextWindow: 128000 }],
-      })),
+      replayProviders: [{
+        id: 'deepseek-account', name: 'Verboo Code fixture', models: [
+          { id: 'unlimited/deepseek-v4-flash', name: 'Fixture model', contextWindow: 128000 },
+          { id: 'testes/deepseek-v4-flash', name: 'Testes model', contextWindow: 128000 },
+        ],
+      }, {
+        id: 'deepseek-official', name: 'Recorded fixture provider',
+        models: [{ id: 'deepseek-v4-flash', name: 'Recorded fixture model', contextWindow: 128000 }],
+      }],
       extraOverlayPath: [join(ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), overlay],
     })
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
@@ -180,8 +203,8 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   it('surrounds Send with a purple ring while retaining the water inside', async () => {
     await navigate(/^(Preferences|Preferências)$/)
     await page.getByLabel(/^(Language|Idioma)$/).selectOption('en')
-    await navigate(/^(Workspace|Área de trabalho)$/)
-    await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
+    await openConversation()
+    await chooseModel('Fixture model')
     const primary = page.locator('[data-composer-primary]')
     const liquid = primary.locator('[data-verboo-stamina-liquid]')
     const ring = primary.locator('[data-stamina-ring]')
@@ -262,8 +285,8 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
   })
   it.skipIf(!DEBUG)('shows exact server percentages and fresh timestamps in debug mode', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
-    await page.getByRole('button').filter({ has: page.getByText(basename(scaffold.workspaceCwd), { exact: true }) }).click()
+    await openConversation()
+    await chooseModel('Fixture model')
     const debug = page.locator('[data-verboo-stamina-debug]')
     await debug.waitFor()
     try {
@@ -300,6 +323,38 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(true)
     } finally {
       platform.state.level = undefined
+    }
+  })
+
+  it.skipIf(!DEBUG)('follows the selected group and never borrows another group’s stamina', async () => {
+    await openConversation()
+    await chooseModel('Fixture model')
+    const debug = page.locator('[data-verboo-stamina-debug]')
+    const liquid = page.locator('[data-verboo-stamina-liquid]')
+    const previousLevel = platform.state.level
+    try {
+      platform.state.level = 50
+      platform.state.includeOther = true
+      await debug.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('Unlimited: 50%')
+      expect(await debug.textContent()).not.toContain('Testes')
+      await chooseModel('Testes model')
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('Testes: 7.75%')
+      expect(await debug.textContent()).not.toContain('Unlimited')
+      await expect.poll(() => liquid.locator('[data-stamina-water]').evaluate(node => (node as HTMLElement).style.height)).toBe('7.75%')
+      await chooseModel('Fixture model')
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('Unlimited: 50%')
+      platform.state.omitSelected = true
+      await debug.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await expect.poll(() => debug.textContent(), { timeout: 10000 }).toContain('Unlimited: no stamina reading for this group')
+      expect(await debug.textContent()).not.toContain('Testes')
+      expect(await debug.textContent()).not.toContain('%')
+      expect(await liquid.count()).toBe(0)
+      await page.screenshot({ path: join(ARTIFACTS, 'selected-group-unavailable.png'), animations: 'disabled' })
+    } finally {
+      platform.state.includeOther = false
+      platform.state.omitSelected = false
+      platform.state.level = previousLevel
     }
   })
 

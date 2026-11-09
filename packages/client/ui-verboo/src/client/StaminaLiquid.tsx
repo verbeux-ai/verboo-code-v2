@@ -3,24 +3,24 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ProductProps } from './contracts.ts'
 import { staminaAddress } from './stamina-resource.ts'
+import { selectStaminaForModel, type StaminaModelProps } from './stamina-selection.ts'
 import css from './StaminaLiquid.module.css'
 
 /** The primary-action slot keeps the host button's actions and accessible name. */
-export function StaminaButtonFill(props: PropsRuntime<'conversation.input.primary.background'> & ProductProps) {
+export function StaminaButtonFill(props: PropsRuntime<'conversation.input.primary.background'> & ProductProps & StaminaModelProps) {
   const address = props.useProduct(staminaAddress)
+  const plans = props.useProduct(state => state.plans)
+  const model = props.useStaminaModel(state => state.current)
   const resource = props.useResource<'verboo-stamina'>(address)
-  return <StaminaButtonReading rows={resource.value} stale={resource.status === 'failed'} />
+  const selected = selectStaminaForModel(plans, model, resource.value)
+  return <StaminaButtonReading reading={selected.reading} stale={resource.status === 'failed'} />
 }
 
-/** The least-full enrolled plan represents the account; unknown enrollment paints no reading. */
-export function StaminaButtonReading({ rows, stale }: {
-  rows: StaminaStatus[] | undefined
+/** Only the selected group's confirmed reading paints the water. */
+export function StaminaButtonReading({ reading, stale }: {
+  reading: StaminaStatus | undefined
   stale: boolean
 }) {
-  const reading = rows?.reduce<StaminaStatus | undefined>(
-    (lowest, row) => lowest === undefined || row.remainingPercent < lowest.remainingPercent ? row : lowest,
-    undefined,
-  )
   if (reading === undefined) return null
   return <StaminaLiquid remainingPercent={reading.remainingPercent} stale={stale} />
 }

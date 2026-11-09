@@ -22,18 +22,16 @@ describe('liquid stamina inside the primary action', () => {
     expect(container.textContent).toBe('')
     expect(container.querySelector('[aria-valuenow]')).toBeNull()
   })
-  it.each([undefined, []])('paints no invented reading for unknown or absent enrollment: %s', (rows) => {
-    const { container } = render(<StaminaButtonReading rows={rows} stale={false} />)
+  it('paints no invented reading when the selected group has no enrollment', () => {
+    const { container } = render(<StaminaButtonReading reading={undefined} stale={false} />)
     expect(container.firstChild).toBeNull()
   })
-  it('uses the least-full confirmed enrolled plan without changing its value', () => {
-    const other = { ...reading, groupId: '00000000-0000-4000-8000-000000000002' as PlanId, remainingPercent: 25 }
-    const { container } = render(<StaminaButtonReading rows={[reading, other]} stale={false} />)
-    expect(container.querySelector<HTMLElement>('[data-stamina-water]')!.style.height).toBe('25%')
-
+  it('paints the selected group’s confirmed value without changing it', () => {
+    const { container } = render(<StaminaButtonReading reading={reading} stale={false} />)
+    expect(container.querySelector<HTMLElement>('[data-stamina-water]')!.style.height).toBe('50%')
   })
   it('retains the last confirmed level with a stale presentation after a refresh failure', () => {
-    const { container } = render(<StaminaButtonReading rows={[reading]} stale />)
+    const { container } = render(<StaminaButtonReading reading={reading} stale />)
     expect(container.querySelector('[data-verboo-stamina-liquid]')!.hasAttribute('data-stale')).toBe(true)
     expect(container.querySelector<HTMLElement>('[data-stamina-water]')!.style.height).toBe('50%')
   })

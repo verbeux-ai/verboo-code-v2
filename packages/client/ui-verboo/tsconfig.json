@@ -97,6 +97,9 @@
     },
     {
       "path": "../ui-settings/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-model-selection"
     }
   ]
 }

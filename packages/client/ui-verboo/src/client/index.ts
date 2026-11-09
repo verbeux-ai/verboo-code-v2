@@ -28,6 +28,9 @@ import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { StaminaModelState } from './stamina-selection.ts'
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ExecutionStatus } from './Execution.tsx'
@@ -51,6 +54,7 @@ declare global {
 export const inject = [
   'slots',
   'configForms',
+  'modelDirectories',
   'layout',
   'uiWorkspace',
   'workspaces',
@@ -329,6 +333,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       )
     },
   })
+  const noStaminaModel = createSnapshotStore<StaminaModelState>({ current: null })
+  const staminaFace = (sessionId?: SessionId) => {
+    const product = face()
+    const staminaModel = sessionId === undefined ? noStaminaModel : ctx.modelDirectories.directoryFor(sessionId).store
+    return { ...product, hooks: { ...product.hooks, staminaModel } }
+  }
   const debugConfig = ctx.configForms.get<Pick<Config, 'staminaDebug'>>('ui-verboo')
   const debugActions: StaminaDebugInjected = {
     hooks: { staminaDebug: debugConfig },
@@ -338,8 +348,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       catch (_error) { return false } // The toggle reports an unsuccessful Host write inline.
     },
   }
-  const debugFace = () => {
-    const product = face()
+  const debugFace = (sessionId?: SessionId) => {
+    const product = staminaFace(sessionId)
     return { ...product, ...debugActions, hooks: { ...product.hooks, ...debugActions.hooks } }
   }
   ctx.remoteAccess.whenAccess('account/watch', function* () {
@@ -458,7 +468,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   )
   ctx.slots.inject('conversation.input.primary.background', () =>
     ctx.slots.register(
-      { name: 'conversation.input.primary.background', locale: 'verboo', inject: face },
+      { name: 'conversation.input.primary.background', locale: 'verboo', inject: staminaFace },
       StaminaButtonFill,
     ),
   )

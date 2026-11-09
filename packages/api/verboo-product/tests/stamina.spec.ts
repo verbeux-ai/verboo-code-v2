@@ -47,6 +47,18 @@ function fixture(body: unknown = { data: [reading] }, status = 200) {
 }
 
 describe('public enrolled-plan stamina', () => {
+  it('preserves server routing slugs for matching a selected model to its group ID', async () => {
+    const f = fixture()
+    const group = { id: reading.groupId, name: 'Max', slug: 'max' }
+    f.fetch.mockImplementation(async url => Response.json({ data: String(url).includes('/me/subscriptions') ? [{
+      id: reading.groupId, groupId: group.id, group, status: 'active', cancelAtPeriodEnd: false,
+      management: { changePlan: false }, billing: null,
+    }] : [{ ...group, description: '', priceCents: 100, currency: 'BRL', billingInterval: 'month' }] }))
+    expect(await f.product.getPlans()).toMatchObject({ ok: true, data: {
+      subscriptions: [{ planId: group.id, name: 'Max', slug: 'max' }],
+      catalog: [{ id: group.id, name: 'Max', slug: 'max' }],
+    } })
+  })
   it('uses Host authentication and strips all private accounting fields', async () => {
     const f = fixture({ data: [{ ...reading, budgetUsd: '100', usedUsd: '99', inputRate: 'private', secret: 'never-return' }] })
     expect(await f.product.getStamina(f.signal)).toEqual({ ok: true, data: [reading] })

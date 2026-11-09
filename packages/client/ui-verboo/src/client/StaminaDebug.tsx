@@ -2,10 +2,10 @@
 import { useState } from 'react'
 import type { PropsRuntime, HostObservable, InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { Config } from '../config.ts'
 import type { ProductProps } from './contracts.ts'
 import { staminaAddress } from './stamina-resource.ts'
+import { selectStaminaForModel, type SelectedStamina, type StaminaModelProps } from './stamina-selection.ts'
 import css from './StaminaDebug.module.css'
 
 type DebugLabels = Pick<ProductProps, 't'>
@@ -23,13 +23,16 @@ export interface StaminaDebugInjected {
 export type StaminaDebugProps = PropsLocale<'verboo'> & InjectFace<StaminaDebugInjected>
 
 /** Account-owned readings remain reactive while a response is running. */
-export function StaminaDebug(props: PropsRuntime<'conversation.composer.dock'> & ProductProps & StaminaDebugProps) {
+export function StaminaDebug(props: PropsRuntime<'conversation.composer.dock'> & ProductProps & StaminaDebugProps & StaminaModelProps) {
   const address = props.useProduct(staminaAddress)
+  const plans = props.useProduct(state => state.plans)
+  const model = props.useStaminaModel(state => state.current)
   const resource = props.useResource<'verboo-stamina'>(address)
   const locale = props.usePreferences(state => state.locale)
   const enabled = props.useStaminaDebug(state => state.value?.staminaDebug === true)
   if (!enabled) return null
-  return <StaminaDebugReading rows={resource.value} failed={resource.status === 'failed'} locale={locale} t={props.t} refresh={props.refreshStamina} />
+  const selected = selectStaminaForModel(plans, model, resource.value)
+  return <StaminaDebugReading {...selected} failed={resource.status === 'failed'} locale={locale} t={props.t} refresh={props.refreshStamina} />
 }
 
 /** The switch changes only diagnostic presentation, never account consumption. */
@@ -59,8 +62,7 @@ export function StaminaDebugToggle(props: StaminaDebugProps) {
 }
 
 /** Raw server percentages are neither rounded nor inferred from local tokens. */
-export function StaminaDebugReading({ rows, failed, locale, t, refresh }: DebugLabels & {
-  rows: StaminaStatus[] | undefined
+export function StaminaDebugReading({ group, reading, failed, locale, t, refresh }: DebugLabels & SelectedStamina & {
   failed: boolean
   locale: string
   refresh(): void
@@ -69,12 +71,13 @@ export function StaminaDebugReading({ rows, failed, locale, t, refresh }: DebugL
   return (
     <output className={css.debug} aria-label={t('staminaDebugTitle')} aria-live="off" data-verboo-stamina-debug>
       <span>{t('staminaDebugTitle')}</span>
-      {rows?.length ? rows.map(row => <span className={css.reading} key={row.groupId}>
-        <code>{t('staminaDebugValue', { name: row.groupName, percent: String(row.remainingPercent) })}</code>
-        <time dateTime={row.asOf}>{t('staminaDebugUpdated', { time: time.format(new Date(row.asOf)) })}</time>
-        {row.accountingPending && <span>{t('staminaDebugPending')}</span>}
-      </span>) : <span>{t(failed ? 'staminaDebugFailed' : 'staminaDebugEmpty')}</span>}
-      {rows?.length && failed ? <span>{t('staminaStale')}</span> : null}
+      {reading && group ? <span className={css.reading}>
+        <code>{t('staminaDebugValue', { name: group.name, percent: String(reading.remainingPercent) })}</code>
+        <time dateTime={reading.asOf}>{t('staminaDebugUpdated', { time: time.format(new Date(reading.asOf)) })}</time>
+        {reading.accountingPending && <span>{t('staminaDebugPending')}</span>}
+      </span> : <span>{failed ? t('staminaDebugFailed') : group
+        ? t('staminaDebugGroupEmpty', { name: group.name }) : t('staminaDebugEmpty')}</span>}
+      {reading && failed ? <span>{t('staminaStale')}</span> : null}
       <button type="button" onClick={refresh}>{t('refresh')}</button>
     </output>
   )

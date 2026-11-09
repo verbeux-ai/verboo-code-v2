@@ -8,6 +8,8 @@ export type PlanId = Branded<'VerbooPlanId'>
 export interface Plan {
   id: PlanId
   name: string
+  /** Server routing slug; absent on older API projections. */
+  slug?: string
   description: string
   priceCents: number
   currency: string
@@ -18,6 +20,8 @@ export interface Subscription {
   id: string
   planId: PlanId
   name: string
+  /** Server routing slug of this subscription's group. */
+  slug?: string
   status: string
   renewsAt: string | null
   cancelAtEnd: boolean

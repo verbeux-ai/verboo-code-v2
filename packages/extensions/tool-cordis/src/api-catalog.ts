@@ -7650,7 +7650,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Plan',
-    declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
+    declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    slug?: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
   },
   {
     name: 'PlanId',
@@ -9522,7 +9522,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Subscription',
-    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
+    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
     name: 'SurfaceEvent',
