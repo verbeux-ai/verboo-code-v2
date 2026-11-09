@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const host = process.env.VERBOO_TEST_HOST_MODULE ?? join(repository, 'apps/desktop/tauri/host.mjs')
@@ -17,7 +17,7 @@ const prefix = 'VERBOO_HOST_V1\t'
 async function start(t, cli = manifest, browserOverride = false) {
   const home = await mkdtemp(join(tmpdir(), 'verboo-tauri-host-'))
   if (browserOverride) await writeFile(join(home, 'cordis.patch.yml'), '- id: web-runtime\n  config:\n    openBrowser: true\n    printUrl: false\n    surfaceContext: true\n')
-  const probe = fileURLToPath(new URL('./fixtures/browser-opener-probe.mjs', import.meta.url))
+  const probe = pathToFileURL(fileURLToPath(new URL('./fixtures/browser-opener-probe.mjs', import.meta.url))).href
   const child = spawn(process.execPath, ['--import', probe, host, cli], {
     cwd: repository, env: { ...process.env, DSH_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'],
   })
