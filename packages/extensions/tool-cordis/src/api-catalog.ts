@@ -2916,6 +2916,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'options', description: 'optional cancellation.' }],
         returns: 'one snapshot per stored session.',
       },
+      {
+        signature: 'remove(id: SessionId, options?: SessionPersistenceRemoveOptions): Promise<void>',
+        description: 'Permanently delete every durable artifact of one stored session.\n\nThis is destructive and irreversible: unlike archival, which only hides a session, removal discards the event log and its header, so the session is no longer visible to `stat`, `list`, or `open`. A backend removes the whole physical footprint it owns for the session — every generation and side artifact — so no residue can be listed later.\n\nThe id is an opaque identity, not a lookup result: removing an id this backend holds nothing for resolves without error, because a repeated or racing removal must not fail a caller whose intent is already satisfied. Removal does not close or invalidate live handles: a write handle whose session was removed and which then appends may re-materialize an artifact, so callers stop the session\'s running work before removing it.\n\nA backend I/O failure during removal rejects; nothing is rolled back, so the session is either absent or still fully listed, and a failed removal is safe to repeat. The default refusal serves a backend that owns no removable per-session artifact; every shipped backend overrides it.',
+        parameters: [{ name: 'id', description: 'the stored session to remove.' }, { name: 'options', description: 'optional cancellation observed before backend work starts.' }],
+        returns: 'resolution once every artifact of the session is gone.',
+        throws: ['{SessionRemoveUnsupportedError} when this backend cannot remove stored sessions.'],
+      },
     ],
   },
   {
@@ -4647,6 +4654,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'deleteSession\') deleteSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceDeleteSessionValue>',
+        description: 'Remove one Session permanently, transcript included.',
+        parameters: [{ name: 'request', description: 'Session identity to delete and whether to stop its running work.' }],
+        returns: 'deletion confirmation.',
+      },
+      {
         signature: '@Remote(\'pinSession\') pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue>',
         description: 'Surface one known unarchived Session ahead of unpinned Sessions.',
         parameters: [{ name: 'request', description: 'Session identity to pin.' }],
@@ -4756,6 +4769,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unarchive one session durably by dropping it from the registry-global archive set; the accounting slot was never touched, so the session returns to its recorded position. Unarchiving runs no session-existence check because removing an id cannot introduce an unknown one, so an entry whose session is gone still resolves. An id that is not archived resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to unarchive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'deleteSession(sessionId: SessionId, options: DeleteSessionOptions = {}): Promise<void>',
+        description: 'Delete one conversation permanently: its stored transcript and its place in every registry-global set and workspace account.\n\nThis is irreversible and distinct from archival, which keeps the log. The requested end state is absence, so an id this registry knows nothing about resolves without writing — a repeated or racing deletion, or one whose row another surface already removed, is not an error.\n\nRunning work is never silently discarded. Without `stopActivity` the `workspace/session-activity` waterfall is asked once and any reported activity rejects with WorkspaceActiveSessionError before anything is written or deleted. With `stopActivity` every `workspace/session-stop` provider is asked to stop that work before the transcript is removed, so a turn cannot keep appending to a log that is about to disappear; a provider failure is logged and the deletion proceeds, because the caller\'s request is destructive by definition.\n\nFailure leaves no silent orphan. When the backend removal rejects, no accounting is touched: the row stays visible and the caller may repeat the deletion, which is safe. When removal succeeds but the registry write fails, the rejection is an `AggregateError` naming the committed deletion and the stale accounting; the in-memory projection already dropped the session, so the row is gone from this process and startup reindexing drops the dangling id.',
+        parameters: [{ name: 'sessionId', description: 'The session to delete.' }, { name: 'options', description: 'Whether running work is stopped instead of refusing.' }],
+        returns: 'resolution once the transcript is gone and the registry no longer accounts the session.',
       },
       {
         signature: 'pinSession(sessionId: SessionId): Promise<void>',
@@ -6351,6 +6370,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DeepSeekLlmApiJson',
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
+  },
+  {
+    name: 'DeleteSessionOptions',
+    declaration: 'export interface DeleteSessionOptions {\n    readonly stopActivity?: boolean;\n}',
   },
   {
     name: 'DeliveryRetentionBounds',
@@ -8761,6 +8784,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionPersistenceOpenOptions {\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'SessionPersistenceRemoveOptions',
+    declaration: 'export interface SessionPersistenceRemoveOptions {\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
     name: 'SessionPersistenceRevision',
     declaration: 'export type SessionPersistenceRevision = Branded<\'SessionPersistenceRevision\'>;',
   },
@@ -9814,7 +9841,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Toolkit',
-    declaration: 'export interface Toolkit {\n    slug: string;\n    name: string;\n    available: boolean;\n    authType?: \'oauth\' | \'credentials\' | \'none\' | \'setup\' | undefined;\n}',
+    declaration: 'export interface Toolkit {\n    slug: string;\n    name: string;\n    available: boolean;\n    logo?: string | undefined;\n    authType?: \'oauth\' | \'credentials\' | \'none\' | \'setup\' | undefined;\n}',
   },
   {
     name: 'ToolMessageSource',
@@ -10359,6 +10386,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceDeleteRequest',
     declaration: 'export interface WorkspaceDeleteRequest {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
+    name: 'WorkspaceDeleteSessionRequest',
+    declaration: 'export interface WorkspaceDeleteSessionRequest {\n    readonly sessionId: SessionId;\n    readonly stopActivity?: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceDeleteSessionValue',
+    declaration: 'export interface WorkspaceDeleteSessionValue {\n    readonly deleted: true;\n}',
   },
   {
     name: 'WorkspaceDeleteValue',

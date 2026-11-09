@@ -25,11 +25,13 @@ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   RowToast, RowToastState, SessionArchiveConfirmInjected, SessionArchiveConfirmRequest,
+  SessionDeleteConfirmInjected, SessionDeleteConfirmRequest,
   SessionRenameDialogInjected, SessionRenameTarget,
 } from '../src/client/contract/slots.ts'
 import {
   ArchiveSessionRowButton, SessionArchiveConfirmDialog,
 } from '../src/client/session-actions/ArchiveSession.tsx'
+import { SessionDeleteConfirmDialog } from '../src/client/session-actions/DeleteSession.tsx'
 import { PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
@@ -425,6 +427,89 @@ declare module '@deepseek-ai/dsh-workspace/types' {
 function ToastFrame({ renderSlot }: PropsRenderSlots<'shell.overlay'>) {
   return renderSlot('shell.overlay', {})
 }
+
+
+describe('SessionDeleteConfirmDialog', () => {
+  /** The dialog over a test-owned request source; settling clears the request the way apply does. */
+  function deleteDialog(deleteSession: SessionDeleteConfirmInjected['deleteSession'], translate = tEn) {
+    const request = createSnapshotStore<SessionDeleteConfirmRequest | null>(null)
+    const settleSessionDelete = vi.fn(() => { request.set(null) })
+    render(
+      <SessionDeleteConfirmDialog
+        {...overlay}
+        t={translate}
+        useDeleteRequest={bindSnapshotSelector(request)}
+        settleSessionDelete={settleSessionDelete}
+        deleteSession={deleteSession}
+      />,
+    )
+    const ask = (): void => {
+      act(() => { request.set({ sessionId: sid('one'), displayTitle: 'Doomed session' }) })
+    }
+    return { settleSessionDelete, ask }
+  }
+
+  it('renders nothing until a confirmation is requested', () => {
+    deleteDialog(vi.fn(async () => {}))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('warns that deletion is irreversible and deletes only after the confirmation', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const deleteSession = vi.fn(() => pending.promise)
+    const { settleSessionDelete, ask } = deleteDialog(deleteSession)
+    // Nothing reaches the Host before the dialog is answered.
+    expect(deleteSession).not.toHaveBeenCalled()
+    ask()
+    const dialog = screen.getByRole('dialog', { name: 'Delete this conversation permanently?' })
+    expect(dialog.textContent).toContain('“Doomed session” and its full transcript will be deleted')
+    expect(dialog.textContent).toContain('This cannot be undone.')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }))
+    expect(deleteSession).toHaveBeenCalledWith(sid('one'))
+    // While the Host call is pending, closing is blocked and the status shows.
+    expect(screen.getByRole('status').textContent).toBe('Deleting…')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(settleSessionDelete).not.toHaveBeenCalled()
+    await act(async () => { pending.resolve(undefined) })
+    expect(settleSessionDelete).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('cancelling deletes nothing, and a refusal keeps the dialog open with the reason', async () => {
+    const deleteSession = vi.fn<SessionDeleteConfirmInjected['deleteSession']>()
+      .mockRejectedValueOnce(new Error('delete exploded'))
+    const { settleSessionDelete, ask } = deleteDialog(deleteSession, t)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(deleteSession).not.toHaveBeenCalled()
+    expect(settleSessionDelete).toHaveBeenCalledOnce()
+
+    const second = deleteDialog(deleteSession)
+    second.ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('delete exploded') })
+    expect(second.settleSessionDelete).not.toHaveBeenCalled()
+    // Escape is allowed again once the call settled.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(second.settleSessionDelete).toHaveBeenCalledOnce()
+  })
+
+  it('ignores Escape while the deletion is pending and reports a non-Error reason as text', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const deleteSession = vi.fn<SessionDeleteConfirmInjected['deleteSession']>()
+      .mockReturnValueOnce(pending.promise)
+    const { settleSessionDelete, ask } = deleteDialog(deleteSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }))
+    // The conversation may already be gone, so dismissing mid-flight is refused.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionDelete).not.toHaveBeenCalled()
+    await act(async () => { pending.reject('plain failure') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('plain failure') })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionDelete).toHaveBeenCalledOnce()
+  })
+})
 
 describe('RowActionToast', () => {
   it('adds the archive filter action when the display mapping supplies no actions', () => {

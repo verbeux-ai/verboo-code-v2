@@ -10,6 +10,8 @@ import type {
   WorkspaceBaseline,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
+  WorkspaceDeleteSessionRequest,
+  WorkspaceDeleteSessionValue,
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
@@ -221,6 +223,25 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
       this.installArchived(result.value.archivedSessionIds)
     }
     return result
+  }
+
+  /**
+   * Remove one Session permanently and install the returned acknowledgement.
+   * The Session leaves every projection with the Host delete echo and the
+   * pushed archive/pin sets; the row disappears from the Client list through
+   * `api-session/removed`, which the Session Controller owns.
+   * @param sessionId - Session to delete.
+   * @param options - Whether the Host stops the Session's running work instead of refusing.
+   * @returns generated Remote result.
+   */
+  async deleteSession(
+    sessionId: WorkspaceDeleteSessionRequest['sessionId'],
+    options: Pick<WorkspaceDeleteSessionRequest, 'stopActivity'> = {},
+  ): Promise<RemoteResult<WorkspaceDeleteSessionValue>> {
+    return await this.remote.deleteSession({
+      sessionId,
+      ...(options.stopActivity === true ? { stopActivity: true } : {}),
+    })
   }
 
   /**

@@ -10,6 +10,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHandle, SessionAccess } from './handle.ts'
 import type { SessionLocation } from './errors.ts'
+import { SessionRemoveUnsupportedError } from './errors.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
@@ -32,6 +33,7 @@ export {
   SessionPersistenceCorruptionError,
   SessionPersistenceNotFoundError,
   SessionReadOnlyError,
+  SessionRemoveUnsupportedError,
   sessionFormatVersionRefusal,
 } from './errors.ts'
 export type { SessionLocation } from './errors.ts'
@@ -112,6 +114,12 @@ export interface SessionPersistenceStatOptions {
 /** Options for {@link SessionPersistence.list}. */
 export interface SessionPersistenceListOptions {
   /** Optional cancellation for backend listing work. */
+  readonly signal?: AbortSignal
+}
+
+/** Options for {@link SessionPersistence.remove}. */
+export interface SessionPersistenceRemoveOptions {
+  /** Optional cancellation observed before backend work starts. */
   readonly signal?: AbortSignal
 }
 
@@ -208,6 +216,41 @@ export abstract class SessionPersistence extends Service {
    * @returns one snapshot per stored session.
    */
   abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+  /**
+   * Permanently delete every durable artifact of one stored session.
+   *
+   * This is destructive and irreversible: unlike archival, which only hides a
+   * session, removal discards the event log and its header, so the session is
+   * no longer visible to `stat`, `list`, or `open`. A backend removes the whole
+   * physical footprint it owns for the session — every generation and side
+   * artifact — so no residue can be listed later.
+   *
+   * The id is an opaque identity, not a lookup result: removing an id this
+   * backend holds nothing for resolves without error, because a repeated or
+   * racing removal must not fail a caller whose intent is already satisfied.
+   * Removal does not close or invalidate live handles: a write handle whose
+   * session was removed and which then appends may re-materialize an artifact,
+   * so callers stop the session's running work before removing it.
+   *
+   * A backend I/O failure during removal rejects; nothing is rolled back, so
+   * the session is either absent or still fully listed, and a failed removal is
+   * safe to repeat. The default refusal serves a backend that owns no removable
+   * per-session artifact; every shipped backend overrides it.
+   * @param id - the stored session to remove.
+   * @param options - optional cancellation observed before backend work starts.
+   * @returns resolution once every artifact of the session is gone.
+   * @throws {SessionRemoveUnsupportedError} when this backend cannot remove stored sessions.
+   */
+  remove(id: SessionId, options?: SessionPersistenceRemoveOptions): Promise<void> {
+    try {
+      options?.signal?.throwIfAborted()
+    } catch (error) {
+      // A cancelled caller keeps its own reason as the rejection.
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    return Promise.reject(new SessionRemoveUnsupportedError(id))
+  }
 }
 
 export default SessionPersistence

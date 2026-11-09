@@ -474,6 +474,19 @@ export class JsonlBackendTracker {
   }
 
   /**
+   * Drop a created-but-unmaterialized entry whose session was removed.
+   *
+   * The entry is what makes an unmaterialized session visible to `list`; keeping
+   * it would report a session the caller asked to delete. Dropping it is the same
+   * bookkeeping as materializing: in both cases the id is no longer pending.
+   * Write ownership stays with the creator handle.
+   * @param id - the removed session.
+   */
+  dropPending(id: SessionId): void {
+    this.materialized(id)
+  }
+
+  /**
    * Track one open handle for teardown and, for a write handle, bind it as
    * the session's live event route.
    * @param handle - the just-constructed handle.

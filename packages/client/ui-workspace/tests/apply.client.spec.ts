@@ -18,15 +18,18 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import {
   type ArchiveSessionInjected, menuOpenStateFactory, type PinSessionInjected,
-  type RowToastInjected, type SessionArchiveConfirmInjected, type SessionRenameDialogInjected,
+  type RowToastInjected, type SessionArchiveConfirmInjected, type SessionDeleteConfirmInjected,
+  type SessionRenameDialogInjected,
   type WorkspaceViewStoreHandle,
 } from '../src/client/contract/slots.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { ArchiveSessionRowButton, SessionArchiveConfirmDialog } from '../src/client/session-actions/ArchiveSession.tsx'
+import { SessionDeleteConfirmDialog } from '../src/client/session-actions/DeleteSession.tsx'
 import { PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
 import type { ArchiveToastInjected, ToastDisplayInjected } from '../src/client/contract/toast.ts'
+import { IconTrashOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
@@ -221,6 +224,7 @@ function sessionMenuActions(ctx: Context) {
   return {
     forkSession: (sessionId: SessionId) => { select('session.fork/fork', sessionId) },
     requestSessionRename: (sessionId: SessionId, title: string) => { select('session.rename/rename', sessionId, title) },
+    requestSessionDelete: (sessionId: SessionId, displayTitle: string) => { select('session.delete/delete', sessionId, displayTitle) },
     copySessionId: async (sessionId: SessionId) => { select('session.id/copy', sessionId); await settled() },
   }
 }
@@ -309,7 +313,7 @@ describe('ui-workspace apply', () => {
     // The row actions follow the browser's own declaration, whenever it lands.
     expect(after.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(after.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(after.slots.entries('shell.overlay')).toHaveLength(3)
+    expect(after.slots.entries('shell.overlay')).toHaveLength(4)
   })
 
   it('declares the two Session row lists and registers the shipped actions and overlay surfaces into them', async () => {
@@ -335,6 +339,7 @@ describe('ui-workspace apply', () => {
     expect(rows('shell.overlay')).toEqual([
       ['workspace.session-rename', undefined, SessionRenameDialog, 'workspace'],
       ['workspace.session-archive', undefined, SessionArchiveConfirmDialog, 'workspace'],
+      ['workspace.session-delete', undefined, SessionDeleteConfirmDialog, 'workspace'],
       ['workspace.row-toast', undefined, RowActionToast, undefined],
     ])
     // Only archive notice entries share the browser's viewing store.
@@ -346,6 +351,7 @@ describe('ui-workspace apply', () => {
     expect(b.slots.entries('workspace.toast').map(row => row.options.key)).toEqual([
       'sessionIdCopied', 'sessionIdCopyFailed', 'pinFailed', 'unpinFailed', 'archivedNotOpenable',
       'defaultWorkspaceFailed', 'shortcutForkFailed', 'createFailed', 'forkRequiresOpen', 'archived', 'stoppedAndArchived',
+      'deleted', 'deleteFailed',
     ])
     for (const registration of b.slots.entries('workspace.toast')) {
       expect(registration.locale).toBe('workspace')
@@ -596,6 +602,56 @@ describe('ui-workspace apply', () => {
     }
   })
 
+
+  it('deletes a conversation only after its confirmation, stopping the running work first', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const deleteSession = vi.spyOn(b.ctx.uiWorkspace, 'deleteSession').mockResolvedValue(undefined)
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-delete')) as SessionDeleteConfirmInjected
+    const action = sessionMenuActions(b.ctx)
+
+    // The menu action raises the confirmation; nothing reaches the Host yet.
+    expect(deleteSession).not.toHaveBeenCalled()
+    action.requestSessionDelete(sid('doomed'), 'Doomed session')
+    expect(confirm.hooks.deleteRequest.getSnapshot()).toEqual({ sessionId: 'doomed', displayTitle: 'Doomed session' })
+    expect(deleteSession).not.toHaveBeenCalled()
+
+    // Cancelling settles the request and deletes nothing.
+    confirm.settleSessionDelete()
+    expect(confirm.hooks.deleteRequest.getSnapshot()).toBeNull()
+    expect(deleteSession).not.toHaveBeenCalled()
+    expect(toast.hooks.toast.getSnapshot()).toBeNull()
+
+    // The row menu draws the destructive action with the trash glyph the icon
+    // registry supplies; the danger flag colors it with the error token.
+    const trash = b.slots.entries('contextMenu.icon').find(row => row.options.key === 'workspace.delete')
+    expect(trash?.component).toBe(IconTrashOutlineRegular)
+
+    // Confirming asks the Host to stop whatever still runs and discard the transcript.
+    await confirm.deleteSession(sid('doomed'))
+    expect(deleteSession).toHaveBeenCalledExactlyOnceWith('doomed', { stopActivity: true })
+    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'deleted', sessionId: 'doomed', seq: 1 })
+    expect(b.retain).not.toHaveBeenCalled()
+  })
+
+  it('reports a rejected deletion and never claims the conversation is gone', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const failure = new Error('delete exploded')
+    const deleteSession = vi.spyOn(b.ctx.uiWorkspace, 'deleteSession').mockRejectedValueOnce(failure)
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    const confirm = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-delete')) as SessionDeleteConfirmInjected
+
+    await expect(confirm.deleteSession(sid('doomed'))).rejects.toBe(failure)
+    expect(deleteSession).toHaveBeenCalledExactlyOnceWith('doomed', { stopActivity: true })
+    expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'deleteFailed', sessionId: 'doomed', seq: 1 })
+  })
+
   it('the notice share takes the notice down, undoes an archive, and shows the archived rows', async () => {
     const b = await bench()
     declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
@@ -621,6 +677,16 @@ describe('ui-workspace apply', () => {
     const archiveDisplay = faceOf(archived) as ArchiveToastInjected
     archiveDisplay.filterAction(b.locale.bind('workspace'), toast.dismissToast).onClick()
     expect(view.getSnapshot().archivedFilter).toBe('show')
+
+    // The deletion notices carry the outcome the dialog's Host call produced.
+    const deleted = b.slots.entries('workspace.toast').find(row => row.options.key === 'deleted')!
+    expect((faceOf(deleted) as ToastDisplayInjected<'deleted'>)
+      .display({ kind: 'deleted', sessionId: sid('one'), seq: 1 }, b.locale.bind('workspace'), toast.dismissToast))
+      .toMatchObject({ text: '会话已删除', tone: 'success' })
+    const deleteFailed = b.slots.entries('workspace.toast').find(row => row.options.key === 'deleteFailed')!
+    expect((faceOf(deleteFailed) as ToastDisplayInjected<'deleteFailed'>)
+      .display({ kind: 'deleteFailed', sessionId: sid('one'), seq: 1 }, b.locale.bind('workspace'), toast.dismissToast))
+      .toMatchObject({ text: '无法删除会话，请重试', tone: 'warning' })
 
     archiveDisplay.display({ kind: 'archived', sessionId: sid('one'), seq: 1 }, b.locale.bind('workspace'), toast.dismissToast).actions![0]!.onClick()
     expect(unarchiveSession).toHaveBeenCalledWith('one')
@@ -915,7 +981,7 @@ describe('ui-workspace apply', () => {
     await fiber.await()
     expect(b.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(b.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(b.slots.entries('shell.overlay')).toHaveLength(3)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(4)
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)

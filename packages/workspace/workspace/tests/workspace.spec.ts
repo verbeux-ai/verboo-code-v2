@@ -16,6 +16,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import WorkspaceRegistry, {
   WorkspaceId,
   type workspaceDomainState,
+  WorkspaceActiveSessionError,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
 } from '../src/index.ts'
@@ -56,7 +57,13 @@ async function harness(options: HarnessOptions = {}) {
     listed.map(header => ({ header, revision: SessionPersistenceRevision(`rev-${header.id}`) })))
   const open = vi.fn(() => { throw new Error('event bodies must not be opened') })
   const stat = vi.fn(() => { throw new Error('per-session stat must not be needed') })
-  ctx.provide('sessionPersistence', { list, open, stat } as never)
+  // Removal is the registry's only destructive store call: record every id the
+  // registry asks the backend to forget, and never touch the in-memory listing
+  // unless the test says so, because a wrong registry could still pass by
+  // reading a listing it also rewrote.
+  const removed: SessionId[] = []
+  const remove = vi.fn(async (id: SessionId) => { removed.push(id) })
+  ctx.provide('sessionPersistence', { list, open, stat, remove } as never)
 
   if (options.sessionStore === true) {
     await ctx.plugin(SessionStore)
@@ -83,6 +90,8 @@ async function harness(options: HarnessOptions = {}) {
     list,
     open,
     stat,
+    remove,
+    removed,
     setSessions: (headers: SessionHeader[]) => { listed = headers },
   }
 }
@@ -1201,6 +1210,171 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+  })
+})
+
+
+describe('registry-global session deletion', () => {
+  it('removes the transcript, then drops the id from the archive set, the pin set, and its workspace account', async () => {
+    const dir = await makeDir('delete-home')
+    const result = await harness({
+      sessions: [header('doomed', dir, 100), header('kept', dir, 200)],
+    })
+    const workspace = result.registry.list()[0]!
+    // Accounts list the newest header first.
+    expect(workspace.sessionIds).toEqual(['kept', 'doomed'])
+    await result.registry.archiveSession(SessionId('doomed'))
+    // A pin cannot coexist with an archive, so pin the survivor instead and
+    // prove deletion leaves an unrelated pin alone.
+    await result.registry.pinSession(SessionId('kept'))
+
+    await result.registry.deleteSession(SessionId('doomed'))
+
+    // The backend was asked to delete the durable transcript once.
+    expect(result.removed).toEqual(['doomed'])
+    expect(result.remove).toHaveBeenCalledExactlyOnceWith('doomed')
+    // Every registry-global set and the workspace account lost the id.
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.pinnedSessionIds).toEqual(['kept'])
+    expect(result.registry.list()[0]!.sessionIds).toEqual(['kept'])
+    expect(storedState(result.pool).archivedSessionIds).toEqual([])
+    expect(storedRecord(result.pool, workspace.id).sessionIds).toEqual([SessionId('kept')])
+  })
+
+  it('deletes an unaccounted, unarchived session without inventing accounting', async () => {
+    const dir = await makeDir('delete-ungrouped')
+    const result = await harness({ sessions: [header('loose', dir, 100)] })
+    const workspace = result.registry.list()[0]!
+    // Detach first so the session belongs to no workspace account.
+    await workspace.detachSession(SessionId('loose'))
+    expect(result.registry.list()[0]!.sessionIds).toEqual([])
+
+    await result.registry.deleteSession(SessionId('loose'))
+    expect(result.removed).toEqual(['loose'])
+    expect(result.registry.list()[0]!.sessionIds).toEqual([])
+  })
+
+  it('treats an id the registry does not know as already deleted and writes nothing', async () => {
+    const dir = await makeDir('delete-unknown')
+    const result = await harness({ sessions: [header('known', dir, 100)] })
+    const changesBefore = result.changes.length
+
+    await expect(result.registry.deleteSession(SessionId('ghost'))).resolves.toBeUndefined()
+
+    // The requested end state is absence, so a repeated or racing deletion is
+    // not an error — and nothing asks the backend to delete a stranger's file.
+    expect(result.removed).toEqual([])
+    expect(result.changes.length).toBe(changesBefore)
+  })
+
+  it('refuses a session whose work is still running and deletes nothing', async () => {
+    const dir = await makeDir('delete-active')
+    const result = await harness({ sessions: [header('busy', dir, 100), header('quiet', dir, 200)] })
+    result.ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
+      const rest = await next()
+      return sessionId === 'busy' ? [{ kind: 'probe' }, ...rest] : rest
+    })
+
+    const refusal = await result.registry.deleteSession(SessionId('busy')).catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(WorkspaceActiveSessionError)
+    expect((refusal as WorkspaceActiveSessionError).message).toContain("cannot delete session 'busy'")
+    expect((refusal as WorkspaceActiveSessionError).sessionId).toBe('busy')
+    expect((refusal as WorkspaceActiveSessionError).activity).toEqual([{ kind: 'probe' }])
+    // Nothing was deleted and nothing was unaccounted.
+    expect(result.removed).toEqual([])
+    expect(result.registry.list()[0]!.sessionIds).toEqual(['quiet', 'busy'])
+
+    await result.registry.deleteSession(SessionId('quiet'))
+    expect(result.removed).toEqual(['quiet'])
+  })
+
+  it('with stopActivity, stops the work before removing the transcript', async () => {
+    const dir = await makeDir('delete-stop')
+    const result = await harness({ sessions: [header('busy', dir, 100)] })
+    const order: string[] = []
+    result.ctx.on('workspace/session-activity', async () => {
+      order.push('activity')
+      return [{ kind: 'probe' }]
+    })
+    result.ctx.on('workspace/session-stop', ({ sessionId }) => { order.push(`stop:${sessionId}`) })
+    result.ctx.on('workspace/session-stop', () => { throw new Error('job kill exploded') })
+    result.remove.mockImplementationOnce(async (id) => { order.push(`remove:${id}`); result.removed.push(id) })
+    const warn = vi.spyOn(result.ctx.logger, 'warn').mockImplementation(() => {})
+
+    await result.registry.deleteSession(SessionId('busy'), { stopActivity: true })
+
+    // The stop is requested first, so no turn can append to a log that is
+    // about to disappear; a failing provider is logged and never blocks the
+    // deletion the caller asked for.
+    expect(order).toEqual(['stop:busy', 'remove:busy'])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('job kill exploded'))
+    expect(result.registry.list()[0]!.sessionIds).toEqual([])
+  })
+
+  it('keeps every row and set intact when the backend removal fails, so the caller can retry', async () => {
+    const dir = await makeDir('delete-io-failure')
+    const result = await harness({ sessions: [header('doomed', dir, 100)] })
+    const workspace = result.registry.list()[0]!
+    await result.registry.archiveSession(SessionId('doomed'))
+    await result.registry.unarchiveSession(SessionId('doomed'))
+    result.remove.mockRejectedValueOnce(new Error('backend read-only'))
+
+    await expect(result.registry.deleteSession(SessionId('doomed'))).rejects.toThrow('backend read-only')
+    // A failed removal leaves no orphan: the row, its account slot, and the
+    // archive set are all exactly as they were.
+    expect(result.registry.list()[0]!.sessionIds).toEqual(['doomed'])
+    expect(storedRecord(result.pool, workspace.id).sessionIds).toEqual([SessionId('doomed')])
+    expect(result.registry.archivedSessionIds).toEqual([])
+
+    // Repeating the deletion is safe and completes it.
+    await result.registry.deleteSession(SessionId('doomed'))
+    expect(result.registry.list()[0]!.sessionIds).toEqual([])
+  })
+
+  it('reports a committed deletion whose accounting prune failed instead of claiming a clean removal', async () => {
+    const pool = new MemoryMediaPool()
+    const inner = new MemoryStorageBackend(pool)
+    // A flag the test flips after boot, so startup's own global writes are not
+    // the ones that fail.
+    const control = { failGlobals: false }
+    const backend: StorageBackend = {
+      kv: {
+        open: async (descriptor) => {
+          const unit = await inner.kv.open(descriptor)
+          return {
+            loadAll: () => unit.loadAll(),
+            putRecord: (table, key, value) => unit.putRecord(table, key, value),
+            deleteRecord: (table, key) => unit.deleteRecord(table, key),
+            deleteRecords: (table, keys) => unit.deleteRecords(table, keys),
+            setGlobal: async (value) => {
+              if (control.failGlobals) throw new Error('global write failed')
+              await unit.setGlobal(value)
+            },
+            close: () => unit.close(),
+          }
+        },
+      },
+      close: () => inner.close(),
+    }
+    const result = await harness({ pool, backend, sessions: [header('doomed', await makeDir('delete-prune'), 100)] })
+    await result.registry.archiveSession(SessionId('doomed'))
+    control.failGlobals = true
+
+    const incomplete = await result.registry.deleteSession(SessionId('doomed')).catch((error: unknown) => error)
+    expect(incomplete).toBeInstanceOf(AggregateError)
+    expect((incomplete as AggregateError).message).toContain("session 'doomed' was deleted")
+    // The transcript really is gone, so no projection may keep showing a row
+    // whose log no longer exists.
+    expect(result.removed).toEqual(['doomed'])
+    expect(result.registry.list()[0]!.sessionIds).toEqual([])
+
+    // Repeating the deletion after the storage fault is a no-op, not a second
+    // failure: the requested state already held, so the registry never asks the
+    // backend to delete an id it already forgot.
+    control.failGlobals = false
+    result.setSessions([])
+    await result.registry.deleteSession(SessionId('doomed'))
+    expect(result.removed).toEqual(['doomed'])
   })
 })
 

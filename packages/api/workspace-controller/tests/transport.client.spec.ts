@@ -14,6 +14,7 @@ import {
   ClientWorkspaceModel,
   createWorkspaceStateStream,
   WorkspaceArchiveError,
+  WorkspaceDeleteSessionError,
   WorkspaceController,
   WorkspaceCreateError,
   type WorkspaceFollowSink,
@@ -385,6 +386,8 @@ describe('WorkspaceController', () => {
     expect(mock.log.requests('workspace/pinSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/unpinSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/delete')).toEqual([{ workspaceId: 'one' }])
+    await expect(controller.deleteSession(sid('session'), { stopActivity: true })).resolves.toBeUndefined()
+    expect(mock.log.requests('workspace/deleteSession')).toEqual([{ sessionId: 'session', stopActivity: true }])
   })
 
   it('maps generated business failures to the command facade errors', async ({ mock, start }) => {
@@ -420,6 +423,19 @@ describe('WorkspaceController', () => {
     await expect(controller.archiveSession(sid('session'))).rejects.toMatchObject({
       name: 'WorkspaceArchiveError',
       rpcError: { code: 'workspace/session-active', details: { activity: [{ kind: 'probe' }, { kind: 'probe-items', items: [{ id: 'item-1' }] }] } },
+    })
+    mock.remote.workspace.deleteSession.mockResolvedValueOnce(err(missingSession))
+    const deleteMissing = controller.deleteSession(sid('session'))
+    await expect(deleteMissing).rejects.toBeInstanceOf(WorkspaceDeleteSessionError)
+    await expect(deleteMissing).rejects.toThrow('workspace session delete failed: session/not-found: missing session')
+    // A committed deletion with stale accounting is its own code, not a
+    // generic failure: the conversation is gone and only cleanup is pending.
+    mock.remote.workspace.deleteSession.mockResolvedValueOnce(err(new RemoteError(
+      'workspace/delete-incomplete', 'prune failed', { sessionId: sid('session') },
+    )))
+    await expect(controller.deleteSession(sid('session'))).rejects.toMatchObject({
+      name: 'WorkspaceDeleteSessionError',
+      rpcError: { code: 'workspace/delete-incomplete', details: { sessionId: 'session' } },
     })
     mock.remote.workspace.unarchiveSession.mockResolvedValueOnce(err(missingSession))
     await expect(controller.unarchiveSession(sid('session')))

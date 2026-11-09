@@ -121,6 +121,20 @@ export class SessionFormatUnsupportedError extends Error {
 }
 
 /**
+ * A backend cannot delete a stored session because it owns no removable
+ * per-session artifact. {@link SessionPersistence.remove} rejects with this
+ * rather than resolving, so no caller mistakes an unsupported removal for a
+ * completed one.
+ */
+export class SessionRemoveUnsupportedError extends Error {
+  /** @param sessionId - the session whose removal the backend cannot perform. */
+  constructor(readonly sessionId: SessionId) {
+    super(`session "${sessionId}": this persistence backend cannot remove stored sessions`)
+    this.name = 'SessionRemoveUnsupportedError'
+  }
+}
+
+/**
  * Direction-aware refusal text for a stored session whose format version this
  * build does not read. Shared by load-time checks and by backends that must
  * refuse BEFORE decoding version-dependent structure (a future format may not

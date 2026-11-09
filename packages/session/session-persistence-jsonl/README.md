@@ -80,6 +80,14 @@ The current-generation scanner applies the current codec owner’s structural ad
 
 Unloading the backend waits for the consumer unloads it triggers through `sessionPersistence` injection before removing live-event listeners and draining and closing remaining handles. Consumers must register cleanup in that injecting scope; unrelated scopes and explicit Session or handle closure have their own lifetimes. Programmatic mounting uses the plugin namespace (`import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'`) with `ctx.plugin`; access storage through `ctx.sessionPersistence`.
 
+### Removing a session
+
+`remove(id)` deletes the session's own directory under every project directory, which removes every canonical generation at once, and with it the obsolete flat-file spellings a retired layout wrote beside it. Removal addresses the id alone rather than a selected generation, so a log whose header is corrupt or newer than this build is still deletable, and a session that never materialized stops being listed. The shared project directory and every other session's artifacts stay.
+
+An id with no artifact on disk resolves without writing, so a repeated or racing removal is a no-op. A filesystem refusal rejects and leaves the session visible exactly as it was, which makes the call safe to repeat; nothing is partially deleted behind a success. Removal does not close live handles: a write handle that appends after its session was removed re-materializes a new artifact, so callers stop the session's running work first — the workspace registry's deletion path does exactly that.
+
+The [Workspace registry](../../workspace/workspace/README.md) is the consumer: deleting a conversation stops its work, removes the transcript here, and drops its place in the registry-global sets and workspace accounts.
+
 ### Reading the logs
 
 Materialized `stat` and `list` snapshots include the format catalog's header classification as `formatStatus`, alongside the translated logical `header`. They also include `location: { kind: 'jsonl', path }` for the selected physical generation. A read-only preparation leaves the selected historical version unchanged; the status becomes `current` after publication of the successor. Unmaterialized pending Sessions omit `formatStatus` and `location`.
@@ -164,7 +172,7 @@ These limits define when this backend is a poor fit or needs special operational
 - **Format migration preserves the configured encoding and supports only the catalogued chain** — this build migrates supported historical generations to the current format; changing compression requires a separate root, and retained predecessors do not provide automatic fallback or downgrade support.
 - **The flat-file storage layout does not load** — use a separate root or move pre-release artifacts into the project/session directory layout before loading.
 - **Compressed files are not directly line-readable** — use the backend to load them, or select `compression: 'none'` before writing a fresh root when external line readers are required.
-- **Nothing deletes session files** — logs accumulate under `root` until removed externally; the seam has no deletion API.
+- **Removal deletes the whole session directory** — `remove(id)` deletes every generation and side artifact of one session, but never the shared project directory; a layout that keeps artifacts outside a session directory is not covered.
 - **One live writer per session** — the write-handle claim excludes a second writer inside the owning backend instance, and a kernel lock (non-blocking `flock(2)` on `session.lock`; on Windows a named kernel semaphore derived from that path, with no filesystem footprint) excludes every other instance and process; the lock is taken at write-open of an existing artifact and, for a created session, only right before its first materializing write, so an unmaterialized session leaves no filesystem footprint. A crashed holder's lock dies with its process, so its session is writable again immediately, while a live-but-wedged holder blocks writers until its process exits (on POSIX, removing the lock file forfeits that exclusion; release itself never removes it). Advisory `flock` is unreliable on some network filesystems (NFSv3), and the Windows semaphore name is per login session.
 - **Concurrent root disposal is not ordered** — Cordis can remove already-disposing consumers from its registry before the provider can join their cleanup. Dependency ordering here covers consumer unloads triggered by removing this provider.
 - **POSIX materialization requires hard-link support** — first append uses `link()` so same-id races fail instead of overwriting a committed log; Windows uses write-through rename without replacement.

@@ -18,6 +18,8 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
+  WorkspaceDeleteSessionRequest,
+  WorkspaceDeleteSessionValue,
   WorkspaceDeleteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
@@ -192,6 +194,44 @@ export class WorkspaceCommands {
   async unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  }
+
+  /**
+   * Remove one Session permanently: its transcript artifacts and its place in
+   * every registry-global set and workspace account. Without `stopActivity` a
+   * Session with running work is refused as `workspace/session-active` with the
+   * activity the registry's providers reported; with it, the providers stop
+   * that work first. An id with nothing stored is not an error, so a repeated
+   * or racing deletion resolves as a no-op.
+   * @param request - Session identity to delete and whether to stop its work.
+   * @returns the deletion receipt.
+   */
+  async deleteSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceDeleteSessionValue> {
+    try {
+      await this.ctx.workspaceRegistry.deleteSession(
+        request.sessionId,
+        request.stopActivity === true ? { stopActivity: true } : {},
+      )
+    } catch (error) {
+      if (error instanceof WorkspaceActiveSessionError) {
+        throw new RemoteError(
+          'workspace/session-active',
+          error.message,
+          { sessionId: request.sessionId, activity: error.activity },
+          { cause: error },
+        )
+      }
+      if (error instanceof AggregateError) {
+        throw new RemoteError(
+          'workspace/delete-incomplete',
+          error.message,
+          { sessionId: request.sessionId },
+          { cause: error },
+        )
+      }
+      throw error
+    }
+    return { deleted: true }
   }
 
   /**

@@ -62,7 +62,14 @@ async function harness(options: { systemDocuments?: boolean } = {}) {
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  // Removal is the one destructive store call the controller relays; record it
+  // so a test can prove the Host discards the transcript rather than only
+  // hiding the row.
+  const removed: string[] = []
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]),
+    remove: async (id: string) => { removed.push(id) },
+  } as never)
   await ctx.plugin(WorkspaceRegistry)
   const dispose = (): void => {}
   ctx.provide('typert', {
@@ -72,7 +79,7 @@ async function harness(options: { systemDocuments?: boolean } = {}) {
   } as never)
   new RemoteAccessService(ctx)
   const controller = new WorkspaceController(ctx, options.systemDocuments === true ? {} : { documentsDirectory: root })
-  return { controller, ctx, root, storageDomain }
+  return { controller, ctx, root, storageDomain, removed }
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -301,6 +308,58 @@ describe('WorkspaceController commands', () => {
     // Unarchive is idempotent: an id that is not archived is not an error.
     await expect(controller.unarchiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [] })
+  })
+
+
+  it('deletes a conversation permanently, refuses running work, and reports an incomplete registry prune', async () => {
+    const { controller, ctx, root, removed } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'deletes') })
+    const workspace = ctx.workspaceRegistry.get(created.workspace.workspaceId)!
+    const session = ctx.sessions.create(SessionId('delete-me'), { meta: { cwd: created.workspace.path } })
+    await workspace.attachSession(session.id)
+    await controller.archiveSession({ sessionId: session.id })
+    await controller.unarchiveSession({ sessionId: session.id })
+
+    // Running work is refused with the same stable code archival uses, and
+    // nothing is deleted.
+    const activity = [{ kind: 'probe' as const }]
+    const stopReporting = ctx.on('workspace/session-activity', async ({ sessionId }, next) =>
+      sessionId === session.id ? [...activity, ...(await next())] : next())
+    await expect(controller.deleteSession({ sessionId: session.id })).rejects.toMatchObject({
+      code: 'workspace/session-active',
+      details: { sessionId: session.id, activity },
+    })
+    expect(removed).toEqual([])
+
+    // Choosing to stop first reaches the stop providers and then the store.
+    const stops: string[] = []
+    const stopListening = ctx.on('workspace/session-stop', ({ sessionId }) => { stops.push(String(sessionId)) })
+    await expect(controller.deleteSession({ sessionId: session.id, stopActivity: true }))
+      .resolves.toEqual({ deleted: true })
+    expect(stops).toEqual([String(session.id)])
+    expect(removed).toEqual([String(session.id)])
+    expect(workspace.sessionIds).not.toContain(session.id)
+    stopListening()
+    stopReporting()
+
+    // An id with nothing stored is already in the requested state.
+    await expect(controller.deleteSession({ sessionId: SessionId('never-stored') }))
+      .resolves.toEqual({ deleted: true })
+    expect(removed).toEqual([String(session.id)])
+
+    // A backend failure stays a plain rejection: only the two named outcomes
+    // get a Remote code, so storage faults keep their own diagnostics.
+    vi.spyOn(ctx.workspaceRegistry, 'deleteSession').mockRejectedValueOnce(new Error('backend read-only'))
+    await expect(controller.deleteSession({ sessionId: SessionId('plain') })).rejects.toThrow('backend read-only')
+
+    // A committed deletion whose accounting prune failed is not reported as a
+    // clean success; the code names the partial outcome.
+    const pruneFailure = new AggregateError([new Error('global write failed')], 'session was deleted but accounting is stale')
+    vi.spyOn(ctx.workspaceRegistry, 'deleteSession').mockRejectedValueOnce(pruneFailure)
+    await expect(controller.deleteSession({ sessionId: SessionId('racer') })).rejects.toMatchObject({
+      code: 'workspace/delete-incomplete',
+      details: { sessionId: 'racer' },
+    })
   })
 
   it('pins only known unarchived Sessions and unpins idempotently', async () => {

@@ -56,17 +56,22 @@ export class WorkspaceUnknownSessionError extends Error {
 }
 
 /**
- * An archiveSession request named a session that at least one
+ * An archiveSession or deleteSession request named a session that at least one
  * `workspace/session-activity` listener reported active. Nothing was written;
- * `activity` names what must stop before the session can be archived.
+ * `activity` names what must stop before the session can be archived or deleted.
  */
 export class WorkspaceActiveSessionError extends Error {
   /**
    * @param sessionId - The active session id.
    * @param activity - The reported activity, in listener order.
+   * @param verb - The refused operation; `archive` by default.
    */
-  constructor(readonly sessionId: SessionId, readonly activity: readonly SessionActivity[]) {
-    super(`cannot archive session '${sessionId}': the session is active (${activity.map(entry => entry.kind).join(', ')})`)
+  constructor(
+    readonly sessionId: SessionId,
+    readonly activity: readonly SessionActivity[],
+    verb: 'archive' | 'delete' = 'archive',
+  ) {
+    super(`cannot ${verb} session '${sessionId}': the session is active (${activity.map(entry => entry.kind).join(', ')})`)
     this.name = 'WorkspaceActiveSessionError'
   }
 }
@@ -106,6 +111,18 @@ export interface ArchiveSessionOptions {
    * refusing the archive because of it. The archive is written first, then
    * the stops are requested; running work is never awaited to settlement, and
    * a provider failure is logged without undoing the archive.
+   */
+  readonly stopActivity?: boolean
+}
+
+/** Caller choices for {@link WorkspaceRegistry.deleteSession}. */
+export interface DeleteSessionOptions {
+  /**
+   * Ask the composed providers to stop the session's running work instead of
+   * refusing the deletion because of it. The stops are requested first and
+   * awaited as far as each provider's request goes, so no turn keeps appending
+   * to a log that is about to disappear; a provider failure is logged and does
+   * not block the deletion the caller asked for.
    */
   readonly stopActivity?: boolean
 }
@@ -410,6 +427,55 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Delete one conversation permanently: its stored transcript and its place
+   * in every registry-global set and workspace account.
+   *
+   * This is irreversible and distinct from archival, which keeps the log. The
+   * requested end state is absence, so an id this registry knows nothing about
+   * resolves without writing — a repeated or racing deletion, or one whose row
+   * another surface already removed, is not an error.
+   *
+   * Running work is never silently discarded. Without `stopActivity` the
+   * `workspace/session-activity` waterfall is asked once and any reported
+   * activity rejects with {@link WorkspaceActiveSessionError} before anything
+   * is written or deleted. With `stopActivity` every `workspace/session-stop`
+   * provider is asked to stop that work before the transcript is removed, so a
+   * turn cannot keep appending to a log that is about to disappear; a provider
+   * failure is logged and the deletion proceeds, because the caller's request
+   * is destructive by definition.
+   *
+   * Failure leaves no silent orphan. When the backend removal rejects, no
+   * accounting is touched: the row stays visible and the caller may repeat the
+   * deletion, which is safe. When removal succeeds but the registry write
+   * fails, the rejection is an `AggregateError` naming the committed deletion
+   * and the stale accounting; the in-memory projection already dropped the
+   * session, so the row is gone from this process and startup reindexing drops
+   * the dangling id.
+   * @param sessionId - The session to delete.
+   * @param options - Whether running work is stopped instead of refusing.
+   * @returns resolution once the transcript is gone and the registry no longer accounts the session.
+   */
+  deleteSession(sessionId: SessionId, options: DeleteSessionOptions = {}): Promise<void> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write, so the
+      // existence check, the stops, and the deletion cannot interleave with a
+      // concurrent archive or pin of the same session.
+      if (!(await this.sessionKnown(sessionId))) return
+      if (options.stopActivity === true) {
+        await this.stopSessionActivity(sessionId)
+      } else {
+        const activity = await this.ctx.waterfall(
+          'workspace/session-activity', { sessionId }, () => Promise.resolve([]),
+        )
+        if (activity.length > 0) throw new WorkspaceActiveSessionError(sessionId, activity, 'delete')
+      }
+      await this.ctx.sessionPersistence.remove(sessionId)
+      this.forgetSessionHeader(sessionId)
+      await this.pruneSessionAccounting(sessionId)
+    })
+  }
+
+  /**
    * The registry-global pin set: sessions surfaced ahead of every unpinned
    * session on grouping surfaces. Pinning never touches workspace accounting.
    * @returns Session ids in pin order (most recently pinned first).
@@ -487,9 +553,52 @@ export class WorkspaceRegistry extends Service {
       /* v8 ignore next -- the plain arm guards a rethrowing dispatcher. */
       const failures = error instanceof AggregateError ? error.errors : [error]
       for (const failure of failures) {
-        this.ctx.logger.warn(`workspace: stopping session '${sessionId}' for archive failed: ${String(failure)}`)
+        this.ctx.logger.warn(`workspace: stopping session '${sessionId}' for archival or deletion failed: ${String(failure)}`)
       }
     }
+  }
+
+  /** Drop every in-memory index entry for one removed session, so no projection still resolves it. */
+  private forgetSessionHeader(sessionId: SessionId): void {
+    this.headers.delete(sessionId)
+    this.sessionPaths.delete(sessionId)
+    this.missingSessionPaths.delete(sessionId)
+    this.invalidSessionPaths.delete(sessionId)
+  }
+
+  /**
+   * Drop a removed session from the registry-global sets and from every
+   * workspace account, then republish the entity snapshots.
+   *
+   * The sets are written first and the records second: a failure between them
+   * rejects with an `AggregateError` naming the committed deletion rather than
+   * reporting success over stale accounting the user can still see.
+   */
+  private async pruneSessionAccounting(sessionId: SessionId): Promise<void> {
+    const state = this.requireState()
+    const archivedSessionIds = state.archivedSessionIds.filter(id => id !== sessionId)
+    const pinnedSessionIds = state.pinnedSessionIds.filter(id => id !== sessionId)
+    const setsChanged = archivedSessionIds.length !== state.archivedSessionIds.length
+      || pinnedSessionIds.length !== state.pinnedSessionIds.length
+    try {
+      if (setsChanged) await this.setState({ ...state, archivedSessionIds, pinnedSessionIds })
+      const table = this.requireTable()
+      for (const [id, record] of [...table.entries()]) {
+        if (!record.sessionIds.includes(sessionId)) continue
+        await table.update(id, current => ({
+          ...current,
+          sessionIds: current.sessionIds.filter(session => session !== sessionId),
+          updatedAt: new Date().toISOString(),
+        }))
+      }
+    } catch (error) {
+      throw new AggregateError(
+        [error],
+        `session '${sessionId}' was deleted but the registry no longer accounts it consistently; `
+        + 'the row is gone from this process and startup reindexing drops the dangling entry',
+      )
+    }
+    this.rebuildEntities()
   }
 
   /**

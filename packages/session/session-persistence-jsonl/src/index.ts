@@ -29,6 +29,7 @@ import {
   type SessionHandleReadResult,
   type SessionLocation, type SessionPersistenceCreateOptions,
   type SessionPersistenceListOptions, type SessionPersistenceOpenOptions,
+  type SessionPersistenceRemoveOptions,
   type SessionPersistenceSnapshot, type SessionPersistenceStatOptions,
   type SessionPersistenceRevision as PersistenceRevision,
 } from '@deepseek-ai/dsh-session-persistence'
@@ -561,6 +562,47 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     signal?.throwIfAborted()
     return snapshots
+  }
+
+  /**
+   * Delete every artifact this backend holds for one session: the session's own
+   * directory, which owns every immutable generation and side artifact, plus
+   * the obsolete flat-file spellings an earlier layout wrote beside it. The
+   * project directory is shared by other sessions, so it is never removed.
+   *
+   * The id alone is the address, so removal never depends on reading a header:
+   * a corrupt or future-format log is still deletable, and the root's encoding
+   * check cannot block a deletion the user asked for. An id with no artifact on
+   * disk resolves without writing, and a failed `rm` rejects, leaving the
+   * session visible exactly as it was.
+   * @param id - the stored session to remove.
+   * @param options - optional cancellation observed before backend work starts.
+   */
+  override async remove(id: SessionId, options?: SessionPersistenceRemoveOptions): Promise<void> {
+    const signal = options?.signal
+    signal?.throwIfAborted()
+    const encoded = encodeSegment(id)
+    const projects = await this.listProjectDirs(signal)
+    signal?.throwIfAborted()
+    const removed = await settleLimited(this.listLimit, projects, async (project) => {
+      signal?.throwIfAborted()
+      await rm(join(project, encoded), { recursive: true, force: true })
+      for (const compression of ['zstd', 'none'] as const) {
+        signal?.throwIfAborted()
+        await rm(join(project, encoded + logSuffix(compression)), { force: true })
+      }
+      signal?.throwIfAborted()
+      return project
+    })
+    settledValues(removed)
+    signal?.throwIfAborted()
+    // Cached parses, an in-flight preparation, and the created-but-unmaterialized
+    // entry would all keep answering for a session the disk no longer holds.
+    this.coldLogMemo.delete(id)
+    const preparation = this.migrationPreparations.get(id)
+    this.migrationPreparations.delete(id)
+    preparation?.controller.abort()
+    this.tracker.dropPending(id)
   }
 
   // --- handle-facing storage internals (package-private via the handle class below) ---

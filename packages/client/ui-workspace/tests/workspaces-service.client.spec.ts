@@ -162,7 +162,7 @@ class FakeSessions implements ISessions {
   declare readonly using: ISessions['using']
   declare readonly retainInfo: ISessions['retainInfo']
   declare readonly searchResultLimit: ISessions['searchResultLimit']
-  declare readonly refresh: ISessions['refresh']
+  readonly refresh = vi.fn<ISessions['refresh']>(() => Promise.resolve())
   declare readonly search: ISessions['search']
   declare readonly scope: ISessions['scope']
   declare readonly scopeOf: ISessions['scopeOf']
@@ -180,6 +180,8 @@ class FakeWorkspaces implements IWorkspaces {
   readonly list: MutableSource<WorkspaceSnapshot>
   readonly archiveCalls: SessionId[] = []
   readonly unarchiveCalls: SessionId[] = []
+  readonly deleteCalls: [SessionId, { readonly stopActivity?: boolean } | undefined][] = []
+  onDelete: IWorkspaces['deleteSession'] = async () => {}
   onArchive: IWorkspaces['archiveSession'] = async (sessionId) => {
     this.list.update(state => ({
       ...state,
@@ -220,6 +222,11 @@ class FakeWorkspaces implements IWorkspaces {
   unarchiveSession(sessionId: SessionId): Promise<void> {
     this.unarchiveCalls.push(sessionId)
     return this.onUnarchive(sessionId)
+  }
+
+  deleteSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void> {
+    this.deleteCalls.push([sessionId, options])
+    return this.onDelete(sessionId, options)
   }
 
   pinSession(sessionId: SessionId): Promise<void> {
@@ -1535,6 +1542,45 @@ describe('UiWorkspaceService', () => {
     b.workspaces.onUnarchive = () => Promise.reject(new Error('unarchive rejected'))
     await expect(b.uiWorkspace.unarchiveSession(idle)).rejects.toThrow('unarchive rejected')
     expect(b.workspaces.unarchiveCalls).toEqual([idle, idle])
+  })
+
+
+  it('deletes through the Host, clears the selection, and refreshes the Session list', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+
+    await b.uiWorkspace.deleteSession(sid('current'), { stopActivity: true })
+
+    expect(b.workspaces.deleteCalls).toEqual([[sid('current'), { stopActivity: true }]])
+    // The stored log is gone, so the row must leave the list rather than linger.
+    expect(b.sessions.refresh).toHaveBeenCalledOnce()
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
+    expect(b.selectPanel).toHaveBeenCalledTimes(2)
+  })
+
+  it('deletes a background conversation without touching the selected one', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+
+    await b.uiWorkspace.deleteSession(sid('other'))
+
+    expect(b.workspaces.deleteCalls).toEqual([[sid('other'), {}]])
+    expect(b.sessions.refresh).toHaveBeenCalledOnce()
+    // Only a deletion of the selected Session clears it.
+    expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
+    expect(b.selectPanel).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the selection and the list when the Host refuses the deletion', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+    b.workspaces.onDelete = () => Promise.reject(new Error('delete rejected'))
+
+    await expect(b.uiWorkspace.deleteSession(sid('current'))).rejects.toThrow('delete rejected')
+
+    expect(b.workspaces.deleteCalls).toEqual([[sid('current'), {}]])
+    expect(b.sessions.refresh).not.toHaveBeenCalled()
+    expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
   })
 
   it('passes directory operations to the Host and preserves structured browse failures', async () => {

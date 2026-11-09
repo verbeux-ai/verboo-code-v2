@@ -884,6 +884,43 @@ describe('workspaces action face', () => {
     expect(ws.list.getSnapshot().archivedSessionIds).toEqual(['s1'])
     await runtime.dispose()
   })
+
+  it('deletes a session from the archive set, the pin set and every account', async () => {
+    const runtime = await SlotTestRuntime.create()
+    const ws = runtime.workspaces
+    try {
+      await ws.create({ path: '/tmp/alpha' })
+      // An account that actually holds the session, so the removal has to drop
+      // it from the list as well as from the two sets.
+      await ws.update((draft) => {
+        draft.items = [{
+          workspaceId: 'w1' as WorkspaceId, title: 'Alpha', path: '/tmp/alpha',
+          createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+          sessionIds: ['s1' as SessionId, 's2' as SessionId],
+        }]
+      })
+      await ws.pinSession('s1' as SessionId)
+      await ws.archiveSession('s1' as SessionId)
+      // The default mirrors the production face: the id leaves the archive set,
+      // the pin set, and the account that held it.
+      await ws.deleteSession('s1' as SessionId)
+      const snapshot = ws.list.getSnapshot()
+      expect(snapshot.archivedSessionIds).toEqual([])
+      expect(snapshot.pinnedSessionIds).toEqual([])
+      expect(snapshot.items.flatMap(item => item.sessionIds)).not.toContain('s1')
+      expect(ws.calls.at(-1)).toEqual({ method: 'deleteSession', args: ['s1'] })
+
+      // A stub replaces the default mutation, so features can assert the request
+      // without the list moving underneath them.
+      const stub = vi.fn(async () => {})
+      ws.stub('deleteSession', stub)
+      await ws.deleteSession('s2' as SessionId)
+      expect(stub).toHaveBeenCalledWith('s2')
+      expect(ws.calls.at(-1)).toEqual({ method: 'deleteSession', args: ['s2'] })
+    } finally {
+      await runtime.dispose()
+    }
+  })
 })
 
 describe('single-slot mounting edge arms', () => {

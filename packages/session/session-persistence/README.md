@@ -33,7 +33,7 @@ The seam ships the [JSONL](../session-persistence-jsonl/README.md) backend: one 
 
 ### What the service provides
 
-With a backend mounted, five service methods address stored sessions:
+With a backend mounted, six service methods address stored sessions:
 
 ```text
 const handle = await ctx.sessionPersistence.create(header)     // store a new session, take write ownership
@@ -42,7 +42,10 @@ const reader = await ctx.sessionPersistence.open(id, 'read')   // observe withou
 const snap = await ctx.sessionPersistence.stat(id)             // header + revision (+ eventCount / sizeBytes) without a log read
 const all = await ctx.sessionPersistence.list()                // one snapshot per visible stored session
 await ctx.sessionPersistence.flush()                           // backend-wide durability barrier over every active write handle
+await ctx.sessionPersistence.remove(id)                        // permanently delete every artifact of one stored session
 ```
+
+`remove(id)` is the one destructive operation: it deletes the session's stored artifacts so `stat`, `list`, and `open` no longer see it. It is addressed by id rather than resolved through a listing, and an id this backend holds nothing for resolves without writing, so repeating or racing a removal is not an error. It does not close live handles — a write handle that appends afterwards may re-materialize an artifact — so a caller stops the session's running work first. A backend that owns no removable artifact rejects with `SessionRemoveUnsupportedError` instead of reporting a deletion it cannot perform; the shipped JSONL backend implements removal.
 
 Service-level `flush()` drains every active write handle's routed events and materializes its session, exactly as each handle's own `flush` would; failures aggregate per session as an `AggregateError` without abandoning the sweep, and a handle closed mid-sweep counts as flushed because close itself drains durably.
 

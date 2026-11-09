@@ -373,6 +373,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('unarchiveSession') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Remove one Session permanently, transcript included.
+ * @param request - Session identity to delete and whether to stop its running work.
+ * @returns deletion confirmation.
+ */
+@Remote('deleteSession') deleteSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceDeleteSessionValue>
+
+/**
  * Surface one known unarchived Session ahead of unpinned Sessions.
  * @param request - Session identity to pin.
  * @returns the complete resulting pin set, most recently pinned first.
@@ -559,6 +566,37 @@ archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promi
  * @returns resolution after durability.
  */
 unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Delete one conversation permanently: its stored transcript and its place
+ * in every registry-global set and workspace account.
+ *
+ * This is irreversible and distinct from archival, which keeps the log. The
+ * requested end state is absence, so an id this registry knows nothing about
+ * resolves without writing — a repeated or racing deletion, or one whose row
+ * another surface already removed, is not an error.
+ *
+ * Running work is never silently discarded. Without `stopActivity` the
+ * `workspace/session-activity` waterfall is asked once and any reported
+ * activity rejects with {@link WorkspaceActiveSessionError} before anything
+ * is written or deleted. With `stopActivity` every `workspace/session-stop`
+ * provider is asked to stop that work before the transcript is removed, so a
+ * turn cannot keep appending to a log that is about to disappear; a provider
+ * failure is logged and the deletion proceeds, because the caller's request
+ * is destructive by definition.
+ *
+ * Failure leaves no silent orphan. When the backend removal rejects, no
+ * accounting is touched: the row stays visible and the caller may repeat the
+ * deletion, which is safe. When removal succeeds but the registry write
+ * fails, the rejection is an `AggregateError` naming the committed deletion
+ * and the stale accounting; the in-memory projection already dropped the
+ * session, so the row is gone from this process and startup reindexing drops
+ * the dangling id.
+ * @param sessionId - The session to delete.
+ * @param options - Whether running work is stopped instead of refusing.
+ * @returns resolution once the transcript is gone and the registry no longer accounts the session.
+ */
+deleteSession(sessionId: SessionId, options: DeleteSessionOptions = {}): Promise<void>
 
 /**
  * Pin one session durably, prepending it to the registry-global pin set.

@@ -37,8 +37,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'workspace/name-conflict': { readonly name: string }
     /**
      * The Session still has running work — its own turn, a subagent, a
-     * background job, or an active schedule — so archiving was refused
-     * without a write; `activity` names what must stop first.
+     * background job, or an active schedule — so archiving or deletion was
+     * refused without a write; `activity` names what must stop first.
      */
     'workspace/session-active': {
       readonly sessionId: SessionId
@@ -50,6 +50,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly sessionId: SessionId
       readonly beforeSessionId?: SessionId
     }
+    /**
+     * The transcript artifacts were removed, but the Workspace registry could
+     * not finish clearing its accounting for the Session. The Session is gone
+     * from storage and from this Host's projection; a repeat deletion is a
+     * no-op and startup reindexing drops any dangling entry.
+     */
+    'workspace/delete-incomplete': { readonly sessionId: SessionId }
     /** The verb needs an interaction the composed backend does not serve. */
     'directory-picker/unavailable': { readonly capability: string }
     /** The target is not fully qualified, or the backend cannot list it. */
@@ -127,6 +134,23 @@ export interface WorkspaceArchiveSessionRequest {
 /** Session requested for restoration from the archived Session list. */
 export interface WorkspaceUnarchiveSessionRequest {
   readonly sessionId: SessionId
+}
+
+/** Session requested for permanent removal, transcript included. */
+export interface WorkspaceDeleteSessionRequest {
+  readonly sessionId: SessionId
+  /**
+   * Stop the Session's running work — its turn, subagent descendants, owned
+   * background jobs, and active schedules — instead of refusing the deletion
+   * as `workspace/session-active`. The stops are requested before the
+   * transcript is removed; the response arrives once the artifacts are gone.
+   */
+  readonly stopActivity?: boolean
+}
+
+/** Receipt after one Session's transcript and accounting are removed. */
+export interface WorkspaceDeleteSessionValue {
+  readonly deleted: true
 }
 
 /** Complete archived Session set after a mutation. */
