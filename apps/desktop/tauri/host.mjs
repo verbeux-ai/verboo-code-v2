@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { stat } from 'node:fs/promises'
 import { delimiter, dirname, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const [cliManifest] = process.argv.slice(2)
 const protocol = 'VERBOO_HOST_V1\t'
@@ -54,7 +54,7 @@ async function boot() {
   return runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: 'verboo',
-    patchFiles: [],
+    patchFiles: [fileURLToPath(new URL('./desktop.patch.yml', import.meta.url))],
     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
     packageManager: {
       command: process.execPath,

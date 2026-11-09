@@ -20,6 +20,8 @@ pnpm run start:desktop
 
 `pnpm run dev:desktop --skip-build` 同样复用产物，并启动客户端监视器。Rust 源码变更由 Tauri 重建；客户端变更通过 Web 使用的同一套监视构建更新。退出应用时先释放配置资源，再等待 Node 进程退出；超过关闭期限会明确报告失败，不会误报成功。
 
+启动时仅打开原生聊天窗口，即使用户配置启用了自动打开浏览器。浏览器登录和用户明确请求的外部链接仍使用系统浏览器。
+
 开发目录为 `apps/desktop/.desktop-build/tauri/home`，可用 `DSH_HOME` 覆盖。生成配置仅包含路径，不含凭据。构建产物和开发状态均已被 Git 忽略。
 
 ## 原生分发

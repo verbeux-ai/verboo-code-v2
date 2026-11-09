@@ -20,6 +20,8 @@ pnpm run start:desktop
 
 `pnpm run dev:desktop --skip-build` also reuses artifacts and starts the client watchers. Tauri rebuilds Rust source changes. Client changes rebuild through the same watched bundles used by Web. Closing the application requests profile disposal and waits for the Node process to exit; exceeding the shutdown deadline fails visibly instead of reporting a clean stop.
 
+Startup opens only the native chat window, including when a user profile enables automatic browser startup. Browser sign-in and explicitly requested external links use the system browser.
+
 The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` overrides it. Generated configuration contains paths, never credentials. Build outputs and development state are gitignored.
 
 ## Native distribution

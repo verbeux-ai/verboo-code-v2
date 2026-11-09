@@ -1,0 +1,7 @@
+# Native startup owns the chat window, after all user profile layers.
+- id: web-runtime
+  config:
+    openBrowser: false
+    printUrl: false
+    publicUrl: null
+    surfaceContext: true

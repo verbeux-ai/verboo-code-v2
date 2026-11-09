@@ -98,6 +98,7 @@ export async function prepareRuntime({ repository, desktop, output, packageManag
     await rm(extracted, { recursive: true, force: true })
     await rm(archive)
     await copyFile(join(desktop, 'tauri/host.mjs'), join(staging, 'host.mjs'))
+    await copyFile(join(desktop, 'tauri/desktop.patch.yml'), join(staging, 'desktop.patch.yml'))
     await writeFile(join(staging, 'manifest.json'), JSON.stringify({
       node, host: 'host.mjs', cliManifest: 'application/node_modules/@deepseek-ai/dsh/package.json', workingDirectory: 'application', home: null,
     }, null, 2) + '\n')

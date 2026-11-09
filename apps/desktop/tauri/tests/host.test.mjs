@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -14,9 +14,11 @@ const host = process.env.VERBOO_TEST_HOST_MODULE ?? join(repository, 'apps/deskt
 const manifest = process.env.VERBOO_TEST_CLI_MANIFEST ?? join(repository, 'apps/cli/package.json')
 const prefix = 'VERBOO_HOST_V1\t'
 
-async function start(t, cli = manifest) {
+async function start(t, cli = manifest, browserOverride = false) {
   const home = await mkdtemp(join(tmpdir(), 'verboo-tauri-host-'))
-  const child = spawn(process.execPath, [host, cli], {
+  if (browserOverride) await writeFile(join(home, 'cordis.patch.yml'), '- id: web-runtime\n  config:\n    openBrowser: true\n    printUrl: false\n    surfaceContext: true\n')
+  const probe = fileURLToPath(new URL('./fixtures/browser-opener-probe.mjs', import.meta.url))
+  const child = spawn(process.execPath, ['--import', probe, host, cli], {
     cwd: repository, env: { ...process.env, DSH_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'],
   })
   const events = []
@@ -30,10 +32,12 @@ async function start(t, cli = manifest) {
   })
   // Drain plugin diagnostics without ever printing configuration or a bootstrap URL.
   const diagnostics = createInterface({ input: child.stderr })
+  const browserRequests = []
   diagnostics.on('line', line => {
     if (line.startsWith('Verboo Code: host_boot_failed')) t.diagnostic(line)
+    if (line === 'VERBOO_TEST_BROWSER_HANDOFF') browserRequests.push(line)
   })
-  const exit = once(child, 'exit')
+  const exit = once(child, 'close')
   t.after(async () => {
     if (child.exitCode === null) { child.kill('SIGTERM'); await exit }
     lines.close()
@@ -51,11 +55,21 @@ async function start(t, cli = manifest) {
       exit.then(() => { clearTimeout(deadline); reject(new Error(`Host exited before ${type}`)) })
     })
   }
-  return { child, event, exit, events }
+  return { child, event, exit, events, browserRequests }
 }
 
+test('keeps chat in the native window even when a user patch enables browser startup', { timeout: 45_000 }, async (t) => {
+  const { child, event, exit, browserRequests } = await start(t, manifest, true)
+  const { url } = await event('ready')
+  const response = await fetch(new URL(url).origin)
+  assert.equal(response.status, 401)
+  child.stdin.write('{"type":"shutdown"}\n')
+  assert.equal((await exit)[0], 0)
+  assert.deepEqual(browserRequests, [], 'desktop startup must never hand the chat to the system browser')
+})
+
 test('serves authenticated application assets and disposes the same Host after repeated shutdown', { timeout: 45_000 }, async (t) => {
-  const { child, event, exit, events } = await start(t)
+  const { child, event, exit, events, browserRequests } = await start(t)
   const { url } = await event('ready')
   const origin = new URL(url).origin
   const unauthorized = await fetch(origin)
@@ -78,6 +92,7 @@ test('serves authenticated application assets and disposes the same Host after r
   const [code] = await exit
   assert.equal(code, 0)
   assert.equal(events.filter(event => event.type === 'stopped').length, 1)
+  assert.deepEqual(browserRequests, [], 'normal desktop startup must keep the chat in its native window')
   await assert.rejects(fetch(origin))
   const observation = {
     authenticationRequired: unauthorized.status,
