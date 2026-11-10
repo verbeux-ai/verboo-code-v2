@@ -418,8 +418,8 @@ try {
   await composer.fill('Vamos começar um projeto simples.')
   await composer.press('Enter')
   await page.locator('[data-verboo-running]').waitFor({ timeout: 30000 })
-  await page.locator('[data-verboo-execution=working]').waitFor()
   await page.locator('[data-verboo-session][data-state=working]').waitFor()
+  if (await page.locator('[data-verboo-execution=working]').count()) throw new Error('Working label remains in the composer')
   await capture('conversation-running.png')
   const inferenceDeadline = Date.now() + 30000
   while (state.finishModel === null && Date.now() < inferenceDeadline) await new Promise(resolve => setTimeout(resolve, 50))
@@ -445,7 +445,7 @@ try {
   })
   const bubbleFill = bubbleColors.fill.match(/[\d.]+/g).map(Number)
   contrastReadings.userMessage = contrastRatio(bubbleColors.foreground, bubbleColors.fill)
-  if (bubbleColors.foreground !== 'rgb(255, 255, 255)' || !(bubbleFill[2] > bubbleFill[0] && bubbleFill[0] > bubbleFill[1]) || contrastReadings.userMessage < 4.5) throw new Error('User message lost the Verboo surface or readable foreground')
+  if (Math.max(...bubbleFill.slice(0, 3)) - Math.min(...bubbleFill.slice(0, 3)) > 8 || contrastReadings.userMessage < 4.5) throw new Error('User message lost its neutral surface or readable foreground')
   await composer.click()
   await page.emulateMedia({ colorScheme: 'dark' })
   await capture('conversation-dark.png')
@@ -469,7 +469,7 @@ try {
     await page.getByRole('heading', { name: 'O que vamos construir?', exact: true }).waitFor()
     await composer.fill(`Revisar o projeto e as conexões ${index}.`)
     await composer.press('Enter')
-    await page.locator('[data-verboo-execution=working]').waitFor()
+    await page.locator('[data-verboo-session]:has([aria-current=page])[data-state=working] [role=status]').waitFor()
     const deadline = Date.now() + 30000
     while (state.finishModel === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
     if (state.finishModel === null) throw new Error('Additional conversation did not reach inference')
@@ -520,17 +520,21 @@ try {
   }
   await page.getByRole('button', { name: 'Conexões', exact: true }).click()
   await page.locator('[data-verboo-page=connections]').waitFor()
-  await page.getByRole('heading', { name: 'GitHub', exact: true }).waitFor()
+  const catalog = page.locator('[data-verboo-page=connections] section').filter({ hasText: 'Serviços disponíveis' }).first()
+  await catalog.getByRole('group', { name: 'Filtrar por categoria' }).waitFor()
   await page.getByText('1718 serviços', { exact: true }).waitFor()
-  if (await page.locator('[data-verboo-page=connections] article').count() !== 40) throw new Error('Connector catalog rendered without paging')
-  await page.getByRole('button', { name: 'Mostrar mais', exact: true }).click()
-  if (await page.locator('[data-verboo-page=connections] article').count() !== 80) throw new Error('Connector paging did not advance')
+  if (await catalog.locator('article').count()) throw new Error('Connector catalog opened before category selection or search')
   const search = page.getByRole('textbox', { name: 'Buscar um serviço' })
+  await search.fill('service_')
+  await catalog.getByRole('heading', { name: 'Service 0000', exact: true }).waitFor()
+  if (await catalog.locator('article').count() !== 40) throw new Error('Connector catalog rendered without paging')
+  await catalog.getByRole('button', { name: 'Mostrar mais', exact: true }).click()
+  if (await catalog.locator('article').count() !== 80) throw new Error('Connector paging did not advance')
   await search.fill('service_1708')
   await page.getByRole('heading', { name: 'Service 1708', exact: true }).waitFor()
   if (await page.locator('[data-verboo-page=connections] article').count() !== 1) throw new Error('Search did not cover the full connector catalog')
   await search.fill('Hacker News')
-  await page.getByText('Não exige credenciais', { exact: true }).waitFor()
+  await catalog.getByRole('heading', { name: 'Hacker News', exact: true }).waitFor()
   await page.getByText('Disponível', { exact: true }).waitFor()
   if (await page.getByRole('button', { name: 'Conectar Hacker News', exact: true }).count()) throw new Error('Public service asks for credentials')
   await search.fill('')
@@ -538,6 +542,8 @@ try {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.waitForTimeout(200)
   await capture('connections-dark.png')
+  await search.fill('service_')
+  await catalog.getByRole('heading', { name: 'Service 0000', exact: true }).waitFor()
   const catalogTouch = await context.newCDPSession(page)
   await catalogTouch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
   await page.setViewportSize({ width: 390, height: 844 })
@@ -547,7 +553,8 @@ try {
     await page.locator('[data-sidebar-drawer=true][data-sidebar-collapsed=true]').waitFor()
   }
   await page.locator('[data-verboo-shell]').waitFor({ state: 'hidden' })
-  const touchTargets = await page.locator('[data-verboo-page=connections] article button').evaluateAll(items => items.map(item => ({ width: item.getBoundingClientRect().width, height: item.getBoundingClientRect().height })))
+  const touchTargets = await catalog.locator('article button').evaluateAll(items => items.map(item => ({ width: item.getBoundingClientRect().width, height: item.getBoundingClientRect().height })))
+  if (!touchTargets.length) throw new Error('No connector actions were checked on mobile')
   if (touchTargets.some(item => item.width < 44 || item.height < 44)) throw new Error('Connector touch target is smaller than 44px')
   await capture('connections-mobile.png')
   const catalogOverflow = await page.locator('[data-verboo-page=connections]').evaluate(el => el.scrollWidth > el.clientWidth)
@@ -556,6 +563,7 @@ try {
   await catalogTouch.detach()
   await page.setViewportSize({ width: 1366, height: 900 })
   await page.emulateMedia({ colorScheme: 'light' })
+  await search.fill('Notion')
   await page
     .getByRole('button', { name: 'Conectar Notion', exact: true })
     .click()
@@ -574,7 +582,8 @@ try {
   await provider.close()
   await page.getByRole('button', { name: 'Atualizar', exact: true }).first().click()
   await page.getByText('Notion · Trabalho', { exact: true }).waitFor()
-  const newRow = page.locator('[data-verboo-page=connections] section > div > div').filter({ hasText: 'Notion · Trabalho' }).last()
+  const accounts = page.locator('[data-verboo-page=connections] section').filter({ has: page.getByRole('heading', { name: 'Contas conectadas', exact: true }) })
+  const newRow = accounts.locator(':scope > div > div').filter({ has: page.getByText('Notion · Trabalho', { exact: true }) })
   await newRow.getByRole('button', { name: /Desconectar/ }).click()
   const disconnect = page.getByRole('dialog', { name: 'Desconectar esta conta?' })
   await disconnect.waitFor()
@@ -690,6 +699,7 @@ try {
   console.error(error.message.replace(/https?:\S+/g, '[url]'))
   process.exitCode = 1
 } finally {
+  state.finishModel?.()
   if (browser) await browser.close()
   child.stdin.write('{"type":"shutdown"}\n')
   await Promise.race([
@@ -698,7 +708,7 @@ try {
       setTimeout(() => {
         child.kill('SIGTERM')
         resolve()
-      }, 16000),
+      }, 16000).unref(),
     ),
   ])
   server.closeAllConnections()

@@ -1,5 +1,19 @@
-- region "Stamina":
-  - heading "Stamina" [level=2]
-  - text: Unlimited 50% restante
-  - 'progressbar "Stamina: Unlimited"'
-  - paragraph: Stamina disponível
+- main:
+  - heading "Planos e assinatura" [level=1]
+  - paragraph: Escolha o plano para o seu ritmo de trabalho.
+  - button "Atualizar"
+  - region "Suas assinaturas":
+    - heading "Suas assinaturas" [level=2]
+    - article:
+      - heading "Unlimited" [level=3]
+      - text: Ativo
+      - 'button "Gerenciar assinatura: Unlimited"': Gerenciar assinatura
+    - article:
+      - heading "Testes" [level=3]
+      - text: Ativo
+      - 'button "Gerenciar assinatura: Testes"': Gerenciar assinatura
+  - region "Conheça os planos":
+    - heading "Conheça os planos" [level=2]
+    - paragraph: Nenhum plano disponível no momento.
+    - button "Ver planos na Verboo"
+  - paragraph: Pagamento seguro e gerenciamento da assinatura no navegador.

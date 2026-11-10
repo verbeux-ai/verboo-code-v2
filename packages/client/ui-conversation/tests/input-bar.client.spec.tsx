@@ -61,6 +61,7 @@ function snapshotOf(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
 }
 
 interface BenchOptions {
+  backgroundEntry?: React.ReactNode
   contextEntry?: React.ReactNode
   planEntry?: React.ReactNode
   /** The `plan` projection value the standard-kit useProjection serves. */
@@ -169,6 +170,7 @@ function bench(over?: BenchOptions) {
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object, options?: { fallback?: React.ReactNode }) => {
     slotCalls.push({ key, owner })
+    if (key === 'conversation.input.primary.background') return over?.backgroundEntry ?? null
     if (key === 'conversation.input.overlay') return over?.overlay ?? null
     if (key === 'conversation.input.left') return over?.leftItems ?? null
     if (key === 'conversation.input.right') return over?.rightItems ?? null
@@ -1504,6 +1506,24 @@ describe('running and lock semantics', () => {
     expect(sink).toHaveBeenCalledWith('go', [], 'queue', expect.any(AbortSignal), expect.any(Function))
     const empty = bench()
     expect(empty.button.disabled).toBe(true)
+  })
+
+  it('keeps background paint inside Send without changing submission or empty-draft disabling', () => {
+    const { button, sink } = bench({ draft: 'go', backgroundEntry: <span data-liquid-fixture /> })
+    expect(button.querySelector('[data-liquid-fixture]')).not.toBeNull()
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('go', [], 'queue', expect.any(AbortSignal), expect.any(Function))
+    const empty = bench({ backgroundEntry: <span data-liquid-fixture /> })
+    expect(empty.button.disabled).toBe(true)
+    fireEvent.click(empty.button)
+    expect(empty.sink).not.toHaveBeenCalled()
+  })
+
+  it('keeps the background paint when the same primary action becomes Stop', () => {
+    const { button, stop } = bench({ running: true, backgroundEntry: <span data-liquid-fixture /> })
+    expect(button.querySelector('[data-liquid-fixture]')).not.toBeNull()
+    fireEvent.click(button)
+    expect(stop).toHaveBeenCalledOnce()
   })
 
   it('unlock refocuses the surface; mousedown on the button keeps focus', () => {

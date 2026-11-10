@@ -450,9 +450,20 @@
   border-radius: inherit;
   pointer-events: none;
 }
-.primary > svg { position: relative; z-index: 1; }
-.primary:has([data-composer-primary-visual]):disabled { opacity: 1; }
-.primary:has([data-composer-primary-visual]):disabled:not([data-sending]) > svg { opacity: 0.4; }
+
+.primary > svg {
+  position: relative;
+  z-index: 1;
+}
+
+/* Background readings remain visible while only the unavailable action glyph dims. */
+.primary:has([data-composer-primary-visual]):disabled {
+  opacity: 1;
+}
+
+.primary:has([data-composer-primary-visual]):disabled:not([data-sending]) > svg {
+  opacity: 0.4;
+}
 
 .sendingSpinner {
   animation: input-sending 800ms linear infinite;

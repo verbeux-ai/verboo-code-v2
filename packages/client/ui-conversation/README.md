@@ -136,6 +136,8 @@ Products may set `--dsh-composer-focus-stroke-color` and `--dsh-composer-focus-r
 
 The optional `conversation.input.context` slot replaces the built-in context meter; without a registration, the original meter remains. `--dsh-composer-dock-min-height` may override the default one-row statistics reservation when a product omits those readings.
 
+The optional `conversation.input.primary.background` slot paints behind the primary Send/Stop glyph. Its content is clipped to the circle, hidden from accessibility and receives no pointer events; contributions must contain no focusable content. The carrier retains the action name, handlers and enabled state. Empty contributions retain the ordinary button appearance. With background content present, disabling dims only the action glyph; sending progress remains fully visible.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 

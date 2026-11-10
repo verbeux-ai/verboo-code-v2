@@ -136,6 +136,8 @@ Send 和 Stop 按钮禁用时不显示提示气泡，轮次结束后由 Stop 切
 
 可选的 `conversation.input.context` Slot 可替换内置上下文用量控件；未注册条目时仍使用原控件。产品省略这些读数时，可用 `--dsh-composer-dock-min-height` 覆盖默认预留的一行统计高度。
 
+可选的 `conversation.input.primary.background` Slot 在主要发送/停止图标后方绘制背景。其内容会裁剪为圆形，对辅助技术隐藏且不接收指针事件；贡献内容不得包含可聚焦元素。承载组件保留动作名称、处理函数和启用状态。空贡献保留原有按钮外观。存在背景内容时，禁用只降低动作图标的不透明度，发送进度仍完整可见。
+
 <a id="temporary-composer-entries"></a>
 ## 临时 composer entry
 

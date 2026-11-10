@@ -5,12 +5,11 @@ import type { PageProps, ProductProps } from './contracts.ts'
 import type { Key } from './locales.ts'
 import { Glyph } from './Glyph.tsx'
 import { Busy, Notice } from './PageParts.tsx'
-import { StaminaPanel } from './Stamina.tsx'
 import css from './Product.module.css'
 import plansCss from './Plans.module.css'
 
 type PlanActions = Pick<ProductProps, 't' | 'billing'>
-type PlanPageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 'useResource' | 't' | 'loadPlans' | 'refreshStamina' | 'billing'>
+type PlanPageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 't' | 'loadPlans' | 'billing'>
 const money = (amount: number, currency: string, locale: string) =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount / 100)
 const currentStatuses = ['active', 'trialing', 'past_due', 'incomplete', 'paused']
@@ -93,7 +92,7 @@ export function PlanPage(props: PlanPageProps) {
     <header className={plansCss.header}>
       <div><h1>{props.t('plansTitle')}</h1><p>{props.t('planDescription')}</p></div>
       <Button variant="ghost" size="sm" className={plansCss.refresh} disabled={loading} title={props.t('refresh')}
-        aria-label={props.t('refresh')} onClick={() => { props.loadPlans(); props.refreshStamina() }}>
+        aria-label={props.t('refresh')} onClick={props.loadPlans}>
         <Glyph name="rotate-cw" size={16} className={loading ? css.spin : undefined} />
       </Button>
     </header>
@@ -137,7 +136,6 @@ export function PlanPage(props: PlanPageProps) {
         </div>
       </section>
       <p className={plansCss.billingNote}><Glyph name="arrow-up-right" size={13} />{props.t('billingNote')}</p>
-      <StaminaPanel {...props} />
       {history.length > 0 && <details className={plansCss.history}>
         <summary><Glyph name="chevron-right" size={14} />{props.t('subscriptionHistory')}<span>{history.length}</span></summary>
         {history.map(subscription => <SubscriptionRow key={subscription.id} subscription={subscription}

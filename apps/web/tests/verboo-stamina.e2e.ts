@@ -1,10 +1,10 @@
 /** Built Verboo composition with a borrowed recorded Session and a loopback-only product API. */
 import { createServer, type ServerResponse } from 'node:http'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { chromium, type Browser, type Page } from 'playwright'
+import { chromium, type Browser, type Locator, type Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession,
@@ -40,7 +40,8 @@ async function platformFixture() {
       state.reads++
       const row = {
         groupId: PLAN, groupName: 'Unlimited', remainingPercent: state.level ?? (account === ACCOUNT_A ? 50 : 100),
-        nextOutputTps: account === ACCOUNT_A ? 67 : 200, recovering: false, fullAt: null,
+        nextOutputTps: state.level === 0 ? 5 : state.level === 100 ? 200 : account === ACCOUNT_A ? 67 : 200,
+        recovering: false, fullAt: null,
         accountingPending: false, asOf: new Date().toISOString(),
       }
       const readings = state.enrolled ? [
@@ -84,6 +85,28 @@ async function platformFixture() {
   }
 }
 
+async function liquidFraction(liquid: Locator): Promise<number> {
+  return liquid.evaluate((node) => {
+    const water = node.querySelector('[data-stamina-water]')
+    const height = node.getBoundingClientRect().height
+    return water === null || height === 0 ? NaN : water.getBoundingClientRect().height / height
+  })
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (color: string) => {
+    const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number)
+    if (channels?.length !== 3) throw new Error(`Unexpected computed color: ${color}`)
+    const linear = channels.map((channel) => {
+      const value = channel / 255
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+    })
+    return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
+  }
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+  return (values[0]! + 0.05) / (values[1]! + 0.05)
+}
+
 describe.skipIf(MODE === 'record')('Verboo stamina in the built application', () => {
   let platform: Awaited<ReturnType<typeof platformFixture>>
   let scaffold: WebScaffold
@@ -93,9 +116,16 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   let failures = 0
   async function navigate(name: RegExp) {
     await page.setViewportSize({ width: 1280, height: 960 })
-    await expect.poll(() => page.locator('[data-sidebar-drawer]').count()).toBe(0)
+    const open = page.getByRole('button', { name: /^(Open sidebar|Abrir barra lateral)$/ }).first()
+    if (await open.isVisible()) await open.click()
     const button = page.getByRole('button', { name }).first()
     await button.click()
+  }
+  async function showContent(width: number) {
+    await page.setViewportSize({ width, height: 960 })
+    if (width >= 700) return
+    const close = page.getByRole('button', { name: /^(Collapse sidebar|Recolher barra lateral)$/ }).first()
+    if (await close.isVisible()) await close.click()
   }
   async function openConversation() {
     await navigate(/^(Workspace|Área de trabalho)$/)
@@ -149,7 +179,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
     await seedSession(scaffold, await readFile(session, 'utf8'), 'stamina-history')
     browser = await chromium.launch(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {})
-    page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US' })
+    page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US', deviceScaleFactor: 2 })
     page.setDefaultTimeout(10000)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
@@ -169,26 +199,26 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await writeFile(`${path}.aria.txt`, await page.locator('body').ariaSnapshot())
   })
   afterAll(async () => {
-    await browser?.close()
-    await scaffold?.close()
-    await platform?.close()
+    const results = await Promise.allSettled([browser?.close(), scaffold?.close(), platform?.close()])
     if (directory) await rm(directory, { recursive: true, force: true })
+    const failures = results.filter(result => result.status === 'rejected')
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Stamina fixture cleanup failed')
   })
 
-  it('shows the server reading in My plan across languages, themes and viewport sizes', async () => {
+  it('keeps stamina off plan, connection and preference pages across themes and viewport sizes', async () => {
     for (const locale of ['en', 'pt']) {
       await navigate(/^(Preferences|Preferências)$/)
       await page.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
       await navigate(/^(My plan|Meu plano)$/)
-      const region = page.locator('[data-verboo-page="plan"] [data-verboo-stamina]')
-      await region.getByRole('progressbar').waitFor()
-      expect(await region.getByRole('progressbar').getAttribute('value')).toBe('50')
-      expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
-      await compareOrRefreshGolden(join(EXPECTED, `plan-${locale}.expected.md`), await captureStableAria(page, '[data-verboo-page="plan"] [data-verboo-stamina]', scaffold.workspaceCwd), MODE)
+      const region = page.locator('[data-verboo-page="plan"]')
+      await region.waitFor()
+      expect(await region.textContent()).not.toMatch(/Stamina|tok\/s/)
+      expect(await page.locator('[data-verboo-stamina-liquid]:visible').count()).toBe(0)
+      await compareOrRefreshGolden(join(EXPECTED, `plan-${locale}.expected.md`), await captureStableAria(page, '[data-verboo-page="plan"]', scaffold.workspaceCwd), MODE)
       for (const theme of ['light', 'dark'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         for (const width of [1280, 390]) {
-          await page.setViewportSize({ width, height: 960 })
+          await showContent(width)
           await region.scrollIntoViewIfNeeded()
           const box = await region.boundingBox()
           expect(box).not.toBeNull()
@@ -197,6 +227,12 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
           await page.screenshot({ path: join(ARTIFACTS, `plan-${locale}-${theme}-${width}.png`), animations: 'disabled' })
         }
+      }
+      for (const [name, id] of [[/^(Connections|Conexões)$/, 'connections'], [/^(Preferences|Preferências)$/, 'preferences']] as const) {
+        await navigate(name)
+        await page.locator(`[data-verboo-page="${id}"]`).waitFor()
+        expect(await page.locator('[data-verboo-stamina-liquid]:visible').count()).toBe(0)
+        expect(await page.getByText('Stamina', { exact: true }).count()).toBe(0)
       }
     }
   })
@@ -256,33 +292,88 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     }
     await navigate(/^(My plan|Meu plano)$/)
   })
-  it('preserves the confirmed bar during failure, recovers, and hides an unselected account', async () => {
-    const region = page.locator('[data-verboo-page="plan"] [data-verboo-stamina]')
+  it('shows empty and full liquid without preventing an otherwise valid send', async () => {
+    await navigate(/^(Workspace|Área de trabalho)$/)
+    const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
+    const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
+    const editor = page.locator('[data-composer-input]')
+    await editor.fill('Unsent liquid fixture draft')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    try {
+      for (const level of [0, 100]) {
+        platform.state.level = level
+        await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(level / 100, 2)
+        expect(await primary.isEnabled()).toBe(true)
+        expect(await primary.getAttribute('aria-label')).toMatch(/^(Send|Enviar)/)
+        expect(await primary.textContent()).toBe('')
+        await primary.screenshot({ path: join(ARTIFACTS, `liquid-${level === 0 ? 'empty' : 'full'}.png`), animations: 'disabled' })
+      }
+    } finally {
+      platform.state.level = undefined
+      await editor.fill('')
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+    }
+    await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
+    await navigate(/^(My plan|Meu plano)$/)
+  })
+  it('preserves confirmed liquid during failure, automatically recovers, and hides an unselected account', async () => {
+    await navigate(/^(Workspace|Área de trabalho)$/)
+    const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     platform.state.down = true
-    await region.getByRole('status').waitFor()
-    expect(await region.getByRole('progressbar').getAttribute('value')).toBe('50')
+    await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBe('true')
+    expect(await liquidFraction(liquid)).toBeCloseTo(0.5, 2)
     platform.state.down = false
-    await region.getByRole('button', { name: /^(Try again|Tentar novamente)$/ }).click()
-    await region.getByRole('status').waitFor({ state: 'hidden' })
+    await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBeNull()
     platform.state.enrolled = false
-    await region.waitFor({ state: 'hidden' })
-    expect(await page.getByRole('progressbar').count()).toBe(0)
+    await liquid.waitFor({ state: 'hidden' })
     platform.state.enrolled = true
-    await region.getByRole('progressbar').waitFor()
-    expect(await region.getByRole('progressbar').getAttribute('value')).toBe('50')
+    await liquid.waitFor()
+    await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
   })
   it('discards the old account response while switching to another selected account', async () => {
+    await navigate(/^(Workspace|Área de trabalho)$/)
     platform.state.holdNext = true
-    await page.getByRole('button', { name: /^(Refresh|Atualizar)$/ }).first().click()
-    await expect.poll(() => platform.state.held !== undefined).toBe(true)
+    await expect.poll(() => platform.state.held !== undefined, { timeout: 10000 }).toBe(true)
     const account = scaffold.ctx.deepseekAccount
     if (!('setFixtureAccount' in account) || typeof account.setFixtureAccount !== 'function') throw new Error('Fixture account control is unavailable')
     Reflect.apply(account.setFixtureAccount, account, [ACCOUNT_B])
-    const region = page.locator('[data-verboo-page="plan"] [data-verboo-stamina]')
-    await expect.poll(() => region.getByRole('progressbar').getAttribute('value')).toBe('100')
+    const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
+    await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(1, 2)
     platform.state.held!()
-    await expect.poll(() => region.getByRole('progressbar').getAttribute('value')).toBe('100')
-    expect(await region.textContent()).not.toMatch(/tok\/s|tokens\/s|t\/s|词元\/秒/i)
+    await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(1, 2)
+  })
+  it('keeps answered questions readable on neutral message bubbles in both themes', async () => {
+    const fixture = await selectedSessionFixture(join(ROOT, 'snapshots/web/question-composer/session.v3.jsonl'))
+    await seedSession(scaffold, await readFile(fixture, 'utf8'), 'question-contrast-history')
+    await page.reload({ waitUntil: 'load' })
+    await navigate(/^(Workspace|Área de trabalho)$/)
+    const project = page.getByRole('button', { name: basename(scaffold.workspaceCwd), exact: true })
+    const row = page.locator('[data-verboo-session="question-contrast-history"]')
+    if (!(await row.isVisible())) await project.click()
+    await row.getByRole('button').first().click()
+    const reply = page.locator('[data-question-reply]').first()
+    await reply.waitFor()
+    expect(await reply.locator('dt').textContent()).toContain('Which color do you prefer?')
+    expect(await reply.locator('dd').textContent()).toContain('Include accessibility notes')
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      const colors = await reply.locator('dl').evaluate((details) => {
+        const bubble = details.parentElement!
+        return {
+          background: getComputedStyle(bubble).backgroundColor,
+          texts: [...details.querySelectorAll('dt, dt span, dd')].map(node => getComputedStyle(node).color),
+        }
+      })
+      const channels = colors.background.match(/[\d.]+/g)!.slice(0, 3).map(Number)
+      expect(Math.max(...channels) - Math.min(...channels)).toBeLessThanOrEqual(8)
+      for (const text of colors.texts) expect(contrastRatio(text, colors.background)).toBeGreaterThanOrEqual(4.5)
+      for (const width of [1280, 390]) {
+        await showContent(width)
+        await reply.scrollIntoViewIfNeeded()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await page.screenshot({ path: join(ARTIFACTS, `question-reply-${theme}-${width}.png`), animations: 'disabled' })
+      }
+    }
   })
   it.skipIf(!DEBUG)('shows exact server percentages and fresh timestamps in debug mode', async () => {
     await openConversation()

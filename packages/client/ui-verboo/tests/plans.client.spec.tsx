@@ -33,8 +33,7 @@ function fixture(locale = 'pt') {
   const props: ComponentProps<typeof PlanPage> = {
     useProduct: selector => selector(state),
     usePreferences: selector => selector({ locale, theme: 'system', languages: [] }),
-    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
-    billing: vi.fn(), loadPlans: vi.fn(), refreshStamina: vi.fn(),
+    billing: vi.fn(), loadPlans: vi.fn(),
     t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match: string, name: string) => {
       const value = values?.[name]
       return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
@@ -122,7 +121,6 @@ describe('subscription comparison', () => {
     expect(screen.getByRole('button', { name: 'Escolher plano: Max' })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Atualizar' })[0]!)
     expect(props.loadPlans).toHaveBeenCalledOnce()
-    expect(props.refreshStamina).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: pt.retry }))
     expect(props.loadPlans).toHaveBeenCalledTimes(2)
   })
