@@ -19,10 +19,12 @@ type BrowserOperation =
   | 'task.finish'
   | 'tabs.list'
   | 'tabs.open'
+  | 'tabs.navigate'
   | 'page.observe'
   | 'page.act'
   | 'history.search'
   | 'downloads.search'
+  | 'downloads.start'
   | 'attention.raise'
 
 interface Peer {

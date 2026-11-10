@@ -31,6 +31,8 @@ The Verboo provider controls the user's existing Chrome profile, including its a
 
 Chrome history searches are limited to the previous 30 days. Downloads use Chrome's configured download folder. Page observation brings a tab forward only for a verified login, MFA, or CAPTCHA challenge, then waits for the user to complete it. The extension queues simultaneous challenges by age. If a task start has an unknown outcome, `browser_task_recover` resumes the same task ID while the extension's session is available; after an extension or browser restart, a durable marker prevents duplicate creation and asks the agent to stop for inspection.
 
+The Verboo provider can inspect all tabs and groups, open background task tabs, navigate existing tabs in place, observe and operate page controls, search history and downloads, and start downloads in Chrome's configured folder. After a successful task, the agent asks whether to save a reusable site skill and asks for its destination before writing it.
+
 The Native Messaging host connects to the Host through a loopback-only TCP socket with a random per-user token. The extension sends commands to the existing Host conversation; it does not create another conversation or Agent.
 
 The Chrome Manifest V3 source and its Web Store package workflow are maintained in the standalone [verboo-code-browser-extension repository](https://github.com/verbeux-ai/verboo-code-browser-extension); this repository keeps the desktop host and conversation provider.

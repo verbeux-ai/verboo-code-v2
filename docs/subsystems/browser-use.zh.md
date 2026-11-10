@@ -31,6 +31,8 @@ Verboo 提供方操作用户现有的 Chrome 配置文件，包括其当前登�
 
 Chrome 历史记录搜索范围为过去 30 天。下载使用 Chrome 当前配置的下载文件夹。页面观测仅在确认出现登录、MFA 或 CAPTCHA 挑战时才会把标签页置前，并等待用户完成处理。多个挑战按请求时间排队。如果任务启动结果未知，只要扩展 session 仍然可用，`browser_task_recover` 就会恢复同一个任务 ID；扩展或浏览器重启后，持久标记会阻止重复创建，并要求 Agent 停下来检查。
 
+Verboo 提供方可检查所有标签页和分组，在后台打开任务标签页，在原标签页中导航，观测并操作页面控件，搜索历史记录和下载记录，并将文件下载到 Chrome 当前配置的文件夹。任务成功完成后，Agent 会询问是否保存可复用的网站 skill；只有用户明确同意并确认每次的保存位置后才会写入。
+
 Native Messaging 主机通过仅限回环地址的 TCP 套接字与 Host 连接，并使用每用户随机令牌。扩展向现有 Host 会话发送命令；不会创建另一个会话或 Agent。
 
 Chrome Manifest V3 源码与 Web Store 打包流程由独立的 [verboo-code-browser-extension 仓库](https://github.com/verbeux-ai/verboo-code-browser-extension)维护；本仓库保留桌面主机与会话提供方。

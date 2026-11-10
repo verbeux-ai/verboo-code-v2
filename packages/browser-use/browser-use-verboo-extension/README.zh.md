@@ -28,7 +28,7 @@ kind: "package-reference"
 
 桌面 bundle 会包含 Native Messaging 可执行文件，并在 Verboo Code 启动时安装 Chrome 的每用户主机清单。构建前设置 `VERBOO_CHROME_EXTENSION_ID`，使 Cargo 将同一个扩展 ID 编译进应用和 Native Messaging 主机。发行版必须使用已发布的 Chrome Web Store ID；若 ID 无效或缺失，启动器会拒绝发行版构建。开发构建可使用 Chrome 分配给未打包扩展的 ID。
 
-提供方在每个 Agent 自己的作用域中注册浏览器工具。开始任务会在新的紫色 Chrome 分组中创建后台标签页；该任务打开的页面会加入同一分组。现有标签页可以被查看但不会被移动。任务结束后分组仍会保留。查看到登录、MFA 或 CAPTCHA 挑战时，会将对应标签页置前并等待挑战完成。
+提供方在每个 Agent 自己的作用域中注册浏览器工具。开始任务会在新的紫色 Chrome 分组中创建后台标签页；该任务打开的页面会加入同一分组。现有标签页可以被查看和原地导航，但不会被移动。任务结束后分组仍会保留。查看到登录、MFA 或 CAPTCHA 挑战时，会将对应标签页置前并等待挑战完成。
 
 提供方最多等待 45 秒以连接 Chrome，并在 Native Messaging 断开后最多重发命令两次。重发会保留请求 ID，使扩展返回缓存结果或报告结果未知，而不是重复执行网页操作。`connectionTimeoutMs` 与 `recoveryRetries` 可调整这些上限。
 
@@ -46,7 +46,7 @@ kind: "package-reference"
 
 桥接仅绑定到 `127.0.0.1`，使用随机 256 位令牌对 Native Messaging 主机进行身份验证，并通过本地套接字传输按行分隔、带版本号的 JSON。Chrome 扩展另一侧使用 Chrome 的长度前缀 Native Messaging 协议。扩展实例标识符会将任务命令路由到创建该任务的 Chrome 配置文件。所有重试会沿用同一个请求 ID。Chrome 在 session storage 中缓存最多 4 MiB 的近期响应，并在 local storage 中保留持久请求标记；Host 收到响应后会发送确认消息，让扩展清除两者。扩展重新加载后，若只剩标记而没有 session 响应，扩展会报告结果未知，而不会重复执行网页操作。
 
-提供方公开 `browser_task_start`、`browser_task_recover`、`browser_task_finish`、`browser_tabs_list`、`browser_tab_open`、`browser_page_observe`、`browser_page_act`、`browser_history_search`、`browser_downloads_search` 与 `browser_attention_raise`。如果 Chrome 在创建任务后、返回结果前断开连接，只要扩展任务 session 仍然可用，`browser_task_recover` 就会使用同一个任务 ID 恢复该任务。如果扩展或浏览器重启清除了 session，持久标记会阻止重复创建，并停止恢复以供检查。工具使用 DSH 标准执行管线与 Session 日志。任务标识符仅属于创建它的会话。
+提供方公开 `browser_task_start`、`browser_task_recover`、`browser_task_finish`、`browser_tabs_list`、`browser_tab_open`、`browser_tab_navigate`、`browser_page_observe`、`browser_page_act`、`browser_history_search`、`browser_download_start`、`browser_downloads_search` 与 `browser_attention_raise`。现有标签页可以原地导航而不改变分组或焦点；请求下载会保存到 Chrome 配置的下载文件夹且不弹出保存对话框。如果 Chrome 在创建任务后、返回结果前断开连接，只要扩展任务 session 仍然可用，`browser_task_recover` 就会使用同一个任务 ID 恢复该任务。如果扩展或浏览器重启清除了 session，持久标记会阻止重复创建，并停止恢复以供检查。任务成功完成后，Agent 会询问是否创建可复用的网站 skill，并在写入前询问保存位置。工具使用 DSH 标准执行管线与 Session 日志。任务标识符仅属于创建它的会话。
 
 Chrome Manifest V3 源码与 Chrome Web Store 打包流程位于独立的 [verboo-code-browser-extension 仓库](https://github.com/verbeux-ai/verboo-code-browser-extension)。此提供方保留在 Host 侧。面向模型的工具 schema 由 [`src/index.ts`](src/index.ts) 中的类型化定义注册。
 
