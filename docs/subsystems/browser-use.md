@@ -6,13 +6,14 @@ Browser use lets a model inspect and operate web pages through a configured back
 
 ## Choose a provider
 
-Mount [`dsh-browser-use`](../../packages/browser-use/browser-use/README.md) and one provider in the same composition. The providers are experimental public npm packages and require explicit activation. Their initial browser engine is Chromium.
+Mount [`dsh-browser-use`](../../packages/browser-use/browser-use/README.md) and one provider in the same composition. The MCP and Stagehand providers are experimental public npm packages and require explicit activation. The Verboo product bundle mounts its Chrome extension provider automatically.
 
 | Provider | Integration |
 |---|---|
 | [Playwright MCP](../../packages/experimental/browser-use-playwright-mcp/README.md) | Playwright's browser-control MCP tools |
 | [Chrome DevTools MCP](../../packages/experimental/browser-use-chrome-devtools-mcp/README.md) | Chrome DevTools inspection and control through MCP |
 | [Stagehand](../../packages/experimental/browser-use-stagehand-native/README.md) | Native browser operations with AI-assisted actions, observation, and extraction |
+| [Verboo Chrome extension](../../packages/browser-use/browser-use-verboo-extension/README.md) | Existing Chrome profile connected through Native Messaging and local IPC |
 
 The shared service registers only a name and rejects any second provider, including another instance with the same name. It has no common browser-operation methods, browser resources, or model-controlled selector. Provider configuration in a profile or preset selects launch or attachment for that activation.
 
@@ -23,6 +24,16 @@ A launched browser belongs to the exact live Agent and Session that uses it. Cal
 An attached browser remains externally owned. The provider reserves it for one Session within that provider instance, preserves its existing browser state, and rejects simultaneous attachment by another Session. Teardown disconnects and leaves the external browser running. Separate DSH processes and other clients remain outside this reservation.
 
 Provider shutdown stops tool admission and waits for owned work and resource cleanup before releasing the shared provider registration. Cancellation cannot undo a browser action already delivered.
+
+## Verboo Chrome extension
+
+The Verboo provider controls the user's existing Chrome profile, including its active login state. Tools are registered in each conversation's Agent scope. Every new browser task opens a background tab group; only tabs created by that task join the group, and finishing the task keeps the group open. Existing tabs can be inspected without being moved. Separate tasks use separate groups and can run concurrently.
+
+Chrome history searches are limited to the previous 30 days. Downloads use Chrome's configured download folder. Page observation brings a tab forward only for a verified login, MFA, or CAPTCHA challenge, then waits for the user to complete it. The extension queues simultaneous challenges by age. If a task start has an unknown outcome, `browser_task_recover` resumes the same task ID while the extension's session is available; after an extension or browser restart, a durable marker prevents duplicate creation and asks the agent to stop for inspection.
+
+The Native Messaging host connects to the Host through a loopback-only TCP socket with a random per-user token. The extension sends commands to the existing Host conversation; it does not create another conversation or Agent.
+
+The Chrome Manifest V3 source and its Web Store package workflow are maintained in the standalone [verboo-code-browser-extension repository](https://github.com/verbeux-ai/verboo-code-browser-extension); this repository keeps the desktop host and conversation provider.
 
 ## MCP initialization
 

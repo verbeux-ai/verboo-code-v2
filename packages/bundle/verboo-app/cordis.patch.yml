@@ -65,3 +65,7 @@
       name: '@deepseek-ai/dsh-api-verboo-mcp'
     - id: ui-verboo
       name: '@deepseek-ai/dsh-client-ui-verboo'
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+    - id: browser-use-verboo-extension
+      name: '@deepseek-ai/dsh-browser-use-verboo-extension'

@@ -7,7 +7,8 @@
     "frontendDist": "../tauri/ui",
     "additionalWatchFolders": [
       "../tauri/bridge.js",
-      "../tauri/host.mjs"
+      "../tauri/host.mjs",
+      "../.desktop-build/tauri/native-host/"
     ]
   },
   "app": {
@@ -22,7 +23,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": {
-      "../.desktop-build/tauri/runtime/": "runtime/"
+      "../.desktop-build/tauri/runtime/": "runtime/",
+      "../.desktop-build/tauri/native-host/": "native-host/"
     },
     "macOS": {
       "minimumSystemVersion": "13.5",

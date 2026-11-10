@@ -13,6 +13,12 @@
     },
     {
       "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../browser-use/browser-use"
+    },
+    {
+      "path": "../../browser-use/browser-use-verboo-extension"
     }
   ]
 }

@@ -27,7 +27,7 @@ Run the Verboo Code product on the upstream Harness engine with Verboo login, a 
 
 After building the checkout, launch `pnpm dsh --profile verboo --no-open` for a browser preview or `pnpm run dev:desktop` for Tauri development. The profile layers base, Web and this product bundle in that order.
 
-The product uses compact Chat details and omits the diagnostic Trajectory view. Its UI shadows the activity and token-statistic dock cells and replaces the context meter through typed slots. Permissions, model selection, running feedback and account stamina retain their own controls.
+The product uses compact Chat details and omits the diagnostic Trajectory view. Its UI shadows the activity and token-statistic dock cells and replaces the context meter through typed slots. Permissions, model selection, running feedback and account stamina retain their own controls. The bundle also mounts the Chrome extension provider, which adds browser tools to each conversation and connects them to the user's existing Chrome profile.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -35,7 +35,7 @@ The product uses compact Chat details and omits the diagnostic Trajectory view. 
 <details>
 <summary>Implementation internals</summary>
 
-The [product patch](cordis.patch.yml) replaces account and interface providers through stable entry IDs and mounts the connections extension. Upstream internal package names and saved model provider routes remain technical identifiers. For an upstream update, merge its engine and Web composition, review the small shared extension changes, rebuild, and run product browser QA plus shared GUI checks.
+The [product patch](cordis.patch.yml) replaces account and interface providers through stable entry IDs and mounts the connections and Chrome browser extensions. Upstream internal package names and saved model provider routes remain technical identifiers. For an upstream update, merge its engine and Web composition, review the small shared extension changes, rebuild, and run product browser QA plus shared GUI checks.
 
 The product sets `system-prompt.identity` without rewriting preset tool lists, so upstream personas retain the selected model introduction.
 

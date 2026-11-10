@@ -6,13 +6,14 @@
 
 ## 选择提供方
 
-在同一组合中挂载 [`dsh-browser-use`](../../packages/browser-use/browser-use/README.zh.md) 和一个提供方。这些提供方是实验性公共 npm 包，需要显式激活。它们最初支持的浏览器引擎是 Chromium。
+在同一组合中挂载 [`dsh-browser-use`](../../packages/browser-use/browser-use/README.zh.md) 和一个提供方。MCP 与 Stagehand 提供方是实验性公共 npm 包，需要显式激活。Verboo 产品 bundle 会自动挂载 Chrome 扩展提供方。
 
 | 提供方 | 集成方式 |
 |---|---|
 | [Playwright MCP](../../packages/experimental/browser-use-playwright-mcp/README.zh.md) | Playwright 的浏览器控制 MCP 工具 |
 | [Chrome DevTools MCP](../../packages/experimental/browser-use-chrome-devtools-mcp/README.zh.md) | 通过 MCP 进行 Chrome DevTools 检查与控制 |
 | [Stagehand](../../packages/experimental/browser-use-stagehand-native/README.zh.md) | 原生浏览器操作，支持 AI（人工智能）辅助的动作、观测与提取 |
+| [Verboo Chrome 扩展](../../packages/browser-use/browser-use-verboo-extension/README.zh.md) | 通过 Native Messaging 和本地 IPC 连接现有 Chrome 配置文件 |
 
 共享服务只注册名称，并拒绝任何第二次提供方注册，包括同名实例。它不包含通用浏览器操作方法、浏览器资源或模型控制的选择器。Profile 或 preset 中的提供方配置为此次激活选择启动或附加模式。
 
@@ -23,6 +24,16 @@
 附加的浏览器仍归外部所有。提供方在该提供方实例内将浏览器保留给一个 Session，保留现有浏览器状态，并拒绝另一个 Session 同时附加。清理会断开连接并保持外部浏览器运行。独立 DSH 进程与其他客户端不受此保留约束。
 
 提供方关闭时先停止接收工具调用，并等待自有工作与资源清理完成，再释放共享提供方注册。取消无法撤销已交付的浏览器操作。
+
+## Verboo Chrome 扩展
+
+Verboo 提供方操作用户现有的 Chrome 配置文件，包括其当前登录状态。工具注册在每个会话的 Agent 作用域中。每个新浏览器任务都会在后台创建标签页分组；只有该任务创建的标签页会加入分组，任务结束后分组仍会保留。现有标签页可以被查看，但不会被移动。不同任务使用不同分组，可以同时运行。
+
+Chrome 历史记录搜索范围为过去 30 天。下载使用 Chrome 当前配置的下载文件夹。页面观测仅在确认出现登录、MFA 或 CAPTCHA 挑战时才会把标签页置前，并等待用户完成处理。多个挑战按请求时间排队。如果任务启动结果未知，只要扩展 session 仍然可用，`browser_task_recover` 就会恢复同一个任务 ID；扩展或浏览器重启后，持久标记会阻止重复创建，并要求 Agent 停下来检查。
+
+Native Messaging 主机通过仅限回环地址的 TCP 套接字与 Host 连接，并使用每用户随机令牌。扩展向现有 Host 会话发送命令；不会创建另一个会话或 Agent。
+
+Chrome Manifest V3 源码与 Web Store 打包流程由独立的 [verboo-code-browser-extension 仓库](https://github.com/verbeux-ai/verboo-code-browser-extension)维护；本仓库保留桌面主机与会话提供方。
 
 ## MCP 初始化
 

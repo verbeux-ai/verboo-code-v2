@@ -31,6 +31,8 @@
   "dependencies": {
     "@deepseek-ai/dsh-api-verboo-mcp": "workspace:*",
     "@deepseek-ai/dsh-api-verboo-product": "workspace:*",
+    "@deepseek-ai/dsh-browser-use": "workspace:*",
+    "@deepseek-ai/dsh-browser-use-verboo-extension": "workspace:*",
     "@deepseek-ai/dsh-client-ui-verboo": "workspace:*",
     "@deepseek-ai/dsh-verboo-account": "workspace:*",
     "@deepseek-ai/dsh-verboo-connections": "workspace:*",

@@ -517,6 +517,25 @@ export type Config = LocalConfig
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-bash-sandbox -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-browser-use-verboo-extension -->
+<a id="deepseek-aidsh-browser-use-verboo-extension"></a>
+
+## `@deepseek-ai/dsh-browser-use-verboo-extension`
+
+- `inject`: `browserUse` · `agents`
+- `source`: [`packages/browser-use/browser-use-verboo-extension/src/index.ts:20`](../packages/browser-use/browser-use-verboo-extension/src/index.ts)
+
+```ts config-catalog
+/** Browser bridge connection and bounded recovery settings. */
+export interface Config {
+  /** Maximum time to wait for Chrome to connect or reconnect, in milliseconds. */
+  connectionTimeoutMs: number
+  /** Extra resends of a command after a Native Messaging disconnect. */
+  recoveryRetries: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-browser-use-verboo-extension -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-connection -->
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -4707,6 +4726,8 @@ export interface Config {
   fallbackContextWindow?: number
   /** Output token limit used when the model catalog omits the limit. */
   fallbackMaxOutputTokens?: number
+  /** Additional requests allowed after a malformed model tool-call response. */
+  malformedResponseRetries?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-account -->

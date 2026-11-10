@@ -41,6 +41,7 @@ jobs:
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      VERBOO_CHROME_EXTENSION_ID: ${{ vars.VERBOO_CHROME_EXTENSION_ID }}
     defaults:
       run:
         working-directory: ${{ matrix.directory || github.workspace }}
@@ -72,6 +73,9 @@ jobs:
           cache-on-failure: true
       - name: Validate the release tag and committed product version
         run: node apps/desktop/tauri/publish-release.mjs --check
+      - name: Validate the Chrome Web Store extension ID
+        run: |
+          node --input-type=module -e "const id = process.env.VERBOO_CHROME_EXTENSION_ID; if (typeof id !== 'string' || !/^[a-p]{32}$/u.test(id)) throw new Error('Set the repository variable VERBOO_CHROME_EXTENSION_ID to the published Chrome Web Store extension ID')"
       - name: Linux system dependencies
         if: runner.os == 'Linux'
         run: |
