@@ -25,7 +25,7 @@ Sign in to Verboo with OAuth PKCE and use the models authorized for that account
 <a id="use-this-package"></a>
 ## Use this package
 
-The `verboo` profile supplies the public API origin, router URL and OAuth client ID. [Config](src/config.ts) defines deployment settings. The production client uses `https://code.verboo.ai`, its `/router/v1` gateway and the registered public `verboo-code-cli` client. Loopback HTTP requires an explicit development setting.
+The `verboo` profile supplies the public API origin, router URL and OAuth client ID. [Config](src/config.ts) defines deployment settings. The production client uses `https://code.verboo.ai`, its `/router/v1` gateway and the registered public `verboo-code-cli` client. Loopback HTTP requires an explicit development setting. Each inference request sends a generated `X-Request-Id` and logs that id with its route; malformed tool-call diagnostics log only their category and available provider response id. The account route rejects malformed calls before dispatch and retries one malformed model request by default; `malformedResponseRetries: 0` disables that additional request.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -54,7 +54,7 @@ The selected `deepseek-account` model receives the existing conversation and too
 
 #### Token effect
 
-Authentication adds no input tokens. Model choice determines the provider tokenizer and context limits.
+Authentication and local response validation add no input tokens. A malformed response retried through the agent loop sends the model request again and may consume additional input and output tokens; direct LLM streams remain single-attempt. Model choice determines the provider tokenizer and context limits.
 
 #### KV Cache effect
 

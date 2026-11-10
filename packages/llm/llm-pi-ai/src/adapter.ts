@@ -42,6 +42,7 @@ import {
   contentHasImage,
   LlmAdapter,
   LlmError,
+  ProviderRequestId,
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
 import type {
@@ -61,7 +62,8 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
-import { toStreamChunks } from './stream.ts'
+import { OpenAiToolCallIdInspection, toStreamChunks } from './stream.ts'
+import type { MalformedToolCallDiagnostic } from './stream.ts'
 import type { PiAiRequestHeaderContext } from './types.ts'
 
 /**
@@ -117,6 +119,8 @@ export interface PiAiAdapterOptions {
    * @returns headers to pass to pi-ai after applying Harness attribution.
    */
   prepareHeaders?: (request: PiAiRequestHeaderContext, headers: Headers) => Headers
+  /** Observe safe malformed-response facts without prompt or tool arguments. */
+  onMalformedResponse?: (diagnostic: MalformedToolCallDiagnostic & { provider: string; model: string }) => void
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
@@ -457,6 +461,10 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade, updates.systemPromptUpdate === 'in-history')
+      const inspection = model.api === 'openai-completions' ? new OpenAiToolCallIdInspection() : undefined
+      const reportMalformed = (diagnostic: MalformedToolCallDiagnostic): void => {
+        this.config.onMalformedResponse?.({ provider: options.provider, model: options.model, ...diagnostic })
+      }
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
@@ -464,8 +472,10 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        ...inspection === undefined ? {} : { onProviderStreamEvent: (data: unknown) => { inspection.observe(data) } },
       })
-      const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
+      const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id,
+        (diagnostic) => { if (!inspection?.duplicate) reportMalformed(diagnostic) })[Symbol.asyncIterator]()
       let exhausted = false
       try {
         while (true) {
@@ -474,8 +484,23 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
+          if (inspection?.duplicate && result.value.type === 'block-end'
+            && result.value.block.type === 'tool-call') continue
+          if (result.value.type === 'finish' && inspection?.duplicate
+            && result.value.reason.kind !== 'error' && result.value.reason.kind !== 'aborted'
+            && result.value.reason.kind !== 'max-tokens') {
+            throw new LlmError('OpenAI-compatible response reused a tool-call id', 'MALFORMED_RESPONSE')
+          }
           yield result.value
         }
+      } catch (error: unknown) {
+        if (inspection?.duplicate && error instanceof LlmError && error.code === 'MALFORMED_RESPONSE'
+          && !options.signal?.aborted) {
+          reportMalformed({ category: 'duplicate_id', ...inspection.responseId ? { responseId: inspection.responseId } : {} })
+          throw new LlmError('OpenAI-compatible response reused a tool-call id', 'MALFORMED_RESPONSE',
+            inspection.responseId ? { requestId: ProviderRequestId(inspection.responseId) } : undefined)
+        }
+        throw error
       } finally {
         if (!exhausted) {
           consumer.abort('pi-ai stream consumer stopped')

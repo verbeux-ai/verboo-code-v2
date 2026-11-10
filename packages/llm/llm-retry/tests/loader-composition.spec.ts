@@ -43,6 +43,23 @@ class TransientOnceAdapter extends LlmAdapter {
   }
 }
 
+class CodeLimitedAdapter extends LlmAdapter {
+  requests = 0
+  private readonly retryPolicy = resolveRetryPolicy({
+    mode: 'normal', maxRetries: 5,
+    retryableCodes: ['SERVER', 'MALFORMED_RESPONSE'],
+    maxRetriesByCode: { MALFORMED_RESPONSE: 1 },
+    backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
+  }, 'code-limited provider retryPolicy')
+
+  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy { return this.retryPolicy }
+
+  async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests += 1
+    throw new LlmError('invalid response', this.requests === 1 ? 'SERVER' : 'MALFORMED_RESPONSE')
+  }
+}
+
 afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
@@ -120,6 +137,33 @@ describe('real Loader composition', () => {
     expect(agent.session.deriveMessages().at(-1)).toMatchObject({
       role: 'assistant',
       content: [{ type: 'text', text: 'recovered' }],
+    })
+  })
+
+  it('limits malformed-response retries independently of earlier transient failures', { timeout: 60_000 }, async () => {
+    const loaded = await loadYaml([
+      "- name: '@deepseek-ai/dsh-llm'",
+      "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
+      "- name: '@deepseek-ai/dsh-system-prompt'",
+      "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-tool-executor-native'",
+      "- name: '@deepseek-ai/dsh-agent'",
+      "- name: '@deepseek-ai/dsh-llm-retry'",
+      "- name: '@deepseek-ai/dsh-agent-loop'",
+    ])
+    const adapter = new CodeLimitedAdapter()
+    loaded.llm.registerAdapter(['mock'], adapter)
+    const agent = await loaded.agentLoop.create(SessionId('code-limited-retry'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'retry once' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toBe(3)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')
+      .map(event => event.data.failure.code)).toEqual(['SERVER', 'MALFORMED_RESPONSE'])
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end', data: { reason: { kind: 'error', error: { code: 'MALFORMED_RESPONSE' } } },
     })
   })
 })

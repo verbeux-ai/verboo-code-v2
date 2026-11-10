@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-`verboo` 配置提供公开 API 地址、路由地址与 OAuth 客户端 ID。[Config](src/config.ts) 定义部署设置。生产客户端使用 `https://code.verboo.ai`、其 `/router/v1` 网关与已注册的公开客户端 `verboo-code-cli`。本地 HTTP 必须显式启用开发设置。
+`verboo` 配置提供公开 API 地址、路由地址与 OAuth 客户端 ID。[Config](src/config.ts) 定义部署设置。生产客户端使用 `https://code.verboo.ai`、其 `/router/v1` 网关与已注册的公开客户端 `verboo-code-cli`。本地 HTTP 必须显式启用开发设置。每次推理请求都会发送生成的 `X-Request-Id`，并记录该 id 与路由；格式错误的工具调用诊断只记录故障类别和可用的提供方响应 id。账户路由会在分派工具前拒绝格式错误的调用，并默认对格式错误的模型响应重试一次；`malformedResponseRetries: 0` 会禁用这次额外请求。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现
@@ -54,7 +54,7 @@ kind: "package-reference"
 
 #### Token 影响
 
-身份认证不增加输入 token。模型选择决定提供方的分词器与上下文限制。
+身份认证和本地响应校验不增加输入 token。通过 agent loop 重试格式错误的响应会再次发送模型请求，可能消耗额外的输入和输出 token；直接调用 LLM 流仍只尝试一次。模型选择决定提供方的分词器与上下文限制。
 
 #### KV Cache 影响
 

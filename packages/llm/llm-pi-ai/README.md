@@ -234,7 +234,7 @@ Later system messages supplied to the adapter stay out of the initial prompt, pr
 
 #### What the model sees
 
-pi-ai events become harness reasoning, text, tool-call, usage, and finish chunks. The adapter passes parsed tool arguments to the harness as raw JSON strings. If pi-ai reports invalid completed arguments, the attempt fails with `MALFORMED_RESPONSE` before tool dispatch and publishes no successful replay state. The default normal retry policy excludes this code; an explicit retry policy still controls recovery.
+pi-ai events become harness reasoning, text, tool-call, usage, and finish chunks. The adapter passes parsed tool arguments to the harness as raw JSON strings. Completed calls with invalid arguments, missing ids or names, duplicate ids, or unfinished blocks fail with `MALFORMED_RESPONSE` before tool dispatch and publish no successful replay state. The OpenAI-compatible stream is also checked before pi-ai can merge calls that reused an id at different indices. An optional observer receives only the failure category and available response id, without prompt or argument text. The default normal retry policy excludes this code; an explicit retry policy still controls recovery.
 
 #### Token effect
 

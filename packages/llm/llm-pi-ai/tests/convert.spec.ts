@@ -815,6 +815,21 @@ describe('toStreamChunks', () => {
     ])
   })
 
+  it('rejects a tool-call partial left open in the final assistant message', async () => {
+    const incomplete = assistant({
+      content: [{ type: 'toolCall', id: 'call-open', name: 'f', arguments: { a: 1 } }],
+      stopReason: 'toolUse',
+    })
+    await expect(collect(toStreamChunks(feed(
+      { type: 'toolcall_start', contentIndex: 0, partial: incomplete },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '{"a":1}', partial: incomplete },
+      { type: 'done', reason: 'stop', message: incomplete },
+    )))).rejects.toMatchObject({
+      code: 'MALFORMED_RESPONSE',
+      message: 'Tool call did not complete',
+    })
+  })
+
   it('tolerates toolcall_start with a missing partial entry', async () => {
     const chunks = await collect(toStreamChunks(feed(
       { type: 'toolcall_start', contentIndex: 0, partial: assistant() },

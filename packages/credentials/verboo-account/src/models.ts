@@ -1,8 +1,9 @@
 /** Account-bound OpenAI-compatible model discovery using the existing pi-ai transport. */
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { z } from 'zod'
-import { LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import { LlmError, resolveImageAttachmentAccess, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type {
   LlmModelInfo,
   LlmResolvedModelInfo,
@@ -105,6 +106,8 @@ class VerbooAdapter extends PiAiAdapter {
     private readonly ctx: Context,
     private readonly deployment: Deployment,
   ) {
+    const normalRetry = resolveRetryPolicy(undefined, 'verboo-account retryPolicy')
+    if (normalRetry.mode !== 'normal') throw new Error('Verboo account requires a bounded retry policy')
     const tokens = new WeakMap<ResolvedPiAiProviderProfile, string>()
     const state = { profiles: new Map<string, ResolvedPiAiProviderProfile>() }
     super({
@@ -144,6 +147,20 @@ class VerbooAdapter extends PiAiAdapter {
       resolveAttachments: () => ctx.get('attachments'),
       resolveImageAccess: (attachments, ref) =>
         resolveImageAttachmentAccess(attachments, () => undefined, ref),
+      onMalformedResponse: ({ provider, model, category, responseId }) => {
+        ctx.logger.warn('Verboo model response rejected: %o', {
+          provider, model, category, ...responseId === undefined ? {} : { responseId },
+        })
+      },
+      prepareHeaders: (request, headers) => {
+        const requestId = randomUUID()
+        headers.set('X-Request-Id', requestId)
+        ctx.logger.info('Verboo model request: %o', {
+          requestId, provider: request.provider, model: request.model,
+          ...request.sessionId === undefined ? {} : { sessionId: request.sessionId },
+        })
+        return headers
+      },
     })
     const replace = (models: PiAiModelProfile[], sessionId?: string) => {
       const profiles = resolveProfiles(
@@ -155,6 +172,12 @@ class VerbooAdapter extends PiAiAdapter {
             apiKeyEnv: 'VERBOO_ACCESS_TOKEN',
             models,
             compat: { thinkingFormat: 'deepseek' },
+            retryPolicy: {
+              mode: 'normal',
+              maxRetries: normalRetry.maxRetries,
+              retryableCodes: [...normalRetry.retryableCodes, 'MALFORMED_RESPONSE'],
+              maxRetriesByCode: { MALFORMED_RESPONSE: deployment.malformedResponseRetries },
+            },
           },
         },
         models.length === 0 ? 'deferred' : 'strict',
@@ -312,23 +335,34 @@ class VerbooAdapter extends PiAiAdapter {
     stream: AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
-    for await (const chunk of stream) {
-      // The shared SDK groups 401 and 403 as AUTH. Only the account server can
-      // establish that the grant itself expired; an entitlement failure cannot.
-      if (
-        chunk.type === 'finish' &&
-        chunk.reason.kind === 'error' &&
-        chunk.reason.failure.code === 'AUTH' &&
-        session?.sessionId ===
-          (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
-      ) {
-        await this.ctx.deepseekAccount.getProfile({
-          locale: 'en',
-          version: '0.2.2-alpha.3',
-          timezoneOffsetSeconds: 0,
-        })
+    try {
+      for await (const chunk of stream) {
+        // The shared SDK groups 401 and 403 as AUTH. Only the account server can
+        // establish that the grant itself expired; an entitlement failure cannot.
+        if (
+          chunk.type === 'finish' &&
+          chunk.reason.kind === 'error' &&
+          chunk.reason.failure.code === 'AUTH' &&
+          session?.sessionId ===
+            (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+        ) {
+          await this.ctx.deepseekAccount.getProfile({
+            locale: 'en',
+            version: '0.2.2-alpha.3',
+            timezoneOffsetSeconds: 0,
+          })
+        }
+        yield chunk
       }
-      yield chunk
+    } catch (error: unknown) {
+      if (error instanceof LlmError && error.code === 'MALFORMED_RESPONSE') {
+        throw new LlmError(
+          'O modelo retornou uma chamada de ferramenta inválida. Tente novamente.',
+          'MALFORMED_RESPONSE',
+          error.failure.requestId === undefined ? undefined : { requestId: error.failure.requestId },
+        )
+      }
+      throw error
     }
   }
 }

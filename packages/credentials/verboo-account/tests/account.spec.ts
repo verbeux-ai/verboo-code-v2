@@ -47,11 +47,13 @@ async function fixture(
     body: string
     journey?: string
     operation?: string
+    requestId?: string
   }> = []
   const state = {
     exchanges: 0,
     refreshes: 0,
     inferences: 0,
+    inferenceMalformed: false,
     inferenceStatus: 200,
     profileStatus: 200,
     rejectRefresh: false,
@@ -67,6 +69,7 @@ async function fixture(
       body,
       journey: String(req.headers['x-verboo-journey-id'] ?? ''),
       operation: String(req.headers['x-verboo-operation-id'] ?? ''),
+      requestId: String(req.headers['x-request-id'] ?? ''),
     })
     res.setHeader('content-type', 'application/json')
     if (req.url === '/oauth/token') {
@@ -130,7 +133,13 @@ async function fixture(
         return
       }
       res.setHeader('content-type', 'text/event-stream')
-      for (const chunk of [
+      for (const chunk of state.inferenceMalformed ? [
+        { choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [
+          { index: 0, id: 'duplicate', type: 'function', function: { name: 'count', arguments: '{}' } },
+          { index: 1, id: 'duplicate', type: 'function', function: { name: 'count', arguments: '{}' } },
+        ] }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } },
+      ] : [
         {
           choices: [
             {
@@ -330,6 +339,9 @@ it('composes PKCE login, encrypted storage, exact account models and streaming t
   ).toBe(false)
   const models = await app.ctx.llm.listModels('deepseek-account')
   expect(models.map(model => model.id)).toEqual(['max/qwen3.6-27b'])
+  expect(app.ctx.llm.providerRetryPolicy('deepseek-account')).toMatchObject({
+    mode: 'normal', maxRetries: 5, maxRetriesByCode: { MALFORMED_RESPONSE: 1 },
+  })
   const chunks: StreamChunk[] = []
   for await (const chunk of app.ctx.llm.stream({
     provider: 'deepseek-account',
@@ -346,6 +358,7 @@ it('composes PKCE login, encrypted storage, exact account models and streaming t
     value => value.path === '/router/v1/chat/completions',
   )
   expect(inference?.authorization).toBe('Bearer fixture-access-1-0')
+  expect(inference?.requestId).toMatch(/^[0-9a-f-]{36}$/)
   expect(JSON.parse(inference?.body ?? '{}')).toMatchObject({ model:'max/qwen3.6-27b' })
   expect({
     phase: (await app.ctx.deepseekAccount.getState()).attempt?.phase,
@@ -364,6 +377,21 @@ it('composes PKCE login, encrypted storage, exact account models and streaming t
       "text": "Olá Verboo",
     }
   `)
+})
+
+it('reports a malformed account response without exposing tool arguments', async () => {
+  const app = await fixture()
+  await app.login()
+  await app.ctx.llm.listModels('deepseek-account')
+  app.state.inferenceMalformed = true
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({ provider: 'deepseek-account', model: 'max/qwen3.6-27b', messages: [] })) chunks.push(chunk)
+  expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: {
+    code: 'MALFORMED_RESPONSE', message: 'O modelo retornou uma chamada de ferramenta inválida. Tente novamente.',
+    requestId: 'fixture-completion',
+  } } })
+  expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(false)
+  expect(app.state.inferences).toBe(1)
 })
 
 it('rejects forged callbacks and removes only the cancelled attempt route', async () => {
