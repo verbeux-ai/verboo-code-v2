@@ -1,0 +1,51 @@
+name: Browser Native Messaging host
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-native-host.yml'
+      - 'apps/desktop/src-tauri/native-host/**'
+      - 'apps/desktop/src-tauri/src/native_messaging.rs'
+      - 'apps/desktop/tauri/launch.mjs'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/browser-native-host.yml'
+      - 'apps/desktop/src-tauri/native-host/**'
+      - 'apps/desktop/src-tauri/src/native_messaging.rs'
+      - 'apps/desktop/tauri/launch.mjs'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-native-host-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-check:
+    name: Native host / ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            label: Linux
+          - runner: macos-15
+            label: macOS
+          - runner: windows-latest
+            label: Windows
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri/native-host -> target
+      - name: Compile the Native Messaging host
+        run: cargo check --locked --manifest-path apps/desktop/src-tauri/native-host/Cargo.toml
