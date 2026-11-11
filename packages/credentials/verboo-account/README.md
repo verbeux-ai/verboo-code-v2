@@ -33,7 +33,7 @@ The `verboo` profile supplies the public API origin, router URL and OAuth client
 <details>
 <summary>Implementation internals</summary>
 
-Account grants are encrypted before persistence and never returned over Remote. Refresh and logout capture the owning installation session. Model discovery preserves exact server IDs and delegates inference to the existing pi-ai adapter. New native login observations use Revenue Journey v1; queued observations retain their original version and bytes until an exact persistence receipt arrives.
+Account grants are encrypted before persistence and never returned over Remote. The public credential revision identifies the login and remains stable through token refresh, retaining the verified profile and Client state. A replacement login or rejected grant invalidates that identity; late profile responses never cross logins. Refresh and logout capture the owning installation session. Model discovery preserves exact server IDs and delegates inference to the existing pi-ai adapter. New native login observations use Revenue Journey v1; queued observations retain their original version and bytes until an exact persistence receipt arrives.
 
 </details>
 

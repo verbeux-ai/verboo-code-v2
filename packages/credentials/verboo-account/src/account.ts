@@ -94,7 +94,7 @@ export class VerbooAccount extends DeepSeekAccount {
   private readonly listeners = new Set<(identityOnly: boolean) => void>()
   private lifetime = new AbortController()
   private readonly revocations = new Set<Promise<void>>()
-  private profile: { token: string; id: AccountUserId } | undefined
+  private profile: { sessionId: string; id: AccountUserId } | undefined
   private closed = false
 
   /**
@@ -128,7 +128,6 @@ export class VerbooAccount extends DeepSeekAccount {
       if (key !== KEY) return
       this.lifetime.abort()
       this.lifetime = new AbortController()
-      this.profile = undefined
       this.changed()
     })
     ctx.effect(
@@ -146,21 +145,18 @@ export class VerbooAccount extends DeepSeekAccount {
   }
 
   override async getState(): Promise<AccountView> {
-    const record = await this.ctx.credentials.readRecord(KEY)
+    const grant = await this.readGrant()
     return {
-      ...(record?.kind === 'grant' && this.vault.owns(record.payload)
+      ...(grant !== null
         ? {
           credentialRevision: brandString<AccountCredentialRevision>(
             createHash('sha256')
-              .update(JSON.stringify(record.payload))
+              .update(grant.sessionId)
               .digest('hex'),
           ),
         }
         : {}),
-      status:
-        record?.kind === 'grant' && this.vault.owns(record.payload)
-          ? 'credential-stored'
-          : 'signed-out',
+      status: grant !== null ? 'credential-stored' : 'signed-out',
       links: {
         usageUrl: `${this.deployment.apiOrigin}/pt/dashboard`,
         topUpUrl: `${this.deployment.apiOrigin}/pt/plans`,
@@ -597,10 +593,12 @@ export class VerbooAccount extends DeepSeekAccount {
 
   private async detail(
     path: string,
-  ): Promise<{ token: string; response: unknown } | null> {
+  ): Promise<{ sessionId: string; response: unknown } | null> {
     const token = await this.resolveToken(this.deployment.routerBaseURL)
     if (token === undefined) return null
     const lifetime = this.lifetime
+    const grant = await this.readGrant()
+    if (grant?.accessToken !== token || lifetime !== this.lifetime) return null
     try {
       const response = await this.http.request(
         `${this.deployment.apiOrigin}${path}`,
@@ -610,8 +608,9 @@ export class VerbooAccount extends DeepSeekAccount {
         },
       )
       if (lifetime !== this.lifetime || lifetime.signal.aborted) return null
-      return { token, response }
+      return { sessionId: grant.sessionId, response }
     } catch (error) {
+      if (lifetime !== this.lifetime || lifetime.signal.aborted) return null
       if (
         error instanceof AccountRequestError &&
         error.code === 'authentication_invalid'
@@ -631,8 +630,8 @@ export class VerbooAccount extends DeepSeekAccount {
       if (result === null) return null
       const user = meResponse.parse(result.response).data
       const id = brandString<AccountUserId>(user.id)
-      const changed = this.profile?.id !== id
-      this.profile = { token: result.token, id }
+      const changed = this.profile?.id !== id || this.profile.sessionId !== result.sessionId
+      this.profile = { sessionId: result.sessionId, id }
       if (changed) this.changed(true)
       return {
         status: 'ready',
@@ -675,7 +674,7 @@ export class VerbooAccount extends DeepSeekAccount {
         token: grant.accessToken,
         sessionId: brandString<AccountSessionId>(grant.sessionId),
         userId:
-            this.profile?.token === grant.accessToken ? this.profile.id : null,
+            this.profile?.sessionId === grant.sessionId ? this.profile.id : null,
       }
   }
   override async getDeviceIdentity(): Promise<{
@@ -688,9 +687,10 @@ export class VerbooAccount extends DeepSeekAccount {
       record?.kind === 'grant'
         ? deviceResponse.parse(record.payload)
         : undefined
+    const userId = (await this.getPlatformSession())?.userId
     return {
       ...(device ? { deviceId: device.id } : {}),
-      ...(this.profile ? { userId: this.profile.id } : {}),
+      ...(userId ? { userId } : {}),
       osVersion: release(),
     }
   }

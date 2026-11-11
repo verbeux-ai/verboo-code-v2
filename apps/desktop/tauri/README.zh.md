@@ -57,4 +57,4 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 桥接测试覆盖缓存和异步客户端挂载，并确认不设置 Electron 标记。Node 集成测试覆盖真实配置的认证 HTML 和资源、重复关闭、启动失败以及父进程断开。Rust 测试拒绝远程或无效的启动 URL。
 
-产品 Client 条目在启动时为必需项，原生就绪状态要求 Verboo 导航已挂载。普通 Harness 根节点不能报告产品启动成功。构建后，在仓库根目录运行 `node apps/desktop/tauri/product-qa.mjs`，使用临时配置与操作系统凭据、外部 HTTP 测试服务，验证 OAuth PKCE、模型选择、方案、连接、对话框及两种主题。`VERBOO_QA_OUTPUT` 指定截图目录，`VERBOO_QA_CHROME` 指定浏览器可执行文件。
+产品 Client 条目在启动时为必需项，原生就绪状态要求 Verboo 导航已挂载。普通 Harness 根节点不能报告产品启动成功。构建后，在仓库根目录运行 `node apps/desktop/tauri/product-qa.mjs`，使用临时配置与操作系统凭据、外部 HTTP 测试服务，验证 OAuth PKCE、令牌实时刷新时不闪现引导页且保留草稿、焦点和运行中的对话、模型选择、方案、连接、对话框及两种主题。`VERBOO_QA_OUTPUT` 指定截图目录，`VERBOO_QA_CHROME` 指定浏览器可执行文件。

@@ -34,11 +34,11 @@ export interface AccountLinks {
   readonly usageUrl: string
   readonly topUpUrl: string
 }
-/** Opaque public revision of the stored credential, unrelated to its token or actor identity. */
+/** Opaque public revision of the stored login, unrelated to its token or actor identity. */
 export type AccountCredentialRevision = Branded<'AccountCredentialRevision'>
 /** Stored-account presence is not a claim that the server has validated its token. */
 export interface AccountView {
-  /** Changes whenever the stored credential changes; clients discard prior account-bound reads. */
+  /** Changes when the stored login is replaced; providers may retain it through token refresh. */
   readonly credentialRevision?: AccountCredentialRevision
   readonly status: 'signed-out' | 'credential-stored'
   readonly links: AccountLinks

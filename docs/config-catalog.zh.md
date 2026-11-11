@@ -4709,6 +4709,8 @@ export interface Config {
   fallbackContextWindow?: number
   /** Output token limit used when the model catalog omits the limit. */
   fallbackMaxOutputTokens?: number
+  /** Additional requests allowed after a malformed model tool-call response. */
+  malformedResponseRetries?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-account -->

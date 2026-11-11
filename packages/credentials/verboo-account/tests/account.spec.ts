@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -25,6 +25,7 @@ import * as Models from '../src/models.ts'
 const metadata = { version: 'fixture', locale: 'pt', timezoneOffsetSeconds: 0 }
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   while (cleanups.length) await cleanups.pop()!()
 })
 
@@ -56,6 +57,7 @@ async function fixture(
     inferenceMalformed: false,
     inferenceStatus: 200,
     profileStatus: 200,
+    profileGate: null as Promise<void> | null,
     rejectRefresh: false,
     collectionDown: false,
     catalogFailures: 0,
@@ -90,6 +92,7 @@ async function fixture(
         }),
       )
     } else if (req.url === '/api/me') {
+      if (state.profileGate !== null) await state.profileGate
       if (state.profileStatus !== 200) {
         res.writeHead(state.profileStatus).end('{}')
         return
@@ -453,6 +456,86 @@ it('serializes refresh rotation and refuses credentials outside the configured g
   expect(
     await app.ctx.deepseekAccount.resolveToken(`${app.origin}/unrelated`),
   ).toBeUndefined()
+})
+
+it('keeps the client account revision stable while rotating tokens for the same login', async () => {
+  const app = await fixture()
+  await app.login()
+  const before = await app.ctx.deepseekAccount.getState()
+  const stored = await app.ctx.credentials.readRecord(credentialKey('verboo-account', 'default'))
+  const session = await app.ctx.deepseekAccount.getPlatformSession()
+  if (session === null) throw new Error('Fixture login missing')
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3_600_000)
+
+  const token = await app.ctx.deepseekAccount.resolveToken(`${app.origin}/router/v1`)
+  const after = await app.ctx.deepseekAccount.getState()
+
+  expect(app.state.refreshes).toBe(1)
+  expect(token).not.toBe(session.token)
+  expect(await app.ctx.credentials.readRecord(credentialKey('verboo-account', 'default'))).not.toEqual(stored)
+  expect(before.credentialRevision).toBeDefined()
+  expect(after.credentialRevision).toBe(before.credentialRevision)
+  expect(after.status).toBe('credential-stored')
+  expect(JSON.stringify(after)).not.toContain('fixture-access')
+  expect(JSON.stringify(after)).not.toContain(session.sessionId)
+})
+
+it('retains verified identity through refresh and isolates a new login and sign-out', async () => {
+  const app = await fixture()
+  await app.login()
+  expect((await app.ctx.deepseekAccount.getProfile(metadata))?.status).toBe('ready')
+  const before = await app.ctx.deepseekAccount.getPlatformSession()
+  const revision = (await app.ctx.deepseekAccount.getState()).credentialRevision
+  expect(before?.userId).toBe('9cc3776a-84bf-4ea8-ac35-0916d7ed57f1')
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3_600_000)
+
+  await app.ctx.deepseekAccount.resolveToken(`${app.origin}/router/v1`)
+  expect(await app.ctx.deepseekAccount.getPlatformSession()).toMatchObject({
+    sessionId: before?.sessionId,
+    userId: before?.userId,
+  })
+  expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBe(before?.userId)
+
+  vi.restoreAllMocks()
+  await app.login()
+  expect((await app.ctx.deepseekAccount.getState()).credentialRevision).not.toBe(revision)
+  expect((await app.ctx.deepseekAccount.getPlatformSession())?.userId).toBeNull()
+  expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBeUndefined()
+  expect((await app.ctx.deepseekAccount.getProfile(metadata))?.status).toBe('ready')
+  await app.ctx.deepseekAccount.signOut(metadata)
+  expect(await app.ctx.deepseekAccount.getPlatformSession()).toBeNull()
+  expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBeUndefined()
+})
+
+it('never associates an old profile response with a replacement login', async () => {
+  const app = await fixture()
+  await app.login()
+  const gate = Promise.withResolvers<undefined>()
+  cleanups.push(async () => { gate.resolve(undefined) })
+  app.state.profileGate = gate.promise
+  const profile = app.ctx.deepseekAccount.getProfile(metadata)
+  await until(async () => app.requests.some(request => request.path === '/api/me'))
+  await app.login()
+  app.state.profileGate = null
+  gate.resolve(undefined)
+
+  expect(await profile).toBeNull()
+  expect((await app.ctx.deepseekAccount.getPlatformSession())?.userId).toBeNull()
+  expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBeUndefined()
+})
+
+it('removes verified identity when the server rejects the refresh grant', async () => {
+  const app = await fixture()
+  await app.login()
+  expect((await app.ctx.deepseekAccount.getProfile(metadata))?.status).toBe('ready')
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3_600_000)
+  app.state.rejectRefresh = true
+
+  expect(await app.ctx.deepseekAccount.resolveToken(`${app.origin}/router/v1`)).toBeUndefined()
+  expect(await app.ctx.deepseekAccount.getState()).toMatchObject({ status: 'signed-out' })
+  expect((await app.ctx.deepseekAccount.getState()).credentialRevision).toBeUndefined()
+  expect(await app.ctx.deepseekAccount.getPlatformSession()).toBeNull()
+  expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBeUndefined()
 })
 
 it('expires an invalid refresh grant without deleting a later login', async () => {

@@ -69,6 +69,9 @@ const state = {
   finishModel: null,
   titleSequence: 0,
   rejectDisconnect: true,
+  refreshes: 0,
+  profileReads: 0,
+  refreshedRequests: 0,
 }
 const subscription = () => ({
   id: '00000000-0000-4000-8000-000000000003',
@@ -86,6 +89,7 @@ const server = createServer(async (req, res) => {
   for await (const part of req) body += part
   const url = new URL(req.url, 'http://127.0.0.1')
   requests.push(req.method + ' ' + url.pathname)
+  if (req.headers.authorization === 'Bearer qa-access-only-1') state.refreshedRequests++
   res.setHeader('content-type', 'application/json')
   if (url.pathname === '/oauth/authorize') {
     challenge = url.searchParams.get('code_challenge')
@@ -98,21 +102,24 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === '/oauth/token') {
     const params = new URLSearchParams(body)
-    if (
-      createHash('sha256')
+    const refresh = params.get('grant_type') === 'refresh_token'
+    const valid = refresh
+      ? params.get('refresh_token') === `qa-refresh-only-${state.refreshes}`
+      : createHash('sha256')
         .update(params.get('code_verifier') ?? '')
-        .digest('base64url') !== challenge
-    ) {
+        .digest('base64url') === challenge
+    if (!valid) {
       res.writeHead(400)
       res.end('{"error":"invalid_grant"}')
       return
     }
+    if (refresh) state.refreshes++
     res.end(
       JSON.stringify({
-        access_token: 'qa-access-only',
-        refresh_token: 'qa-refresh-only',
+        access_token: `qa-access-only-${state.refreshes}`,
+        refresh_token: `qa-refresh-only-${state.refreshes}`,
         token_type: 'Bearer',
-        expires_in: 3600,
+        expires_in: refresh ? 3600 : 65,
       }),
     )
     return
@@ -146,6 +153,7 @@ const server = createServer(async (req, res) => {
     return
   }
   if (url.pathname === '/api/me') {
+    state.profileReads++
     res.end(
       JSON.stringify({
         data: {
@@ -288,6 +296,7 @@ const child = spawn(
 child.stderr.on('data', () => {})
 let browser
 let page
+let refreshedAccountFrame = false
 const errors = []
 const contrastReadings = {}
 function contrastRatio(foreground, background) {
@@ -353,6 +362,11 @@ try {
     status: 200, contentType: 'text/html', body: '<title>Authorization QA</title><p>Connection authorized</p>',
   }))
   page = await context.newPage()
+  page.on('websocket', socket => {
+    socket.on('framereceived', ({ payload }) => {
+      if (state.refreshes > 0 && String(payload).includes('"credentialRevision"') && String(payload).includes('"credential-stored"')) refreshedAccountFrame = true
+    })
+  })
   page.on('pageerror', (error) =>
     errors.push(error.message.replace(/https?:\S+/g, '[url]')),
   )
@@ -403,6 +417,19 @@ try {
   await page
     .locator('[data-verboo-onboarding]')
     .waitFor({ state: 'hidden', timeout: 20000 })
+  if (state.refreshes !== 0) throw new Error('The QA login refreshed before the workspace was observed')
+  await page.evaluate(() => {
+    const monitor = { flashes: 0, observer: null }
+    monitor.observer = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element && (node.matches('[data-verboo-onboarding]') || node.querySelector('[data-verboo-onboarding]'))) monitor.flashes++
+        }
+      }
+    })
+    monitor.observer.observe(document.body, { childList: true, subtree: true })
+    window.__verbooRefreshQa = monitor
+  })
   await page.waitForTimeout(700)
   await capture('workspace-light.png')
   await page.emulateMedia({colorScheme:'dark'}); await page.waitForTimeout(250); await capture('workspace-dark.png'); await page.emulateMedia({colorScheme:'light'})
@@ -421,6 +448,33 @@ try {
   await page.locator('[data-verboo-session][data-state=working]').waitFor()
   if (await page.locator('[data-verboo-execution=working]').count()) throw new Error('Working label remains in the composer')
   await capture('conversation-running.png')
+  const refreshDraft = 'Continuar daqui depois da renovação.'
+  await composer.fill(refreshDraft)
+  await page.evaluate(() => {
+    window.__verbooRefreshQa.editor = document.querySelector('[data-composer-card] [contenteditable=true]')
+    window.__verbooRefreshQa.session = document.querySelector('[data-conversation-session]')?.getAttribute('data-conversation-session')
+  })
+  const refreshDeadline = Date.now() + 15000
+  while ((state.refreshes === 0 || state.refreshedRequests === 0 || !refreshedAccountFrame) && Date.now() < refreshDeadline) await new Promise(resolve => setTimeout(resolve, 50))
+  if (state.refreshes !== 1 || state.refreshedRequests === 0 || !refreshedAccountFrame) throw new Error('The live app did not observe and use the rotated login')
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const refreshUi = await page.evaluate(() => {
+    const monitor = window.__verbooRefreshQa
+    const result = {
+      flashes: monitor.flashes,
+      sameEditor: monitor.editor === document.querySelector('[data-composer-card] [contenteditable=true]'),
+      focused: monitor.editor === document.activeElement,
+      draft: monitor.editor?.textContent,
+      sameSession: monitor.session === document.querySelector('[data-conversation-session]')?.getAttribute('data-conversation-session'),
+      stillWorking: document.querySelector('[data-verboo-session][data-state=working]') !== null,
+    }
+    monitor.observer.disconnect()
+    delete window.__verbooRefreshQa
+    return result
+  })
+  if (refreshUi.flashes || !refreshUi.sameEditor || !refreshUi.focused || refreshUi.draft !== refreshDraft || !refreshUi.sameSession || !refreshUi.stillWorking || state.profileReads !== 1) throw new Error('Token refresh interrupted the workspace: ' + JSON.stringify({ ...refreshUi, profileReads: state.profileReads }))
+  await composer.fill('')
+  console.log('Live token refresh: rotated credentials, no onboarding flash, retained draft, focus, conversation and running state.')
   const inferenceDeadline = Date.now() + 30000
   while (state.finishModel === null && Date.now() < inferenceDeadline) await new Promise(resolve => setTimeout(resolve, 50))
   const modelInput = JSON.stringify(state.modelRequests)
@@ -678,7 +732,7 @@ try {
   await writeFile(join(dir, 'contrast.json'), JSON.stringify(contrastReadings, null, 2) + '\n')
   console.log('Measured contrast:', JSON.stringify(contrastReadings))
   console.log(
-    'Actual Verboo profile browser QA: OAuth PKCE, vault, conversation execution states, non-overlapping sidebar rows, 1718 searchable connectors, public services, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
+    'Actual Verboo profile browser QA: OAuth PKCE, live token refresh, vault, conversation execution states, non-overlapping sidebar rows, 1718 searchable connectors, public services, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
   )
   console.log('Screenshots:', dir)
 } catch (error) {
@@ -701,16 +755,15 @@ try {
 } finally {
   state.finishModel?.()
   if (browser) await browser.close()
+  const exited = child.exitCode !== null || child.signalCode !== null
+    ? Promise.resolve()
+    : new Promise(resolve => child.once('exit', resolve))
   child.stdin.write('{"type":"shutdown"}\n')
-  await Promise.race([
-    new Promise((resolve) => child.once('exit', resolve)),
-    new Promise((resolve) =>
-      setTimeout(() => {
-        child.kill('SIGTERM')
-        resolve()
-      }, 16000).unref(),
-    ),
-  ])
+  const stopHost = setTimeout(() => child.kill('SIGTERM'), 16000).unref()
+  const killHost = setTimeout(() => child.kill('SIGKILL'), 19000).unref()
+  await exited
+  clearTimeout(stopHost)
+  clearTimeout(killHost)
   server.closeAllConnections()
   await new Promise((resolve) => server.close(resolve))
   try {
