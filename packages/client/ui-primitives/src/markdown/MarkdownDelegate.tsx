@@ -5,8 +5,9 @@ import type { FileDragActions } from '../file-drag-actions.ts'
 import type { ImageLightboxLabels } from '../ImageLightbox.tsx'
 
 /**
- * Handle one sanitized absolute HTTP(S) URL selected from Markdown.
- * @param href - destination URL.
+ * Handle one allowlisted absolute destination selected from Markdown: an
+ * HTTP(S) page, a `mailto:` address, or a `tel:` number.
+ * @param href - sanitized destination.
  */
 export type MarkdownExternalLinkHandler = (href: string) => void
 
@@ -30,7 +31,7 @@ export interface MarkdownDelegate {
     resourceAddress?: ((path: string) => string) | undefined
     labels: ImageLightboxLabels & { open: string; loading: string; failed: string }
   } | undefined
-  /** Ordinary HTTP(S) activation; absent handlers retain native anchor behavior. */
+  /** Ordinary activation of an allowlisted destination; absent handlers retain native anchor behavior. */
   readonly openExternalLink?: MarkdownExternalLinkHandler | undefined
   /**
    * Open a decoded local destination from settled Markdown; absent handlers leave plain text.

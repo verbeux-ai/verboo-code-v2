@@ -391,7 +391,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-workspace-controller`
 
 - `inject`: `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/workspace-controller/src/index.ts:39`](../packages/api/workspace-controller/src/index.ts)
+- `source`: [`packages/api/workspace-controller/src/index.ts:41`](../packages/api/workspace-controller/src/index.ts)
 
 ```ts config-catalog
 /** First-use directory policy for the Host account. */
@@ -410,7 +410,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-workspace-files`
 
 - `inject`: `fs` · `sandboxPolicy` · `sessions` · `typert`
-- `source`: [`packages/api/workspace-files/src/index.ts:70`](../packages/api/workspace-files/src/index.ts)
+- `source`: [`packages/api/workspace-files/src/index.ts:72`](../packages/api/workspace-files/src/index.ts)
 
 ```ts config-catalog
 /** Deployment caps on one page or one listing. */
@@ -3008,7 +3008,7 @@ export interface Config {
 
 - `inject`: `sessionProjections`
 - `refs`: [`SandboxMode`](subsystems/sandbox.zh.md)
-- `source`: [`packages/sandbox/sandbox-policy/src/index.ts:94`](../packages/sandbox/sandbox-policy/src/index.ts)
+- `source`: [`packages/sandbox/sandbox-policy/src/index.ts:96`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -4944,7 +4944,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-working-directory`
 
 - `inject`: `fs` · `sessionProjections` · `systemPrompt`
-- `source`: [`packages/session/working-directory/src/index.ts:51`](../packages/session/working-directory/src/index.ts)
+- `source`: [`packages/session/working-directory/src/index.ts:53`](../packages/session/working-directory/src/index.ts)
 
 ```ts config-catalog
 /** Deployment default for Sessions without an original project directory. */
@@ -4997,6 +4997,7 @@ export interface Config {
 | `@deepseek-ai/dsh-api-remotes` | `typertGateway` | [`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts) |
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |
 | `@deepseek-ai/dsh-browser-use` | — | [`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts) |
+| `@deepseek-ai/dsh-client-external-links` | — | [`packages/client/external-links/src/index.ts`](../packages/client/external-links/src/index.ts) |
 | `@deepseek-ai/dsh-client-file-upload` | `agents` · `attachments` · `commands` · `connection` | [`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts) |
 | `@deepseek-ai/dsh-client-locale` | — | [`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts) |
 | `@deepseek-ai/dsh-client-modules` | `loader` | [`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts) |

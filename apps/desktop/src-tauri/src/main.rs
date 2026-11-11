@@ -15,10 +15,15 @@ use std::{
     thread,
 };
 use tauri::{
-    ipc::CapabilityBuilder, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    ipc::CapabilityBuilder, webview::NewWindowResponse, Manager, RunEvent, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+
+mod navigation;
+
+use navigation::{NavigationDecision, navigation_decision};
 
 #[derive(Default)]
 struct HostState {
@@ -157,6 +162,16 @@ fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
     app.exit(1);
 }
 
+/// Hand one destination to the system browser, reporting a failed handoff.
+///
+/// A refused handoff leaves the click with no visible effect, so it is logged
+/// for the same native diagnostics the client reports through.
+fn open_externally(app: &tauri::AppHandle, url: &url::Url) {
+    if app.opener().open_url(url.as_str(), None::<&str>).is_err() {
+        eprintln!("Verboo Code: external_link_failed");
+    }
+}
+
 fn main() {
     let state = Arc::new(HostState::default());
     let setup_state = state.clone();
@@ -216,24 +231,29 @@ fn main() {
                     .on_navigation({
                         let state = setup_state.clone();
                         let app = app.handle().clone();
-                        move |url| {
-                            if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
-                            {
-                                return true;
+                        move |url| match navigation_decision(url, state.origin.get()) {
+                            NavigationDecision::NavigateHere => true,
+                            NavigationDecision::OpenExternally => {
+                                open_externally(&app, url);
+                                false
                             }
-                            if state
-                                .origin
-                                .get()
-                                .is_some_and(|origin| origin == &url.origin())
-                            {
-                                return true;
-                            }
-                            if matches!(url.scheme(), "http" | "https" | "mailto") {
-                                if app.opener().open_url(url.as_str(), None::<&str>).is_err() {
-                                    eprintln!("Verboo Code: external_link_failed");
+                            NavigationDecision::Deny => false,
+                        }
+                    })
+                    .on_new_window({
+                        let state = setup_state.clone();
+                        let app = app.handle().clone();
+                        move |url, _features| {
+                            // The product is one window. A destination that asks
+                            // for its own window either leaves the application or
+                            // is dropped; a second Webview is never created.
+                            match navigation_decision(&url, state.origin.get()) {
+                                NavigationDecision::OpenExternally => open_externally(&app, &url),
+                                NavigationDecision::NavigateHere | NavigationDecision::Deny => {
+                                    eprintln!("Verboo Code: new_window_denied");
                                 }
                             }
-                            false
+                            NewWindowResponse::Deny
                         }
                     })
                     .build()?;

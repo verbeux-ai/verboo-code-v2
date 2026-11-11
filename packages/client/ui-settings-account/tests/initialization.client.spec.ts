@@ -28,6 +28,8 @@ it.each(['accepted', 'refused', 'disconnected', 'pending'] as const)('initialize
   const disposers: (() => void)[] = []
   let operations: AccountSectionInjected | undefined
   const ctx = {
+    // Optional services read through ctx.get; these cases install no link service.
+    get: () => undefined,
     effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) disposers.push(dispose) },
     locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'en' }) },
     configForms: {

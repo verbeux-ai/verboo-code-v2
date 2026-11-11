@@ -29,6 +29,8 @@ import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, RemoteError, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
+// Type-only: the `ctx.workspaceRegistry` service merge, read optionally below.
+import type {} from '@deepseek-ai/dsh-workspace'
 import { WorkspaceChangeFeed } from './changes.ts'
 import type {
   WorkspaceByteRange,
@@ -215,7 +217,13 @@ export class WorkspaceFiles extends TypertRemoteService {
           if (header === undefined) return undefined
           return {
             sessionId,
-            workspaceRoot: header.cwd ?? scope.sandboxPolicy.workspaceRoot,
+            // The Workspace registry owns project membership: it resolves an
+            // explicit project assignment first and the immutable header cwd
+            // second, so a conversation moved to another project reads files
+            // relative to the project it works in now.
+            workspaceRoot: scope.get('workspaceRegistry')?.projectPathOf(sessionId)
+              ?? header.cwd
+              ?? scope.sandboxPolicy.workspaceRoot,
           }
         },
       })

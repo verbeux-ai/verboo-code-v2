@@ -118,6 +118,23 @@ export interface UiWorkspace {
    */
   pinSession(sessionId: SessionId): Promise<void>
   /**
+   * Move a Session to another Workspace, which becomes the project it works
+   * in. The transcript and its saved history are untouched; the conversation
+   * reconnects to the destination project on its next request.
+   * @param sessionId - Session to move.
+   * @param workspaceId - Workspace that becomes the Session's project.
+   * @param options - `stopActivity` asks the Host to stop the Session's running work instead of refusing.
+   * @returns the destination Workspace, read from the Host's answer.
+   * @throws {WorkspaceMoveSessionError} when the Host refuses; without
+   *   `stopActivity` a Session with running work fails as
+   *   `workspace/session-active`, its details naming what runs.
+   */
+  moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options?: { readonly stopActivity?: boolean },
+  ): Promise<WorkspaceView>
+  /**
    * Unpin a Session on the Host; saved positions stay as they are.
    * @param sessionId - Session to unpin.
    */
@@ -415,6 +432,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unpinSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unpinSession(sessionId)
+  }
+
+  async moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options: { readonly stopActivity?: boolean } = {},
+  ): Promise<WorkspaceView> {
+    const result = await this.workspaces.moveSession(sessionId, workspaceId, options)
+    return result.workspace
   }
 
   async pickDirectory(): Promise<string | null> {

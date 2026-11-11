@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-11-10-project-assignment-and-session-moves.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-10-project-assignment-and-session-moves.md
+/agent-note-moving-a-conversation-between-projects:
+  en: 029f86f7d338884e
+  zh: 86b75f0132aa7d91
+/agent-note-moving-a-conversation-between-projects/problem:
+  en: 2b60bc7e7214ffeb
+  zh: e8be8c4652d3c00f
+/agent-note-moving-a-conversation-between-projects/decision:
+  en: 239b6986504e00d6
+  zh: c3006f90e9f46c87
+/agent-note-moving-a-conversation-between-projects/alternatives-considered:
+  en: b7f23d83ba28f9ae
+  zh: 6d1e795fefdaf90b
+/agent-note-moving-a-conversation-between-projects/consequences:
+  en: 1fbf680548236b08
+  zh: 16dce37eaf3955ec
+/agent-note-moving-a-conversation-between-projects/testing:
+  en: d91f7e8dcb0b42f6
+  zh: d2203fad53feef62
+/agent-note-moving-a-conversation-between-projects/related:
+  en: ecbdc6fdcef1bb3b
+  zh: 361051614f27910d

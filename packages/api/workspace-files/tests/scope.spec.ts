@@ -24,6 +24,35 @@ function header(id: SessionId, cwd?: string): SessionHeader {
 }
 
 describe('Workspace Files Session scope lookup', () => {
+  it('resolves a moved session against its assigned project instead of its header cwd', async () => {
+    const movedId = SessionId('moved')
+    const originalRoot = resolve('original-project')
+    const assignedRoot = resolve('assigned-project')
+    const ctx = new Context()
+    ctx.provide('fs', {} as never)
+    ctx.provide('sandboxPolicy', { workspaceRoot: resolve('fallback') } as never)
+    // The mounted Workspace registry owns project membership: an explicit
+    // assignment outranks the immutable header cwd, so a conversation moved to
+    // another project reads files relative to where it works now.
+    ctx.provide('workspaceRegistry', {
+      projectPathOf: (id: SessionId) => id === movedId ? assignedRoot : undefined,
+    } as never)
+    const sessions = await ctx.plugin(SessionStore)
+    const typert = await ctx.plugin(TypertRegistry)
+    const workspaceFiles = await ctx.plugin(WorkspaceFiles, CAPS)
+
+    try {
+      ctx.sessions.create(movedId, { meta: { cwd: originalRoot } })
+      const lookup = ctx.typert.lookups.get('workspaceFileScope')
+      if (lookup === undefined) throw new Error('workspaceFileScope lookup did not register')
+      await expect(lookup.resolve(movedId)).resolves.toEqual({ sessionId: movedId, workspaceRoot: assignedRoot })
+    } finally {
+      await workspaceFiles.dispose()
+      await sessions.dispose()
+      await typert.dispose()
+    }
+  })
+
   it('uses live or stored headers without an Agent and leaves with its plugin', async () => {
     const liveId = SessionId('live-subagent')
     const coldId = SessionId('cold-subagent')

@@ -29,6 +29,7 @@ function setup(initial: DetailsState = {}, language = 'en') {
     loadDetail: vi.fn(), retryDetail: vi.fn(),
     detailImage: vi.fn((document: PluginDetailDocumentId, destination: string) => `https://dsh.example/api/plugin-market/detail-file?document=${document}&path=${destination}`),
     useDetails: bindSnapshotSelector(details), useLocale: bindSnapshotSelector(locale),
+    openExternalLink: vi.fn(),
   }
   const set = (key: string, state: DetailsState[string]): void => { act(() => { details.set({ ...details.getSnapshot(), [key]: state }) }) }
   const forget = (): void => { details.set({}) }

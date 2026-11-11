@@ -19,12 +19,14 @@ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepsee
 import {
   type ArchiveSessionInjected, menuOpenStateFactory, type PinSessionInjected,
   type RowToastInjected, type SessionArchiveConfirmInjected, type SessionDeleteConfirmInjected,
+  type SessionMoveDialogInjected,
   type SessionRenameDialogInjected,
   type WorkspaceViewStoreHandle,
 } from '../src/client/contract/slots.ts'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { ArchiveSessionRowButton, SessionArchiveConfirmDialog } from '../src/client/session-actions/ArchiveSession.tsx'
 import { SessionDeleteConfirmDialog } from '../src/client/session-actions/DeleteSession.tsx'
+import { SessionMoveDialog } from '../src/client/session-actions/MoveSession.tsx'
 import { PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
@@ -146,6 +148,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
     pinSession,
     unpinSession,
     insertSessionBefore: vi.fn(async () => ({})),
+    moveSession: vi.fn(async () => ({ workspace: workspaceState([]).items[0] })),
   } as never)
   ctx.provide('sessions', {
     list: { getSnapshot: () => sessionSnapshot, subscribe },
@@ -225,6 +228,7 @@ function sessionMenuActions(ctx: Context) {
     forkSession: (sessionId: SessionId) => { select('session.fork/fork', sessionId) },
     requestSessionRename: (sessionId: SessionId, title: string) => { select('session.rename/rename', sessionId, title) },
     requestSessionDelete: (sessionId: SessionId, displayTitle: string) => { select('session.delete/delete', sessionId, displayTitle) },
+    requestSessionMove: (sessionId: SessionId, displayTitle: string) => { select('session.move/move', sessionId, displayTitle) },
     copySessionId: async (sessionId: SessionId) => { select('session.id/copy', sessionId); await settled() },
   }
 }
@@ -313,7 +317,7 @@ describe('ui-workspace apply', () => {
     // The row actions follow the browser's own declaration, whenever it lands.
     expect(after.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(after.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(after.slots.entries('shell.overlay')).toHaveLength(4)
+    expect(after.slots.entries('shell.overlay')).toHaveLength(5)
   })
 
   it('declares the two Session row lists and registers the shipped actions and overlay surfaces into them', async () => {
@@ -340,6 +344,7 @@ describe('ui-workspace apply', () => {
       ['workspace.session-rename', undefined, SessionRenameDialog, 'workspace'],
       ['workspace.session-archive', undefined, SessionArchiveConfirmDialog, 'workspace'],
       ['workspace.session-delete', undefined, SessionDeleteConfirmDialog, 'workspace'],
+      ['workspace.session-move', undefined, SessionMoveDialog, 'workspace'],
       ['workspace.row-toast', undefined, RowActionToast, undefined],
     ])
     // Only archive notice entries share the browser's viewing store.
@@ -351,7 +356,7 @@ describe('ui-workspace apply', () => {
     expect(b.slots.entries('workspace.toast').map(row => row.options.key)).toEqual([
       'sessionIdCopied', 'sessionIdCopyFailed', 'pinFailed', 'unpinFailed', 'archivedNotOpenable',
       'defaultWorkspaceFailed', 'shortcutForkFailed', 'createFailed', 'forkRequiresOpen', 'archived', 'stoppedAndArchived',
-      'deleted', 'deleteFailed',
+      'deleted', 'moved', 'deleteFailed',
     ])
     for (const registration of b.slots.entries('workspace.toast')) {
       expect(registration.locale).toBe('workspace')
@@ -687,6 +692,11 @@ describe('ui-workspace apply', () => {
     expect((faceOf(deleteFailed) as ToastDisplayInjected<'deleteFailed'>)
       .display({ kind: 'deleteFailed', sessionId: sid('one'), seq: 1 }, b.locale.bind('workspace'), toast.dismissToast))
       .toMatchObject({ text: '无法删除会话，请重试', tone: 'warning' })
+    // The moved notice names the destination project the Host answered with.
+    const moved = b.slots.entries('workspace.toast').find(row => row.options.key === 'moved')!
+    expect((faceOf(moved) as ToastDisplayInjected<'moved'>)
+      .display({ kind: 'moved', sessionId: sid('one'), workspaceTitle: 'beta', seq: 1 }, b.locale.bind('workspace'), toast.dismissToast))
+      .toMatchObject({ text: '会话已移动到“beta”', tone: 'success' })
 
     archiveDisplay.display({ kind: 'archived', sessionId: sid('one'), seq: 1 }, b.locale.bind('workspace'), toast.dismissToast).actions![0]!.onClick()
     expect(unarchiveSession).toHaveBeenCalledWith('one')
@@ -754,6 +764,45 @@ describe('ui-workspace apply', () => {
     }
     await browser.unarchiveSession('session' as never)
     expect(unarchiveSession).toHaveBeenCalledWith('session')
+  })
+
+  it('raises the move request from the row menu and reports the move the navigation service made', async () => {
+    const b = await bench()
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const destination = {
+      workspaceId: 'beta' as WorkspaceId, path: '/projects/beta', title: 'beta', sessionIds: ['session' as never],
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const moveSession = vi.spyOn(b.ctx.uiWorkspace, 'moveSession').mockResolvedValue(destination)
+    const dialog = faceOf(entry(b.slots, 'shell.overlay', 'workspace.session-move')) as SessionMoveDialogInjected
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    b.setWorkspaces(workspaceState([workspace('alpha', ['one', 'session']), workspace('beta', [])]))
+    expect(dialog.hooks.moveRequest.getSnapshot()).toBeNull()
+
+    // The menu row names the Workspace that owns the Session today, so the
+    // dialog never offers it as a destination.
+    sessionMenuActions(b.ctx).requestSessionMove('session' as never, 'Movable')
+    expect(dialog.hooks.moveRequest.getSnapshot()).toEqual({
+      sessionId: 'session', displayTitle: 'Movable', currentWorkspaceId: 'alpha',
+    })
+    dialog.settleSessionMove()
+    expect(dialog.hooks.moveRequest.getSnapshot()).toBeNull()
+
+    // The dialog's hop asks the Host and announces where the conversation went.
+    await dialog.moveSession('session' as never, 'beta' as never)
+    expect(moveSession).toHaveBeenCalledWith('session', 'beta')
+    await vi.waitFor(() => {
+      expect(toast.hooks.toast.getSnapshot()).toEqual({
+        kind: 'moved', sessionId: 'session', workspaceTitle: 'beta', seq: 1,
+      })
+    })
+    // A refused move reaches the dialog, which reports it in place.
+    const refusal = new Error('workspace session move failed: workspace/session-active: active')
+    moveSession.mockRejectedValueOnce(refusal)
+    await expect(dialog.moveSession('session' as never, 'beta' as never)).rejects.toBe(refusal)
+    await settled()
+    expect(toast.hooks.toast.getSnapshot()).toMatchObject({ kind: 'moved' })
   })
 
   it.each(['absent', 'cold', 'loading', 'error', 'closed'] as const)(
@@ -981,7 +1030,7 @@ describe('ui-workspace apply', () => {
     await fiber.await()
     expect(b.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(b.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(b.slots.entries('shell.overlay')).toHaveLength(4)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(5)
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)

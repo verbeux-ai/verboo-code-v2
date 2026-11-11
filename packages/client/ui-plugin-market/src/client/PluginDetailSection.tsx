@@ -1,6 +1,8 @@
 /** A market entry's long description: the Markdown document the Host reads for one listed version. */
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { DetailDocument, detailDocumentState, useDetailDocumentLabels, type MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  DetailDocument, MarkdownDelegateProvider, detailDocumentState, useDetailDocumentLabels, type MarkdownPathImages,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { detailKey, type DetailFace, type DetailFailureKind, type DetailRequest } from './market-store.ts'
 
@@ -14,7 +16,11 @@ const FAILURE_KEYS = {
 } as const satisfies Record<DetailFailureKind, string>
 
 /** Props of the detail section: the entry version, the dictionary, and the injected detail reads. */
-export type PluginDetailSectionProps = { readonly request: DetailRequest } & PropsLocale<'pluginMarket'> & InjectFace<DetailFace>
+export type PluginDetailSectionProps = {
+  readonly request: DetailRequest
+  /** Ordinary activation of a destination inside the detail document. */
+  readonly openExternalLink: (url: string) => void
+} & PropsLocale<'pluginMarket'> & InjectFace<DetailFace>
 
 /**
  * Read and render an entry version's detail document in the active language. Relative images load from the Host beside
@@ -23,7 +29,7 @@ export type PluginDetailSectionProps = { readonly request: DetailRequest } & Pro
  * @returns the section, or null when the version has no document.
  */
 export function PluginDetailSection(props: PluginDetailSectionProps): ReactNode {
-  const { request, t, loadDetail, retryDetail, detailImage } = props
+  const { request, t, loadDetail, retryDetail, detailImage, openExternalLink } = props
   const language = props.useLocale(snapshot => snapshot.active)
   const key = detailKey(request, language)
   const state = props.useDetails(details => details[key])
@@ -43,5 +49,9 @@ export function PluginDetailSection(props: PluginDetailSectionProps): ReactNode 
   const shown = detailDocumentState(state?.status === 'error'
     ? { status: 'error', message: t(FAILURE_KEYS[state.failure]) }
     : state === undefined || state.status === 'loading' ? state : { status: 'ready', markdown: detail?.status === 'found' ? detail.markdown : undefined })
-  return <DetailDocument state={shown} labels={labels} images={images} onRetry={() => { retryDetail(request, language) }} />
+  return (
+    <MarkdownDelegateProvider openExternalLink={openExternalLink}>
+      <DetailDocument state={shown} labels={labels} images={images} onRetry={() => { retryDetail(request, language) }} />
+    </MarkdownDelegateProvider>
+  )
 }

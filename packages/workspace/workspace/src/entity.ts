@@ -9,11 +9,10 @@
  */
 
 import { stat } from 'node:fs/promises'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
-import { realpathNormalize } from './paths.ts'
 
 /** An insertSessionBefore request named a session or anchor not on the account (storage failures stay plain errors). */
 export class WorkspaceMoveInvalidError extends Error {
@@ -29,7 +28,8 @@ export class WorkspaceMoveInvalidError extends Error {
 /**
  * The registry-owned machinery an entity mutates through. Entities never see
  * the registry itself — only the open table, the canonical session-path
- * index backing the `sessionIds` projection, and attach-time header reads.
+ * index backing the `sessionIds` projection, and the project resolution used
+ * by attach.
  */
 export interface WorkspaceEntityHost {
   /**
@@ -40,7 +40,8 @@ export interface WorkspaceEntityHost {
 
   /**
    * Validate an already-accounted session, preserving ownership when its fully
-   * qualified cwd cannot resolve because a path component is missing.
+   * qualified project directory cannot resolve because a path component is
+   * missing.
    * @param id - Session already present in this workspace's candidate account.
    * @param path - Workspace's stored canonical directory.
    * @returns whether the candidate remains a member.
@@ -48,19 +49,19 @@ export interface WorkspaceEntityHost {
   candidateMatches(id: SessionId, path: string): boolean
 
   /**
-   * Read one stored session header for attach validation.
-   * @param id - The session whose header to read.
-   * @returns the header; rejects when session persistence is absent or holds
-   * no session with this id.
+   * Resolve the project directory of one session for attach validation.
+   *
+   * An explicit project assignment decides the answer without reading the
+   * header: the assignment was validated when it was written. Otherwise the
+   * stored header cwd is read, canonicalized, and required to be an existing
+   * directory, and the validated canonical path is published to the
+   * projection index.
+   * @param id - The session whose project directory to resolve.
+   * @returns the canonical project directory of that session.
+   * @throws when the session is unknown, has no cwd to validate, or its cwd
+   * does not resolve to an existing directory.
    */
-  readSessionHeader(id: SessionId): Promise<SessionHeader>
-
-  /**
-   * Publish a successfully validated canonical cwd to the projection index.
-   * @param id - Validated session id.
-   * @param path - Canonical existing directory from the immutable header cwd.
-   */
-  rememberSessionPath(id: SessionId, path: string): void
+  resolveProjectPath(id: SessionId): Promise<string>
 }
 
 /** Chain-slot abort sentinel thrown by the update fn when the record needs no change; only `mutate` observes it. */
@@ -109,40 +110,18 @@ export class WorkspaceEntity implements Workspace {
 
   async attachSession(sessionId: SessionId): Promise<void> {
     // Validation is skipped when the settled snapshot already accounts the
-    // id: the cwd fact was checked when it first attached and both inputs
-    // (stored header cwd, workspace path) are immutable. Membership itself is
-    // decided on the write chain inside `mutate`, never on this snapshot.
+    // id: the project fact was checked when it first attached and both inputs
+    // (project assignment, stored header cwd) are durable facts. Membership
+    // itself is decided on the write chain inside `mutate`, never on this
+    // snapshot.
     if (!this.record.sessionIds.includes(sessionId)) {
-      const header = await this.host.readSessionHeader(sessionId)
-      if (header.cwd === undefined) {
+      const project = await this.host.resolveProjectPath(sessionId)
+      if (project !== this.record.path) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + 'its stored header carries no cwd to validate against',
+          + `its project resolves to '${project}'`,
         )
       }
-      let cwd: string
-      try {
-        cwd = await realpathNormalize(header.cwd)
-      } catch (error) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd '${header.cwd}' does not resolve, so it cannot be validated`,
-          { cause: error },
-        )
-      }
-      if (!(await stat(cwd)).isDirectory()) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd '${header.cwd}' is not a directory`,
-        )
-      }
-      if (cwd !== this.record.path) {
-        throw new Error(
-          `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
-          + `its cwd resolves to '${cwd}'`,
-        )
-      }
-      this.host.rememberSessionPath(sessionId, cwd)
     }
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record
@@ -218,5 +197,16 @@ export class WorkspaceEntity implements Workspace {
       throw error
     }
     this.record = next
+  }
+
+  /**
+   * Re-read this entity's record after the registry wrote its accounting
+   * directly. Keeping the entity identity stable is what lets a consumer that
+   * captured a Workspace across a move observe the new account instead of a
+   * detached snapshot.
+   * @param record - The record currently committed for this workspace.
+   */
+  refresh(record: WorkspaceRecord): void {
+    this.record = record
   }
 }

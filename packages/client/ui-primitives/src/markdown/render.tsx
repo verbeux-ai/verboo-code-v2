@@ -52,21 +52,29 @@ export interface MarkdownLabels {
   footnotes: string
 }
 
+/** Schemes a Markdown destination may carry into the DOM. */
+const LINKABLE_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:'])
+
+/**
+ * The destination an anchor may carry, or the empty string for plain text.
+ * This is a positive allowlist: only `http:`, `https:`, `mailto:`, and `tel:`
+ * reach the DOM, so `file:`, `ftp:`, `ssh:`, custom schemes, and embedded
+ * documents render as their own text instead of as a navigable link. Embedded
+ * credentials render as text too, matching the link service that would refuse
+ * them. Relative destinations stay text because there is no in-document target
+ * for them (footnote fragments included).
+ * @param url - authored Markdown destination.
+ * @returns the destination to render, or the empty string for plain text.
+ */
 function sanitizeUrl(url: string): string {
   if (isExplicitFilePath(url)) return ''
   try {
-    switch (new URL(url).protocol) {
-      case 'javascript:':
-      case 'vbscript:':
-      case 'data:':
-      case 'blob:':
-        return ''
-      default:
-        return url
-    }
+    const target = new URL(url)
+    if (target.username !== '' || target.password !== '') return ''
+    return LINKABLE_SCHEMES.has(target.protocol) ? url : ''
   } catch {
     // Relative and otherwise unparsable destinations are disallowed alongside
-    // disallowed protocols; new URL() has no other failure mode for strings.
+    // unlisted protocols; new URL() has no other failure mode for strings.
     return ''
   }
 }
@@ -581,7 +589,17 @@ function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
   return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
 }
 
-/** Anchor over a safe absolute href, with optional owner navigation for HTTP(S). */
+/**
+ * True for the schemes that load a page in another browsing context, so the
+ * anchor asks for a new tab; `mailto:` and `tel:` leave the document through a
+ * program the browser registers and stay in the current tab.
+ */
+function opensAnotherPage(href: string): boolean {
+  const protocol = new URL(href).protocol
+  return protocol === 'http:' || protocol === 'https:'
+}
+
+/** Anchor over a safe absolute href, with optional owner navigation for every allowlisted scheme. */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
@@ -594,13 +612,16 @@ function MarkdownAnchor({ href, glyph, children }: {
   readonly children: ReactNode[]
 }): ReactNode {
   const { openExternalLink, getTriggerProps } = useMarkdownDelegate()
-  const external = ['http:', 'https:'].includes(new URL(href).protocol)
-  const open = external ? openExternalLink : undefined
+  const page = opensAnotherPage(href)
+  // Every allowlisted destination leaves through the owner's single exit; the
+  // context menu stays limited to pages, because a mail address has no page to
+  // open in a tab or a browser window.
+  const open = openExternalLink
   return (
     <a
       href={href}
-      {...external ? getTriggerProps?.({ kind: 'url', url: href }) : {}}
-      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      {...page ? getTriggerProps?.({ kind: 'url', url: href }) : {}}
+      {...(page ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       onClick={open === undefined ? undefined : (event) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
         event.preventDefault()

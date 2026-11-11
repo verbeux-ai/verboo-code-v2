@@ -43,6 +43,8 @@ async function boot() {
   const fileActions = { save, copyImage, canSaveAs: true }
   const sessions = createSnapshotStore({ byId: { [sessionId]: { cwd: '/workspace' } } })
   const sidebar = { openResourceIn: vi.fn(), openTabIn: vi.fn() }
+  const externalLinks = { open: vi.fn(async () => 'window' as const) }
+  ctx.provide('externalLinks', externalLinks as never)
   const browserTab = vi.fn(() => ({}))
   const directoryFetch = vi.fn(async () => new Response(JSON.stringify({ apps: ['vscode', 'finder'] })))
   const directories = new OpenInAppController(directoryFetch)
@@ -75,7 +77,7 @@ async function boot() {
     return action
   }
   return { registry, resolve, choose, remote, fileActions, paths, directories, directoryFetch, sessions,
-    sidebar, browserTab, notify, failure, writeText, report }
+    sidebar, browserTab, externalLinks, notify, failure, writeText, report }
 }
 
 it('routes file actions through an explicit host, the line, native association and original bytes', async () => {
@@ -155,9 +157,8 @@ it('opens links in the registered browser, externally, and on the clipboard', as
   expect((await h.resolve(target)).source.getSnapshot().find(item => item.id === 'open-in-app.url/sidebar')?.label).toBe('menu.openInSidebar')
   await h.choose(target, 'open-in-app.url/sidebar')
   expect(h.sidebar.openTabIn).toHaveBeenCalledWith(sessionId, 'browser', { params: { url: target.value.url } })
-  const external = vi.spyOn(window, 'open').mockReturnValue(null)
   await h.choose(target, 'open-in-app.url/external')
-  expect(external).toHaveBeenCalledWith(target.value.url, '_blank', 'noopener,noreferrer')
+  expect(h.externalLinks.open).toHaveBeenCalledWith(target.value.url)
   await h.choose(target, 'open-in-app.url/copy')
   expect(h.writeText).toHaveBeenCalledWith(target.value.url)
   h.browserTab.mockReturnValueOnce(undefined as never)

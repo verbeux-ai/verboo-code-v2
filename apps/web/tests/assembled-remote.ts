@@ -251,6 +251,37 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     mock.streams.push('workspace/follow', { type: 'upsert', workspace: structuredClone(workspace) })
     return ok({ workspace: structuredClone(workspace), created: true })
   })
+  mock.unary('workspace/moveSession', (request: unknown) => {
+    request = recordValue(request, 'request')
+    const sessionId = recordString(request, 'sessionId')
+    const workspaceId = recordString(request, 'workspaceId')
+    const target = workspaces.find(candidate => candidate.workspaceId === workspaceId)
+    if (target === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: 'workspace/move-invalid',
+          message: `assembled fixture has no Workspace ${workspaceId}`,
+          details: { workspaceId, sessionId },
+        },
+      }
+    }
+    for (const workspace of workspaces) {
+      if (!workspace.sessionIds.includes(sessionId)) continue
+      workspace.sessionIds = workspace.sessionIds.filter(candidate => candidate !== sessionId)
+      workspace.updatedAt = new Date().toISOString()
+      mock.streams.push('workspace/follow', { type: 'upsert', workspace: structuredClone(workspace) })
+    }
+    target.sessionIds = [sessionId, ...target.sessionIds.filter(candidate => candidate !== sessionId)]
+    target.updatedAt = new Date().toISOString()
+    mock.streams.push('workspace/follow', { type: 'upsert', workspace: structuredClone(target) })
+    return ok({
+      sessionId,
+      workspaceId,
+      projectPath: target.path,
+      workspace: structuredClone(target),
+    })
+  })
   mock.unary('session/create', (request: unknown) => {
     request = recordValue(request, 'request')
     const requestedId = optionalRecordString(request, 'sessionId')

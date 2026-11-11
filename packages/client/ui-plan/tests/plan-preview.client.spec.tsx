@@ -25,6 +25,20 @@ const plan = submittedPlan(call)!
 const target = { session: { kind: 'session' as const, sessionId: 'session / 中文' as SessionId }, callId: plan.callId }
 const t = makeTranslate(en, commonEn)
 
+/**
+ * Bind a test's partial props share to the framework props a renderer declares.
+ * The specs here supply only the members each case exercises; the framework
+ * delivers the rest at the real slot site.
+ * @param partial - the props this case supplies.
+ * @returns the same value as the component's declared props share.
+ */
+function asProps<T>(partial: Partial<Record<keyof T, unknown>>): T {
+  // Test-only binder: each case supplies only the members it exercises, with the
+  // values it needs for that case; the framework delivers the rest at the real
+  // slot site.
+  return partial as unknown as T
+}
+
 function planHook(plans: readonly typeof plan[]): Parameters<typeof PlanCards>[0]['usePlans'] {
   const source = createSnapshotStore(plans)
   return keyedObservableHook(() => source) as Parameters<typeof PlanCards>[0]['usePlans']
@@ -126,7 +140,7 @@ it('projects native and PTC submissions into their resolved turns without duplic
   } as Parameters<typeof PlanCards>[0]
   const view = render(<PlanCards {...props} />)
   expect(view.container.querySelectorAll('[data-plan-card]')).toHaveLength(2)
-  view.rerender(<PlanCards {...{ ...props, turn: { turn: 2 } } as unknown as Parameters<typeof PlanCards>[0]} />)
+  view.rerender(<PlanCards {...asProps<Parameters<typeof PlanCards>[0]>({ ...props, turn: { turn: 2 } })} />)
   expect(view.container.querySelector('[data-plan-card]')?.getAttribute('data-plan-card')).toBe('next-turn')
   assembler.replaceWindow(entries.filter((_, index) => index !== 4), true)
   expect((assembler.snapshot('chat') as ChatSnapshot).nodes.values()).toHaveLength(3)
@@ -288,22 +302,22 @@ describe('plan entry points and document', () => {
     const props = { t, useResource: () => ({ status: 'none' }),
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address, params: { planReview: { title: plan.title, markdown } } } } }),
     }
-    const view = render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
+    const view = render(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>(props)} />)
     expect(screen.getByRole('heading', { name: plan.title })).toBeTruthy()
     expect(screen.getByText('Implement')).toBeTruthy()
-    view.rerender(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
+    view.rerender(<PlanTitle {...asProps<Parameters<typeof PlanTitle>[0]>(props)} />)
     expect(screen.getByText(plan.title)).toBeTruthy()
-    view.rerender(<PlanPreview {...{ ...props,
+    view.rerender(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>({ ...props,
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address } } }),
-    } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    })} />)
     expect(screen.getByRole('status').textContent).toBe(en['preview.expired'])
-    view.rerender(<PlanTitle {...{ ...props,
+    view.rerender(<PlanTitle {...asProps<Parameters<typeof PlanTitle>[0]>({ ...props,
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address } } }),
-    } as unknown as Parameters<typeof PlanTitle>[0]} />)
+    })} />)
     expect(screen.getByText('Plan')).toBeTruthy()
-    view.rerender(<PlanPreview {...{ ...props,
+    view.rerender(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>({ ...props,
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address, params: { line: 2 } } } }),
-    } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    })} />)
     expect(screen.getByRole('status').textContent).toBe(en['preview.expired'])
   })
   it('shows restored Markdown and its heading as the tab title', () => {
@@ -311,25 +325,40 @@ describe('plan entry points and document', () => {
       t, useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }),
       useResource: () => ({ status: 'live', value: plan }),
     }
-    render(<PlanPreview {...props as unknown as Parameters<typeof PlanPreview>[0]} />)
+    render(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>(props)} />)
     expect(screen.getByRole('heading', { name: plan.title })).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     cleanup()
-    render(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
+    render(<PlanTitle {...asProps<Parameters<typeof PlanTitle>[0]>(props)} />)
     expect(screen.getByText(plan.title)).toBeTruthy()
+  })
+  it('sends a plan link through the injected navigation and opens a mentioned file in the Sidebar', () => {
+    const openExternalLink = vi.fn<(url: string) => void>()
+    const openFile = vi.fn<(path: string, options?: { line?: number }) => void>()
+    const linked = { ...plan, markdown: '## Goal\n\n[guide](https://example.com/guide) and [readme](src/readme.md#L4)' }
+    const props = {
+      t, openExternalLink, openFile,
+      useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }),
+      useResource: () => ({ status: 'live', value: linked }),
+    }
+    render(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>(props)} />)
+    fireEvent.click(screen.getByRole('link', { name: /guide/u }))
+    expect(openExternalLink).toHaveBeenCalledWith('https://example.com/guide')
+    fireEvent.click(screen.getByRole('button', { name: /readme/u }))
+    expect(openFile).toHaveBeenCalledWith('src/readme.md', { line: 4 })
   })
   it('keeps a tab label while history loads', () => {
     const props = { useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }), useResource: () => ({ status: 'loading' }) }
-    render(<PlanTitle {...props as unknown as Parameters<typeof PlanTitle>[0]} />)
+    render(<PlanTitle {...asProps<Parameters<typeof PlanTitle>[0]>(props)} />)
     expect(screen.getByText('Plan')).toBeTruthy()
   })
   it.each([en, zh])('localizes plan failures and unavailable providers', (dictionary) => {
     const props = { t: makeTranslate(dictionary, commonEn),
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }),
     }
-    const view = render(<PlanPreview {...{ ...props, useResource: () => ({ status: 'loading' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    const view = render(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>({ ...props, useResource: () => ({ status: 'loading' }) })} />)
     expect(screen.getByRole('status').textContent).toBe(dictionary['preview.loading'])
-    view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'none' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    view.rerender(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>({ ...props, useResource: () => ({ status: 'none' }) })} />)
     expect(screen.getByRole('status').textContent).toBe(dictionary['preview.unavailable'])
     for (const [code, message] of [
       ['plan/invalid-address', dictionary['preview.invalidAddress']],
@@ -337,7 +366,7 @@ describe('plan entry points and document', () => {
       ['plan/read-failed', 'connection lost'],
       ['session/not-found', 'connection lost'],
     ] as const) {
-      view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'failed', failure: { code, message: 'connection lost' } }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+      view.rerender(<PlanPreview {...asProps<Parameters<typeof PlanPreview>[0]>({ ...props, useResource: () => ({ status: 'failed', failure: { code, message: 'connection lost' } }) })} />)
       expect(screen.getByRole('status').textContent).toBe(dictionary['preview.failed'] + message)
     }
   })

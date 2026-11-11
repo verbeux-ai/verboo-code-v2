@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceView } from '../types.ts'
+import type { WorkspaceMoveSessionValue, WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -28,6 +28,21 @@ export class WorkspaceArchiveError extends Error {
   /** @param rpcError - Host business or folded carrier failure. */
   constructor(readonly rpcError: RemoteFailure) {
     super(`workspace session archive failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
+/**
+ * Session move failed on the Host. `rpcError.code` distinguishes the
+ * active-session refusal (`workspace/session-active`, whose details name what
+ * still runs) from an unusable destination (`workspace/move-invalid`) or a
+ * missing session.
+ */
+export class WorkspaceMoveSessionError extends Error {
+  override readonly name = 'WorkspaceMoveSessionError'
+
+  /** @param rpcError - Host business or folded carrier failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`workspace session move failed: ${rpcError.code}: ${rpcError.message}`)
   }
 }
 
@@ -136,6 +151,23 @@ export interface IWorkspaces {
     sessionId: SessionId,
     beforeSessionId?: SessionId,
   ): Promise<WorkspaceView>
+  /**
+   * Move a Session to another Workspace, which becomes the project it works in.
+   * The transcript and the Session's saved history are untouched.
+   * @param sessionId - Session to move.
+   * @param workspaceId - Workspace that becomes the Session's project.
+   * @param options - `stopActivity` asks the Host to stop the Session's running work instead of refusing.
+   * @returns the resulting project ownership.
+   * @throws {WorkspaceMoveSessionError} when the Host refuses; without
+   *   `stopActivity` a Session with running work fails as
+   *   `workspace/session-active`, and an unusable destination fails as
+   *   `workspace/move-invalid`.
+   */
+  moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options?: { readonly stopActivity?: boolean },
+  ): Promise<WorkspaceMoveSessionValue>
 }
 
 /** Owns the bare Workspace snapshot and Workspace-only commands. */
@@ -212,6 +244,16 @@ export class WorkspaceController extends Service implements IWorkspaces {
     const result = await this.model.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     if (!result.ok) throw commandError('move', result.error)
     return result.value.workspace
+  }
+
+  async moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options: { readonly stopActivity?: boolean } = {},
+  ): Promise<WorkspaceMoveSessionValue> {
+    const result = await this.model.moveSession(sessionId, workspaceId, options)
+    if (!result.ok) throw new WorkspaceMoveSessionError(result.error)
+    return result.value
   }
 }
 

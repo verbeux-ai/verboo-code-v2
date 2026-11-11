@@ -1,4 +1,4 @@
-import { IconEditOutlineRegular, IconTrashOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconUnarchiveOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular, IconCopyOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutlineRegular, IconTrashOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconUnarchiveOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular, IconCopyOutlineRegular, IconFolderOpenOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionMenu } from './session-actions/SessionMenu.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
 /**
@@ -41,10 +41,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   type ArchiveSessionInjected, type DeleteSessionInjected, type ForkSessionInjected, menuOpenStateFactory,
+  type MoveSessionInjected,
   type PinSessionInjected,
   type SessionArchiveConfirmInjected, type SessionArchiveConfirmRequest,
   type SessionDeleteConfirmInjected, type SessionDeleteConfirmRequest,
   type RenameSessionInjected, type RowToast, type RowToastInjected, type RowToastState, type SessionRenameDialogInjected,
+  type SessionMoveDialogInjected, type SessionMoveRequest,
   type WorkspaceActionRequest, type SessionIdInjected, type WorkspaceBrowserInjected, type WorkspacePickerInjected,
 } from './contract/slots.ts'
 import { createWorkspaceShortcutControls, installWorkspaceShortcuts } from './shortcuts.ts'
@@ -55,6 +57,7 @@ import { ArchiveSessionRowButton, SessionArchiveConfirmDialog } from './session-
 import { SessionDeleteConfirmDialog } from './session-actions/DeleteSession.tsx'
 import { derive } from './session-actions/derived.ts'
 import { registerSessionMenus } from './session-actions/context-menus.tsx'
+import { SessionMoveDialog } from './session-actions/MoveSession.tsx'
 import { PinSessionRowButton } from './session-actions/PinSession.tsx'
 import { SessionRenameDialog } from './session-actions/RenameSession.tsx'
 import { RowActionToast } from './session-actions/RowActionToast.tsx'
@@ -172,6 +175,9 @@ export function apply(ctx: Context): void {
   // Deletion is irreversible, so the action only raises a confirmation; the
   // dialog owns the Host call.
   const deleteRequest = createSnapshotStore<SessionDeleteConfirmRequest | null>(null)
+  // A move changes which project the conversation works in, so it takes the
+  // same shape: the menu raises the request and the dialog owns the Host call.
+  const moveRequest = createSnapshotStore<SessionMoveRequest | null>(null)
   const requestSessionRename = shortcutControls.rename
   const unarchiveSession = (sessionId: SessionId): void => {
     uiWorkspace.unarchiveSession(sessionId).catch((reason: unknown) => {
@@ -271,6 +277,28 @@ export function apply(ctx: Context): void {
     settleSessionRename: shortcutControls.closeRename,
     renameSession,
   })
+  const moveInjected = (): MoveSessionInjected => ({
+    requestSessionMove: (sessionId, displayTitle) => {
+      const currentWorkspaceId = workspaces.list.getSnapshot().items
+        .find(item => item.sessionIds.includes(sessionId))?.workspaceId
+      moveRequest.set({
+        sessionId,
+        displayTitle,
+        ...currentWorkspaceId === undefined ? {} : { currentWorkspaceId },
+      })
+    },
+  })
+  const moveDialogInjected = (): SessionMoveDialogInjected => ({
+    hooks: { moveRequest },
+    settleSessionMove: () => { moveRequest.set(null) },
+    // The Host refuses a conversation with running work instead of moving it;
+    // the dialog reports that refusal in place, naming what still runs, so the
+    // operator can wait for it rather than silently moving a live turn.
+    moveSession: async (sessionId, workspaceId) => {
+      const destination = await uiWorkspace.moveSession(sessionId, workspaceId)
+      notify({ kind: 'moved', sessionId, workspaceTitle: destination.title })
+    },
+  })
   const toastActions = {
     undoArchive: unarchiveSession,
     showArchived: () => { viewInstance.actions.setArchivedFilter('show') },
@@ -299,6 +327,7 @@ export function apply(ctx: Context): void {
       'workspace.pin': IconPinOutlineRegular, 'workspace.unpin': IconPinFillRegular,
       'workspace.archive': IconArchiveOutlineRegular, 'workspace.unarchive': IconUnarchiveOutlineRegular,
       'workspace.fork': IconBranchOutlineRegular, 'workspace.copy': IconCopyOutlineRegular,
+      'workspace.move': IconFolderOpenOutlineRegular,
     })) yield ctx.slots.register({ name: 'contextMenu.icon', key }, Icon)
   })
   ctx.effect(() => ctx.contextMenus.register({
@@ -376,7 +405,7 @@ export function apply(ctx: Context): void {
   }, SessionMenu))
   registerSessionMenus(ctx, {
     ...pinInjected(), ...archiveInjected(), ...renameInjected(), ...forkInjected(), ...sessionIdInjected(),
-    ...deleteInjected(),
+    ...deleteInjected(), ...moveInjected(),
   })
   ctx.slots.inject('sidebar.workspaces.session.row.action', function* () {
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.row.action', id: 'archive', order: 100, locale: NS, inject: archiveInjected }, ArchiveSessionRowButton)
@@ -394,6 +423,9 @@ export function apply(ctx: Context): void {
     yield ctx.slots.register({
       name: 'shell.overlay', id: 'workspace.session-delete', locale: NS, inject: deleteConfirmInjected,
     }, SessionDeleteConfirmDialog)
+    yield ctx.slots.register({
+      name: 'shell.overlay', id: 'workspace.session-move', locale: NS, inject: moveDialogInjected,
+    }, SessionMoveDialog)
     yield ctx.slots.register({
       name: 'shell.overlay', id: 'workspace.row-toast', inject: rowToastInjected,
       children: { 'workspace.toast': { kind: 'keyed', scope: 'root' } },

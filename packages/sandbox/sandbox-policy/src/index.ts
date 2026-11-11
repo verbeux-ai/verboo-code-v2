@@ -30,6 +30,8 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+// Type-only: the `ctx.workspaceRegistry` service merge, read optionally below.
+import type {} from '@deepseek-ai/dsh-workspace'
 
 export { SANDBOX_MODES, setSandboxMode } from './session-mode.ts'
 
@@ -188,9 +190,9 @@ export class SandboxPolicyService extends Service {
   /**
    * Resolve the complete policy for one capability call. An approved explicit
    * mode outranks the session's last `sandbox/mode` event, which outranks the
-   * deployment default. A session cwd is its workspace-write boundary; the
-   * configured root is the fallback for agentless calls and sessions without a
-   * cwd.
+   * deployment default. The session's project directory is its workspace-write
+   * boundary; the configured root is the fallback for agentless calls and
+   * sessions without a project.
    * @param request - optional session and approved mode override.
    * @returns the fully resolved per-call mode and absolute workspace root.
    */
@@ -198,10 +200,31 @@ export class SandboxPolicyService extends Service {
     const { session } = request
     return {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
-      workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      workspaceRoot: resolveWorkspaceRoot(this.projectPathOf(session) ?? this.workspaceRoot),
       ...this.additionalWritableRoots === undefined ? {} : { additionalWritableRoots: this.additionalWritableRoots },
       ...session === undefined ? {} : { sessionId: session.id },
     }
+  }
+
+  /**
+   * The project directory of one session, through the Workspace registry when
+   * the deployment mounts it.
+   *
+   * The registry owns project membership: it resolves an explicit project
+   * assignment first and the immutable header cwd second, so a conversation
+   * moved to another project is confined to the project it works in now. A
+   * composition without the registry falls back to the header.
+   * @param session - session whose project directory is requested.
+   * @returns the project directory, or undefined for an agentless call.
+   */
+  private projectPathOf(session: Session | undefined): string | undefined {
+    if (session === undefined) return undefined
+    const registry = this.ctx.get('workspaceRegistry')
+    if (registry !== undefined) {
+      const assigned = registry.projectPathOf(session.id)
+      if (assigned !== undefined) return assigned
+    }
+    return session.header.cwd
   }
 
   /**

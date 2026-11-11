@@ -56,7 +56,7 @@ function setup(indexes: MarketIndexSummary[] = [{ url: A }, { url: B }]) {
   new TestRemote(ctx, { pluginMarket: market, pluginRegistryProbe: probe })
   const controller = new DiscoverController(ctx, () => 'https://dsh.example/prefix/')
   const face = controller.face(text => typeof text === 'string' ? text : text.en)
-  return { controller, face, market, probe, state, snapshot: () => controller.store.getSnapshot() }
+  return { ctx, controller, face, market, probe, state, snapshot: () => controller.store.getSnapshot() }
 }
 
 describe('DiscoverController', () => {
@@ -463,6 +463,14 @@ describe('detail reads', () => {
     answer({ ok: true, value: FOUND })
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     expect(controller.details.getSnapshot()[detailKey(BUNDLE, 'en')]).toEqual({ status: 'loading' })
+  })
+
+  it('sends a detail document link through the product link service', () => {
+    const { ctx, face } = setup()
+    const opened = vi.fn<(url: string, options?: object) => Promise<'window'>>(() => Promise.resolve('window'))
+    ctx.provide('externalLinks', { open: opened, begin: vi.fn(), end: vi.fn(), setPreference: vi.fn() })
+    face.openExternalLink('https://example.com/docs')
+    expect(opened).toHaveBeenCalledWith('https://example.com/docs')
   })
 
   it('addresses relative images through the Host route and leaves other destinations alone', () => {

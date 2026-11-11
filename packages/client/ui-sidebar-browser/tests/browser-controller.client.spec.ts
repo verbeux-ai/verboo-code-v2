@@ -26,7 +26,8 @@ function harness() {
   const id = `browser-controller-test-${String(++sequence)}`
   const store = createBrowserStore().create(id)
   let open = true
-  const face = createBrowserControllers(store.actions, createIframePage, () => open)
+  const external = vi.fn<(url: string) => void>()
+  const face = createBrowserControllers(store.actions, createIframePage, () => open, external)
   disposables.push(face)
   const host = document.createElement('div')
   host.id = id
@@ -41,7 +42,7 @@ function harness() {
     if (element === null) throw new Error('expected a mounted iframe')
     return element
   }
-  return { store, face, mount, iframe, close: () => { open = false } }
+  return { store, face, mount, iframe, external, close: () => { open = false } }
 }
 
 afterEach(async () => {
@@ -54,6 +55,12 @@ afterEach(async () => {
 })
 
 describe('BrowserController', () => {
+  it('hands the toolbar address to the system-browser exit it was built with', () => {
+    const h = harness()
+    h.face.openExternal('https://example.com/page')
+    expect(h.external).toHaveBeenCalledWith('https://example.com/page')
+  })
+
   it('restores only on request and redirects saved checkpoints to a replacement binding', () => {
     const h = harness()
     const saved = browserAddressCheckpoint({ kind: 'https', url: 'https://saved.example/', title: 'Saved page' }, 2)

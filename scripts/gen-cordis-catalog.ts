@@ -183,6 +183,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   contextMenus: 'client-side interface-typed menu registry — packages/client/ui-context-menu/README.md owns the API',
+  externalLinks: 'client-side external destination policy — packages/client/external-links/README.md owns the API',
   fileActions: 'client-side interface-typed file actions — packages/client/ui-file-actions/README.md owns the API',
   invocation: 'not a service: per-call accessor (RemoteInvocation | undefined) the Gateway derives for each Remote call — packages/api/gateway/README.md owns the contract',
   webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
@@ -321,8 +322,12 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkspaceChangesSummary: 'deliverables.md',
   WorkspaceFileDiff: 'deliverables.md',
   DeleteSessionOptions: 'workspace.md',
+  MoveSessionOptions: 'workspace.md',
+  SessionMoveOutcome: 'workspace.md',
   WorkspaceDeleteSessionRequest: 'workspace.md',
   WorkspaceDeleteSessionValue: 'workspace.md',
+  WorkspaceMoveSessionRequest: 'workspace.md',
+  WorkspaceMoveSessionValue: 'workspace.md',
   SessionPersistenceRemoveOptions: 'persistence.md',
   Reload: 'boot.md',
   ProfileReconciliation: 'boot.md',

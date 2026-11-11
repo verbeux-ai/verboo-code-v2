@@ -64,6 +64,7 @@ function sectionOperations(account: AccountSnapshot, pages: PlatformPages): Acco
       theme: { getSnapshot: () => theme, subscribe: () => () => {} },
     },
     openPlatformPage: pages.open,
+    openExternalLink: () => {},
     refreshAccount: async () => {},
     avatarFailed: () => {},
     bonusNoticeShown: () => {}, bonusNoticeDismissed: () => {},

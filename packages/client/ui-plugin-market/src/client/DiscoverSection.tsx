@@ -1,5 +1,5 @@
 /** Discover: search one plugin market index, read an entry's page, and install a version. */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import {
   Button, IconChevronDownOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular,
   IconSlidersTwoOutlineRegular, IconTrashOutlineRegular, IconWarningOutlineRegular, Input, Menu, Modal, Pill,
@@ -21,6 +21,20 @@ type Translate = DiscoverSectionProps['t']
 
 /** The injected actions, without the reactive sources the renderer binds as hooks. */
 type DiscoverActions = Omit<DiscoverFace, 'hooks'>
+
+/**
+ * Route one anchor's ordinary activation through the product link service.
+ * Modified clicks keep their native behavior (new tab, new window, download).
+ * @param open - the service-backed activation the plugin injects.
+ * @returns the click handler for an external anchor.
+ */
+function externalOnly(open: (url: string) => void) {
+  return (event: MouseEvent<HTMLAnchorElement>): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    open(event.currentTarget.href)
+  }
+}
 
 /** Typing pause before the query text is sent. */
 const TEXT_DELAY_MS = 250
@@ -235,6 +249,7 @@ function EntryDetail({ entry, listing, t, face, hooks, language, onBack, onInsta
       <div className={css.detailDocument}>
         <PluginDetailSection request={{ url: listing.url, name: entry.name, version: version.version, npm: version.source.type === 'npm' }} t={t}
           loadDetail={face.loadDetail} retryDetail={face.retryDetail} detailImage={face.detailImage}
+          openExternalLink={face.openExternalLink}
           useDetails={hooks.useDetails} useLocale={hooks.useLocale} />
       </div>
       <section className={css.detailSection}>
@@ -252,14 +267,16 @@ function EntryDetail({ entry, listing, t, face, hooks, language, onBack, onInsta
           {entry.homepage === undefined ? null : (
             <div>
               <dt>{t('factHomepage')}</dt>
-              <dd><a className={css.link} href={entry.homepage} target="_blank" rel="noopener noreferrer">{entry.homepage}</a></dd>
+              <dd><a className={css.link} href={entry.homepage} target="_blank" rel="noopener noreferrer"
+                onClick={externalOnly(face.openExternalLink)}>{entry.homepage}</a></dd>
             </div>
           )}
           {entry.repository === undefined ? null : (
             <div>
               <dt>{t('factSourceCode')}</dt>
               <dd>
-                <a className={css.link} href={entry.repository.url} target="_blank" rel="noopener noreferrer">{entry.repository.url}</a>
+                <a className={css.link} href={entry.repository.url} target="_blank" rel="noopener noreferrer"
+                  onClick={externalOnly(face.openExternalLink)}>{entry.repository.url}</a>
                 {entry.repository.directory === undefined ? null : <> <code>{entry.repository.directory}</code></>}
               </dd>
             </div>

@@ -1,7 +1,7 @@
 /** Test-owned workspaces face: the renderer standard-kit observable plus recorded actions. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceMoveSessionValue, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -135,6 +135,33 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('insertSessionBefore')
     if (stub !== undefined) return await (stub(workspaceId, sessionId, beforeSessionId) as Promise<WorkspaceView>)
     return { workspaceId, title: '', path: '', sessionIds: [sessionId] } as unknown as WorkspaceView
+  }
+
+  /**
+   * Move a session to another project (recorded). The default echoes an
+   * accepted move that reports no previous owner.
+   * @param sessionId - session to move.
+   * @param workspaceId - destination project.
+   * @param options - whether to stop the session's running work first.
+   * @returns the resulting project ownership.
+   */
+  async moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options?: { readonly stopActivity?: boolean },
+  ): Promise<WorkspaceMoveSessionValue> {
+    this.calls.push({ method: 'moveSession', args: [sessionId, workspaceId, options] })
+    const stub = this.stubs.get('moveSession')
+    if (stub !== undefined) {
+      return await (stub(sessionId, workspaceId, options) as Promise<WorkspaceMoveSessionValue>)
+    }
+    const workspace = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+    return {
+      sessionId,
+      workspaceId,
+      projectPath: workspace?.path ?? '',
+      workspace: workspace ?? { workspaceId, title: '', path: '', sessionIds: [sessionId], createdAt: '', updatedAt: '' },
+    }
   }
 
   /**

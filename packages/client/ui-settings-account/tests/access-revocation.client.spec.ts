@@ -46,6 +46,8 @@ it('withdraws every account surface and the account stream on revocation, and re
   const streams: { readonly signal: AbortSignal; readonly accepted: Promise<undefined> }[] = []
   const lifetime: (() => void)[] = []
   const ctx = {
+    // Optional services read through ctx.get; only the handoff cases install one.
+    get: () => undefined,
     effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) lifetime.push(dispose) },
     locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'en' }) },
     configForms: {
@@ -121,6 +123,8 @@ it('drops reads a revoked grant started, and the next grant shows no account sec
   const firstFrames: { release: () => void; accepted: Promise<undefined> }[] = []
   const lifetime: (() => void)[] = []
   const ctx = {
+    // Optional services read through ctx.get; these cases install no link service.
+    get: () => undefined,
     effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) lifetime.push(dispose) },
     locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'en' }) },
     configForms: {
@@ -198,7 +202,7 @@ type StreamScript = (yieldFrame: () => void) => void
  * @param scripts - per-grant hooks run right before that stream delivers its first frame.
  * @returns the plugin's access guards, Remote spies, slot counts, and teardown.
  */
-function revocationHarness(scripts: StreamScript[]) {
+function revocationHarness(scripts: StreamScript[], externalLinks?: object) {
   const links = { usageUrl: 'https://example.test/usage', topUpUrl: 'https://example.test/top_up' }
   const signedIn: AccountView = { status: 'credential-stored', links, attempt: null }
   const guards: Guard[] = []
@@ -210,6 +214,8 @@ function revocationHarness(scripts: StreamScript[]) {
   const getUnnotifiedBonuses = vi.fn(async () => ({ ok: true, value: null }))
   const startSignIn = vi.fn<() => Promise<{ ok: false }>>()
   const ctx = {
+    // Optional services read through ctx.get; these cases install no link service.
+    get: (name: string) => name === 'externalLinks' ? externalLinks : undefined,
     effect: (install: () => (() => void) | undefined) => { const dispose = install(); if (dispose) lifetime.push(dispose) },
     locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'en' }) },
     configForms: {
@@ -282,11 +288,12 @@ it('ignores a frame the stream delivered just before the revocation', async () =
   }
 })
 
-it('closes the sign-in dialog, its failure, and the pending authorization tab on revocation', async () => {
+it('closes the sign-in dialog, its failure, and the pending authorization handoff on revocation', async () => {
   vi.stubEnv('DSH_CLIENT_VERSION', '0.0.0-test')
-  const popup = { opener: null, closed: false, close: vi.fn(), location: { replace: vi.fn() } }
-  const open = vi.spyOn(window, 'open').mockReturnValue(popup as never)
-  const b = revocationHarness([() => {}, () => {}])
+  const begin = vi.fn<() => void>()
+  const end = vi.fn<() => void>()
+  const externalLinks = { open: vi.fn(async () => 'window' as const), begin, end, setPreference: vi.fn() }
+  const b = revocationHarness([() => {}, () => {}], externalLinks)
   try {
     grant(b.guards)
     await b.accepted[0]
@@ -299,14 +306,16 @@ it('closes the sign-in dialog, its failure, and the pending authorization tab on
 
     grant(b.guards)
     await b.accepted[1]
-    popup.close.mockClear()
     b.startSignIn.mockReturnValueOnce(new Promise(() => {}))
+    begin.mockClear()
+    end.mockClear()
     void b.operations().start()
-    expect(open).toHaveBeenCalledTimes(2)
+    expect(begin).toHaveBeenCalledOnce()
+    expect(end.mock.calls.length).toBeGreaterThan(0)
     revoke(b.guards)
-    expect(popup.close).toHaveBeenCalledOnce()
+    // Revocation spends the reservation the click took.
+    expect(end.mock.calls.length).toBeGreaterThan(1)
   } finally {
     b.dispose()
-    open.mockRestore()
   }
 })

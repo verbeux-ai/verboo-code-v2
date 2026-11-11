@@ -349,6 +349,11 @@
     - id: ui-file-drag
       name: '@deepseek-ai/dsh-client-ui-file-drag'
 
+    # One exit for every external destination: Sidebar Browser, granted popup,
+    # or the Desktop native opener, plus the refusal notice.
+    - id: external-links
+      name: '@deepseek-ai/dsh-client-external-links'
+
     # Tool call tree, generic fallback, and keyed business Tool views.
     - id: ui-tool
       name: '@deepseek-ai/dsh-client-ui-tool'

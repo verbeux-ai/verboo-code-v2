@@ -166,21 +166,36 @@ describe('Markdown file links', () => {
   })
 
   it.each([
-    'mailto:10086', 'https:123', 'http:123', 'https://example.com:8080',
-    'index.ts:24', 'example.com:8080', 'localhost:3000', 'Makefile:12', 'tel:10086',
-    'vscode:open', 'file:///etc/passwd:24', 'custom.scheme:value:24', 'C:123',
-  ])(
-    'preserves external destination %s with and without a file opener', (target) => {
-      const openFile = vi.fn()
-      const markdown = <MarkdownText text={`[external](${target})`} />
-      const view = render(<MarkdownDelegateProvider openFile={openFile}>{markdown}</MarkdownDelegateProvider>)
-      expect(view.getByRole('link', { name: 'external' }).getAttribute('href')).toBe(target)
-      expect(view.queryByRole('button')).toBeNull()
-      expect(openFile).not.toHaveBeenCalled()
-      view.rerender(markdown)
-      expect(view.getByRole('link', { name: 'external' }).getAttribute('href')).toBe(target)
-    },
-  )
+    ['http://example.com/a', 'http:'],
+    ['https://example.com:8080', 'https:'],
+    ['mailto:10086', 'mailto:'],
+    ['tel:10086', 'tel:'],
+  ])('preserves allowlisted destination %s with and without a file opener', (target, _scheme) => {
+    const openFile = vi.fn()
+    const markdown = <MarkdownText text={`[external](${target})`} />
+    const view = render(<MarkdownDelegateProvider openFile={openFile}>{markdown}</MarkdownDelegateProvider>)
+    expect(view.getByRole('link', { name: 'external' }).getAttribute('href')).toBe(target)
+    expect(view.queryByRole('button')).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+    view.rerender(markdown)
+    expect(view.getByRole('link', { name: 'external' }).getAttribute('href')).toBe(target)
+  })
+
+  it.each([
+    'file:///etc/passwd', 'ftp://example.com/file', 'ssh://git@example.com/repo',
+    'vscode:open', 'custom.scheme:value', 'localhost:3000', 'example.com:8080',
+    'https://user:secret@example.com/', '//server/share.ts',
+  ])('renders unlisted scheme %s as plain text', (target) => {
+    const openFile = vi.fn()
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText text={`[external](${target})`} />
+      </MarkdownDelegateProvider>,
+    )
+    expect(view.getByText('external')).toBeTruthy()
+    expect(view.container.querySelector('a')).toBeNull()
+    expect(openFile).not.toHaveBeenCalled()
+  })
 
   it('preserves external links and leaves local links inert without an opener', () => {
     const view = render(<MarkdownText text={'[web](https://example.com/a#L1) [mail](mailto:a@example.com) [file](src/a.ts)'} />)

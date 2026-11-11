@@ -7,6 +7,8 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MarketIndexSummary, MarketSearchResult, PluginDetail, PluginDetailDocumentId, RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { LocaleSnapshot } from '@deepseek-ai/dsh-client-locale/client'
 import { declaredQuery, INITIAL_QUERY, type DiscoverQuery } from './presentation.ts'
+// Type-only: the optional `ctx.externalLinks` service merge read below.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 
 /** Why the last listing read failed: the index could not be fetched, is not a valid index, or changed while its pages loaded. */
 export type ListingFailure = 'fetch' | 'invalid' | 'changed'
@@ -97,6 +99,8 @@ export interface DetailFace {
    * @returns the authenticated Host URL, or undefined for an absolute, protocol-relative, or fragment destination.
    */
   readonly detailImage: (document: PluginDetailDocumentId, destination: string) => string | undefined
+  /** Open an ordinary destination found in market copy through the product link service. */
+  readonly openExternalLink: (url: string) => void
 }
 
 /** What the Discover tab receives through injection. */
@@ -219,7 +223,7 @@ export class DiscoverController {
     }
   }
 
-  /** Detail reads and image addressing of the entry detail section. */
+  /** Detail reads, image addressing, and link activation of the entry detail section. */
   private detailFace(): DetailFace {
     return {
       hooks: { details: this.details, locale: this.ctx.locale },
@@ -231,6 +235,9 @@ export class DiscoverController {
         if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/iu.test(destination)) return undefined
         return new URL(`${DETAIL_FILE_ROUTE}?document=${encodeURIComponent(document)}&path=${encodeURIComponent(destination)}`, this.base()).href
       },
+      // Market copy is authored outside the product; its destinations take the
+      // same exit as any other link instead of opening a window directly.
+      openExternalLink: (url) => { void this.ctx.get('externalLinks')?.open(url) },
     }
   }
 

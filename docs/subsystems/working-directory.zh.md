@@ -6,9 +6,11 @@ Session 的当前目录由 [`dsh-working-directory`](../../packages/session/work
 
 ## 目录选择
 
-`ctx.workingDirectory.get(session)` 读取日志中的值。`ensure(agent)` 验证它，并在目录消失时恢复原始项目。`set(agent, path)` 验证并记录请求的变更。header 没有目录的 Session 使用配置的运行时回退目录；回退目录不可用时返回错误。
+`ctx.workingDirectory.get(session)` 读取日志中的值。`ensure(agent)` 验证它，并在目录消失时恢复该项目。`set(agent, path)` 验证并记录请求的变更。header 没有目录的 Session 使用配置的运行时回退目录；回退目录不可用时返回错误。
 
-变更仅影响一个 Session。相对路径文件系统操作、新启动的进程、指令发现、技能和文件补全使用当前目录。已有终端和持久 shell 保留自己的目录。沙箱可写根目录与项目归属继续绑定原始项目。
+会话的项目是[工作区注册表](workspace.zh.md#project-assignment)的答案——会话被移动到其他项目时取显式持久归属，否则取不可变 header 的 cwd。Agent 创建（`agent/created`）时，所有者把该答案与已记录的目录比较，二者不同就提交一次 `working-directory/change`，因此已移动的会话从之后第一个请求起就在目标项目中工作。`ensure` 恢复到该项目，而不是 header。没有注册表的组合保持仅依据 header 的行为。
+
+变更仅影响一个 Session。相对路径文件系统操作、新启动的进程、指令发现、技能和文件补全使用当前目录。已有终端和持久 shell 保留自己的目录。沙箱可写根目录与工作区文件作用域读取同一个项目答案，因此 `@` 引用、shell、沙箱与文件预览彼此一致。
 
 ## 模型上下文
 

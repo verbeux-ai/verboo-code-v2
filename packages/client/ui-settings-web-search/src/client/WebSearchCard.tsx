@@ -72,7 +72,12 @@ export function WebSearchCard(props: WebSearchCardProps) {
           providersFailed={state.providersFailed} onRetry={props.retryProviders}
           description={describe(search)}
           hint={search.kind === 'deepseek'
-            ? <a className={styles.link} href={t('searchGuideUrl')} target="_blank" rel="noopener noreferrer">{t('searchGuide')}</a>
+            ? <a className={styles.link} href={t('searchGuideUrl')} target="_blank" rel="noopener noreferrer"
+              onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                event.preventDefault()
+                props.openExternalLink(event.currentTarget.href)
+              }}>{t('searchGuide')}</a>
             : search.kind === 'plugin' ? t('pluginProviderHint') : undefined} />
         {search.kind === 'deepseek' && (
           <div className={styles.panel}>

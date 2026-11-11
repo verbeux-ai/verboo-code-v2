@@ -33,13 +33,32 @@ export const workspaceRecord = z.object({
 export type WorkspaceRecord = z.infer<typeof workspaceRecord>
 
 /**
- * Recoverable two-write mutation marker. The marker is persisted before the
- * record/order pair can diverge, so startup can distinguish an interrupted
- * registry operation from unexplained medium corruption.
+ * One Session's explicit project assignment: the Workspace that owns it and
+ * the canonical project directory it works in. The assignment outranks the
+ * immutable Session header cwd for membership, execution, and file access, and
+ * it is the durable record of a Session moved between Workspaces.
+ */
+export const sessionProjectRecord = z.object({
+  /** Canonical directory of the owning Workspace at assignment time. */
+  projectPath: z.string(),
+  /** ISO-8601 instant the assignment was written. */
+  assignedAt: z.string(),
+})
+
+/** One stored Session project assignment, inferred from {@link sessionProjectRecord}. */
+export type SessionProjectRecord = z.infer<typeof sessionProjectRecord>
+
+/**
+ * Recoverable multi-write mutation marker. The marker is persisted before the
+ * record/order or assignment/accounting pair can diverge, so startup can
+ * distinguish an interrupted registry operation from unexplained medium
+ * corruption. `move` names the destination Workspace and the Session whose
+ * assignment and accounting it completes.
  */
 const workspacePendingMutation = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('create'), workspaceId }),
   z.object({ operation: z.literal('delete'), workspaceId }),
+  z.object({ operation: z.literal('move'), sessionId, workspaceId }),
 ])
 
 /**
@@ -68,17 +87,25 @@ export const workspaceDomainState = z.object({
 export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
 
 /**
- * The workspace domain spec: one `workspaces` table keyed by
- * {@link WorkspaceId} plus the bootstrap/order singleton. The registry opens
- * this through `ctx.storage.domain`; the spec object is the single source of
- * the domain's identity, version, and schemas.
+ * The workspace domain spec: a `workspaces` table keyed by
+ * {@link WorkspaceId}, a `session_projects` table keyed by Session id holding
+ * the explicit project assignment of every moved Session, plus the
+ * bootstrap/order singleton. The registry opens this through
+ * `ctx.storage.domain`; the spec object is the single source of the domain's
+ * identity, version, and schemas. Version 3 adds `session_projects`; version 2
+ * units parse unchanged because the table simply starts empty and the
+ * assignment is optional by construction.
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  version: 2,
+  version: 3,
+  compatibleVersions: [2],
   global: {
     schema: workspaceDomainState,
     initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },
   },
-  tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
+  tables: {
+    workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord),
+    session_projects: domainTable<SessionId, SessionProjectRecord>(sessionProjectRecord),
+  },
 })

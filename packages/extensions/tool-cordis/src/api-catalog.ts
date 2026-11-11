@@ -2572,7 +2572,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy',
-        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
+        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. The session\'s project directory is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a project.',
         parameters: [{ name: 'request', description: 'optional session and approved mode override.' }],
         returns: 'the fully resolved per-call mode and absolute workspace root.',
       },
@@ -4642,6 +4642,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated Workspace projection.',
       },
       {
+        signature: '@Remote(\'moveSession\') moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue>',
+        description: 'Move one Session to another Workspace, which becomes its project.',
+        parameters: [{ name: 'request', description: 'Session, destination Workspace, and whether to stop its running work.' }],
+        returns: 'the resulting project ownership and the destination Workspace projection.',
+      },
+      {
         signature: '@Remote(\'archiveSession\') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>',
         description: 'Hide one known Session from Workspace grouping surfaces.',
         parameters: [{ name: 'request', description: 'Session identity to archive.' }],
@@ -4787,6 +4793,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Unpin one session durably by dropping it from the registry-global pin set. Unpinning runs no session-existence check because removing an id cannot introduce an unknown one, so an entry whose session is gone still resolves. An id that is not pinned resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to unpin.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'moveSession( sessionId: SessionId, targetWorkspaceId: WorkspaceId, options: MoveSessionOptions = {}, ): Promise<SessionMoveOutcome>',
+        description: 'Move one session to another Workspace and make that Workspace its project.\n\nThe immutable session header keeps the directory the session was created in. What changes is the durable project assignment this registry owns: it outranks the header for membership, for the directory executing tools use, and for workspace-scoped file access, so the conversation afterwards works in the destination project.\n\nThe session must exist (live or in session persistence). The destination must be a registered Workspace whose directory is currently an existing directory. Without `stopActivity` the session must also be inactive: the `workspace/session-activity` waterfall is asked once, and any reported activity rejects with WorkspaceActiveSessionError before anything is written. With `stopActivity` the stops are requested and never awaited to settlement, because moving an idle-in-effect session is the caller\'s stated intent.\n\nA session whose project already is the destination is not an error and writes nothing. The assignment is written under a `pendingMutation` marker: an interrupted move completes at the next startup or registry operation, and no reachable state accounts the session in two Workspaces.',
+        parameters: [{ name: 'sessionId', description: 'The session to move.' }, { name: 'targetWorkspaceId', description: 'The Workspace that becomes its project.' }, { name: 'options', description: 'Whether running work is stopped instead of refusing.' }],
+        returns: 'the resulting ownership, naming the previous project when one existed.',
+      },
+      {
+        signature: 'ownerOf(sessionId: SessionId): WorkspaceId | undefined',
+        description: 'The Workspace currently accounting a session, if any.',
+        parameters: [{ name: 'sessionId', description: 'Session to locate.' }],
+        returns: 'the owning Workspace id, or undefined when no record accounts it.',
+      },
+      {
+        signature: 'projectPathOf(sessionId: SessionId): string | undefined',
+        description: 'Resolve the project directory of one session: its explicit project assignment when one exists, otherwise the canonical cwd of its immutable header.\n\nThis is the single authority for "which project does this conversation work in". The assignment decides without touching the header or the filesystem, so a moved session resolves to its destination project while its header keeps the directory it was created in. The header fallback reports only a canonical path that resolved to an existing directory when the header was indexed.',
+        parameters: [{ name: 'sessionId', description: 'Session to resolve.' }],
+        returns: 'the canonical project directory, or undefined when neither input resolves one.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -7536,6 +7560,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ModTier = \'prepend\' | \'user\' | \'append\' | \'builtin\' | \'core\';',
   },
   {
+    name: 'MoveSessionOptions',
+    declaration: 'export interface MoveSessionOptions {\n    readonly stopActivity?: boolean;\n}',
+  },
+  {
     name: 'NativeFileApplication',
     declaration: 'export interface NativeFileApplication {\n    readonly id: string;\n    readonly name: string;\n    readonly default: boolean;\n    readonly icon: string | null;\n}',
   },
@@ -8738,6 +8766,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionMessageProjectionContext',
     declaration: 'export interface SessionMessageProjectionContext {\n    nodes: readonly SessionSeq[];\n    events: readonly SessionEvent[];\n    baseSeq: SessionLogOffset;\n    messages: ReadonlyMap<SessionSeq, Message>;\n}',
+  },
+  {
+    name: 'SessionMoveOutcome',
+    declaration: 'export interface SessionMoveOutcome {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId;\n    readonly projectPath: string;\n    readonly previousWorkspaceId?: WorkspaceId;\n    readonly previousProjectPath?: string;\n}',
   },
   {
     name: 'SessionObservation',
@@ -10458,6 +10490,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceInsertSessionBeforeRequest',
     declaration: 'export interface WorkspaceInsertSessionBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly beforeSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceMoveSessionRequest',
+    declaration: 'export interface WorkspaceMoveSessionRequest {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId;\n    readonly stopActivity?: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceMoveSessionValue',
+    declaration: 'export interface WorkspaceMoveSessionValue {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId;\n    readonly projectPath: string;\n    readonly previousWorkspaceId?: WorkspaceId;\n    readonly previousProjectPath?: string;\n    readonly workspace: WorkspaceView;\n}',
   },
   {
     name: 'WorkspaceOrderValue',

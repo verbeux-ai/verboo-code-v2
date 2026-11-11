@@ -27,6 +27,9 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../../util/workspace-path"
+    },
+    {
       "path": "../ui-renderer"
     },
     {
@@ -64,6 +67,12 @@
     },
     {
       "path": "../../core/tool-executor-ptc"
+    },
+    {
+      "path": "../ui-sidebar-documentpreview/tsconfig.client.json"
+    },
+    {
+      "path": "../external-links"
     }
   ]
 }

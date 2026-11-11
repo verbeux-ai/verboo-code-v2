@@ -18,6 +18,8 @@ import type { BrowserPageFactory } from './browser/BrowserPage.ts'
 import { BROWSER_ID, browserDefinition } from './definition.tsx'
 import { en, ja, es, fr, de, ru, pt, zh } from './locales.ts'
 import { createBrowserStore } from './browser/store.ts'
+// Type-only: the optional `ctx.externalLinks` service merge read below.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 
 export type { BrowserBodyProps } from './view/BrowserBody.tsx'
 export type { BrowserControllerState, BrowserInjected, BrowserMountRequest } from './browser/BrowserController.ts'
@@ -87,8 +89,14 @@ export function apply(ctx: Context): void {
           existing.rebind(actions)
           return existing
         }
-        const controller = createBrowserControllers(actions, factory(sessionId), tabId =>
-          openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.tabId === tabId))
+        const controller = createBrowserControllers(
+          actions,
+          factory(sessionId),
+          tabId => openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.tabId === tabId),
+          // The toolbar's system-browser action takes the product destination
+          // policy, the same one every other link uses.
+          (url) => { void ctx.get('externalLinks')?.open(url) },
+        )
         controllers.set(sessionId, controller)
         return controller
       },

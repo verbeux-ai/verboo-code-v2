@@ -202,6 +202,11 @@ export interface BrowserInjected {
   reload(tabId: TabId): void
   /** @param tabId - owning tab. @param enabled - provider's optional sandbox control. */
   setSandbox(tabId: TabId, enabled: boolean): void
+  /**
+   * Hand the current page to the system browser.
+   * @param url - absolute address the toolbar shows as known.
+   */
+  openExternal(url: string): void
 }
 
 /**
@@ -209,10 +214,11 @@ export interface BrowserInjected {
  * @param actions - persisted view-state writer.
  * @param createPage - composition-selected provider.
  * @param isTabOpen - authoritative layout membership, independent of mounted bodies and plugin lifetime.
+ * @param openExternal - system-browser exit for the toolbar's current address.
  * @returns tab callbacks.
  */
 export function createBrowserControllers(actions: BoundActions<BrowserStore>, createPage: BrowserPageFactory,
-  isTabOpen: (tabId: TabId) => boolean): BrowserInjected {
+  isTabOpen: (tabId: TabId) => boolean, openExternal: (url: string) => void): BrowserInjected {
   let currentActions = actions
   const controllers = new Map<TabId, {
     readonly signal: AbortSignal
@@ -222,6 +228,7 @@ export function createBrowserControllers(actions: BoundActions<BrowserStore>, cr
   const controller = (id: TabId): BrowserController | undefined => controllers.get(id)?.controller
   return {
     keyedHooks: { browserState: key => controller(key as TabId) },
+    openExternal: (url) => { openExternal(url) },
     mount(request) {
       const { tabId, signal } = request
       if (signal.aborted) return () => {}

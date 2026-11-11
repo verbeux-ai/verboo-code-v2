@@ -79,6 +79,14 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
   }
   if (withBrowserRegistry) runtime.ctx.provide('sidebarRightTabs', sidebarRightTabs as never)
   runtime.ctx.provide('resources', { register: vi.fn(() => () => {}) } as never)
+  // Every external destination leaves Chat through the product link service.
+  const externalLinks = {
+    open: vi.fn<(url: string) => Promise<'sidebar' | 'window' | 'native' | 'blocked'>>(() => Promise.resolve('sidebar')),
+    begin: vi.fn<() => void>(),
+    end: vi.fn<() => void>(),
+    setPreference: vi.fn<(preference: 'sidebar' | 'new-tab') => void>(),
+  }
+  runtime.ctx.provide('externalLinks', externalLinks)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
   )
@@ -139,6 +147,7 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
     },
     runtime, chat, chatSettings, browserAvailable,
     layout, openWorkspacePath, sidebarRight, sidebarRightTabs, session, chatViewApi, chatFlowApi, rootReference, openSession,
+    externalLinks,
   }
 }
 
@@ -340,29 +349,19 @@ describe('Chat inject API', () => {
     await b.runtime.dispose()
   })
 
-  it('opens message HTTP(S) links in Sidebar Browser tabs', async () => {
+  it('hands every message link to the product link service without opening a window itself', async () => {
     const b = await bench()
-    const { injected } = b.chatViewApi(b.rootReference)
-    injected.openExternalLink('http://example.test/path')
-    injected.openExternalLink('https://example.test/path')
-    expect(b.sidebarRight.openTab.mock.calls).toEqual([
-      ['browser', { params: { url: 'http://example.test/path' } }],
-      ['browser', { params: { url: 'https://example.test/path' } }],
-    ])
-    await b.runtime.dispose()
-  })
-
-  it('opens message HTTP(S) links in the system browser when no Sidebar Browser is registered', async () => {
-    const b = await bench()
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const windowOpen = vi.spyOn(window, 'open')
     try {
-      b.sidebarRightTabs.get.mockReturnValue(undefined)
       const { injected } = b.chatViewApi(b.rootReference)
+      injected.openExternalLink('http://example.test/path')
       injected.openExternalLink('https://example.test/path')
+      expect(b.externalLinks.open.mock.calls).toEqual([['http://example.test/path'], ['https://example.test/path']])
+      // The service owns the destination, so Chat neither opens a tab nor a window.
       expect(b.sidebarRight.openTab).not.toHaveBeenCalled()
-      expect(open).toHaveBeenCalledWith('https://example.test/path', '_blank', 'noopener,noreferrer')
+      expect(windowOpen).not.toHaveBeenCalled()
     } finally {
-      open.mockRestore()
+      windowOpen.mockRestore()
       await b.runtime.dispose()
     }
   })
@@ -370,38 +369,37 @@ describe('Chat inject API', () => {
   it('applies restored and live link destinations without remounting the Chat view', async () => {
     const settings: ChatSettings = { transcriptView: 'compact', performanceUsage: 'detailed', linkOpening: 'new-tab' }
     const b = await bench(settings)
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       const { injected } = b.chatViewApi(b.rootReference)
       const source = b.linkPreference.hooks.linkOpening
       expect(source.getSnapshot()).toBe('new-tab')
+      expect(b.externalLinks.setPreference).toHaveBeenLastCalledWith('new-tab')
       injected.openExternalLink('https://example.test/restored')
-      expect(open).toHaveBeenLastCalledWith('https://example.test/restored', '_blank', 'noopener,noreferrer')
-      expect(b.sidebarRight.openTab).not.toHaveBeenCalled()
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('https://example.test/restored')
 
       b.chatSettings.publish({ value: { ...settings, linkOpening: 'sidebar' } })
       expect(source.getSnapshot()).toBe('sidebar')
+      expect(b.externalLinks.setPreference).toHaveBeenLastCalledWith('sidebar')
       injected.openExternalLink('http://example.test/live')
-      expect(b.sidebarRight.openTab).toHaveBeenLastCalledWith('browser', { params: { url: 'http://example.test/live' } })
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('http://example.test/live')
 
       b.linkPreference.setLinkOpening('new-tab')
       expect(b.chatSettings.set).toHaveBeenCalledWith('linkOpening', 'new-tab')
+      expect(b.externalLinks.setPreference).toHaveBeenLastCalledWith('new-tab')
       injected.openExternalLink('http://example.test/selected')
-      expect(open).toHaveBeenLastCalledWith('http://example.test/selected', '_blank', 'noopener,noreferrer')
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('http://example.test/selected')
 
       await b.chat.dispose()
       expect(b.runtime.slots.entries('settings.general.item').some(row => row.options.id === 'link-opening')).toBe(false)
       b.chatSettings.publish({ value: { ...settings, linkOpening: 'sidebar' } })
       expect(source.getSnapshot()).toBe('new-tab')
     } finally {
-      open.mockRestore()
       await b.runtime.dispose()
     }
   })
 
-  it('follows browser registration and routes absent browsers externally', async () => {
+  it('follows browser registration and routes every destination through the service', async () => {
     const b = await bench()
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     const available = b.linkPreference.hooks.browserAvailable
     const changed = vi.fn()
     const unsubscribe = available.subscribe(changed)
@@ -412,14 +410,13 @@ describe('Chat inject API', () => {
       expect(available.getSnapshot()).toBe(false)
       expect(changed).toHaveBeenCalledOnce()
       injected.openExternalLink('https://example.test/disabled')
-      expect(open).toHaveBeenCalledWith('https://example.test/disabled', '_blank', 'noopener,noreferrer')
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('https://example.test/disabled')
       b.browserAvailable.set(true)
       injected.openExternalLink('https://example.test/enabled')
-      expect(b.sidebarRight.openTab).toHaveBeenCalledWith('browser', { params: { url: 'https://example.test/enabled' } })
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('https://example.test/enabled')
       expect(b.linkPreference.hooks.linkOpening.getSnapshot()).toBe('sidebar')
     } finally {
       unsubscribe()
-      open.mockRestore()
       await b.runtime.dispose()
     }
   })
@@ -445,7 +442,6 @@ describe('Chat inject API', () => {
 
   it('keeps local link choices usable when settings cannot persist', async () => {
     const b = await bench()
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       const { injected } = b.chatViewApi(b.rootReference)
       b.chatSettings.publish({ status: 'unavailable' })
@@ -453,16 +449,16 @@ describe('Chat inject API', () => {
       b.linkPreference.setLinkOpening('new-tab')
       b.chatSettings.publish({ value: undefined })
       injected.openExternalLink('https://example.test/local')
-      expect(open).toHaveBeenCalledWith('https://example.test/local', '_blank', 'noopener,noreferrer')
-      expect(b.sidebarRight.openTab).not.toHaveBeenCalled()
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('https://example.test/local')
+      expect(b.externalLinks.setPreference).toHaveBeenLastCalledWith('new-tab')
 
       b.chatSettings.set.mockRejectedValueOnce(new Error('settings unavailable'))
       b.linkPreference.setLinkOpening('sidebar')
       await Promise.resolve()
       injected.openExternalLink('https://example.test/local-sidebar')
-      expect(b.sidebarRight.openTab).toHaveBeenCalledWith('browser', { params: { url: 'https://example.test/local-sidebar' } })
+      expect(b.externalLinks.open).toHaveBeenLastCalledWith('https://example.test/local-sidebar')
+      expect(b.externalLinks.setPreference).toHaveBeenLastCalledWith('sidebar')
     } finally {
-      open.mockRestore()
       await b.runtime.dispose()
     }
   })

@@ -58,7 +58,7 @@ A session's mode can be switched at runtime through a UI policy control or an ex
 
 ### Failures and recovery
 
-An invalid configured mode is rejected when the plugin loads, so a typo fails loud instead of silently changing policy. A session without a cwd, and agentless calls, fall back to the configured workspace root; a call with an approved explicit mode uses that mode for exactly that call.
+An invalid configured mode is rejected when the plugin loads, so a typo fails loud instead of silently changing policy. A session without a cwd, and agentless calls, fall back to the configured workspace root; a call with an approved explicit mode uses that mode for exactly that call. A conversation moved to another project is confined to that project from its first later request on, because the registry answers with the assignment rather than the header the conversation was created in.
 
 -----
 
@@ -72,7 +72,7 @@ This section explains policy resolution, the per-session store, and the model-vi
 
 ### Resolution precedence
 
-`resolve({ session, mode })` returns one complete per-call policy: an approved explicit mode outranks the session's last `sandbox/mode` event, which outranks the deployment default. The session's immutable `cwd` supplies the workspace root; otherwise the configured fallback applies. Absolute execution-world spelling is preserved. Enforcing providers canonicalize the root on their own filesystem, so remote `symlink/..` paths are never resolved on the Harness host.
+`resolve({ session, mode })` returns one complete per-call policy: an approved explicit mode outranks the session's last `sandbox/mode` event, which outranks the deployment default. The session's project supplies the workspace root — the Workspace registry's `projectPathOf` answer when that service is mounted, which is a durable project assignment for a moved conversation and the immutable `cwd` otherwise; a composition without the registry reads the header. Without either, the configured fallback applies. Absolute execution-world spelling is preserved. Enforcing providers canonicalize the root on their own filesystem, so remote `symlink/..` paths are never resolved on the Harness host.
 
 ### The per-session store
 

@@ -160,6 +160,31 @@ describe('SandboxPolicyService', () => {
     expect(ctx.sandboxPolicy.resolve({ session: session('sess-no-cwd') }).workspaceRoot).toBe('/fallback')
   })
 
+  it('confines a moved session to its assigned project instead of its immutable header cwd', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/fallback' })
+    // A mounted Workspace registry owns project membership: it answers with the
+    // explicit project assignment when the conversation was moved.
+    ctx.provide('workspaceRegistry', {
+      projectPathOf: (id: string) => id === 'sess-moved' ? '/projects/destination' : undefined,
+    } as never)
+
+    expect(ctx.sandboxPolicy.resolve({ session: session('sess-moved', '/projects/original') })).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: '/projects/destination',
+      sessionId: 'sess-moved',
+    })
+    // A session the registry resolves nothing for keeps the header cwd.
+    expect(ctx.sandboxPolicy.resolve({ session: session('sess-resident', '/projects/original') }).workspaceRoot)
+      .toBe('/projects/original')
+  })
+
+  it('falls back to the header cwd when no Workspace registry is mounted', async () => {
+    const ctx = await mounted({ workspaceRoot: '/fallback' })
+    expect(ctx.get('workspaceRegistry')).toBeUndefined()
+    expect(ctx.sandboxPolicy.resolve({ session: session('sess-plain', '/projects/original') }).workspaceRoot)
+      .toBe('/projects/original')
+  })
+
   it('rejects a mode outside the closed vocabulary at load', async () => {
     const ctx = new Context()
     // Config validation runs when the fiber activates, and the policy seam

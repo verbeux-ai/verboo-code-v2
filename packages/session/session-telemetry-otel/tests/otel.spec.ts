@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
@@ -167,7 +168,9 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(authorization).toBe('Bearer test-token')
 
     const resource = first.body.resourceLogs[0]!.resource.attributes
-    expect(resource).toContainEqual({ key: 'service.name', value: { stringValue: 'deepseek-harness' } })
+    // The resource names this build's own product identity, which the shipped
+    // composition sets; a hardcoded upstream name would pin our rebranding away.
+    expect(resource).toContainEqual({ key: 'service.name', value: { stringValue: APP_IDENTITY.product } })
     expect(resource).toContainEqual({ key: 'user.id', value: { stringValue: getOrCreateAnonymousUserId() } })
 
     const records = allRecords(captures)

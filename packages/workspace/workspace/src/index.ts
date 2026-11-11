@@ -17,14 +17,14 @@ import type { WorkspaceEntityHost } from './entity.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
-import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+import type { SessionProjectRecord, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { SessionActivity, Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
 export type {
   SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap, Workspace,
 } from './types.ts'
-export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
-export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
+export { workspaceDomainState, workspaceRecord, workspaceDomainSpec, sessionProjectRecord } from './spec.ts'
+export type { SessionProjectRecord, WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
 
 /** Identifies one workspace record (see `src/types.ts` for the brand rationale). */
@@ -49,16 +49,17 @@ export class WorkspaceUnknownSessionError extends Error {
    * @param sessionId - The unknown session id.
    * @param verb - The registry operation that named the session.
    */
-  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin') {
+  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin' | 'move') {
     super(`cannot ${verb} session '${sessionId}': live sessions and session persistence hold no such session`)
     this.name = 'WorkspaceUnknownSessionError'
   }
 }
 
 /**
- * An archiveSession or deleteSession request named a session that at least one
- * `workspace/session-activity` listener reported active. Nothing was written;
- * `activity` names what must stop before the session can be archived or deleted.
+ * An archiveSession, deleteSession, or moveSession request named a session that
+ * at least one `workspace/session-activity` listener reported active. Nothing
+ * was written; `activity` names what must stop before the session can be
+ * archived, deleted, or moved.
  */
 export class WorkspaceActiveSessionError extends Error {
   /**
@@ -69,10 +70,25 @@ export class WorkspaceActiveSessionError extends Error {
   constructor(
     readonly sessionId: SessionId,
     readonly activity: readonly SessionActivity[],
-    verb: 'archive' | 'delete' = 'archive',
+    verb: 'archive' | 'delete' | 'move' = 'archive',
   ) {
     super(`cannot ${verb} session '${sessionId}': the session is active (${activity.map(entry => entry.kind).join(', ')})`)
     this.name = 'WorkspaceActiveSessionError'
+  }
+}
+
+/**
+ * A moveSession request named a Workspace that cannot own a session: unknown,
+ * or whose directory is not currently an existing directory.
+ */
+export class WorkspaceMoveTargetInvalidError extends Error {
+  /**
+   * @param workspaceId - The rejected destination Workspace.
+   * @param reason - Why it cannot be the destination.
+   */
+  constructor(readonly workspaceId: WorkspaceId, reason: string) {
+    super(`cannot move a session to workspace '${workspaceId}': ${reason}`)
+    this.name = 'WorkspaceMoveTargetInvalidError'
   }
 }
 
@@ -125,6 +141,30 @@ export interface DeleteSessionOptions {
    * not block the deletion the caller asked for.
    */
   readonly stopActivity?: boolean
+}
+
+/** Caller choices for {@link WorkspaceRegistry.moveSession}. */
+export interface MoveSessionOptions {
+  /**
+   * Ask the composed providers to stop the session's running work instead of
+   * refusing the move because of it. Without this, any reported activity
+   * rejects with {@link WorkspaceActiveSessionError} and nothing is written.
+   */
+  readonly stopActivity?: boolean
+}
+
+/** The project ownership that resulted from {@link WorkspaceRegistry.moveSession}. */
+export interface SessionMoveOutcome {
+  /** The moved session. */
+  readonly sessionId: SessionId
+  /** The Workspace that owns the session after the move. */
+  readonly workspaceId: WorkspaceId
+  /** Canonical project directory the session works in after the move. */
+  readonly projectPath: string
+  /** The Workspace that owned the session before the move, when it had one. */
+  readonly previousWorkspaceId?: WorkspaceId
+  /** Canonical project directory the session worked in before the move, when one resolved. */
+  readonly previousProjectPath?: string
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -188,6 +228,7 @@ export class WorkspaceRegistry extends Service {
   static inject = ['storageDomain', 'sessionPersistence']
 
   private table?: KvTable<WorkspaceId, WorkspaceRecord>
+  private projects?: KvTable<SessionId, SessionProjectRecord>
   private global?: DomainGlobal<WorkspaceDomainState>
   private state?: WorkspaceDomainState
   private readonly entities = new Map<WorkspaceId, WorkspaceEntity>()
@@ -199,13 +240,8 @@ export class WorkspaceRegistry extends Service {
 
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
-    candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
-    readSessionHeader: id => this.readSessionHeader(id),
-    rememberSessionPath: (id, path) => {
-      this.sessionPaths.set(id, path)
-      this.missingSessionPaths.delete(id)
-      this.invalidSessionPaths.delete(id)
-    },
+    candidateMatches: (id, path) => this.candidateMatches(id, path),
+    resolveProjectPath: id => this.resolveProjectPath(id),
   }
 
   constructor(ctx: Context) {
@@ -217,6 +253,7 @@ export class WorkspaceRegistry extends Service {
     const domain = await this.ctx.storageDomain.open(workspaceDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'workspace.domainClose')
     this.table = domain.table('workspaces')
+    this.projects = domain.table('session_projects')
     this.global = domain.global
     this.state = domain.global.get()
 
@@ -532,6 +569,235 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Move one session to another Workspace and make that Workspace its project.
+   *
+   * The immutable session header keeps the directory the session was created
+   * in. What changes is the durable project assignment this registry owns: it
+   * outranks the header for membership, for the directory executing tools use,
+   * and for workspace-scoped file access, so the conversation afterwards
+   * works in the destination project.
+   *
+   * The session must exist (live or in session persistence). The destination
+   * must be a registered Workspace whose directory is currently an existing
+   * directory. Without `stopActivity` the session must also be inactive: the
+   * `workspace/session-activity` waterfall is asked once, and any reported
+   * activity rejects with {@link WorkspaceActiveSessionError} before anything
+   * is written. With `stopActivity` the stops are requested and never awaited
+   * to settlement, because moving an idle-in-effect session is the caller's
+   * stated intent.
+   *
+   * A session whose project already is the destination is not an error and
+   * writes nothing. The assignment is written under a `pendingMutation`
+   * marker: an interrupted move completes at the next startup or registry
+   * operation, and no reachable state accounts the session in two Workspaces.
+   * @param sessionId - The session to move.
+   * @param targetWorkspaceId - The Workspace that becomes its project.
+   * @param options - Whether running work is stopped instead of refusing.
+   * @returns the resulting ownership, naming the previous project when one existed.
+   */
+  moveSession(
+    sessionId: SessionId,
+    targetWorkspaceId: WorkspaceId,
+    options: MoveSessionOptions = {},
+  ): Promise<SessionMoveOutcome> {
+    return this.enqueueOperation(async () => {
+      // The chain slot serializes against every other registry write: the
+      // destination cannot be deleted and no other move of this session can
+      // interleave between the checks and the assignment write.
+      const target = this.entities.get(targetWorkspaceId)
+      if (target === undefined) {
+        throw new WorkspaceMoveTargetInvalidError(
+          targetWorkspaceId, 'the registry holds no such workspace',
+        )
+      }
+      const previousProjectPath = this.projectPathOf(sessionId)
+      const previousWorkspaceId = this.ownerOf(sessionId)
+      if (previousWorkspaceId === target.id) {
+        // Idempotent: the destination already owns the session, so the
+        // requested end state is true and nothing is written or stopped.
+        return {
+          sessionId,
+          workspaceId: target.id,
+          projectPath: target.path,
+          previousWorkspaceId,
+          ...previousProjectPath === undefined ? {} : { previousProjectPath },
+        }
+      }
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId, 'move')
+      }
+      if ((await target.status()) !== 'ok') {
+        throw new WorkspaceMoveTargetInvalidError(
+          targetWorkspaceId, `its directory '${target.path}' does not exist`,
+        )
+      }
+      if (options.stopActivity !== true) {
+        const activity = await this.ctx.waterfall(
+          'workspace/session-activity', { sessionId }, () => Promise.resolve([]),
+        )
+        if (activity.length > 0) throw new WorkspaceActiveSessionError(sessionId, activity, 'move')
+      }
+      const state = this.requireState()
+      await this.setState({
+        ...state,
+        pendingMutation: { operation: 'move', sessionId, workspaceId: target.id },
+      })
+      try {
+        await this.commitMove(sessionId, target.id)
+      } catch (error) {
+        // The assignment or the accounting write failed halfway. Retrying once
+        // finishes the durable move the marker already names; a second failure
+        // keeps the marker for startup instead of reporting a half state as a
+        // completed move.
+        try {
+          await this.commitMove(sessionId, target.id)
+        } catch (retryError) {
+          this.rebuildEntities()
+          throw new AggregateError(
+            [error, retryError],
+            `session '${sessionId}' is not yet moved to workspace '${target.id}'; `
+            + 'the pending marker completes the move at the next startup',
+          )
+        }
+      }
+      await this.setState({ ...this.requireState(), pendingMutation: undefined })
+      if (options.stopActivity === true) await this.stopSessionActivity(sessionId)
+      this.refreshEntities()
+      return {
+        sessionId,
+        workspaceId: target.id,
+        projectPath: target.path,
+        ...previousWorkspaceId === undefined ? {} : { previousWorkspaceId },
+        ...previousProjectPath === undefined ? {} : { previousProjectPath },
+      }
+    })
+  }
+
+  /**
+   * The Workspace currently accounting a session, if any.
+   * @param sessionId - Session to locate.
+   * @returns the owning Workspace id, or undefined when no record accounts it.
+   */
+  ownerOf(sessionId: SessionId): WorkspaceId | undefined {
+    for (const [id, record] of this.requireTable().entries()) {
+      if (record.sessionIds.includes(sessionId)) return id
+    }
+    return undefined
+  }
+
+  /**
+   * Resolve the project directory of one session: its explicit project
+   * assignment when one exists, otherwise the canonical cwd of its immutable
+   * header.
+   *
+   * This is the single authority for "which project does this conversation
+   * work in". The assignment decides without touching the header or the
+   * filesystem, so a moved session resolves to its destination project while
+   * its header keeps the directory it was created in. The header fallback
+   * reports only a canonical path that resolved to an existing directory when
+   * the header was indexed.
+   * @param sessionId - Session to resolve.
+   * @returns the canonical project directory, or undefined when neither input resolves one.
+   */
+  projectPathOf(sessionId: SessionId): string | undefined {
+    const assigned = this.projects?.get(sessionId)
+    if (assigned !== undefined) return assigned.projectPath
+    return this.sessionPaths.get(sessionId)
+  }
+
+  /**
+   * Whether an accounted session still belongs to a Workspace at `path`.
+   *
+   * The project assignment decides when one exists; otherwise the header index
+   * decides, preserving ownership when a fully qualified header cwd failed to
+   * resolve because a path component was missing.
+   */
+  private candidateMatches(sessionId: SessionId, path: string): boolean {
+    const assigned = this.projects?.get(sessionId)
+    if (assigned !== undefined) return assigned.projectPath === path
+    return this.sessionPaths.get(sessionId) === path || this.missingSessionPaths.has(sessionId)
+  }
+
+  /**
+   * Resolve one session's project directory for attach validation, indexing a
+   * header cwd the startup or live index has not validated yet.
+   * @param sessionId - Session to resolve.
+   * @returns the canonical project directory.
+   * @throws when the session is unknown, carries no cwd, or its cwd does not
+   * resolve to an existing directory.
+   */
+  private async resolveProjectPath(sessionId: SessionId): Promise<string> {
+    const assigned = this.projects?.get(sessionId)
+    if (assigned !== undefined) return assigned.projectPath
+    const header = await this.readSessionHeader(sessionId)
+    if (header.cwd === undefined) {
+      throw new Error(
+        `cannot validate session '${sessionId}': its stored header carries no cwd to validate against`,
+      )
+    }
+    const indexed = this.sessionPaths.get(sessionId)
+    if (indexed !== undefined) return indexed
+    let cwd: string
+    try {
+      cwd = await realpathNormalize(header.cwd)
+    } catch (error) {
+      throw new Error(
+        `cannot validate session '${sessionId}': its cwd '${header.cwd}' does not resolve, `
+        + 'so it cannot be validated',
+        { cause: error },
+      )
+    }
+    if (!(await stat(cwd)).isDirectory()) {
+      throw new Error(`cannot validate session '${sessionId}': its cwd '${header.cwd}' is not a directory`)
+    }
+    this.sessionPaths.set(sessionId, cwd)
+    this.missingSessionPaths.delete(sessionId)
+    this.invalidSessionPaths.delete(sessionId)
+    return cwd
+  }
+
+  /**
+   * Write the project assignment and the accounting of one move, idempotently:
+   * the assignment lands first (it is what makes membership resolve to the
+   * destination), then every other account drops the session, then the
+   * destination prepends it.
+   * @param sessionId - Session being moved.
+   * @param targetWorkspaceId - Destination Workspace identity.
+   * @returns resolution after every durable write landed.
+   */
+  private async commitMove(sessionId: SessionId, targetWorkspaceId: WorkspaceId): Promise<void> {
+    const table = this.requireTable()
+    const projects = this.requireProjects()
+    const target = table.get(targetWorkspaceId)
+    if (target === undefined) {
+      throw new Error(
+        `cannot complete the move of session '${sessionId}': `
+        + `destination workspace '${targetWorkspaceId}' is absent from the registry`,
+      )
+    }
+    const assigned = projects.get(sessionId)
+    if (assigned?.projectPath !== target.path) {
+      await projects.put(sessionId, { projectPath: target.path, assignedAt: new Date().toISOString() })
+    }
+    for (const [id, record] of [...table.entries()]) {
+      if (id === targetWorkspaceId || !record.sessionIds.includes(sessionId)) continue
+      await table.update(id, current => ({
+        ...current,
+        sessionIds: current.sessionIds.filter(candidate => candidate !== sessionId),
+        updatedAt: new Date().toISOString(),
+      }))
+    }
+    const current = table.get(targetWorkspaceId) as WorkspaceRecord
+    if (current.sessionIds[0] !== sessionId) {
+      await table.update(targetWorkspaceId, record => ({
+        ...record,
+        sessionIds: [sessionId, ...record.sessionIds.filter(candidate => candidate !== sessionId)],
+        updatedAt: new Date().toISOString(),
+      }))
+    }
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never
@@ -582,6 +848,8 @@ export class WorkspaceRegistry extends Service {
       || pinnedSessionIds.length !== state.pinnedSessionIds.length
     try {
       if (setsChanged) await this.setState({ ...state, archivedSessionIds, pinnedSessionIds })
+      const projects = this.requireProjects()
+      if (projects.get(sessionId) !== undefined) await projects.delete(sessionId)
       const table = this.requireTable()
       for (const [id, record] of [...table.entries()]) {
         if (!record.sessionIds.includes(sessionId)) continue
@@ -746,6 +1014,15 @@ export class WorkspaceRegistry extends Service {
     const state = this.requireState()
     const pending = state.pendingMutation
     if (pending === undefined) return
+    if (pending.operation === 'move') {
+      // An interrupted move is completed, never rolled back: the assignment is
+      // the only writer of project membership, and finishing it is what keeps
+      // the session accounted in exactly one Workspace.
+      await this.commitMove(pending.sessionId, pending.workspaceId)
+      await this.setState({ ...this.requireState(), pendingMutation: undefined })
+      this.refreshEntities()
+      return
+    }
     if (state.workspaceIds.includes(pending.workspaceId)) {
       throw new Error(
         `workspace domain is inconsistent: pending ${pending.operation} workspace `
@@ -761,7 +1038,9 @@ export class WorkspaceRegistry extends Service {
     const state = this.requireState()
     const groupsByPath = new Map<string, SessionHeader[]>()
     for (const header of headers) {
-      const path = this.sessionPaths.get(header.id)
+      // Header-only: an explicit project assignment decides first, so a moved
+      // session bootstraps into its assigned project without opening any log.
+      const path = this.projectPathOf(header.id)
       if (path === undefined) continue
       const group = groupsByPath.get(path)
       if (group === undefined) groupsByPath.set(path, [header])
@@ -891,6 +1170,20 @@ export class WorkspaceRegistry extends Service {
         accounted.set(sessionId, id)
       }
     }
+
+    // An assignment and the accounting must agree: a second owner can only
+    // come from a divergent write, and an assignment naming no existing
+    // Workspace path would leave the session unowned on the next read.
+    for (const [sessionId, assignment] of this.requireProjects().entries()) {
+      const owner = accounted.get(sessionId)
+      if (owner === undefined) continue
+      const record = table.get(owner) as WorkspaceRecord
+      if (record.path === assignment.projectPath) continue
+      throw new Error(
+        `workspace domain is inconsistent: session '${sessionId}' is assigned to project `
+        + `'${assignment.projectPath}' but accounted by workspace '${owner}' at '${record.path}'`,
+      )
+    }
   }
 
   private rebuildEntities(): void {
@@ -898,6 +1191,21 @@ export class WorkspaceRegistry extends Service {
     for (const id of this.requireState().workspaceIds) {
       const record = this.requireTable().get(id) as WorkspaceRecord
       this.entities.set(id, new WorkspaceEntity(this.host, id, record))
+    }
+  }
+
+  /**
+   * Re-read every entity's record in place. A move writes accounting through
+   * the domain table directly and must not detach Workspace references a
+   * consumer already captured.
+   */
+  private refreshEntities(): void {
+    const table = this.requireTable()
+    for (const [id, entity] of this.entities) {
+      const record = table.get(id)
+      /* v8 ignore next -- the registry order and the table are validated to agree at every commit. */
+      if (record === undefined) continue
+      entity.refresh(record)
     }
   }
 
@@ -988,6 +1296,14 @@ export class WorkspaceRegistry extends Service {
   private requireTable(): KvTable<WorkspaceId, WorkspaceRecord> {
     if (this.table === undefined) throw new Error('workspace registry is not started yet')
     return this.table
+  }
+
+  private requireProjects(): KvTable<SessionId, SessionProjectRecord> {
+    /* v8 ignore next 2 -- `projects` is acquired beside `table` and `state` in the
+       one `Service.init` that publishes the service, and every caller runs on the
+       registry write chain afterwards, so no composition reaches this guard. */
+    if (this.projects === undefined) throw new Error('workspace registry is not started yet')
+    return this.projects
   }
 
   private requireState(): WorkspaceDomainState {

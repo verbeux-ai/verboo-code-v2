@@ -53,8 +53,12 @@ export function apply(ctx: Context): void {
   let snapshot: AccountSnapshot = {
     view: undefined, details: undefined, avatar: undefined, failed: false, loginVisible: false, desktopOnboardingVisible: desktop,
   }
-  // Desktop main opens the authorization page natively; a plain browser opens it in a tab it owns.
-  const browser = new BrowserLogin(url => authorizeUrlWithTheme(url, ctx.theme.getTheme().active.colorScheme))
+  // The link service reserves the sign-in destination and, on Desktop, hands it
+  // to the system browser instead of opening a tab.
+  const browser = new BrowserLogin(
+    () => ctx.get('externalLinks'),
+    url => authorizeUrlWithTheme(url, ctx.theme.getTheme().active.colorScheme),
+  )
   ctx.effect(() => () => { browser.dispose() }, 'account: pending browser window')
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
@@ -196,6 +200,8 @@ export function apply(ctx: Context): void {
     })
   const operations: AccountSectionInjected = {
     avatarFailed: (value) => { avatar.failed(value) },
+    // One exit for every Platform destination the sheet links to.
+    openExternalLink: (url) => { void ctx.get('externalLinks')?.open(url) },
     subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refreshAccount) },
@@ -209,8 +215,9 @@ export function apply(ctx: Context): void {
         version: process.env.DSH_CLIENT_VERSION,
         width: window.screen.width, height: window.screen.height, pixelRatio: window.devicePixelRatio,
       }
+      const links = ctx.get('externalLinks')
       const openForm = (deviceInfo: string): void => {
-        window.open(contactUrl(config, { ...context, deviceInfo }), '_blank', 'noopener,noreferrer')
+        void links?.open(contactUrl(config, { ...context, deviceInfo }))
       }
       const readDeviceInfo = (globalThis as typeof globalThis & {
         dshDesktop?: { deviceInfo?: () => Promise<string> }
@@ -220,6 +227,10 @@ export function apply(ctx: Context): void {
         openForm(navigator.userAgent)
         return
       }
+      // The questionnaire's URL is only known after the native identity read, so
+      // the destination is reserved inside the click; the service closes an
+      // unused reservation when the open is refused.
+      links?.begin()
       void (async () => {
         let deviceInfo = ''
         try { deviceInfo = await readDeviceInfo() }

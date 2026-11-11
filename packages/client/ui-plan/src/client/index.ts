@@ -14,11 +14,16 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: the optional `ctx.externalLinks` service merge read below.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
+// Type-only: the `file` entry of `SidebarRightResourceParamsMap`, which types `{ params: { line } }` below.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
 import { extractMarkdownPlainText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { PlanCards, PlanReviewOpen, type PlanCardsInjected, type PlanOpenInjected, type PlanReviewOpenInjected } from './PlanCard.tsx'
-import { PlanPreview, PlanTitle } from './PlanPreview.tsx'
+import { PlanPreview, PlanTitle, type PlanPreviewInjected } from './PlanPreview.tsx'
 import { planDefinition } from './plan-definition.ts'
 import { planResourceProvider } from './plan-resource.ts'
 import { planAddress, parsePlanAddress } from './plan.ts'
@@ -108,6 +113,19 @@ export function apply(ctx: ClientContext): void {
   }, PlanReviewOpen))
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: previewId, locale: NS,
+    // A plan is prose with links: they leave through the product link service
+    // even though no conversation owns this tab.
+    inject: (sessionId: SessionId): PlanPreviewInjected => ({
+      openExternalLink: (url) => { void ctx.get('externalLinks')?.open(url) },
+      // A file mentioned in the plan opens in the right Sidebar under this
+      // Session, the same destination a Chat file link uses.
+      openFile: (path, options) => {
+        const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+        const address = fileAddressFor(sessionId, cwd, resolveWorkspacePath(undefined, path))
+        if (options?.line === undefined) ctx.sidebarRight.openResource(address)
+        else ctx.sidebarRight.openResource(address, { params: { line: options.line } })
+      },
+    }),
   }, PlanPreview))
   ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab.title', key: previewId,

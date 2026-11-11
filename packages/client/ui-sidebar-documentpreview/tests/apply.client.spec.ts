@@ -76,11 +76,17 @@ async function boot() {
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
   ctx.provide('remote', { workspaceFiles: { read, readBytes } } as never)
+  const sessionRows = createSnapshotStore({ byId: { [SESSION]: { cwd: '/workspace' } } })
+  ctx.provide('sessions', { list: sessionRows } as never)
+  const openResource = vi.fn()
+  ctx.provide('sidebarRight', { openResource } as never)
+  const opened = vi.fn<(url: string, options?: object) => Promise<'window'>>(() => Promise.resolve('window'))
+  ctx.provide('externalLinks', { open: opened, begin: vi.fn(), end: vi.fn(), setPreference: vi.fn() } as never)
   ctx.provide('remote.workspaceFiles', { read, readBytes } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   onTestFinished(async () => { await fiber.dispose() })
   await fiber.await()
-  return { ctx, tabs, registered, dictionaries, fiber, read, readBytes }
+  return { ctx, tabs, registered, dictionaries, fiber, read, readBytes, openResource, opened }
 }
 
 describe('ui-sidebar-documentpreview apply', () => {
@@ -111,6 +117,21 @@ describe('ui-sidebar-documentpreview apply', () => {
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
+  })
+
+  it('navigates a previewed document\'s links through the product service and the Sidebar', async () => {
+    const { registered, openResource, opened } = await boot()
+    const markdown = registered.find(entry => entry.name === 'sidebar.right.tab.document' && entry.key === MARKDOWN_BODY_ID)!
+    const injected = (markdown.inject as (sessionId: string) => {
+      openFile: (path: string, options?: { line?: number }) => void
+      openExternalLink: (url: string) => void
+    })(SESSION)
+    injected.openFile('notes/guide.md')
+    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/' + SESSION + '/notes/guide.md')
+    injected.openFile('notes/guide.md', { line: 9 })
+    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/' + SESSION + '/notes/guide.md', { params: { line: 9 } })
+    injected.openExternalLink('https://example.com/doc')
+    expect(opened).toHaveBeenCalledWith('https://example.com/doc')
   })
 
   it('takes every registration back when the plugin is disposed', async () => {

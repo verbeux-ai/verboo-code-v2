@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -25,13 +26,14 @@ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   RowToast, RowToastState, SessionArchiveConfirmInjected, SessionArchiveConfirmRequest,
-  SessionDeleteConfirmInjected, SessionDeleteConfirmRequest,
+  SessionDeleteConfirmInjected, SessionDeleteConfirmRequest, SessionMoveDialogInjected, SessionMoveRequest,
   SessionRenameDialogInjected, SessionRenameTarget,
 } from '../src/client/contract/slots.ts'
 import {
   ArchiveSessionRowButton, SessionArchiveConfirmDialog,
 } from '../src/client/session-actions/ArchiveSession.tsx'
 import { SessionDeleteConfirmDialog } from '../src/client/session-actions/DeleteSession.tsx'
+import { SessionMoveDialog } from '../src/client/session-actions/MoveSession.tsx'
 import { PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
 import { SessionRenameDialog } from '../src/client/session-actions/RenameSession.tsx'
 import { RowActionToast } from '../src/client/session-actions/RowActionToast.tsx'
@@ -508,6 +510,148 @@ describe('SessionDeleteConfirmDialog', () => {
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('plain failure') })
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(settleSessionDelete).toHaveBeenCalledOnce()
+  })
+})
+
+describe('SessionMoveDialog', () => {
+  /** Two further projects, so a destination choice is real. */
+  const projects: WorkspaceSnapshot = {
+    ...workspaces,
+    items: [
+      ...workspaces.items,
+      {
+        workspaceId: 'beta' as WorkspaceId, path: '/projects/beta', title: 'beta', sessionIds: [],
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        workspaceId: 'gamma' as WorkspaceId, path: '/projects/gamma', title: 'gamma', sessionIds: [],
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  }
+
+  /** The dialog over a test-owned request source; settling clears the request the way apply does. */
+  function moveDialog(
+    moveSession: SessionMoveDialogInjected['moveSession'],
+    options: { readonly snapshot?: WorkspaceSnapshot; readonly request?: SessionMoveRequest } = {},
+  ) {
+    const request = createSnapshotStore<SessionMoveRequest | null>(null)
+    const settleSessionMove = vi.fn(() => { request.set(null) })
+    render(
+      <SessionMoveDialog
+        {...overlay}
+        useWorkspaces={hook(options.snapshot ?? projects)}
+        t={tEn}
+        useMoveRequest={bindSnapshotSelector(request)}
+        settleSessionMove={settleSessionMove}
+        moveSession={moveSession}
+      />,
+    )
+    const ask = (): void => {
+      act(() => {
+        request.set(options.request ?? {
+          sessionId: sid('one'), displayTitle: 'Movable session', currentWorkspaceId: 'alpha' as WorkspaceId,
+        })
+      })
+    }
+    return { settleSessionMove, ask }
+  }
+
+  it('renders nothing until a move is requested', () => {
+    moveDialog(vi.fn(async () => {}))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('offers every other project, preselects the first, and moves only on confirm', async () => {
+    const moveSession = vi.fn(async () => {})
+    const { settleSessionMove, ask } = moveDialog(moveSession)
+    ask()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    // The current project is not a destination: moving there is not a move.
+    const choices = screen.getAllByRole('radio')
+    expect(choices.map(choice => choice.textContent)).toEqual([
+      'beta/projects/beta', 'gamma/projects/gamma',
+    ])
+    expect(choices[0]!.getAttribute('aria-checked')).toBe('true')
+    expect(moveSession).not.toHaveBeenCalled()
+
+    fireEvent.click(choices[1]!)
+    expect(choices[1]!.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => { expect(settleSessionMove).toHaveBeenCalledOnce() })
+    expect(moveSession).toHaveBeenCalledWith('one', 'gamma')
+  })
+
+  it('says so when no other project exists, and confirming stays unavailable', () => {
+    const moveSession = vi.fn(async () => {})
+    const { ask } = moveDialog(moveSession, { snapshot: workspaces })
+    ask()
+    expect(screen.getByText('No other project is available for this conversation.')).toBeTruthy()
+    expect(screen.queryAllByRole('radio')).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect(moveSession).not.toHaveBeenCalled()
+  })
+
+  it('reports the running-work refusal in place, naming what would have to stop', async () => {
+    const activity = [{ kind: 'turn' as const }]
+    const refusal = Object.assign(new Error('workspace session move failed: workspace/session-active: active'), {
+      name: 'WorkspaceMoveSessionError',
+      rpcError: new RemoteError('workspace/session-active', 'active', { sessionId: sid('one'), activity }),
+    })
+    const moveSession = vi.fn<SessionMoveDialogInjected['moveSession']>().mockRejectedValueOnce(refusal)
+    const { settleSessionMove, ask } = moveDialog(moveSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
+    expect(screen.getByRole('alert').textContent).toContain('This conversation is still running')
+    expect(screen.getByRole('alert').textContent).toContain('The turn in progress')
+    // The dialog stays open so the operator can choose another destination later.
+    expect(settleSessionMove).not.toHaveBeenCalled()
+  })
+
+  it('clears a refusal on a new choice and reports any other failure as its own message', async () => {
+    const activity = [{ kind: 'probe' as never }]
+    const refusal = Object.assign(new Error('busy'), {
+      name: 'WorkspaceMoveSessionError',
+      rpcError: new RemoteError('workspace/session-active', 'busy', { sessionId: sid('one'), activity }),
+    })
+    const moveSession = vi.fn<SessionMoveDialogInjected['moveSession']>()
+      .mockRejectedValueOnce(refusal)
+      .mockRejectedValueOnce('plain failure')
+    const { settleSessionMove, ask } = moveDialog(moveSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
+    // A family this build did not compile falls through to the generic line.
+    expect(screen.getByRole('alert').textContent).toContain('1 other item of work (probe)')
+
+    fireEvent.click(screen.getAllByRole('radio')[1]!)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('plain failure') })
+    expect(settleSessionMove).not.toHaveBeenCalled()
+  })
+
+  it('refuses to dismiss while the move is pending, then settles on Escape', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const moveSession = vi.fn<SessionMoveDialogInjected['moveSession']>().mockReturnValueOnce(pending.promise)
+    const { settleSessionMove, ask } = moveDialog(moveSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionMove).not.toHaveBeenCalled()
+    await act(async () => { pending.resolve(undefined) })
+    await waitFor(() => { expect(settleSessionMove).toHaveBeenCalledOnce() })
+  })
+
+  it('does not offer the current project and preselects nothing when the Session has no owner', () => {
+    const { ask } = moveDialog(vi.fn(async () => {}), {
+      request: { sessionId: sid('one'), displayTitle: 'Ungrouped session' },
+    })
+    ask()
+    expect(screen.getAllByRole('radio').map(choice => choice.textContent)).toEqual([
+      'alpha/projects/alpha', 'beta/projects/beta', 'gamma/projects/gamma',
+    ])
   })
 })
 

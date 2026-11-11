@@ -2,7 +2,7 @@
 
 English | [中文](workspace.zh.md)
 
-A workspace is the persistent record of a directory the user works in: a stable id over a canonical path, a display title, and the ordered account of sessions that belong to it. The subsystem is one package ([dsh-workspace](../../packages/workspace/workspace), `ctx.workspaceRegistry`) — an optional host-side capability, not part of the agent-loop spine, and invisible to models (no tools, no prompt text, no session events). It stores its records through the [storage domain form](storage.md) and validates session membership against [`SessionHeader.cwd`](persistence.md#sessionheader--metadata-beside-the-log), so `storageDomain` and `sessionPersistence` are mandatory startup dependencies: an unavailable persistence peer leaves the plugin pending rather than being mistaken for an empty history. Design record: [domain KV storage Agent Note](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md); bootstrap and GUI ordering: [Workspace UI product-flow Agent Note](../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md).
+A workspace is the persistent record of a directory the user works in: a stable id over a canonical path, a display title, and the ordered account of sessions that belong to it. The subsystem is one package ([dsh-workspace](../../packages/workspace/workspace), `ctx.workspaceRegistry`) — an optional host-side capability, not part of the agent-loop spine, and invisible to models (no tools, no prompt text, no session events). It stores its records through the [storage domain form](storage.md) and resolves each Session's project through one authority — a durable [project assignment](#project-assignment) when one exists, otherwise [`SessionHeader.cwd`](persistence.md#sessionheader--metadata-beside-the-log) — so `storageDomain` and `sessionPersistence` are mandatory startup dependencies: an unavailable persistence peer leaves the plugin pending rather than being mistaken for an empty history. Design record: [domain KV storage Agent Note](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md); bootstrap and GUI ordering: [Workspace UI product-flow Agent Note](../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md); project moves: [move Agent Note](../../.agents/notes/implemented/architecture/2026-11-10-project-assignment-and-session-moves.md).
 
 Source: [`packages/workspace/workspace/src/types.ts`](../../packages/workspace/workspace/src/types.ts)
 
@@ -119,11 +119,55 @@ interface Workspace {
 
 Ownership truth is the record's ordered `sessionIds`, never derived from session cwd. Membership validates the recorded header cwd against the workspace path; an existing candidate remains owned when its fully qualified cwd fails resolution or directory stat with `ENOENT`. This preserves missing-directory and dangling-symlink accounts without admitting new sessions. Failed writes reject (`insertSessionBefore` account errors as `WorkspaceMoveInvalidError`, storage failures as plain errors); every accepted mutation stamps `updatedAt` and durably prunes candidates that no longer pass the membership check.
 
+## Project assignment
+
+The `SessionHeader.cwd` is immutable, so it alone cannot express "this conversation now works in that project". A second, registry-owned fact decides that instead: the durable project assignment, stored in the domain's `session_projects` table keyed by Session id. Each row is a `projectPath` (the owning Workspace's canonical directory when the assignment was written) and an `assignedAt` instant. The table is optional by construction, so a unit written before it parses with no assignments at all.
+
+`WorkspaceRegistry.projectPathOf(sessionId)` is the single authority for "which project does this conversation belong to": the assignment when one exists, otherwise the canonical cwd of the immutable header. `candidateMatches`, `attachSession`, the history bootstrap, and every project-consuming package resolve through it, so exactly one answer exists at any moment. Two consequences follow. Membership reads a moved Session from the assignment rather than from its header, and the header keeps naming the directory the conversation was created in. A composition without the registry falls back to the header, which is why `sandbox-policy` and `workspace-files` read the service optionally instead of injecting it.
+
+## Moving a Session between projects
+
+`moveSession(sessionId, targetWorkspaceId, options?)` re-homes one conversation. It refuses a Session with running work exactly as archival does — the `workspace/session-activity` waterfall is asked once and any reported activity rejects with `WorkspaceActiveSessionError` before anything is written — and it refuses a destination that cannot own a Session: an unknown Workspace, or one whose directory is not currently an existing directory, rejects with `WorkspaceMoveTargetInvalidError`. A Session the registry does not know rejects with `WorkspaceUnknownSessionError`.
+
+```ts type-equiv
+/** Caller choices for {@link WorkspaceRegistry.moveSession}. */
+interface MoveSessionOptions {
+  /**
+   * Ask the composed providers to stop the session's running work instead of
+   * refusing the move because of it. Without this, any reported activity
+   * rejects with {@link WorkspaceActiveSessionError} and nothing is written.
+   */
+  readonly stopActivity?: boolean
+}
+```
+
+The accepted move writes the assignment under a `pendingMutation` marker naming `{ operation: 'move', sessionId, workspaceId }`, then detaches the Session from every other account, then prepends it to the destination. The assignment lands first because it is what makes membership resolve to the destination; the marker is cleared last, so an interruption anywhere in between is completed at the next startup or registry operation instead of leaving the Session unowned or double-booked. `validateStoredState` still fails loud on any account held by two Workspaces, and now also on an assignment whose `projectPath` disagrees with the record that accounts the Session.
+
+```ts type-equiv
+/** The project ownership that resulted from {@link WorkspaceRegistry.moveSession}. */
+interface SessionMoveOutcome {
+  /** The moved session. */
+  readonly sessionId: SessionId
+  /** The Workspace that owns the session after the move. */
+  readonly workspaceId: WorkspaceId
+  /** Canonical project directory the session works in after the move. */
+  readonly projectPath: string
+  /** The Workspace that owned the session before the move, when it had one. */
+  readonly previousWorkspaceId?: WorkspaceId
+  /** Canonical project directory the session worked in before the move, when one resolved. */
+  readonly previousProjectPath?: string
+}
+```
+
+A move onto the Workspace that already owns the Session is not an error and writes nothing. The transport surface is `workspace/moveSession` in the [Workspace Controller](../../packages/api/workspace-controller/src/types.ts), which maps the three refusals to `workspace/session-active`, `workspace/move-invalid`, and `session/not-found`, and answers with the outcome plus the destination row so a Client can reflect the move immediately.
+
+The conversation starts working in the destination on its next request, not during the move: the [working-directory](working-directory.md) owner listens for `agent/created`, compares `projectPathOf` with the recorded directory, and commits a `working-directory/change` when they differ. That commit is what reaches the model, the sandbox writable root, `@` file references, and the shells, so the move requires no header rewrite and no transcript relocation.
+
 ## The registry: `ctx.workspaceRegistry`
 
-`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, title?)` requires a fully qualified path, canonicalizes it, rejects a nonexistent path (the original `ENOENT`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path)` applies the same fully qualified realpath canon without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([reference](../../packages/workspace/workspace/README.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption.
+`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, title?)` requires a fully qualified path, canonicalizes it, rejects a nonexistent path (the original `ENOENT`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path)` applies the same fully qualified realpath canon without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([reference](../../packages/workspace/workspace/README.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption. A marked move is the exception to that rollback direction: it is completed, because [the assignment](#project-assignment) is the only writer of project membership.
 
-Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that stored header cwd against the workspace path. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; the initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
+Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that project directory against the workspace path. A moved session attaches to the Workspace its [assignment](#project-assignment) names, so its stored header cwd takes no part. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; an assignment decides that grouping before the header does, and an explicit assignment needs no filesystem check. The initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
 
 ## Default Workspace initialization
 
@@ -357,6 +401,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * @returns the updated Workspace projection.
  */
 @Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
+
+/**
+ * Move one Session to another Workspace, which becomes its project.
+ * @param request - Session, destination Workspace, and whether to stop its running work.
+ * @returns the resulting project ownership and the destination Workspace projection.
+ */
+@Remote('moveSession') moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue>
 
 /**
  * Hide one known Session from Workspace grouping surfaces.
@@ -616,6 +667,58 @@ pinSession(sessionId: SessionId): Promise<void>
  * @returns resolution after durability.
  */
 unpinSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Move one session to another Workspace and make that Workspace its project.
+ *
+ * The immutable session header keeps the directory the session was created
+ * in. What changes is the durable project assignment this registry owns: it
+ * outranks the header for membership, for the directory executing tools use,
+ * and for workspace-scoped file access, so the conversation afterwards
+ * works in the destination project.
+ *
+ * The session must exist (live or in session persistence). The destination
+ * must be a registered Workspace whose directory is currently an existing
+ * directory. Without `stopActivity` the session must also be inactive: the
+ * `workspace/session-activity` waterfall is asked once, and any reported
+ * activity rejects with {@link WorkspaceActiveSessionError} before anything
+ * is written. With `stopActivity` the stops are requested and never awaited
+ * to settlement, because moving an idle-in-effect session is the caller's
+ * stated intent.
+ *
+ * A session whose project already is the destination is not an error and
+ * writes nothing. The assignment is written under a `pendingMutation`
+ * marker: an interrupted move completes at the next startup or registry
+ * operation, and no reachable state accounts the session in two Workspaces.
+ * @param sessionId - The session to move.
+ * @param targetWorkspaceId - The Workspace that becomes its project.
+ * @param options - Whether running work is stopped instead of refusing.
+ * @returns the resulting ownership, naming the previous project when one existed.
+ */
+moveSession( sessionId: SessionId, targetWorkspaceId: WorkspaceId, options: MoveSessionOptions = {}, ): Promise<SessionMoveOutcome>
+
+/**
+ * The Workspace currently accounting a session, if any.
+ * @param sessionId - Session to locate.
+ * @returns the owning Workspace id, or undefined when no record accounts it.
+ */
+ownerOf(sessionId: SessionId): WorkspaceId | undefined
+
+/**
+ * Resolve the project directory of one session: its explicit project
+ * assignment when one exists, otherwise the canonical cwd of its immutable
+ * header.
+ *
+ * This is the single authority for "which project does this conversation
+ * work in". The assignment decides without touching the header or the
+ * filesystem, so a moved session resolves to its destination project while
+ * its header keeps the directory it was created in. The header fallback
+ * reports only a canonical path that resolved to an existing directory when
+ * the header was indexed.
+ * @param sessionId - Session to resolve.
+ * @returns the canonical project directory, or undefined when neither input resolves one.
+ */
+projectPathOf(sessionId: SessionId): string | undefined
 
 /**
  * Resolve by canonical directory path without creating or mutating a

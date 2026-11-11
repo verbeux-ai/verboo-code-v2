@@ -175,9 +175,15 @@ describe('web e2e: Markdown file links', () => {
 
     const relative = page.getByRole('button', { name: 'Relative colon:24–30', exact: true })
     await relative.waitFor()
+    // A destination outside the openable schemes is prose, never a file button
+    // and never an anchor: an unlisted scheme would otherwise reach whichever
+    // program the operating system registered for it.
     expect(await page.getByRole('button', { name: 'Development server', exact: true }).count()).toBe(0)
-    expect(await page.getByRole('link', { name: 'Development server', exact: true }).getAttribute('href')).toBe('localhost:3000')
-    expect(await page.getByRole('link', { name: 'Bare URL', exact: true }).getAttribute('href')).toBe('index.ts:24')
+    expect(await page.getByRole('link', { name: 'Development server', exact: true }).count()).toBe(0)
+    // The label survives as ordinary prose inside the surrounding paragraph.
+    expect(await page.getByText(/Development server/u).count()).toBeGreaterThan(0)
+    expect(await page.getByRole('link', { name: 'Bare URL', exact: true }).count()).toBe(0)
+    expect(await page.getByText(/Bare URL/u).count()).toBeGreaterThan(0)
     expect(await page.getByRole('link', { name: 'Blocked script', exact: true }).count()).toBe(0)
     expect(await page.getByRole('button', { name: 'Blocked script', exact: true }).count()).toBe(0)
     expect(await page.getByRole('link', { name: 'Mail', exact: true }).getAttribute('href')).toBe('mailto:10086')

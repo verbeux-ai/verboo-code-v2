@@ -38,7 +38,8 @@ function providePreview(ctx: Context) {
   const mounted = createSnapshotStore<SessionId | undefined>(undefined)
   const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
   const binding = vi.fn<() => object | undefined>(() => ({}))
-  ctx.provide('sessions', { subagentAddress, binding })
+  const sessionRows = createSnapshotStore({ byId: { [SID]: { cwd: '/workspace' } } })
+  ctx.provide('sessions', { subagentAddress, binding, list: sessionRows })
   ctx.provide('resources', { register: vi.fn(() => removeResources) })
   ctx.provide('sidebarRightTabs', { register: registerType })
   ctx.provide('sidebarRight', { openResourceIn, openResource, mounted })
@@ -69,7 +70,9 @@ async function bench() {
   ctx.provide('remote', { commands: commandsRemote })
   ctx.provide('remote.commands', commandsRemote)
   ctx.provide('locale', new LocaleRuntime(ctx))
-  return { ctx, slots, execute, ...preview }
+  const opened = vi.fn<(url: string, options?: object) => Promise<'window'>>(() => Promise.resolve('window'))
+  ctx.provide('externalLinks', { open: opened, begin: vi.fn(), end: vi.fn(), setPreference: vi.fn() })
+  return { ctx, slots, execute, opened, ...preview }
 }
 
 describe('ui-plan browser apply', () => {
@@ -243,6 +246,15 @@ describe('ui-plan browser apply', () => {
       expect(b.openResource.mock.calls.at(-1)![0]).not.toBe(first[0])
       expect(b.slots.entries('sidebar.right.pane.tab')[0]!.component).toBe(PlanPreview)
       expect(b.slots.entries('sidebar.right.pane.tab.title')[0]!.component).toBe(PlanTitle)
+      // The preview's navigation leaves through the product link service and the
+      // right Sidebar, so a plan's links behave like a Chat message's.
+      const previewInjected = b.slots.entries('sidebar.right.pane.tab')[0]!.inject!(SID as never) as { openFile: (path: string, options?: { line?: number }) => void; openExternalLink: (url: string) => void }
+      previewInjected.openFile('src/plan.md')
+      expect(b.openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/s-plan/src/plan.md')
+      previewInjected.openFile('src/plan.md', { line: 7 })
+      expect(b.openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/s-plan/src/plan.md', { params: { line: 7 } })
+      previewInjected.openExternalLink('https://example.com/plan')
+      expect(b.opened).toHaveBeenCalledWith('https://example.com/plan')
       await fiber.dispose()
       expect(b.slots.entries('conversation.chat.turnTail')).toEqual([])
       expect(b.slots.entries('conversation.plan-review.actions')).toEqual([])

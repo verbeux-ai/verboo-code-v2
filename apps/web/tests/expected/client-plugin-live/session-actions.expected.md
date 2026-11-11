@@ -2,6 +2,7 @@
   - menuitem "Pin session"
   - menuitem "Rename"
   - menuitem "Fork session"
+  - menuitem "Move to project…"
   - separator
   - menuitem "Copy Session ID"
   - separator
@@ -9,3 +10,5 @@
   - menuitem "Copy session ID"
   - separator
   - menuitem "Archive session"
+  - separator
+  - menuitem "Delete conversation"

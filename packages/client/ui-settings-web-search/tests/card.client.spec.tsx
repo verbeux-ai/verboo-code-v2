@@ -89,6 +89,7 @@ function plugins(): WebSearchCardState {
 function cardActions() {
   return {
     edit: vi.fn(), resetField: vi.fn(), selectProvider: vi.fn(), retryProviders: vi.fn(), save: vi.fn(), discard: vi.fn(),
+    openExternalLink: vi.fn<(url: string) => void>(),
   }
 }
 
@@ -189,12 +190,18 @@ describe('WebSearchCard', () => {
   })
 
   it('shows the DeepSeek search guide after the Search API description, and the Fetch API description', () => {
-    renderPage(apis())
+    const { actions } = renderPage(apis())
     expect(fetchMenu().textContent).toBe(en.providerDeepSeekFetch)
     const guide = screen.getByRole('link', { name: en.searchGuide })
     expect(guide).toHaveProperty('href', en.searchGuideUrl)
     expect(guide.getAttribute('target')).toBe('_blank')
     expect(guide.getAttribute('rel')).toBe('noopener noreferrer')
+    // The guide leaves through the product link service; a modified click keeps
+    // the browser's own meaning.
+    fireEvent.click(guide, { metaKey: true })
+    expect(actions.openExternalLink).not.toHaveBeenCalled()
+    fireEvent.click(guide)
+    expect(actions.openExternalLink).toHaveBeenCalledWith(en.searchGuideUrl)
     // The description comes first; the guide link is the page's own line after it.
     expect(paragraphs(en.searchSection).slice(0, 2)).toEqual([DESCRIPTIONS['deepseek-search-api']!.zh, en.searchGuide])
   })

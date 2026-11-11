@@ -1,21 +1,33 @@
 /** Read-only Markdown viewer for logged plans and temporary review documents. */
 import { useMemo } from 'react'
-import { FileTypeIcon, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { FileTypeIcon, MarkdownDelegateProvider, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './plan-resource.ts'
 import { isReviewPreviewAddress } from './review-preview.ts'
 import { planFailureLine } from './failure-line.ts'
 import css from './PlanPreview.module.css'
 
-type PlanPreviewProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'plan'>
+/** Navigation supplied by the plugin: the product link service and the Sidebar file opener. */
+export interface PlanPreviewInjected {
+  /** Ordinary activation of a destination inside the plan document. */
+  readonly openExternalLink: ((url: string) => void) | undefined
+  /**
+   * Open a file the plan mentions.
+   * @param path - absolute or workspace-relative path.
+   * @param options - first line to reveal.
+   */
+  readonly openFile: ((path: string, options?: { line?: number }) => void) | undefined
+}
+
+type PlanPreviewProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'plan'> & InjectFace<PlanPreviewInjected>
 
 /**
  * Render the submitted plan with its complete Markdown.
  * @param props - Framework-bound tab identity, resource, and copy.
  * @returns the plan document or a localized loading/failure state.
  */
-export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
+export function PlanPreview({ useTabInfo, useResource, openExternalLink, openFile, t }: PlanPreviewProps) {
   const tab = useTabInfo()
   const resource = useResource<'plan'>(tab.tab.navigation.address)
   const temporary = isReviewPreviewAddress(tab.tab.navigation.address)
@@ -34,7 +46,11 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   )
   return (
     <section className={css.preview} data-plan-preview={'callId' in plan ? plan.callId : tab.tab.navigation.address} aria-label={plan.title}>
-      <div className={css.document}><MarkdownText text={plan.markdown} labels={labels} /></div>
+      <div className={css.document}>
+        <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={openFile}>
+          <MarkdownText text={plan.markdown} labels={labels} />
+        </MarkdownDelegateProvider>
+      </div>
     </section>
   )
 }

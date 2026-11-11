@@ -40,6 +40,18 @@ function bonus(orderId: string, message = 'Awarded 5.00'): AccountBonusBatch {
     }],
   }
 }
+/**
+ * Record every destination the account asks the product link service to open,
+ * without leaving the test document.
+ * @param c - the booted client whose service answers.
+ * @returns a snapshot reader over the opened destinations, in call order.
+ */
+function destinations(c: TestClient): { opened: () => string[]; spy: ReturnType<typeof vi.spyOn> } {
+  const links = c.ctx.get('externalLinks')!
+  const spy = vi.spyOn(links, 'open').mockImplementation(() => Promise.resolve('window'))
+  return { opened: () => spy.mock.calls.map(call => call[0]), spy }
+}
+
 function operations(c: TestClient): AccountSectionInjected {
   const injected: object = c.ctx.slots.entries('settings.launcher')[0]!.inject!()
   return injected as AccountSectionInjected
@@ -102,9 +114,9 @@ it('claims account balance notices from the frame-wide quota chain and declines 
 
 it('shares account actions across seats, publishes dialog ownership, and opens contextual support', async ({ start }) => {
   vi.stubGlobal(CONTACT_CONFIG_GLOBAL, { contactFormUrl: 'https://example.test/form/?prefill_device_model=old&hide_device_model=1', contactSource: 'harness' })
-  const open = vi.spyOn(window, 'open').mockReturnValue(null)
   vi.stubGlobal('dshDesktop', {})
   const c = await start()
+  const linked = destinations(c)
   const actions = operations(c)
   expect(c.ctx.slots.entries('settings.models.sign-in')[0]!.inject!()).toBe(actions)
   // The account UI follows the live theme service through the framework hook channel.
@@ -129,7 +141,7 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   actions.showLogin(false)
   expect(listener).toHaveBeenCalledTimes(2)
   actions.contactUs()
-  const signedOut = new URL(String(open.mock.calls.at(-1)![0]))
+  const signedOut = new URL(linked.opened().at(-1)!)
   expect(signedOut.searchParams.has('prefill_uid')).toBe(false)
   expect(signedOut.searchParams.get('hide_uid')).toBe('1')
   c.mock.remote.account.getProfile.mockResolvedValue(ok(profile))
@@ -139,7 +151,7 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   expect(entry.inject!()).toBe(actions)
   expect(resolveSlotLabel(entry.options.label)).toBe('Account')
   actions.contactUs()
-  const support = new URL(String(open.mock.calls.at(-1)![0]))
+  const support = new URL(linked.opened().at(-1)!)
   expect(support.searchParams.get('prefill_uid')).toBe('account-user')
   expect(support.searchParams.get('hide_uid')).toBe('1')
   expect(support.searchParams.get('hide_harness_version')).toBe('1')
@@ -156,43 +168,51 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   c.mock.streams.push('account/watch', view)
   await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().view).toEqual(view) })
   actions.contactUs()
-  const signedOutAgain = new URL(String(open.mock.calls.at(-1)![0]))
+  const signedOutAgain = new URL(linked.opened().at(-1)!)
   expect(signedOutAgain.searchParams.has('prefill_uid')).toBe(false)
   expect(signedOutAgain.searchParams.get('hide_uid')).toBe('1')
   await c.unload(SELF)
   expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)
 }, 60_000)
 
+it('sends a Platform destination the sheet links to through the product link service', async ({ start }) => {
+  vi.stubGlobal('dshDesktop', {})
+  const c = await start()
+  const linked = destinations(c)
+  operations(c).openExternalLink('https://platform.deepseek.com/usage')
+  expect(linked.opened()).toEqual(['https://platform.deepseek.com/usage'])
+}, 60_000)
+
 it('prefills the native device description from the Desktop bridge on every click', async ({ start }) => {
-  const open = vi.spyOn(window, 'open').mockReturnValue(null)
-  const deviceInfo = vi.fn(async () => 'platform=darwin; os=15.0; app_arch=arm64; cpu=Apple M3; memory_gib=16.0')
+  const deviceInfo = vi.fn(async () => 'platform=darwin; os=15.0; app_arrm64; cpu=Apple M3; memory_gib=16.0')
   vi.stubGlobal('dshDesktop', { deviceInfo })
   const c = await start()
+  const linked = destinations(c)
   const actions = operations(c)
   actions.contactUs()
-  await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
-  const first = new URL(String(open.mock.calls.at(-1)![0]))
+  await vi.waitFor(() => { expect(linked.opened()).toHaveLength(1) })
+  const first = new URL(linked.opened().at(-1)!)
   expect(first.searchParams.get('prefill_device_info'))
-    .toBe('platform=darwin; os=15.0; app_arch=arm64; cpu=Apple M3; memory_gib=16.0; screen_resolution=3024x1964')
+    .toBe('platform=darwin; os=15.0; app_arrm64; cpu=Apple M3; memory_gib=16.0; screen_resolution=3024x1964')
   expect(first.searchParams.get('hide_device_info')).toBe('1')
   deviceInfo.mockResolvedValue('platform=win32; os=10.0; app_arch=x64; memory_gib=32.0')
   vi.stubGlobal('screen', { width: 1920, height: 1080 })
   vi.stubGlobal('devicePixelRatio', 1)
   actions.contactUs()
-  await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(2) })
-  expect(new URL(String(open.mock.calls.at(-1)![0])).searchParams.get('prefill_device_info'))
+  await vi.waitFor(() => { expect(linked.opened()).toHaveLength(2) })
+  expect(new URL(linked.opened().at(-1)!).searchParams.get('prefill_device_info'))
     .toBe('platform=win32; os=10.0; app_arch=x64; memory_gib=32.0; screen_resolution=1920x1080')
   expect(deviceInfo).toHaveBeenCalledTimes(2)
 }, 60_000)
 
 it('opens the questionnaire with screen resolution when the native read fails', async ({ start }) => {
-  const open = vi.spyOn(window, 'open').mockReturnValue(null)
   const deviceInfo = vi.fn(async (): Promise<string> => { throw new Error('platform ipc unavailable') })
   vi.stubGlobal('dshDesktop', { deviceInfo })
   const c = await start()
+  const linked = destinations(c)
   operations(c).contactUs()
-  await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
-  const url = new URL(String(open.mock.calls.at(-1)![0]))
+  await vi.waitFor(() => { expect(linked.opened()).toHaveLength(1) })
+  const url = new URL(linked.opened().at(-1)!)
   expect(url.searchParams.get('prefill_device_info')).toBe('screen_resolution=3024x1964')
   expect(url.searchParams.get('hide_device_info')).toBe('1')
   expect(url.searchParams.has('prefill_app_locale')).toBe(false)
@@ -200,10 +220,10 @@ it('opens the questionnaire with screen resolution when the native read fails', 
 }, 60_000)
 
 it('reports the account sampled by the click when a native read outlasts a sign-out', async ({ start }) => {
-  const open = vi.spyOn(window, 'open').mockReturnValue(null)
   const device = Promise.withResolvers<string>()
   vi.stubGlobal('dshDesktop', { deviceInfo: vi.fn(() => device.promise) })
   const c = await start()
+  const linked = destinations(c)
   const actions = operations(c)
   c.mock.remote.account.getProfile.mockResolvedValue(ok(profile))
   c.mock.streams.push('account/watch', stored)
@@ -212,8 +232,8 @@ it('reports the account sampled by the click when a native read outlasts a sign-
   c.mock.streams.push('account/watch', view)
   await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().view).toEqual(view) })
   device.resolve('platform=darwin; os=15.0; app_arch=arm64; memory_gib=16.0')
-  await vi.waitFor(() => { expect(open).toHaveBeenCalledOnce() })
-  expect(new URL(String(open.mock.calls.at(-1)![0])).searchParams.get('prefill_uid')).toBe('account-user')
+  await vi.waitFor(() => { expect(linked.opened()).toHaveLength(1) })
+  expect(new URL(linked.opened().at(-1)!).searchParams.get('prefill_uid')).toBe('account-user')
 }, 60_000)
 
 it('publishes one avatar load and retries it through the shared Settings refresh action', async ({ start }) => {

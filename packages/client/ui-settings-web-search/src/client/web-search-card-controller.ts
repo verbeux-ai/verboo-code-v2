@@ -29,6 +29,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { WebProviderInfo, WebProviderList as ProviderList } from '@deepseek-ai/dsh-web/types'
+// Type-only: the optional `ctx.externalLinks` service merge read below.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   SettingsFormModel, settingsNumberField, settingsTextField,
@@ -180,6 +182,11 @@ export interface WebSearchCardFace extends Pick<SettingsFormActions, 'save' | 'd
   retryProviders: () => void
   /** Resolve a provider description to the active language. */
   resolveText: (text: NonNullable<WebProviderOption['description']>) => string
+  /**
+   * Open the provider's documentation through the product link service.
+   * @param url - absolute documentation destination.
+   */
+  openExternalLink: (url: string) => void
 }
 
 /** Settings scopes for the namespaces the page edits. */
@@ -530,6 +537,7 @@ export class WebSearchCardController {
       selectProvider: (field, id) => { this.select(field, id) },
       retryProviders: () => { this.refreshProviders() },
       resolveText: text => this.ctx.locale.resolveText(text),
+      openExternalLink: (url) => { void this.ctx.get('externalLinks')?.open(url) },
       save: () => { void this.save() },
       discard: () => {
         for (const form of [this.selection, this.api, this.legacy]) form.actions().discard()

@@ -2063,6 +2063,9 @@ importers:
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: workspace:*
         version: link:../../util/workspace-path
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/attachment/attachment:
     devDependencies:
@@ -3092,6 +3095,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../../client/external-links
       '@deepseek-ai/dsh-client-file-upload':
         specifier: workspace:*
         version: link:../../client/file-upload
@@ -3550,6 +3556,39 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
+
+  packages/client/external-links:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../locale
+      '@deepseek-ai/dsh-client-store':
+        specifier: workspace:*
+        version: link:../store
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:*
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:*
+        version: link:../ui-layout
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:*
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../ui-renderer
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:*
+        version: link:../ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../ui-slots
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
 
   packages/client/file-upload:
     dependencies:
@@ -4075,6 +4114,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../connection
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -5223,6 +5265,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../api/session-controller
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -5250,6 +5295,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-session':
         specifier: workspace:*
         version: link:../ui-session
+      '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
+        specifier: workspace:*
+        version: link:../ui-sidebar-documentpreview
       '@deepseek-ai/dsh-client-ui-sidebar-right':
         specifier: workspace:*
         version: link:../ui-sidebar-right
@@ -5277,6 +5325,9 @@ importers:
       '@deepseek-ai/dsh-util-crypto':
         specifier: workspace:*
         version: link:../../util/crypto
+      '@deepseek-ai/dsh-util-workspace-path':
+        specifier: workspace:*
+        version: link:../../util/workspace-path
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -5368,6 +5419,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -5775,6 +5829,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -6191,6 +6248,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -6323,6 +6383,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -6381,6 +6444,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../connection
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -7203,6 +7269,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../connection
+      '@deepseek-ai/dsh-client-external-links':
+        specifier: workspace:*
+        version: link:../external-links
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:*
         version: link:../locale
@@ -14303,6 +14372,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/sandbox/sandbox-windows-acl:
     dependencies:
@@ -15426,6 +15498,9 @@ importers:
       '@deepseek-ai/dsh-user-approval':
         specifier: workspace:*
         version: link:../../interaction/user-approval
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/settings/settings:
     dependencies:

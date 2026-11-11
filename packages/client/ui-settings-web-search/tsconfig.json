@@ -40,6 +40,9 @@
     },
     {
       "path": "../../web/web"
+    },
+    {
+      "path": "../external-links"
     }
   ]
 }

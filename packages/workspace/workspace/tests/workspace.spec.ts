@@ -18,13 +18,18 @@ import WorkspaceRegistry, {
   type workspaceDomainState,
   WorkspaceActiveSessionError,
   WorkspaceMoveInvalidError,
+  WorkspaceMoveTargetInvalidError,
   WorkspaceOrderInvalidError,
+  WorkspaceUnknownSessionError,
 } from '../src/index.ts'
-import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
+import type {
+  SessionProjectRecord, WorkspaceDomainState, WorkspaceRecord,
+} from '../src/index.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
 import * as workspacePaths from '../src/paths.ts'
 
-const DOMAIN_VERSION = 2
+/** The domain version legacy fixtures are stamped with; current media are version 3. */
+const LEGACY_DOMAIN_VERSION = 2
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: SESSION_FORMAT_VERSION,
@@ -158,20 +163,25 @@ function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:0
 }
 
 /**
- * Media written before archivedSessionIds and pinnedSessionIds existed omit
- * the fields; keeping the fixtures in that shape continuously proves the
- * schema defaults upgrade them.
+ * Media written before archivedSessionIds, pinnedSessionIds, and the
+ * `session_projects` table existed omit them; keeping the fixtures stamped with
+ * the previous domain version continuously proves the schema defaults and the
+ * accepted older version upgrade them.
  */
 type StoredDomainState = z.input<typeof workspaceDomainState>
 
 function storedPool(
   entries: Array<[string, WorkspaceRecord]>,
   state: StoredDomainState,
+  projects: Array<[string, SessionProjectRecord]> = [],
 ): MemoryMediaPool {
   const pool = new MemoryMediaPool()
-  pool.versions.set('workspace', DOMAIN_VERSION)
+  pool.versions.set('workspace', LEGACY_DOMAIN_VERSION)
   pool.media.set('workspace', {
-    tables: new Map([['workspaces', new Map<string, unknown>(entries)]]),
+    tables: new Map([
+      ['workspaces', new Map<string, unknown>(entries)],
+      ...projects.length === 0 ? [] : [['session_projects', new Map<string, unknown>(projects)] as [string, Map<string, unknown>]],
+    ]),
     global: state,
   })
   return pool
@@ -179,6 +189,11 @@ function storedPool(
 
 function storedRecord(pool: MemoryMediaPool, id: string): WorkspaceRecord {
   return pool.media.get('workspace')!.tables.get('workspaces')!.get(id) as WorkspaceRecord
+}
+
+/** The durable project assignment of one session, or undefined when the table holds none. */
+function storedProject(pool: MemoryMediaPool, sessionId: string): SessionProjectRecord | undefined {
+  return pool.media.get('workspace')!.tables.get('session_projects')?.get(sessionId) as SessionProjectRecord | undefined
 }
 
 function storedState(pool: MemoryMediaPool): WorkspaceDomainState {
@@ -772,6 +787,483 @@ describe('Workspace session ordering', () => {
     expect(workspace.sessionIds).toEqual(['s1'])
   })
 
+})
+
+describe('Session project moves', () => {
+  /**
+   * Two Workspaces the session could belong to: `origin` is where its header
+   * cwd points, `target` is where a move sends it. The header never changes, so
+   * any observable difference between them comes from the assignment.
+   */
+  async function moveFixture(name: string) {
+    const origin = await makeDir(`${name}-origin`)
+    const target = await makeDir(`${name}-target`)
+    const result = await harness({ sessions: [header('moved', origin, 100)] })
+    const originWorkspace = await result.registry.create(origin)
+    const targetWorkspace = await result.registry.create(target)
+    await originWorkspace.attachSession(SessionId('moved'))
+    return { origin, target, result, originWorkspace, targetWorkspace }
+  }
+
+  it('moves a session into the destination project and records the assignment durably', async () => {
+    const { origin, target, result, originWorkspace, targetWorkspace } = await moveFixture('move-happy')
+    onTestFinished(() => result.ctx.fiber.dispose())
+
+    const outcome = await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    expect(outcome).toEqual({
+      sessionId: 'moved',
+      workspaceId: targetWorkspace.id,
+      projectPath: target,
+      previousWorkspaceId: originWorkspace.id,
+      previousProjectPath: origin,
+    })
+    // Detached from every account and prepended to the destination.
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual([])
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(result.registry.ownerOf(SessionId('moved'))).toBe(targetWorkspace.id)
+    expect(storedProject(result.pool, 'moved')?.projectPath).toBe(target)
+    expect(storedRecord(result.pool, targetWorkspace.id).sessionIds).toEqual([SessionId('moved')])
+    expect(storedRecord(result.pool, originWorkspace.id).sessionIds).toEqual([])
+    // The move leaves no pending marker behind.
+    expect(storedState(result.pool).pendingMutation).toBeUndefined()
+    // The destination keeps prior members after the moved session.
+    await targetWorkspace.attachSession(SessionId('moved'))
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+  })
+
+  it('refuses a session with running work and writes nothing', async () => {
+    const { origin, result, originWorkspace, targetWorkspace } = await moveFixture('move-active')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const asked: SessionId[] = []
+    result.ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
+      asked.push(sessionId)
+      return [{ kind: 'probe' }, ...(await next())]
+    })
+    const writes = [...result.changes]
+
+    const refusal = await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+      .then(() => undefined, (error: unknown) => error as Error & { sessionId: string; activity: unknown })
+    expect(refusal?.name).toBe('WorkspaceActiveSessionError')
+    expect(refusal?.sessionId).toBe('moved')
+    expect(refusal?.activity).toEqual([{ kind: 'probe' }])
+    expect(refusal?.message).toContain('cannot move session')
+    expect(asked).toEqual(['moved'])
+    // Nothing was written: same accounting, no assignment, no marker.
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual([])
+    expect(storedProject(result.pool, 'moved')).toBeUndefined()
+    expect(storedState(result.pool).pendingMutation).toBeUndefined()
+    expect(result.changes).toEqual(writes)
+    expect(origin).toBeDefined()
+  })
+
+  it('with stopActivity, moves the session and then asks providers to stop its work', async () => {
+    const { result, targetWorkspace } = await moveFixture('move-stop')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const order: string[] = []
+    result.ctx.on('workspace/session-activity', async ({ sessionId }, next) => {
+      order.push(`activity:${sessionId}`)
+      return [{ kind: 'probe' }, ...(await next())]
+    })
+    result.ctx.on('workspace/session-stop', ({ sessionId }) => { order.push(`stop:${sessionId}`) })
+    result.ctx.on('domain/changed', (change) => {
+      if (change.table === 'session_projects') order.push('assignment')
+    })
+
+    await result.registry.moveSession(SessionId('moved'), targetWorkspace.id, { stopActivity: true })
+    // The assignment is durable before any stop-induced wake can observe it.
+    expect(order[0]).toBe('assignment')
+    expect(order).toContain('stop:moved')
+    expect(order.some(entry => entry.startsWith('activity:'))).toBe(false)
+    expect(result.registry.ownerOf(SessionId('moved'))).toBe(targetWorkspace.id)
+  })
+
+  it('rejects an unknown destination, a destination without a directory, and an unknown session', async () => {
+    const { result, originWorkspace, targetWorkspace } = await moveFixture('move-invalid')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    await expect(result.registry.moveSession(SessionId('moved'), WorkspaceId('absent')))
+      .rejects.toBeInstanceOf(WorkspaceMoveTargetInvalidError)
+    await expect(result.registry.moveSession(SessionId('moved'), WorkspaceId('absent')))
+      .rejects.toThrow(/the registry holds no such workspace/)
+
+    await rm(targetWorkspace.path, { recursive: true })
+    await expect(result.registry.moveSession(SessionId('moved'), targetWorkspace.id))
+      .rejects.toThrow(/does not exist/)
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(storedProject(result.pool, 'moved')).toBeUndefined()
+
+    await expect(result.registry.moveSession(SessionId('ghost'), WorkspaceId('absent')))
+      .rejects.toBeInstanceOf(WorkspaceMoveTargetInvalidError)
+  })
+
+  it('rejects a session neither live nor persisted, leaving state untouched', async () => {
+    const { result, originWorkspace, targetWorkspace } = await moveFixture('move-unknown')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    await expect(result.registry.moveSession(SessionId('ghost'), targetWorkspace.id))
+      .rejects.toBeInstanceOf(WorkspaceUnknownSessionError)
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual([])
+    expect(storedProject(result.pool, 'ghost')).toBeUndefined()
+    expect(storedState(result.pool).pendingMutation).toBeUndefined()
+  })
+
+  it('treats a move onto the current project as already true without writing', async () => {
+    const { result, targetWorkspace } = await moveFixture('move-idempotent')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    const writes = [...result.changes]
+
+    const repeat = await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    expect(repeat.workspaceId).toBe(targetWorkspace.id)
+    expect(repeat.projectPath).toBe(targetWorkspace.path)
+    expect(result.changes).toEqual(writes)
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+  })
+
+  it('keeps membership resolving through the assignment after restart and never double-books the session', async () => {
+    const origin = await makeDir('move-restart-origin')
+    const target = await makeDir('move-restart-target')
+    const headers = [header('moved', origin, 100)]
+    const first = await harness({ sessions: headers })
+    onTestFinished(() => first.ctx.fiber.dispose())
+    const originWorkspace = await first.registry.create(origin)
+    const targetWorkspace = await first.registry.create(target)
+    await originWorkspace.attachSession(SessionId('moved'))
+    await first.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    const pool = first.pool
+    await first.ctx.fiber.dispose()
+
+    // A restart reads the assignment, so the session stays in the destination
+    // even though its immutable header still names the original project.
+    const restarted = await harness({ pool, sessions: headers })
+    onTestFinished(() => restarted.ctx.fiber.dispose())
+    expect(restarted.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(restarted.registry.get(originWorkspace.id)!.sessionIds).toEqual([])
+    expect(restarted.registry.ownerOf(SessionId('moved'))).toBe(targetWorkspace.id)
+    expect(storedProject(pool, 'moved')?.projectPath).toBe(target)
+  })
+
+  it('completes an interrupted move from its pending marker', async () => {
+    const origin = await makeDir('move-crash-origin')
+    const target = await makeDir('move-crash-target')
+    const originId = WorkspaceId('00000000-0000-4000-8000-000000000011')
+    const targetId = WorkspaceId('00000000-0000-4000-8000-000000000012')
+    // The crash happened after the assignment and the detach but before the
+    // destination prepend: the session is accounted nowhere and the marker
+    // names the move.
+    const interrupted = storedPool(
+      [[originId, record(origin, [])], [targetId, record(target, [])]],
+      {
+        initialized: true,
+        workspaceIds: [targetId, originId],
+        pendingMutation: { operation: 'move', sessionId: SessionId('moved'), workspaceId: targetId },
+      },
+      [['moved', { projectPath: target, assignedAt: '2026-07-24T00:00:00.000Z' }]],
+    )
+    const recovered = await harness({ pool: interrupted, sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => recovered.ctx.fiber.dispose())
+
+    expect(recovered.registry.get(targetId)!.sessionIds).toEqual(['moved'])
+    expect(recovered.registry.get(originId)!.sessionIds).toEqual([])
+    expect(storedState(interrupted).pendingMutation).toBeUndefined()
+    expect(storedRecord(interrupted, targetId).sessionIds).toEqual([SessionId('moved')])
+  })
+
+  it('recovers a marker left by a crash between the detach and the assignment', async () => {
+    const origin = await makeDir('move-crash-assign-origin')
+    const target = await makeDir('move-crash-assign-target')
+    const originId = WorkspaceId('00000000-0000-4000-8000-000000000013')
+    const targetId = WorkspaceId('00000000-0000-4000-8000-000000000014')
+    // The crash happened before the assignment write: the session is still
+    // accounted by the origin, and the marker must still land it in the
+    // destination rather than leave it double-booked.
+    const interrupted = storedPool(
+      [[originId, record(origin, ['moved'])], [targetId, record(target, [])]],
+      {
+        initialized: true,
+        workspaceIds: [targetId, originId],
+        pendingMutation: { operation: 'move', sessionId: SessionId('moved'), workspaceId: targetId },
+      },
+    )
+    const recovered = await harness({ pool: interrupted, sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => recovered.ctx.fiber.dispose())
+
+    expect(recovered.registry.get(targetId)!.sessionIds).toEqual(['moved'])
+    expect(recovered.registry.get(originId)!.sessionIds).toEqual([])
+    expect(storedProject(interrupted, 'moved')?.projectPath).toBe(target)
+  })
+
+  it('treats a repeat move of an unmapped session as already true and names no previous project', async () => {
+    const target = await makeDir('move-idempotent-unmapped')
+    const targetId = WorkspaceId('00000000-0000-4000-8000-000000000017')
+    // The destination accounts the session while no indexed header cwd and no
+    // assignment resolve a project for it, which is the shape a legacy account
+    // takes before the session's header is read.
+    const pool = storedPool(
+      [[targetId, record(target, ['moved'])]],
+      { initialized: true, workspaceIds: [targetId] },
+    )
+    const result = await harness({ pool })
+    onTestFinished(() => result.ctx.fiber.dispose())
+
+    const repeat = await result.registry.moveSession(SessionId('moved'), targetId)
+    expect(repeat).toEqual({
+      sessionId: 'moved',
+      workspaceId: targetId,
+      projectPath: target,
+      previousWorkspaceId: targetId,
+    })
+    expect(repeat.previousProjectPath).toBeUndefined()
+    // Nothing was written: the requested end state already held.
+    expect(storedProject(pool, 'moved')).toBeUndefined()
+    expect(storedState(pool).pendingMutation).toBeUndefined()
+  })
+
+  it('keeps the pending marker and reports both attempts when a move cannot be written', async () => {
+    const origin = await makeDir('move-write-failure-origin')
+    const target = await makeDir('move-write-failure-target')
+    const sessions = [header('moved', origin, 100)]
+    const pool = new MemoryMediaPool()
+    let putsAfterStart = 0
+    let failPuts = false
+    const backend = new MemoryStorageBackend(pool)
+    const flaky: StorageBackend = {
+      close: () => backend.close(),
+      kv: {
+        open: async (descriptor) => {
+          const unit = await backend.kv.open(descriptor)
+          return {
+            loadAll: () => unit.loadAll(),
+            putRecord: async (table, key, value) => {
+              if (failPuts) {
+                putsAfterStart += 1
+                throw new Error('selected assignment put failure')
+              }
+              await unit.putRecord(table, key, value)
+            },
+            deleteRecord: (table, key) => unit.deleteRecord(table, key),
+            deleteRecords: (table, keys) => unit.deleteRecords(table, keys),
+            setGlobal: value => unit.setGlobal(value),
+            close: () => unit.close(),
+          }
+        },
+      },
+    }
+    const result = await harness({ pool, sessions, backend: flaky })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const originWorkspace = await result.registry.create(origin)
+    const targetWorkspace = await result.registry.create(target)
+    await originWorkspace.attachSession(SessionId('moved'))
+
+    failPuts = true
+    const failure = await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+      .then(() => undefined, (error: unknown) => error)
+    failPuts = false
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect(putsAfterStart).toBeGreaterThan(0)
+    expect((failure as AggregateError).message).toContain('the pending marker completes the move at the next startup')
+    // The failure reported a half state honestly: the marker survives for the
+    // next startup, and no account was silently rewritten.
+    expect(storedState(pool).pendingMutation).toEqual({
+      operation: 'move',
+      sessionId: SessionId('moved'),
+      workspaceId: targetWorkspace.id,
+    })
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual(['moved'])
+
+    // A restart completes the marked move instead of leaving it half written.
+    await result.ctx.fiber.dispose()
+    const recovered = await harness({ pool, sessions })
+    onTestFinished(() => recovered.ctx.fiber.dispose())
+    expect(recovered.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(recovered.registry.get(originWorkspace.id)!.sessionIds).toEqual([])
+  })
+
+  it('leaves an already-prepended destination account untouched when completing a marked move', async () => {
+    const origin = await makeDir('move-marker-prepended-origin')
+    const target = await makeDir('move-marker-prepended-target')
+    const originId = WorkspaceId('00000000-0000-4000-8000-000000000018')
+    const targetId = WorkspaceId('00000000-0000-4000-8000-000000000019')
+    // The crash happened after the destination prepend: the session already
+    // leads the destination account, so completing the move must not rewrite it.
+    const interrupted = storedPool(
+      [[originId, record(origin, [])], [targetId, record(target, ['moved'])]],
+      {
+        initialized: true,
+        workspaceIds: [targetId, originId],
+        pendingMutation: { operation: 'move', sessionId: SessionId('moved'), workspaceId: targetId },
+      },
+      [['moved', { projectPath: target, assignedAt: '2026-07-24T00:00:00.000Z' }]],
+    )
+    const recovered = await harness({ pool: interrupted, sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => recovered.ctx.fiber.dispose())
+
+    expect(recovered.registry.get(targetId)!.sessionIds).toEqual(['moved'])
+    expect(storedRecord(interrupted, targetId).sessionIds).toEqual([SessionId('moved')])
+    expect(storedRecord(interrupted, targetId).updatedAt).toBe('2026-07-24T00:00:00.000Z')
+    expect(storedState(interrupted).pendingMutation).toBeUndefined()
+  })
+
+  it('re-prepends a moved session that the destination accounts below another member', async () => {
+    const origin = await makeDir('move-marker-below-origin')
+    const target = await makeDir('move-marker-below-target')
+    const originId = WorkspaceId('00000000-0000-4000-8000-000000000023')
+    const targetId = WorkspaceId('00000000-0000-4000-8000-000000000024')
+    // The crash left the session accounted by both workspaces: the detach ran
+    // for neither, and the destination lists it after an existing member, so
+    // completing the move must prepend it in place of the duplicate.
+    const interrupted = storedPool(
+      [[originId, record(origin, ['moved'])], [targetId, record(target, ['other', 'moved'])]],
+      {
+        initialized: true,
+        workspaceIds: [targetId, originId],
+        pendingMutation: { operation: 'move', sessionId: SessionId('moved'), workspaceId: targetId },
+      },
+    )
+    const recovered = await harness({ pool: interrupted, sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => recovered.ctx.fiber.dispose())
+
+    expect(storedRecord(interrupted, targetId).sessionIds).toEqual([SessionId('moved'), SessionId('other')])
+    expect(storedRecord(interrupted, originId).sessionIds).toEqual([])
+    expect(storedState(interrupted).pendingMutation).toBeUndefined()
+  })
+
+  it('completes a marker whose destination left the registry as a loud failure', async () => {
+    const origin = await makeDir('move-marker-missing-target-origin')
+    const originId = WorkspaceId('00000000-0000-4000-8000-000000000020')
+    const absentId = WorkspaceId('00000000-0000-4000-8000-000000000021')
+    const interrupted = storedPool(
+      [[originId, record(origin, ['moved'])]],
+      {
+        initialized: true,
+        workspaceIds: [originId],
+        pendingMutation: { operation: 'move', sessionId: SessionId('moved'), workspaceId: absentId },
+      },
+    )
+    await expect(harness({ pool: interrupted, sessions: [header('moved', origin, 100)] }))
+      .rejects.toThrow(/is absent from the registry/)
+  })
+
+  it('accepts an assignment for a session no workspace accounts', async () => {
+    const dir = await makeDir('assignment-unaccounted')
+    const id = WorkspaceId('00000000-0000-4000-8000-000000000022')
+    // A deleted Workspace removes its account but a crash can leave the
+    // assignment behind; that shape must load rather than read as corruption.
+    const pool = storedPool(
+      [[id, record(dir, [])]],
+      { initialized: true, workspaceIds: [id] },
+      [['orphaned', { projectPath: dir, assignedAt: '2026-07-24T00:00:00.000Z' }]],
+    )
+    const result = await harness({ pool })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    expect(result.registry.list()).toHaveLength(1)
+    expect(result.registry.projectPathOf(SessionId('orphaned'))).toBe(dir)
+    expect(result.registry.ownerOf(SessionId('orphaned'))).toBeUndefined()
+  })
+
+  it('keeps duplicate accounting and a divergent assignment failing loud', async () => {
+    const origin = await makeDir('move-corrupt-origin')
+    const target = await makeDir('move-corrupt-target')
+    const duplicate = storedPool(
+      [
+        [WorkspaceId('00000000-0000-4000-8000-000000000015'), record(origin, ['moved'])],
+        [WorkspaceId('00000000-0000-4000-8000-000000000016'), record(target, ['moved'])],
+      ],
+      { initialized: true, workspaceIds: [] },
+    )
+    // `initialized: true` with an empty order is already inconsistent; the
+    // duplicate account is what this case asserts, so build a consistent order.
+    duplicate.media.get('workspace')!.global = {
+      initialized: true,
+      workspaceIds: ['00000000-0000-4000-8000-000000000015', '00000000-0000-4000-8000-000000000016'],
+    }
+    await expect(harness({ pool: duplicate, sessions: [header('moved', origin, 100)] }))
+      .rejects.toThrow(/accounted by both workspace/)
+
+    const divergent = storedPool(
+      [[WorkspaceId('00000000-0000-4000-8000-000000000017'), record(origin, ['moved'])]],
+      { initialized: true, workspaceIds: ['00000000-0000-4000-8000-000000000017'] },
+      [['moved', { projectPath: target, assignedAt: '2026-07-24T00:00:00.000Z' }]],
+    )
+    await expect(harness({ pool: divergent, sessions: [header('moved', origin, 100)] }))
+      .rejects.toThrow(/is assigned to project/)
+  })
+
+  it('attaches a moved session to its assigned project rather than to its header cwd', async () => {
+    const origin = await makeDir('move-attach-origin')
+    const target = await makeDir('move-attach-target')
+    const result = await harness({ sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const originWorkspace = await result.registry.create(origin)
+    const targetWorkspace = await result.registry.create(target)
+    await originWorkspace.attachSession(SessionId('moved'))
+    await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+
+    // The attach check resolves the assignment first, so the destination
+    // accepts the session and the origin refuses it even though the stored
+    // header cwd still names the origin.
+    await targetWorkspace.attachSession(SessionId('moved'))
+    expect(targetWorkspace.sessionIds).toEqual(['moved'])
+    await originWorkspace.detachSession(SessionId('moved'))
+    await expect(originWorkspace.attachSession(SessionId('moved')))
+      .rejects.toThrow(/its project resolves to/)
+  })
+
+  it('reports the resulting ownership when the session had no workspace before', async () => {
+    const origin = await makeDir('move-unowned-origin')
+    const target = await makeDir('move-unowned-target')
+    // No header at plugin time, so the one-time bootstrap accounts nothing;
+    // the session becomes known only afterwards, as an Ungrouped conversation.
+    const result = await harness()
+    onTestFinished(() => result.ctx.fiber.dispose())
+    result.setSessions([header('loose', origin, 100)])
+    const targetWorkspace = await result.registry.create(target)
+
+    const outcome = await result.registry.moveSession(SessionId('loose'), targetWorkspace.id)
+    expect(outcome.previousWorkspaceId).toBeUndefined()
+    // The previous project was never indexed for this Ungrouped session, so the
+    // outcome names only what the move established.
+    expect(outcome.previousProjectPath).toBeUndefined()
+    expect(outcome.workspaceId).toBe(targetWorkspace.id)
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['loose'])
+  })
+
+  it('drops the assignment when the session is deleted', async () => {
+    const { result, targetWorkspace } = await moveFixture('move-delete')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    await result.registry.deleteSession(SessionId('moved'))
+    expect(storedProject(result.pool, 'moved')).toBeUndefined()
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual([])
+  })
+
+  it('reports a move that could not be completed instead of publishing a half state', async () => {
+    const { result, originWorkspace, targetWorkspace } = await moveFixture('move-write-failure')
+    onTestFinished(() => result.ctx.fiber.dispose())
+    // Every write rejects: the marker write itself goes first, so the move
+    // reports the failure with nothing changed.
+    result.pool.failNextWrites = 1
+    await expect(result.registry.moveSession(SessionId('moved'), targetWorkspace.id)).rejects.toThrow()
+    expect(result.registry.get(originWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(result.registry.get(targetWorkspace.id)!.sessionIds).toEqual([])
+    expect(storedState(result.pool).pendingMutation).toBeUndefined()
+    expect(storedProject(result.pool, 'moved')).toBeUndefined()
+  })
+
+  it('keeps a completed move across a restart and clears its marker', async () => {
+    const { origin, target, result, originWorkspace, targetWorkspace } = await moveFixture('move-restart-clean')
+    const pool = result.pool
+    await result.registry.moveSession(SessionId('moved'), targetWorkspace.id)
+    expect(storedState(pool).pendingMutation).toBeUndefined()
+    await result.fiber.dispose()
+
+    const restarted = await harness({ pool, sessions: [header('moved', origin, 100)] })
+    onTestFinished(() => restarted.ctx.fiber.dispose())
+    expect(restarted.registry.get(targetWorkspace.id)!.sessionIds).toEqual(['moved'])
+    expect(restarted.registry.get(originWorkspace.id)!.sessionIds).toEqual([])
+    expect(storedState(pool).pendingMutation).toBeUndefined()
+    expect(storedProject(pool, 'moved')?.projectPath).toBe(target)
+  })
 })
 
 describe('header-validated membership projection', () => {

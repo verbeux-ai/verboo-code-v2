@@ -47,9 +47,18 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       : turnProcess.spec.answerStep === data.step && turnProcess.spec.inlineReasoning)
     && !turnProcess.open
   const revealProcess = useCallback(() => { turnProcess?.setOpen(true) }, [turnProcess])
+  // A Turn owns one reply row per Assistant step, so a mark drawn on every row
+  // repeats once per step. The Turn tail names exactly one closing reply: mark
+  // there. Without tail data, the Turn process control's answer step still
+  // names one settled row; a Turn exposing neither marks its settled row.
+  const closing = owner !== undefined
+    || (tail === undefined && data.status === 'settled'
+      && (turnProcess === undefined || turnProcess.spec.answerStep === data.step))
   return (
     <div className={css.message}>
-      <div className={css.mark} data-chat-assistant-mark>{groupPart !== 'reasoning' && renderSlot('conversation.chat.assistant.mark', {})}</div>
+      <div className={css.mark} data-chat-assistant-mark>
+        {groupPart !== 'reasoning' && renderSlot('conversation.chat.assistant.mark', { closing })}
+      </div>
       <div className={css.content}><AssistantMarkdown
         blocks={data.blocks}
         groupPart={groupPart}

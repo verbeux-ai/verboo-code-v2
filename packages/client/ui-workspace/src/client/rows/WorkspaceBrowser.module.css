@@ -621,6 +621,78 @@
   overflow-wrap: anywhere;
 }
 
+/* The move-to-project dialog's destination list and its empty fallback. */
+.moveChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+}
+
+.moveChoice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0.5px solid transparent;
+  border-radius: var(--dsw-radius-lg);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .moveChoice:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.moveChoice[aria-checked='true'] {
+  border-color: var(--dsw-alias-border-l4);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.moveChoice:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.moveChoiceLabel {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.moveChoicePath {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.moveEmpty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The refusal listing what keeps a conversation from moving. */
+.moveBlocked {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.moveBlocked li {
+  overflow-wrap: anywhere;
+}
+
 @media (pointer: coarse) {
   .searchInput,
   .renameInput {
