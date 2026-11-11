@@ -87,6 +87,7 @@ function renderTab(state: Partial<DiscoverState> = {}, dictionary: Record<Plugin
     toggleSources: vi.fn(),
     editDraft: vi.fn(), addSource: vi.fn(), removeSource: vi.fn(),
     loadDetail: vi.fn(), retryDetail: vi.fn(), detailImage: vi.fn(() => undefined),
+    openExternalLink: vi.fn<(url: string) => void>(),
   }
   const install = vi.fn()
   const openPackage = vi.fn()
@@ -294,6 +295,14 @@ describe('DiscoverSection', () => {
       .toEqual(['https://example.com/alpha#readme', '_blank', 'noopener noreferrer'])
     const repository = detail.getByRole('link', { name: 'https://github.com/o/plugins' })
     expect([repository.getAttribute('href'), repository.getAttribute('target')]).toEqual(['https://github.com/o/plugins', '_blank'])
+    // Market copy is authored outside the product, so its destinations take the
+    // same exit as every other link; a modified click keeps the native meaning.
+    fireEvent.click(homepage, { metaKey: true })
+    expect(actions.openExternalLink).not.toHaveBeenCalled()
+    fireEvent.click(homepage)
+    expect(actions.openExternalLink).toHaveBeenLastCalledWith('https://example.com/alpha#readme')
+    fireEvent.click(repository)
+    expect(actions.openExternalLink).toHaveBeenLastCalledWith('https://github.com/o/plugins')
     expect(detail.getByText(en.factSourceCode)).toBeTruthy()
     expect(detail.getByText('packages/a')).toBeTruthy()
     fireEvent.click(detail.getByRole('button', { name: 'Install Alpha' }))

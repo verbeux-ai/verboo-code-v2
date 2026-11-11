@@ -33,6 +33,25 @@ function ctxWith(namespaces: object) {
   return { remote: namespaces } as never
 }
 
+/**
+ * A context whose optional link service answers, so the page's one external
+ * destination can be observed.
+ * @param namespaces - Remote namespaces the controller calls.
+ * @returns the context and the recorded destinations.
+ */
+function ctxWithLinks(namespaces: object) {
+  const opened: string[] = []
+  return {
+    ctx: {
+      remote: namespaces,
+      get: (name: string) => name === 'externalLinks'
+        ? { open: (url: string) => { opened.push(url); return Promise.resolve('window' as const) } }
+        : undefined,
+    } as never,
+    opened,
+  }
+}
+
 /** Providers the shipped composition registers, in registration order. */
 const SHIPPED_PROVIDERS = {
   search: [{ id: 'deepseek-search-api' }, { id: 'deepseek-official' }],
@@ -122,6 +141,18 @@ async function keyBench(legacy: WebLegacySettings = {}) {
   await Promise.resolve()
   return b
 }
+
+describe('WebSearchCardController', () => {
+  it('sends the provider guide through the product link service', () => {
+    const api = remoteApi(true)
+    const links = ctxWithLinks({
+      credentials: { describe: api.describe, set: api.set }, web: { listProviders: api.listProviders },
+    })
+    const b = bench({ ctx: links.ctx })
+    b.face.openExternalLink('https://api-docs.deepseek.com/guides/search_docs')
+    expect(links.opened).toEqual(['https://api-docs.deepseek.com/guides/search_docs'])
+  })
+})
 
 describe('WebSearchCardController legacy key', () => {
   it('reads the key reference once per settings publication wave after the eager read', async () => {

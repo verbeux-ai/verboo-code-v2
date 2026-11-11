@@ -1,4 +1,6 @@
 /** Product composition uses the Harness's public services and typed slots. */
+// The Desktop bridge's global declaration is owned by the link service that routes through it.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -38,7 +40,7 @@ import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
-import { BrandMark } from './Brand.tsx'
+import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
@@ -46,11 +48,6 @@ import { ConnectionsPage } from './Connections.tsx'
 /** Product replacement for optional diagnostic readouts. */
 function OmittedDiagnostic() { return null }
 
-declare global {
-  var __VERBOO_DESKTOP__:
-    | { framework: 'tauri'; openExternal(url: string): Promise<void> }
-    | undefined
-}
 export const inject = [
   'slots',
   'configForms',
@@ -125,10 +122,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     locale: ctx.locale.getLocale().active,
     timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
   })
-  const navigation = new ExternalNavigation(
-    () => globalThis.__VERBOO_DESKTOP__,
-    () => window.open('about:blank', '_blank'),
-  )
+  // Account handoffs reserve their destination inside the click and then open
+  // the Host-issued URL; the product link service owns both steps.
+  const navigation = new ExternalNavigation(() => ctx.get('externalLinks'))
   const open = (url: string) => navigation.open(url)
   ctx.effect(() => () =>{  navigation.release() }, 'Verboo: browser reservations')
   const model = new ProductModel(
@@ -450,7 +446,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('conversation.chat.assistant.mark', () =>
-    ctx.slots.register({ name: 'conversation.chat.assistant.mark' }, BrandMark),
+    ctx.slots.register({ name: 'conversation.chat.assistant.mark' }, AssistantMark),
   )
   ctx.slots.inject('conversation.input.context', () =>
     ctx.slots.register({ name: 'conversation.input.context' }, OmittedDiagnostic),

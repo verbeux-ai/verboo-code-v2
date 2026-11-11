@@ -43,7 +43,8 @@ function mountBrowser(navigation?: { readonly url?: string },
   if (options.initial !== undefined) store.actions.replace(TAB, options.initial)
   const lifetime = new AbortController()
   lifetimes.add(lifetime)
-  const injected = createBrowserControllers(store.actions, options.createPage ?? createIframePage, () => true)
+  const external = vi.fn<(url: string) => void>()
+  const injected = createBrowserControllers(store.actions, options.createPage ?? createIframePage, () => true, external)
   controllers.push(injected)
   const { keyedHooks, ...commands } = injected
   const tabActions = { bindCommands: vi.fn<ReturnType<BrowserBodyProps['useTabInfo']>['tab']['actions']['bindCommands']>(() => vi.fn()), openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
@@ -73,7 +74,7 @@ function mountBrowser(navigation?: { readonly url?: string },
     }
   const renderBody = () => render(<BrowserBody {...props as BrowserBodyProps} />)
   return {
-    view: renderBody(), remount: renderBody, store, lifetime, injected, tabActions,
+    view: renderBody(), remount: renderBody, store, lifetime, injected, tabActions, external,
   }
 }
 
@@ -186,7 +187,6 @@ describe('BrowserBody', () => {
   })
 
   it('marks later frame loads unknown and limits unsafe toolbar actions', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     const mounted = mountBrowser()
     const input = mounted.view.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'https://example.com/one' } })
@@ -209,7 +209,7 @@ describe('BrowserBody', () => {
     expect(mounted.view.getByRole('button', { name: zh.external })).toHaveProperty('disabled', true)
     expect(mounted.view.getByRole('button', { name: zh.reload })).toHaveProperty('disabled', false)
     fireEvent.click(mounted.view.getByRole('button', { name: zh.external }))
-    expect(open).not.toHaveBeenCalled()
+    expect(mounted.external).not.toHaveBeenCalled()
 
     fireEvent.click(mounted.view.getByRole('button', { name: zh.reload }))
     expect(mounted.store.getSnapshot().byTab[TAB]?.navigation).toEqual({ status: 'loading', revision: revision + 1 })
@@ -247,14 +247,13 @@ describe('BrowserBody', () => {
     expect(mounted.view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost:5173/')
   })
 
-  it('opens known Web targets externally and consumes an initial typed navigation', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+  it('hands known Web targets to the system browser and consumes an initial typed navigation', async () => {
     const mounted = mountBrowser({ url: 'https://initial.example/path' })
     const input = mounted.view.getByRole('textbox') as HTMLInputElement
     await waitFor(() => { expect(input.value).toBe('https://initial.example/path') })
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')).not.toBeNull() })
     fireEvent.click(mounted.view.getByRole('button', { name: zh.external }))
-    expect(open).toHaveBeenCalledWith('https://initial.example/path', '_blank', 'noopener,noreferrer')
+    expect(mounted.external).toHaveBeenCalledWith('https://initial.example/path')
   })
 
   it('keeps a rejected initial URL in the address input for editing', async () => {

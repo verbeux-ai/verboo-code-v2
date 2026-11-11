@@ -71,6 +71,9 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
 
   const unknown = frame.address === 'unknown'
   const externalUrl = unknown ? undefined : target?.url
+  // The toolbar's system-browser action goes through the product link service,
+  // so one destination policy covers the page as well as every other link.
+  const openExternal = props.openExternal
   const sandboxed = frame.sandboxEnabled
   const failure = state?.addressFailure
   const error = frame.error
@@ -97,7 +100,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
           <button type="submit" className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>
         </div>
         <button type="button" className={css.tool} aria-label={t('external')} title={t('external')} disabled={externalUrl === undefined}
-          onClick={externalUrl === undefined ? undefined : () => { window.open(externalUrl, '_blank', 'noopener,noreferrer') }}
+          onClick={externalUrl === undefined ? undefined : () => { openExternal(externalUrl) }}
         ><IconRightUpOutlineRegular size={14} /></button>
         {sandboxed !== undefined && <button
           type="button"

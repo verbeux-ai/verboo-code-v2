@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
-import { LinkIconMedium, WebBlock as LocalizedWebBlock } from '../src/index.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render } from '@testing-library/react'
+import { LinkIconMedium, MarkdownDelegateProvider, WebBlock as LocalizedWebBlock } from '../src/index.ts'
 import type {
   WebFetchBlockProps, WebSearchBlockProps, WebSourceView,
 } from '../src/index.ts'
@@ -106,6 +106,23 @@ describe('WebBlock search card', () => {
     expect(anchor.getAttribute('href')).toBe('https://example.com/a')
     expect(anchor.getAttribute('target')).toBe('_blank')
     expect(anchor.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('hands a citation click to the nearest Markdown owner and keeps modified clicks native', () => {
+    const openExternalLink = vi.fn<(href: string) => void>()
+    const view = render(
+      <MarkdownDelegateProvider openExternalLink={openExternalLink}>
+        <WebBlock kind="search" truncated={false} sources={[{ url: 'https://example.com/a', title: 'Titled' }]} />
+      </MarkdownDelegateProvider>,
+    )
+    const anchor = view.getByText('Titled')
+    // A modified click keeps the browser's own meaning: new tab, new window, download.
+    for (const modified of [{ button: 1 }, { metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
+      fireEvent.click(anchor, modified)
+    }
+    expect(openExternalLink).not.toHaveBeenCalled()
+    fireEvent.click(anchor)
+    expect(openExternalLink).toHaveBeenCalledWith('https://example.com/a')
   })
 
   it("leads a source and a fetched url on a known site with that site's mark", () => {

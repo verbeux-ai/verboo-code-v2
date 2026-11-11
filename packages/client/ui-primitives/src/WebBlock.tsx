@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { MarkdownText, type MarkdownLabels } from './markdown/MarkdownText.tsx'
+import { useMarkdownDelegate } from './markdown/MarkdownDelegate.tsx'
 import { LinkIconMedium } from './LinkIcon.tsx'
 import css from './WebBlock.module.css'
 
@@ -108,10 +109,21 @@ function linkLabel(url: string, title: string | undefined): string {
  * @returns the anchor or span element.
  */
 function SafeLink({ url, label, className }: { url: string; label: string; className?: string | undefined }) {
+  const { openExternalLink } = useMarkdownDelegate()
   const href = safeHref(url)
   if (href === undefined) return <span className={className}>{label}</span>
   return (
-    <a className={className} href={href} target="_blank" rel="noopener noreferrer">
+    <a
+      className={className}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={openExternalLink === undefined ? undefined : (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        openExternalLink(href)
+      }}
+    >
       <LinkIconMedium kind="url" href={href} className={css.linkIcon} />
       {label}
     </a>

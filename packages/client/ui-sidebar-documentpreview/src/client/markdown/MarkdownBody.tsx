@@ -1,8 +1,10 @@
 /** One retained Markdown renderer over the document owner's accumulated text. */
 import { lazy, Suspense, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { MarkdownText, type MarkdownLabels, type MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  MarkdownDelegateProvider, MarkdownText, type MarkdownLabels, type MarkdownPathImages,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { splitFrontmatter } from './frontmatter.ts'
 import type { FrontmatterFieldsProps } from './frontmatter-fields.tsx'
@@ -21,8 +23,20 @@ const FrontmatterFields = lazy(() => import('./frontmatter-fields.tsx').then(
   () => ({ default: FrontmatterFallback }),
 ))
 
-/** Standard document inputs and this implementation's locale. */
-export type MarkdownBodyProps = DocumentPreviewProps & PropsLocale<'documentMarkdown'>
+/** Link activation supplied by the plugin: the product link service, or none. */
+export interface MarkdownBodyInjected {
+  /** Ordinary activation of a destination inside the previewed document. */
+  readonly openExternalLink: ((url: string) => void) | undefined
+  /**
+   * Open a relative file the document links to.
+   * @param path - absolute or workspace-relative path.
+   * @param options - first line to reveal.
+   */
+  readonly openFile: ((path: string, options?: { line?: number }) => void) | undefined
+}
+
+/** Standard document inputs, this implementation's locale, and its link activation. */
+export type MarkdownBodyProps = DocumentPreviewProps & PropsLocale<'documentMarkdown'> & InjectFace<MarkdownBodyInjected>
 
 /**
  * Render one accumulated document; EOF completes the primitive's full parse.
@@ -31,7 +45,7 @@ export type MarkdownBodyProps = DocumentPreviewProps & PropsLocale<'documentMark
  * @param props - owner-loaded contents and localized primitive labels.
  * @returns Markdown content, or nothing for a non-text delivery.
  */
-export function MarkdownBody({ content, resourceAddress, useResource, t }: MarkdownBodyProps): ReactNode {
+export function MarkdownBody({ content, resourceAddress, useResource, openExternalLink, openFile, t }: MarkdownBodyProps): ReactNode {
   const absolutePath = useResource<'file'>(resourceAddress).value?.absolutePath
   const pathImages = useMemo<MarkdownPathImages>(() => ({
     resolve: value => markdownImageUrl(document.baseURI, absolutePath, value),
@@ -51,7 +65,9 @@ export function MarkdownBody({ content, resourceAddress, useResource, t }: Markd
   return (
     <div className={css.document} data-document-markdown>
       {split === undefined ? null : <FrontmatterBox source={split.source} />}
-      <MarkdownText text={split?.body ?? text} streaming={!content.eof} labels={labels} pathImages={pathImages} />
+      <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={openFile}>
+        <MarkdownText text={split?.body ?? text} streaming={!content.eof} labels={labels} pathImages={pathImages} />
+      </MarkdownDelegateProvider>
     </div>
   )
 }

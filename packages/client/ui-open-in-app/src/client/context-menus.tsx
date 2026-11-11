@@ -117,7 +117,7 @@ export function registerContextMenus(
       { id: 'sidebar', icon: { key: 'open-in-app.sidebar' }, label: t('menu.openInSidebar'), disabled: ctx.sidebarRightTabs.get('browser') === undefined,
         run: () => { ctx.sidebarRight.openTabIn(sessionId, 'browser', { params: { url } }) } },
       { id: 'external', label: t('menu.external'),
-        run: () => { window.open(url, '_blank', 'noopener,noreferrer') } },
+        run: () => { void ctx.get('externalLinks')?.open(url) } },
       { id: 'copy', icon: { key: 'open-in-app.copy' }, failureLabel: t('menu.copyFailed'), label: t('menu.copyLink'), run: async () => {
         await navigator.clipboard.writeText(url); ctx.contextMenus.notify(t('menu.copied'), true)
       } },

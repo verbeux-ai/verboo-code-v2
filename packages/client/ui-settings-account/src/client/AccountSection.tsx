@@ -12,6 +12,8 @@ import type { AccountAvatarSnapshot } from './account-avatar.ts'
 import { authorizeUrlWithTheme } from './authorize-url.ts'
 import type { BonusNotice } from './bonus-notices.ts'
 import css from './AccountSection.module.css'
+// Type-only: the optional `ctx.externalLinks` service merge read below.
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 
 /** Safe account snapshot shared by the settings page and launcher. */
 export interface AccountSnapshot {
@@ -54,6 +56,11 @@ export interface AccountSectionInjected {
   subscribeModelSignInRequired?: (listener: () => void) => () => void
   /** Desktop-only: show one page in the account feature's shared native host; absent in ordinary browsers. */
   openPlatformPage?: PlatformPages['open']
+  /**
+   * Ordinary activation of a Platform destination, through the product link service.
+   * @param url - absolute destination from the account links.
+   */
+  openExternalLink: (url: string) => void
 
   /** Account stream owned by the Host and theme snapshots published by the renderer, observed through framework hooks. */
   hooks: {
@@ -90,7 +97,9 @@ export interface AccountSectionInjected {
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
 /** @param props - localized actions, account subscription, and the shared Platform page channel. @returns account settings UI. */
-export function AccountSection({ t, useAccount, useTheme, start, cancel, openPlatformPage, avatarFailed }: AccountSectionProps) {
+export function AccountSection({
+  t, useAccount, useTheme, start, cancel, openPlatformPage, openExternalLink, avatarFailed,
+}: AccountSectionProps) {
   const { view: state, details, avatar, failed: streamFailed } = useAccount(value => value)
   const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   // The shared host owns the native view; this page holds only its own request,
@@ -106,6 +115,8 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
   const attempt = state?.attempt
   const active = attempt !== null && attempt !== undefined
     && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(attempt.phase)
+  // A narrowed const keeps the property's refinement inside the anchor's click closure.
+  const authorizeUrl = attempt?.authorizeUrl
   const signedIn = state?.status === 'credential-stored'
   useEffect(() => () => { releasePage.current?.(); releasePage.current = undefined }, [])
   useEffect(() => {
@@ -123,11 +134,30 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
     try { await action() } catch { setFailed(true) } finally { setBusy(false) }
   }
   /**
+   * Route a Platform destination through the embedded page on Desktop and the
+   * product link service elsewhere. Modified clicks keep native behavior, and a
+   * read that has not produced a link yet leaves the click inert.
    * @param event - click on a Platform destination link.
-   * @returns nothing; on Desktop the embedded page replaces the pending navigation.
+   * @param page - embedded page to show instead of leaving the app.
+   * @param url - destination the anchor carries, absent before the read lands.
+   * @returns nothing.
    */
-  const openUsage = (event: MouseEvent<HTMLAnchorElement>): void => {
-    if (openPlatformPage !== undefined && signedIn) { event.preventDefault(); showPage(openPlatformPage, 'usage') }
+  const openPlatform = (event: MouseEvent<HTMLAnchorElement>, page: PlatformPage, url: string): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    if (openPlatformPage !== undefined && signedIn) { showPage(openPlatformPage, page); return }
+    openExternalLink(url)
+  }
+  /**
+   * Send a destination the sheet shows outside the embedded Platform pages.
+   * @param event - click on the anchor carrying it.
+   * @param url - destination the anchor carries.
+   * @returns nothing.
+   */
+  const openElsewhere = (event: MouseEvent<HTMLAnchorElement>, url: string): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    openExternalLink(url)
   }
   /**
    * The Platform entry the balance rows share with the Usage action: an embedded page on
@@ -138,9 +168,11 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
    * @param className - link treatment for the row that renders it, absent when the sheet has no such rule.
    * @returns the Platform anchor.
    */
+  // The signed-out branch above returns without a read, so every anchor below has one.
+  const links = state?.links ?? { usageUrl: '', topUpUrl: '' }
   const platformLink = (label: string, className: string | undefined) => (
-    <a className={className} href={state?.links.usageUrl} aria-disabled={state === undefined}
-      target="_blank" rel="noreferrer" onClick={openUsage}>{label}</a>
+    <a className={className} href={links.usageUrl} target="_blank" rel="noreferrer"
+      onClick={(event) => { openPlatform(event, 'usage', links.usageUrl) }}>{label}</a>
   )
   const status = failed || streamFailed || attempt?.phase === 'failed' ? t('failed')
     : attempt?.phase === 'expired' ? t('expired')
@@ -172,13 +204,15 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
             <span className={css.status} role="status">{status}</span>
           </div>
         </div>
-        {signedIn && <a className={css.accountInfo} href={new URL('/', state.links.usageUrl).href} target="_blank" rel="noopener noreferrer">
+        {signedIn && <a className={css.accountInfo} href={new URL('/', links.usageUrl).href} target="_blank" rel="noopener noreferrer"
+          onClick={(event) => { openElsewhere(event, new URL('/', links.usageUrl).href) }}>
           {t('accountInfo')}<IconRightUpOutlineRegular size={12} />
         </a>}
       </div>
       {active && <div className={css.actions}>
-        {attempt.authorizeUrl && <a className={css.linkButton} href={authorizeUrlWithTheme(attempt.authorizeUrl, colorScheme)}
-          target="_blank" rel="noreferrer">
+        {authorizeUrl !== undefined && <a className={css.linkButton} href={authorizeUrlWithTheme(authorizeUrl, colorScheme)}
+          target="_blank" rel="noreferrer"
+          onClick={(event) => { openElsewhere(event, authorizeUrlWithTheme(authorizeUrl, colorScheme)) }}>
           {t('open')}
         </a>}
         <Button variant="outline" disabled={busy || attempt.phase === 'committing'}
@@ -215,9 +249,9 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
           <span className={css.secondary}>{t('more')}</span>
           <div className={css.links}>
             {platformLink(t('usage'), css.linkButton)}
-            <a className={`${css.linkButton} ${css.primary}`} href={state?.links.topUpUrl} aria-disabled={state === undefined}
+            <a className={`${css.linkButton} ${css.primary}`} href={links.topUpUrl}
               target="_blank" rel="noreferrer"
-              onClick={(event) => { if (openPlatformPage !== undefined && signedIn) { event.preventDefault(); showPage(openPlatformPage, 'top-up') } }}>{t('topUp')}</a>
+              onClick={(event) => { openPlatform(event, 'top-up', links.topUpUrl) }}>{t('topUp')}</a>
           </div>
         </div>
       </div>

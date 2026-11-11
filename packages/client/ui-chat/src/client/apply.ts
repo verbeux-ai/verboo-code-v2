@@ -1,6 +1,7 @@
 import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
 /** Register the Chat Conversation target, renderers, stats, and details surface. */
 import type {} from '@deepseek-ai/dsh-client-ui-file-drag/client'
+import type {} from '@deepseek-ai/dsh-client-external-links/client'
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -146,6 +147,17 @@ export function apply(ctx: Context): void {
     const accepted = chatSettings.getSnapshot().value?.linkOpening
     if (accepted !== undefined) linkOpening.set(accepted)
   }))
+  // Chat owns this preference; the product link service owns where the
+  // destination goes, including the Desktop native handoff Chat used to bypass.
+  // The service is optional so Chat mounts without a host that routes links.
+  const links = ctx.get('externalLinks')
+  if (links !== undefined) {
+    ctx.effect(() => {
+      const publish = (): void => { links.setPreference(linkOpening.getSnapshot()) }
+      publish()
+      return linkOpening.subscribe(publish)
+    }, 'ui-chat: link destination preference')
+  }
   ctx.inject(['sidebarRightTabs'], (scope) => {
     const tabs = scope.sidebarRightTabs
     const browserAvailable: ObservableSnapshot<boolean> = {
@@ -279,13 +291,7 @@ export function apply(ctx: Context): void {
             await Promise.resolve()
           },
           resolveFilePath: sessionFilePath(ctx, sessionId),
-          openExternalLink: (url) => {
-            if (linkOpening.getSnapshot() === 'sidebar' && ctx.get('sidebarRightTabs')?.get('browser') !== undefined) {
-              ctx.sidebarRight.openTab('browser', { params: { url } })
-            } else {
-              window.open(url, '_blank', 'noopener,noreferrer')
-            }
-          },
+          openExternalLink: (url) => { void ctx.get('externalLinks')?.open(url) },
           loadOlder: () => { void session.loadOlder() },
           loadThrough: seq => session.loadThrough(seq),
           loadImage: Object.assign(

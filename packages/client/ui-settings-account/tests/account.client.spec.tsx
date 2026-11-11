@@ -36,6 +36,8 @@ function operationsOf(state: Omit<AccountView, 'links'>, details?: Partial<Accou
       theme: { getSnapshot: () => themeOf('light'), subscribe: () => () => {} },
     },
     hasRunningAccountTasks: vi.fn(async () => false),
+    // Every Platform destination leaves through the product link service.
+    openExternalLink: vi.fn(),
     contactUs: vi.fn(), showLogin: vi.fn(), setOnboarding: vi.fn(),
     bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
     refreshAccount: vi.fn(() => Promise.resolve()),
@@ -489,13 +491,15 @@ it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' a
 
 it('opens more account information at the configured Platform origin without invoking the embedded bridge', () => {
   const platform: PlatformBridge = { open: vi.fn(), close: vi.fn(), setBounds: vi.fn() }
-  mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
   const link = screen.getByRole('link', { name: en.accountInfo })
   expect(link.getAttribute('href')).toBe('http://localhost:8081/')
   expect(link.getAttribute('target')).toBe('_blank')
   expect(link.getAttribute('rel')).toBe('noopener noreferrer')
   fireEvent.click(link)
   expect(platform.open).not.toHaveBeenCalled()
+  // The browser destination leaves through the link service, not a bare anchor.
+  expect(operations.openExternalLink).toHaveBeenCalledWith('http://localhost:8081/')
 })
 
 it.each([en, zh])('shows a localized toast when the account credential expires', async (copy) => {
@@ -551,8 +555,34 @@ it.each(['failed', 'expired'] as const)('allows a new sign-in after the attempt 
   expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
 })
 
+it('leaves modified clicks to the browser and sends ordinary ones to the link service', () => {
+  const platform: PlatformBridge = { open: vi.fn(), close: vi.fn(), setBounds: vi.fn() }
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, undefined, platform)
+  const accountInfo = screen.getByRole('link', { name: en.accountInfo })
+  // A modified click keeps its native meaning: new tab, new window, download.
+  for (const modified of [{ button: 1 }, { metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
+    fireEvent.click(accountInfo, modified)
+  }
+  expect(operations.openExternalLink).not.toHaveBeenCalled()
+  fireEvent.click(accountInfo)
+  expect(operations.openExternalLink).toHaveBeenCalledWith('http://localhost:8081/')
+})
+
+it('leaves modified Platform clicks native and opens the pending authorization link', () => {
+  const operations = mount({ status: 'signed-out', attempt: { id: 'attempt' as SignInAttemptId, phase: 'waiting-browser',
+    authorizeUrl: 'https://platform.deepseek.com/dsh/authorize' } })
+  const open = screen.getByRole('link', { name: en.open })
+  fireEvent.click(open, { metaKey: true })
+  expect(operations.openExternalLink).not.toHaveBeenCalled()
+  fireEvent.click(open)
+  expect(operations.openExternalLink).toHaveBeenCalledWith(expect.stringContaining('https://platform.deepseek.com/dsh/authorize'))
+  const usage = screen.getAllByRole('link', { name: en.usage })[0]!
+  fireEvent.click(usage, { ctrlKey: true })
+  expect(operations.openExternalLink).toHaveBeenCalledOnce()
+})
+
 it('shows unavailable details and keeps external Platform links usable in a browser', () => {
-  mount({ status: 'credential-stored', attempt: null }, en, {
+  const operations = mount({ status: 'credential-stored', attempt: null }, en, {
     profile: { status: 'failed' }, balance: { status: 'failed' },
   })
   expect(screen.getByText(en.profileUnavailable)).toBeTruthy()
@@ -561,10 +591,11 @@ it('shows unavailable details and keeps external Platform links usable in a brow
   expect(unavailable).toHaveLength(2)
   for (const link of unavailable) expect(link.getAttribute('href')).toBe('http://localhost:8081/usage')
   for (const name of [en.usage, en.topUp, en.balanceUnavailable]) {
-    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
-    screen.getAllByRole('link', { name })[0]!.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
+    fireEvent.click(screen.getAllByRole('link', { name })[0]!)
   }
+  // Without the embedded page, each destination goes to the product link service.
+  expect(operations.openExternalLink).toHaveBeenCalledWith('http://localhost:8081/usage')
+  expect(operations.openExternalLink).toHaveBeenCalledWith('http://localhost:8081/top_up')
 })
 
 it('opens the embedded Platform page from a failed balance row on Desktop', async () => {
