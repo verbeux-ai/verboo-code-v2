@@ -606,7 +606,7 @@ export class BrowserExtensionBridge {
   }
 
   private closePeer(peer: Peer, cause?: Error): void {
-    this.peers.delete(peer)
+    if (!this.peers.delete(peer)) return
     const retryingAttentionTasks = new Set([...this.pending.values()]
       .filter(pending => pending.peer === peer && pending.operation === 'attention.raise')
       .map(pending => pending.taskId))
