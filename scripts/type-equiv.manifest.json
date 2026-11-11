@@ -1922,6 +1922,16 @@
       "source": "packages/workspace/workspace/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "MoveSessionOptions",
+      "source": "packages/workspace/workspace/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "SessionMoveOutcome",
+      "source": "packages/workspace/workspace/src/index.ts"
+    },
+    {
       "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootEntry",
       "source": "packages/client/modules/src/client/manifest.ts"

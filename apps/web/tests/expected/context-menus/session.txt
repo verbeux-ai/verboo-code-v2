@@ -1,6 +1,8 @@
 Pin session
 Rename
 Fork session
+Move to project…
 Copy Session ID
 Show in folder
 Archive session
+Delete conversation

@@ -10,12 +10,6 @@
   - button "Zero line"
   - text: ·
   - button "Reversed range"
-  - text: ·
-  - link "Bare URL":
-    - /url: index.ts:24
-  - text: · Blocked script ·
-  - link "Development server":
-    - /url: localhost:3000
-  - text: ·
+  - text: · Bare URL · Blocked script · Development server ·
   - link "Mail":
     - /url: mailto:10086

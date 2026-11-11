@@ -70,10 +70,13 @@ describe.each(['MacIntel', 'Win32', 'Linux x86_64'])('web context menus on %s', 
     const menu = page.getByRole('menu')
     await menu.getByRole('menuitem', { name: /Copy.*[Ii][Dd]/ }).waitFor()
     const names = await menuLabels(menu)
-    expect(names.slice(0, 5)).toEqual(['Pin session', 'Rename', 'Fork session', 'Copy Session ID', 'Show in folder'])
-    expect(names.at(-1)).toBe('Archive session')
+    expect(names.slice(0, 6)).toEqual(['Pin session', 'Rename', 'Fork session', 'Move to project…', 'Copy Session ID', 'Show in folder'])
+    // Archive is separated from Delete by its own rule, so it is the
+    // second-to-last entry and Delete closes the list.
+    expect(names.slice(-2)).toEqual(['Archive session', 'Delete conversation'])
     expect(await menu.getByRole('menuitem').evaluateAll(rows => rows.every(row => row.querySelector('svg[data-icon]')))).toBe(true)
-    expect(await menu.getByRole('separator').count()).toBe(2)
+    // One rule before the id action, one before Archive, and one before Delete.
+    expect(await menu.getByRole('separator').count()).toBe(3)
     expect(await menu.getByRole('menuitem', { name: 'Archive session', exact: true }).evaluate(row =>
       getComputedStyle(row.parentElement!.parentElement!).borderTopWidth)).toBe('0px')
     const alignedSeparators = async () => {
