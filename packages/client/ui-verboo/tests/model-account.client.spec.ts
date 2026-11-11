@@ -223,6 +223,66 @@ describe('account identity and reads', () => {
     expect(model.state.getSnapshot().busy).toBeNull()
   })
 
+  it('keeps the verified-account marker through credential revision refreshes', async () => {
+    const refreshed = Promise.withResolvers<Awaited<ReturnType<ProductApi['profile']>>>()
+    let reads = 0
+    const { api, model } = fixture({
+      profile: vi.fn(async () => {
+        reads += 1
+        return reads === 1
+          ? { id: profileId('user-1'), name: 'Verboo', contact: null }
+          : refreshed.promise
+      }),
+    })
+
+    model.adopt(view('revision-1'))
+    await settle()
+    expect(model.state.getSnapshot()).toMatchObject({
+      profile: { id: 'user-1' },
+      profilePreviouslyVerified: true,
+      accountFailed: false,
+    })
+
+    model.adopt(view('revision-2'))
+    expect(api.profile).toHaveBeenCalledTimes(2)
+    expect(model.state.getSnapshot()).toMatchObject({
+      view: { credentialRevision: 'revision-2' },
+      profile: null,
+      profilePreviouslyVerified: true,
+      accountFailed: false,
+    })
+
+    refreshed.resolve({ id: profileId('user-1'), name: 'Verboo', contact: null })
+    await settle()
+    expect(model.state.getSnapshot()).toMatchObject({
+      profile: { id: 'user-1' },
+      profilePreviouslyVerified: true,
+      accountFailed: false,
+    })
+  })
+
+  it('keeps a failed post-verification refresh actionable', async () => {
+    let reads = 0
+    const { model } = fixture({
+      profile: vi.fn(async () => {
+        reads += 1
+        if (reads === 1) return { id: profileId('user-1'), name: 'Verboo', contact: null }
+        throw new Error('offline')
+      }),
+    })
+
+    model.adopt(view('revision-1'))
+    await settle()
+    model.adopt(view('revision-2'))
+    await settle()
+
+    expect(model.state.getSnapshot()).toMatchObject({
+      profile: null,
+      profilePreviouslyVerified: true,
+      accountFailed: true,
+    })
+  })
+
   it('keeps a failed sign-out actionable', async () => {
     const { model } = fixture({ signOut: vi.fn(async () => { throw new Error('offline') }) })
     expect(await model.signOut()).toBe(false)

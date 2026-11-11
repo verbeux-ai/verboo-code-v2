@@ -70,6 +70,7 @@ function fixture(overrides: Partial<ProductSnapshot> = {}) {
   const state: ProductSnapshot = {
     view: null,
     profile: null,
+    profilePreviouslyVerified: false,
     initialized: true,
     accountFailed: false,
     actionFailed: null,

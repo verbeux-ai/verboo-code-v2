@@ -9,8 +9,9 @@ import css from './Product.module.css'
 export function Onboarding(props: ProductProps) {
   const state = props.useProduct(s => s)
   const ref = useRef<HTMLDivElement>(null)
-  const visible =
-    state.view?.status !== 'credential-stored' || state.profile === null
+  const waitingForInitialProfileCheck = state.profile === null
+    && (!state.profilePreviouslyVerified || state.accountFailed)
+  const visible = state.view?.status !== 'credential-stored' || waitingForInitialProfileCheck
   useModalLayer(ref, visible, () => {})
   if (!visible) return null
   const phase = state.view?.attempt?.phase

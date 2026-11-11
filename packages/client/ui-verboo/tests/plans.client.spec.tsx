@@ -21,7 +21,7 @@ const subscription = (status = 'active', name = 'Pro'): Subscription => ({
 })
 function fixture(locale = 'pt') {
   const state: ProductSnapshot = {
-    view: null, profile: null, initialized: true, accountFailed: false, actionFailed: null,
+    view: null, profile: null, profilePreviouslyVerified: false, initialized: true, accountFailed: false, actionFailed: null,
     starting: false, plans: { subscriptions: [subscription()], catalog: [max, pro] },
     connections: null, plansFailed: false, connectionsFailed: false,
     loadingPlans: false, loadingConnections: false, busy: null, handoff: null,
