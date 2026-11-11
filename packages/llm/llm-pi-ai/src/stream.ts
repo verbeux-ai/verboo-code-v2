@@ -9,11 +9,50 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 import { toPiReplayState } from './replay.ts'
+
+/** Safe facts about a rejected completed tool-call response. */
+export interface MalformedToolCallDiagnostic {
+  readonly category: 'invalid_arguments' | 'missing_id' | 'missing_name' | 'duplicate_id' | 'incomplete_call'
+  readonly responseId?: string
+}
+
+/** Inspect OpenAI-compatible stream indices before pi-ai coalesces calls by id. */
+export class OpenAiToolCallIdInspection {
+  private readonly indices = new Map<string, number>()
+  private readonly ids = new Map<number, string>()
+  /** First provider response id observed for correlation. */
+  responseId: string | undefined
+  /** Whether conflicting id/index assignments were observed. */
+  duplicate = false
+
+  /** Record only correlation fields from one untrusted provider chunk.
+   * @param value - One raw provider stream event.
+   */
+  observe(value: unknown): void {
+    if (typeof value !== 'object' || value === null) return
+    if ('id' in value && typeof value.id === 'string' && value.id.length > 0) this.responseId ??= value.id
+    if (!('choices' in value) || !Array.isArray(value.choices)) return
+    const choice: unknown = value.choices[0]
+    if (typeof choice !== 'object' || choice === null || !('delta' in choice)) return
+    const delta = choice.delta
+    if (typeof delta !== 'object' || delta === null || !('tool_calls' in delta) || !Array.isArray(delta.tool_calls)) return
+    const calls: unknown[] = delta.tool_calls
+    for (const call of calls) {
+      if (typeof call !== 'object' || call === null || !('index' in call) || !('id' in call)) continue
+      const { index, id } = call
+      if (!Number.isSafeInteger(index) || typeof index !== 'number' || index < 0 || typeof id !== 'string' || id.length === 0) continue
+      if ((this.indices.has(id) && this.indices.get(id) !== index)
+        || (this.ids.has(index) && this.ids.get(index) !== id)) this.duplicate = true
+      this.indices.set(id, index)
+      this.ids.set(index, id)
+    }
+  }
+}
 
 /**
  * Map pi-ai usage (reasoning folded into output by pi-ai).
@@ -136,9 +175,10 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  * @param callerSignal - caller cancellation state; an aborted caller makes any
  *   in-band terminal error an aborted finish.
  * @param requestedModel - request model identity recorded for durable replay.
+ * @param onMalformed - optional observer of safe rejection facts, without arguments or prompt text.
  * @returns the harness chunks, ending with `usage` then `finish`; throws
  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event, or
- *   `MALFORMED_RESPONSE` when completed tool arguments are invalid. Length-limited
+ *   `MALFORMED_RESPONSE` when completed tool calls are invalid. Length-limited
  *   output retains its terminal reason so the assembler can discard incomplete calls.
  */
 export async function* toStreamChunks(
@@ -146,11 +186,14 @@ export async function* toStreamChunks(
   contextWindow?: number,
   callerSignal?: AbortSignal,
   requestedModel?: string,
+  onMalformed?: (diagnostic: MalformedToolCallDiagnostic) => void,
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
   const toolIds = new Map<number, { id: string; name: string }>()
-  let argumentsError: string | undefined
+  const openCalls = new Set<number>()
+  const completedIds = new Set<string>()
+  let malformed: { category: MalformedToolCallDiagnostic['category']; message: string } | undefined
 
   for await (const event of events) {
     switch (event.type) {
@@ -180,6 +223,8 @@ export async function* toStreamChunks(
         const id = partial?.type === 'toolCall' ? partial.id : ''
         const name = partial?.type === 'toolCall' ? partial.name : ''
         toolIds.set(event.contentIndex, { id, name })
+        if (openCalls.has(event.contentIndex)) malformed ??= { category: 'incomplete_call', message: 'Tool call started twice before completion' }
+        openCalls.add(event.contentIndex)
         yield { type: 'block-start', index: event.contentIndex, blockType: 'tool-call' }
         break
       }
@@ -195,10 +240,18 @@ export async function* toStreamChunks(
         break
       }
       case 'toolcall_end':
+        if (!openCalls.delete(event.contentIndex)) malformed ??= { category: 'incomplete_call', message: 'Tool call ended without a start' }
+        if (event.toolCall.id.length === 0) malformed ??= { category: 'missing_id', message: 'Tool call completed without an id' }
+        if (event.toolCall.name.length === 0) malformed ??= { category: 'missing_name', message: 'Tool call completed without a name' }
+        if (event.toolCall.id.length > 0) {
+          if (completedIds.has(event.toolCall.id)) malformed ??= { category: 'duplicate_id', message: 'Tool calls reused an id' }
+          completedIds.add(event.toolCall.id)
+        }
         if (event.toolCall.argumentsError !== undefined) {
-          argumentsError ??= `Tool call "${event.toolCall.name}": ${event.toolCall.argumentsError}`
+          malformed ??= { category: 'invalid_arguments', message: 'Tool call completed with invalid JSON object arguments' }
           break
         }
+        if (malformed !== undefined) break
         yield {
           type: 'block-end',
           index: event.contentIndex,
@@ -214,8 +267,14 @@ export async function* toStreamChunks(
         break
       case 'done':
         yield { type: 'usage', usage: mapUsage(event.message.usage) }
-        if (argumentsError !== undefined && event.message.stopReason !== 'length') {
-          throw new LlmError(argumentsError, 'MALFORMED_RESPONSE')
+        if ([...openCalls].some(index => event.message.content[index]?.type === 'toolCall')) {
+          malformed ??= { category: 'incomplete_call', message: 'Tool call did not complete' }
+        }
+        if (malformed !== undefined && event.message.stopReason !== 'length') {
+          const responseId = event.message.responseId
+          onMalformed?.({ category: malformed.category, ...responseId ? { responseId } : {} })
+          throw new LlmError(malformed.message, 'MALFORMED_RESPONSE',
+            responseId ? { requestId: ProviderRequestId(responseId) } : undefined)
         }
         yield {
           type: 'finish',

@@ -21,6 +21,8 @@ export interface Config {
   fallbackContextWindow?: number
   /** Output token limit used when the model catalog omits the limit. */
   fallbackMaxOutputTokens?: number
+  /** Additional requests allowed after a malformed model tool-call response. */
+  malformedResponseRetries?: number
 }
 
 /** Validated defaults for the production Verboo deployment. */
@@ -42,6 +44,7 @@ export const Config = Schema.object({
     .max(128_000)
     .step(1)
     .default(8192),
+  malformedResponseRetries: Schema.number().step(1).min(0).max(1).default(1),
 })
 
 /** Resolved endpoints; no secret is configuration. */
@@ -54,6 +57,7 @@ export interface Deployment {
   catalogMaxAgeMs: number
   fallbackContextWindow: number
   fallbackMaxOutputTokens: number
+  malformedResponseRetries: number
 }
 
 /**

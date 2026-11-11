@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-`verboo` 配置提供公开 API 地址、路由地址与 OAuth 客户端 ID。[Config](src/config.ts) 定义部署设置。生产客户端使用 `https://code.verboo.ai`、其 `/router/v1` 网关与已注册的公开客户端 `verboo-code-cli`。本地 HTTP 必须显式启用开发设置。
+`verboo` 配置提供公开 API 地址、路由地址与 OAuth 客户端 ID。[Config](src/config.ts) 定义部署设置。生产客户端使用 `https://code.verboo.ai`、其 `/router/v1` 网关与已注册的公开客户端 `verboo-code-cli`。本地 HTTP 必须显式启用开发设置。每次推理请求都会发送生成的 `X-Request-Id`，并记录该 id 与路由；格式错误的工具调用诊断只记录故障类别和可用的提供方响应 id。账户路由会在分派工具前拒绝格式错误的调用，并默认对格式错误的模型响应重试一次；`malformedResponseRetries: 0` 会禁用这次额外请求。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现
@@ -33,7 +33,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节</summary>
 
-账号凭据在持久化前加密，绝不通过 Remote 返回。刷新与退出操作捕获所属安装会话。模型发现保留服务器的完整模型 ID，并委托已有 pi-ai 适配器执行推理。新的原生登录观察使用 Revenue Journey v1；排队的观察在收到精确持久化回执前保留原始版本与字节。
+账号凭据在持久化前加密，绝不通过 Remote 返回。公开的凭据修订号标识一次登录，在令牌刷新期间保持不变，从而保留已验证的用户资料与 Client 状态。替换登录或凭据遭拒会使该身份失效；迟到的用户资料响应不会跨登录使用。刷新与退出操作捕获所属安装会话。模型发现保留服务器的完整模型 ID，并委托已有 pi-ai 适配器执行推理。新的原生登录观察使用 Revenue Journey v1；排队的观察在收到精确持久化回执前保留原始版本与字节。
 
 </details>
 
@@ -54,7 +54,7 @@ kind: "package-reference"
 
 #### Token 影响
 
-身份认证不增加输入 token。模型选择决定提供方的分词器与上下文限制。
+身份认证和本地响应校验不增加输入 token。通过 agent loop 重试格式错误的响应会再次发送模型请求，可能消耗额外的输入和输出 token；直接调用 LLM 流仍只尝试一次。模型选择决定提供方的分词器与上下文限制。
 
 #### KV Cache 影响
 

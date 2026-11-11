@@ -94,7 +94,7 @@ describe('completed tool-call arguments through the public runtime', () => {
     const raw = '{"value":"unfinished'
     const { chunks, assembler, server } = await collect(api, events(raw))
     expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE' } })
-    expect(assembler.finish).toHaveProperty('failure.message', expect.stringContaining(raw))
+    expect(assembler.finish).toHaveProperty('failure.message', 'Tool call completed with invalid JSON object arguments')
     expect(assembler.replayState).toBeUndefined()
     expect(chunks.filter(chunk => chunk.type === 'finish')).toHaveLength(1)
     expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(false)
@@ -107,19 +107,53 @@ describe('completed tool-call arguments through the public runtime', () => {
     expect(assembler.replayState).toBeUndefined()
   })
 
+  it('rejects duplicate OpenAI-compatible call ids before pi-ai coalesces them', async () => {
+    const events = [
+      JSON.stringify({ id: 'response_duplicate', choices: [{ index: 0, delta: {
+        role: 'assistant', tool_calls: [
+          { index: 0, id: 'same', type: 'function', function: { name: 'count', arguments: '{}' } },
+          { index: 1, id: 'same', type: 'function', function: { name: 'count', arguments: '{}' } },
+        ],
+      }, finish_reason: null }] }),
+      JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 3, completion_tokens: 2 } }),
+      '[DONE]',
+    ]
+    const { assembler } = await collect('openai-completions', events)
+    expect(assembler.finish).toEqual({ kind: 'error', failure: {
+      code: 'MALFORMED_RESPONSE', message: 'OpenAI-compatible response reused a tool-call id', requestId: 'response_duplicate',
+    } })
+    expect(assembler.replayState).toBeUndefined()
+  })
+
+  it.each([
+    ['', 'count', 'Tool call completed without an id'],
+    ['call', '', 'Tool call completed without a name'],
+  ])('rejects a completed call missing protocol fields', async (id, name, message) => {
+    const events = [
+      JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [
+        { index: 0, id, type: 'function', function: { name, arguments: '{}' } },
+      ] }, finish_reason: null }] }),
+      JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 3, completion_tokens: 2 } }),
+      '[DONE]',
+    ]
+    const { assembler } = await collect('openai-completions', events)
+    expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE', message } })
+    expect(assembler.replayState).toBeUndefined()
+  })
+
   it('uses authoritative invalid Responses arguments after a valid streamed prefix', async () => {
     const raw = '{"value":"final-invalid'
     const { chunks, assembler } = await collect('openai-responses', responsesEvents(raw, '{"value":"valid-prefix"}'))
     expect(chunks).toContainEqual(expect.objectContaining({ type: 'tool-call-delta', argumentsDelta: '{"value":"valid-prefix"}' }))
     expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE' } })
-    expect(assembler.finish).toHaveProperty('failure.message', expect.stringContaining(raw))
+    expect(assembler.finish).toHaveProperty('failure.message', 'Tool call completed with invalid JSON object arguments')
     expect(assembler.replayState).toBeUndefined()
   })
 
   it('retains the first completed-argument failure when several calls are invalid', async () => {
     const { assembler } = await collect('openai-responses', responsesEvents('[]', undefined, true, '[1]'))
     expect(assembler.finish).toEqual({ kind: 'error', failure: {
-      code: 'MALFORMED_RESPONSE', message: 'Tool call "count": Tool arguments must be a JSON object\n\nReceived arguments:\n[1]',
+      code: 'MALFORMED_RESPONSE', message: 'Tool call completed with invalid JSON object arguments', requestId: 'response_arguments',
     } })
     expect(assembler.replayState).toBeUndefined()
   })

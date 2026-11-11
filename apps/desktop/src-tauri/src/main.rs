@@ -3,6 +3,7 @@
 mod host;
 mod locale;
 mod update;
+mod update_logic;
 
 use host::{authenticated_url, HostEvent, HostProcess, RuntimeConfig, STARTUP_DEADLINE};
 use std::{
@@ -183,9 +184,12 @@ fn main() {
             pick_directory,
             desktop_info,
             client_ready,
-            client_diagnostic
+            client_diagnostic,
+            update::update_install,
+            update::update_close
         ])
         .setup(move |app| {
+            update::install(&app.handle());
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Verboo Code")

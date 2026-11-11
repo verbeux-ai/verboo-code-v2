@@ -70,6 +70,7 @@ function retryPolicyKey(policy: ResolvedRetryPolicy): string {
       policy.mode,
       policy.maxRetries,
       [...policy.retryableCodes].sort(),
+      Object.entries(policy.maxRetriesByCode).sort(([left], [right]) => left.localeCompare(right)),
       policy.initialDelayMs,
       policy.maxDelayMs,
       policy.jitterRatio,
@@ -218,6 +219,15 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
     const previous = retryState[retryStateKey(provider, policyKey)]
     const previousRetry = previous?.retry ?? 0
     if (policy.mode === 'normal' && previousRetry >= policy.maxRetries) return next()
+    if (policy.mode === 'normal') {
+      const codeLimit = policy.maxRetriesByCode[failure.code]
+      if (codeLimit !== undefined) {
+        const codeRetries = agent.session.snapshotEvents().filter(event => event.type === 'llm/retry'
+          && event.data.turn === turn && event.data.step === step && event.data.provider === provider
+          && event.data.policyKey === policyKey && event.data.failure.code === failure.code).length
+        if (codeRetries >= codeLimit) return next()
+      }
+    }
     const retry = previousRetry + 1
     const retryId = previous?.retryId ?? RetryId(randomUUID())
     let delayMs: number
