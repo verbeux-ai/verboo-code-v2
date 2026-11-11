@@ -120,9 +120,9 @@ describe('SSE framing and provider failures', () => {
     await expect(read(sse([{ type: 'error', error: { type: 'overloaded_error', message: 'busy' } }]))).rejects.toMatchObject({ code: 'SERVER' })
   })
   it.each([
-    [401, {}, 'AUTH'], [403, {}, 'AUTH'], [402, {}, 'QUOTA'], [429, {}, 'RATE_LIMIT'],
+    [401, {}, 'AUTH'], [403, {}, 'AUTH_FORBIDDEN'], [402, {}, 'QUOTA'], [429, {}, 'RATE_LIMIT'],
     [400, {}, 'INVALID_REQUEST'], [413, {}, 'INVALID_REQUEST'], [503, {}, 'SERVER'], [404, {}, 'HTTP_404'],
-    [undefined, { type: 'authentication_error' }, 'AUTH'], [undefined, { type: 'rate_limit_error' }, 'RATE_LIMIT'],
+    [undefined, { type: 'authentication_error' }, 'AUTH'], [undefined, { type: 'permission_error' }, 'AUTH_FORBIDDEN'], [undefined, { type: 'rate_limit_error' }, 'RATE_LIMIT'],
     [undefined, { type: 'invalid_request_error' }, 'INVALID_REQUEST'], [undefined, {}, 'SERVER'],
     [400, { message: 'maximum context length exceeded' }, 'CONTEXT_WINDOW_EXCEEDED'],
     [400, { message: 'insufficient balance' }, 'QUOTA'],

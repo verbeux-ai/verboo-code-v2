@@ -2670,16 +2670,19 @@ describe('ChatView', () => {
   it('renders every terminal failure inline with neutral quota copy and no transient notice', () => {
     const h = makeHarness({ nodes: [
       user(1, 'try'), turnError(2, 'AUTH'), turnError(3), turnError(4, 'QUOTA'), turnError(5, 'ACCOUNT_QUOTA'),
-      turnError(6, 'INTERRUPTED'),
+      turnError(6, 'INTERRUPTED'), turnError(7, 'AUTH_FORBIDDEN'), turnError(8, 'ACCOUNT_REFRESH_FAILED'), turnError(9, 'TIMEOUT'),
     ] })
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
     expect(statuses.map(status => status.textContent)).toEqual([
-      '本轮运行失败API 密钥无效AUTH',
+      '本轮运行失败服务提供方拒绝了配置的凭据。AUTH',
       '本轮运行失败plugin exploded',
       '本轮运行失败当前请求的额度已用尽QUOTA',
       '本轮运行失败当前请求的额度已用尽ACCOUNT_QUOTA',
       '任务已停止Verboo Code 进程在本轮完成前退出（例如被强制结束、崩溃或关闭超时），重新启动后本轮已中止。未完成的工具调用结果未知。',
+      '本轮运行失败服务提供方拒绝了此请求的访问权限。AUTH_FORBIDDEN',
+      '本轮运行失败无法刷新账户会话。登录状态已保留，请重试请求。ACCOUNT_REFRESH_FAILED',
+      '本轮运行失败等待服务提供方响应时，请求超时。请重试。TIMEOUT',
     ])
     // The transient notice is the frame-wide host's job; the failure row keeps
     // neither a recharge affordance nor a toast of its own.

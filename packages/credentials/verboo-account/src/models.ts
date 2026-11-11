@@ -319,7 +319,7 @@ class VerbooAdapter extends PiAiAdapter {
     const prepared = await super.prepareCall(provider, model, signal)
     return {
       ...prepared,
-      stream: options => this.observeAuthentication(prepared.stream(options)),
+      stream: options => this.observeAuthentication(() => prepared.stream(options), options),
     }
   }
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -328,33 +328,74 @@ class VerbooAdapter extends PiAiAdapter {
         'Entre na sua conta Verboo para continuar.',
         'ACCOUNT_SIGN_IN_REQUIRED',
       )
-    yield* this.observeAuthentication(super.stream(options))
+    yield* this.observeAuthentication(() => super.stream(options), options)
   }
 
   private async *observeAuthentication(
-    stream: AsyncIterable<StreamChunk>,
+    stream: () => AsyncIterable<StreamChunk>,
+    options: Pick<GenerateOptions, 'signal'>,
   ): AsyncIterable<StreamChunk> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
+    const pending: StreamChunk[] = []
+    let outputStarted = false
     try {
-      for await (const chunk of stream) {
-        // The shared SDK groups 401 and 403 as AUTH. Only the account server can
-        // establish that the grant itself expired; an entitlement failure cannot.
+      for await (const chunk of stream()) {
+        if (chunk.type !== 'usage' && chunk.type !== 'finish') {
+          outputStarted = true
+          for (const buffered of pending) yield buffered
+          pending.length = 0
+          yield chunk
+          continue
+        }
+        if (chunk.type === 'usage') {
+          pending.push(chunk)
+          continue
+        }
         if (
           chunk.type === 'finish' &&
           chunk.reason.kind === 'error' &&
           chunk.reason.failure.code === 'AUTH' &&
-          session?.sessionId ===
-            (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+          !outputStarted &&
+          session !== null &&
+          session.sessionId === (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
         ) {
-          await this.ctx.deepseekAccount.getProfile({
-            locale: 'en',
-            version: '0.2.2-alpha.3',
-            timezoneOffsetSeconds: 0,
-          })
+          let refreshed: string | undefined
+          try {
+            refreshed = await this.ctx.deepseekAccount.refreshRejectedToken(
+              this.deployment.routerBaseURL,
+              session.token,
+              options.signal,
+            )
+          } catch (error: unknown) {
+            if (error instanceof AccountRequestError && error.code === 'request_cancelled')
+              throw new LlmError('Account token refresh was cancelled', 'ABORTED', { cause: error })
+            throw new LlmError(
+              'Could not refresh the account session. Your sign-in was kept; try the request again.',
+              'ACCOUNT_REFRESH_FAILED',
+              { cause: error },
+            )
+          }
+          if (options.signal?.aborted)
+            throw new LlmError('Account token refresh was cancelled', 'ABORTED')
+          if (refreshed !== undefined) {
+            const current = await this.ctx.deepseekAccount.getPlatformSession()
+            if (current?.sessionId === session.sessionId) {
+              yield* stream()
+              return
+            }
+          }
+          if (await this.ctx.deepseekAccount.getPlatformSession() === null)
+            throw new LlmError('Your Verboo sign-in expired. Sign in again.', 'ACCOUNT_SIGN_IN_REQUIRED')
         }
+        for (const buffered of pending) yield buffered
+        pending.length = 0
         yield chunk
+        return
       }
+      for (const buffered of pending) yield buffered
     } catch (error: unknown) {
+      for (const buffered of pending) yield buffered
+      pending.length = 0
       if (error instanceof LlmError && error.code === 'MALFORMED_RESPONSE') {
         throw new LlmError(
           'O modelo retornou uma chamada de ferramenta inválida. Tente novamente.',

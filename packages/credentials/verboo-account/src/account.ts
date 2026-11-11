@@ -468,9 +468,27 @@ export class VerbooAccount extends DeepSeekAccount {
       !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))
     )
       return undefined
-    let current = await this.readGrant()
+    const current = await this.readGrant()
     if (current === null) return undefined
     if (current.expiresAt > Date.now() + 60_000) return current.accessToken
+    return this.refreshRejectedToken(url, current.accessToken)
+  }
+
+  override async refreshRejectedToken(
+    url: string,
+    rejectedToken: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const target = new URL(url)
+    const router = new URL(this.deployment.routerBaseURL)
+    const prefix = router.pathname.replace(/\/$/, '')
+    if (
+      target.origin !== router.origin ||
+      target.username ||
+      target.password ||
+      !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))
+    )
+      return undefined
     const resultState = { rejected: false }
     const lifetime = this.lifetime
     const result = await this.ctx.credentials.modifyRecord(
@@ -478,7 +496,7 @@ export class VerbooAccount extends DeepSeekAccount {
       async (record) => {
         if (record === undefined) return undefined
         const stored = await this.readGrant(record)
-        if (stored === null || stored.expiresAt > Date.now() + 60_000)
+        if (stored === null || stored.accessToken !== rejectedToken)
           return undefined
         try {
           const updated = await this.exchange(
@@ -488,7 +506,9 @@ export class VerbooAccount extends DeepSeekAccount {
               installation_id: stored.installationId,
               scope: 'user:profile user:inference',
             },
-            lifetime.signal,
+            signal === undefined
+              ? lifetime.signal
+              : AbortSignal.any([lifetime.signal, signal]),
             operation(),
           )
           return {
@@ -510,9 +530,16 @@ export class VerbooAccount extends DeepSeekAccount {
         }
       },
     )
-    current = result === undefined ? null : await this.readGrant(result)
+    const current = result === undefined ? null : await this.readGrant(result)
     if (resultState.rejected) this.expired()
-    return current?.accessToken
+    if (current !== null && current.accessToken !== rejectedToken)
+      return current.accessToken
+    if (result === undefined) {
+      const latest = await this.readGrant()
+      if (latest !== null && latest.accessToken !== rejectedToken)
+        return latest.accessToken
+    }
+    return undefined
   }
 
   private signedOutRecord(): CredentialRecord {
