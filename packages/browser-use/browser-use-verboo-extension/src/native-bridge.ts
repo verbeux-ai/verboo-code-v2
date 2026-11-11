@@ -21,6 +21,7 @@ type BrowserOperation =
   | 'groups.update'
   | 'tabs.open'
   | 'tabs.navigate'
+  | 'tabs.close'
   | 'page.observe'
   | 'page.act'
   | 'history.search'
