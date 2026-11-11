@@ -4,12 +4,12 @@ import type { RemoteEndpoint } from '@deepseek-ai/dsh-api-remote-access/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { MenuContribution, ContextMenuTargetMap } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {
-  ArchiveSessionInjected, DeleteSessionInjected, ForkSessionInjected, PinSessionInjected, RenameSessionInjected,
-  SessionIdInjected,
+  ArchiveSessionInjected, DeleteSessionInjected, ForkSessionInjected, MoveSessionInjected, PinSessionInjected,
+  RenameSessionInjected, SessionIdInjected,
 } from '../contract/slots.ts'
 
 type Actions = Omit<PinSessionInjected & ArchiveSessionInjected, 'hooks'>
-  & DeleteSessionInjected
+  & DeleteSessionInjected & MoveSessionInjected
   & ForkSessionInjected & RenameSessionInjected & SessionIdInjected
 
 /**
@@ -53,6 +53,13 @@ export function registerSessionMenus(ctx: Context, actions: Actions): void {
   register('fork', 300, ['session/fork'], target => allowed(target, 'session/fork') ? [{
     id: 'fork', label: t('menu.fork'), icon: { key: 'workspace.fork' }, commandId: 'session.fork' as ShortcutCommandId,
     run: () => { actions.forkSession(target.sessionId) },
+  }] : [])
+  // Moving is a Workspace write, so the gate names the Workspace endpoint the
+  // dialog will call rather than a Session one; an archived row keeps it, since
+  // the destination project is exactly where it becomes visible again.
+  register('move', 400, ['workspace/moveSession'], target => allowed(target, 'workspace/moveSession') ? [{
+    id: 'move', label: t('menu.moveSession'), icon: { key: 'workspace.move' },
+    run: () => { actions.requestSessionMove(target.sessionId, target.displayTitle) },
   }] : [])
   register('id', 450, [], target => [{
     id: 'copy', label: t('menu.sessionId'), icon: { key: 'workspace.copy' }, separatorBefore: true,

@@ -6,9 +6,11 @@ A Session's active directory is owned by [`dsh-working-directory`](../../package
 
 ## Directory selection
 
-`ctx.workingDirectory.get(session)` reads the logged value. `ensure(agent)` validates it and restores the original project when the directory disappeared. `set(agent, path)` validates and records a requested change. Sessions without a header directory use the configured runtime fallback; an unavailable fallback produces an error.
+`ctx.workingDirectory.get(session)` reads the logged value. `ensure(agent)` validates it and restores the project when the directory disappeared. `set(agent, path)` validates and records a requested change. Sessions without a header directory use the configured runtime fallback; an unavailable fallback produces an error.
 
-Changes are local to one Session. Relative filesystem operations, newly started processes, instruction discovery, skills, and file completion use the active directory. Existing terminals and persistent shells retain their own directories. Sandbox writable roots and project membership remain anchored to the original project.
+A Session's project is the [Workspace registry's](workspace.md#project-assignment) answer — an explicit durable assignment when the conversation was moved to another project, otherwise the immutable header cwd. The owner compares that answer with the recorded directory when an Agent is created (`agent/created`) and commits a `working-directory/change` when they differ, so a moved conversation works in its destination from the first later request. `ensure` restores to the project, not to the header. A composition without the registry keeps the header-only behavior.
+
+Changes are local to one Session. Relative filesystem operations, newly started processes, instruction discovery, skills, and file completion use the active directory. Existing terminals and persistent shells retain their own directories. The sandbox writable root and the Workspace file scope read the same project answer, so `@` references, shells, sandbox, and file previews agree.
 
 ## Model context
 

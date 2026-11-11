@@ -18,6 +18,8 @@ import type {
   WorkspaceId,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -103,6 +105,12 @@ export const workspaceWorld: RemoteTable = {
     'workspace/delete': (_request: WorkspaceDeleteRequest): RemoteResult<WorkspaceDeleteValue> => ok({ deleted: true }),
     'workspace/insertBefore': (request: WorkspaceInsertBeforeRequest): RemoteResult<WorkspaceOrderValue> => ok({ workspaceIds: [request.workspaceId] }),
     'workspace/insertSessionBefore': (request: WorkspaceInsertSessionBeforeRequest): RemoteResult<WorkspaceValue> => ok({
+      workspace: workspace(String(request.workspaceId), { sessionIds: [request.sessionId] }),
+    }),
+    'workspace/moveSession': (request: WorkspaceMoveSessionRequest): RemoteResult<WorkspaceMoveSessionValue> => ok({
+      sessionId: request.sessionId,
+      workspaceId: request.workspaceId,
+      projectPath: `/work/${String(request.workspaceId)}`,
       workspace: workspace(String(request.workspaceId), { sessionIds: [request.sessionId] }),
     }),
     'workspace/archiveSession': (request: WorkspaceArchiveSessionRequest): RemoteResult<WorkspaceArchiveValue> => ok({ archivedSessionIds: [request.sessionId] }),

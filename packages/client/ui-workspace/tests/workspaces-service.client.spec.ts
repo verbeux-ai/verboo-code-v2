@@ -201,6 +201,28 @@ class FakeWorkspaces implements IWorkspaces {
   declare readonly delete: IWorkspaces['delete']
   declare readonly insertBefore: IWorkspaces['insertBefore']
   declare readonly insertSessionBefore: IWorkspaces['insertSessionBefore']
+  readonly moveCalls: [SessionId, WorkspaceId, { readonly stopActivity?: boolean } | undefined][] = []
+  onMove: IWorkspaces['moveSession'] = async (sessionId, workspaceId) => {
+    const workspace = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+    return {
+      sessionId,
+      workspaceId,
+      projectPath: workspace?.path ?? `/projects/${String(workspaceId)}`,
+      workspace: workspace ?? {
+        workspaceId, path: `/projects/${String(workspaceId)}`, title: String(workspaceId), sessionIds: [],
+        createdAt: '0', updatedAt: '0',
+      },
+    }
+  }
+
+  moveSession(
+    sessionId: SessionId,
+    workspaceId: WorkspaceId,
+    options?: { readonly stopActivity?: boolean },
+  ): ReturnType<IWorkspaces['moveSession']> {
+    this.moveCalls.push([sessionId, workspaceId, options])
+    return this.onMove(sessionId, workspaceId, options)
+  }
   readonly pinCalls: SessionId[] = []
   readonly unpinCalls: SessionId[] = []
   onPin: IWorkspaces['pinSession'] = async (sessionId) => {
@@ -1542,6 +1564,21 @@ describe('UiWorkspaceService', () => {
     b.workspaces.onUnarchive = () => Promise.reject(new Error('unarchive rejected'))
     await expect(b.uiWorkspace.unarchiveSession(idle)).rejects.toThrow('unarchive rejected')
     expect(b.workspaces.unarchiveCalls).toEqual([idle, idle])
+  })
+
+  it('moves a Session to another project through the Host and returns the destination row', async () => {
+    const moved = sid('moved')
+    const destination = wid('beta')
+    const b = bench({ workspaces: workspaceState([workspace('beta')]) })
+
+    const resolved = await b.uiWorkspace.moveSession(moved, destination)
+    expect(b.workspaces.moveCalls).toEqual([[moved, destination, {}]])
+    expect(resolved).toMatchObject({ workspaceId: destination, path: '/w/beta' })
+
+    // A refusal reaches the caller unchanged; it is not a notice.
+    b.workspaces.onMove = () => Promise.reject(new Error('move refused'))
+    await expect(b.uiWorkspace.moveSession(moved, destination)).rejects.toThrow('move refused')
+    expect(b.workspaces.moveCalls).toHaveLength(2)
   })
 
 

@@ -44,7 +44,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly sessionId: SessionId
       readonly activity: readonly SessionActivity[]
     }
-    /** The Session or its anchor is not in the Workspace's manual order. */
+    /**
+     * The move cannot be performed: either the Session or its anchor is not in
+     * the Workspace's manual order, or the requested destination cannot own it
+     * — no Workspace carries that identity, or its directory is not currently
+     * an existing directory.
+     */
     'workspace/move-invalid': {
       readonly workspaceId: WorkspaceId
       readonly sessionId: SessionId
@@ -116,6 +121,39 @@ export interface WorkspaceInsertSessionBeforeRequest {
   readonly workspaceId: WorkspaceId
   readonly sessionId: SessionId
   readonly beforeSessionId?: SessionId
+}
+
+/**
+ * Session move onto another Workspace as its project. The conversation keeps
+ * its transcript and its immutable creation directory; what changes is the
+ * project it works in.
+ */
+export interface WorkspaceMoveSessionRequest {
+  readonly sessionId: SessionId
+  /** Workspace that becomes the Session's project. */
+  readonly workspaceId: WorkspaceId
+  /**
+   * Stop the Session's running work — its turn, subagent descendants, owned
+   * background jobs, and active schedules — instead of refusing the move as
+   * `workspace/session-active`. The stops are requested after the move is
+   * durable and are not awaited to settlement.
+   */
+  readonly stopActivity?: boolean
+}
+
+/** Result of moving one Session to another Workspace. */
+export interface WorkspaceMoveSessionValue {
+  readonly sessionId: SessionId
+  /** The Workspace owning the Session after the move. */
+  readonly workspaceId: WorkspaceId
+  /** Canonical project directory the Session works in after the move. */
+  readonly projectPath: string
+  /** Previous owning Workspace, absent when the Session had none. */
+  readonly previousWorkspaceId?: WorkspaceId
+  /** Previous project directory, absent when none resolved. */
+  readonly previousProjectPath?: string
+  /** The destination Workspace row, reflecting the new account. */
+  readonly workspace: WorkspaceView
 }
 
 /** Session requested for archival from Workspace grouping surfaces. */

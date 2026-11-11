@@ -13,6 +13,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+// Type-only: the optional `ctx.workspaceRegistry` service merge read below.
+import type {} from '@deepseek-ai/dsh-workspace'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -108,6 +110,27 @@ export class WorkingDirectoryService extends Service {
       }
       return assembly
     }, { prepend: true })
+    // A conversation's project can change while it is stored — moving it to
+    // another project writes a durable project assignment — so every resumed
+    // or created Agent starts from the assignment rather than from the header
+    // directory it was created in. Serial listeners finish before creation
+    // resolves, so the first request already sees the effective directory.
+    ctx.on('agent/created', async ({ agent }) => {
+      const project = this.projectOf(agent)
+      const current = this.get(agent.session)
+      if (project === undefined || project === current) return
+      try {
+        await this.set(agent, project)
+      } catch (error) {
+        // Creation is not the place to fail over a directory: an assignment
+        // whose project is temporarily unavailable must not make a stored
+        // conversation unopenable. `ensure` reports the same condition during
+        // prompt assembly, where a caller can act on it.
+        this.ctx.logger.warn(
+          `working-directory: could not apply project ${JSON.stringify(project)}: ${String(error)}`,
+        )
+      }
+    })
     ctx.effect(() => async () => {
       this.lifecycle.abort(new Error('working-directory service disposed'))
       await Promise.allSettled(this.operations)
@@ -144,7 +167,9 @@ export class WorkingDirectoryService extends Service {
         }
         return current
       }
-      const original = agent.session.header.cwd ?? this.defaultDirectory
+      // The project directory is what "original" means here: a moved Session
+      // restores to its destination, not to the header directory it left.
+      const original = this.projectOf(agent) ?? agent.session.header.cwd ?? this.defaultDirectory
       const restored = await this.directory(original, original, control)
       this.commit(agent, restored, true, control)
       return restored
@@ -171,6 +196,18 @@ export class WorkingDirectoryService extends Service {
 
   private contextText(session: Session): string {
     return `Current working directory: ${JSON.stringify(this.get(session))}.`
+  }
+
+  /**
+   * The durable project directory of one Session, when the deployment mounts
+   * the Workspace registry. The registry resolves an explicit project
+   * assignment first and the immutable header cwd second, so a conversation
+   * moved to another project works in its destination.
+   * @param agent - Agent whose Session project is requested.
+   * @returns the project directory, or undefined when no registry is mounted.
+   */
+  private projectOf(agent: Agent): string | undefined {
+    return this.ctx.get('workspaceRegistry')?.projectPathOf(agent.session.id)
   }
 
   private async directory(path: string, cwd: string, signal: AbortSignal): Promise<string> {

@@ -23,6 +23,8 @@ import type {
   WorkspaceId,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -151,6 +153,16 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('insertSessionBefore')
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
     return this.commands.insertSessionBefore(request)
+  }
+
+  /**
+   * Move one Session to another Workspace, which becomes its project.
+   * @param request - Session, destination Workspace, and whether to stop its running work.
+   * @returns the resulting project ownership and the destination Workspace projection.
+   */
+  @Remote('moveSession')
+  moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue> {
+    return this.commands.moveSession(request)
   }
 
   /**

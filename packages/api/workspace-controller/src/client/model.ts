@@ -14,6 +14,8 @@ import type {
   WorkspaceDeleteSessionValue,
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -178,6 +180,31 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
       workspaceId,
       sessionId,
       ...beforeSessionId === undefined ? {} : { beforeSessionId },
+    })
+    if (result.ok) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
+   * Move a Session to another Workspace and merge the returned destination row.
+   *
+   * The origin row's new account arrives through the follow stream, so this
+   * installs only the unary echo: a superseded reply would otherwise reorder a
+   * row a later move already changed.
+   * @param sessionId - Session to move.
+   * @param workspaceId - Workspace that becomes the Session's project.
+   * @param options - Whether the Host stops the Session's running work instead of refusing.
+   * @returns generated Remote result.
+   */
+  async moveSession(
+    sessionId: WorkspaceMoveSessionRequest['sessionId'],
+    workspaceId: WorkspaceMoveSessionRequest['workspaceId'],
+    options: Pick<WorkspaceMoveSessionRequest, 'stopActivity'> = {},
+  ): Promise<RemoteResult<WorkspaceMoveSessionValue>> {
+    const result = await this.remote.moveSession({
+      sessionId,
+      workspaceId,
+      ...(options.stopActivity === true ? { stopActivity: true } : {}),
     })
     if (result.ok) this.upsert(result.value.workspace)
     return result

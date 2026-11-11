@@ -17,6 +17,7 @@ import {
   WorkspaceDeleteSessionError,
   WorkspaceController,
   WorkspaceCreateError,
+  WorkspaceMoveSessionError,
   type WorkspaceFollowSink,
 } from '../src/client/index.ts'
 import type { WorkspaceFollowFrame, WorkspaceId } from '../src/types.ts'
@@ -370,6 +371,9 @@ describe('WorkspaceController', () => {
     await expect(controller.insertSessionBefore(wid('one'), sid('session'))).resolves.toMatchObject({
       sessionIds: ['session'],
     })
+    await expect(controller.moveSession(sid('session'), wid('two'))).resolves.toMatchObject({
+      sessionId: 'session', workspaceId: 'two', projectPath: '/work/two',
+    })
     await expect(controller.archiveSession(sid('session'))).resolves.toBeUndefined()
     await expect(controller.unarchiveSession(sid('session'))).resolves.toBeUndefined()
     await expect(controller.pinSession(sid('session'))).resolves.toBeUndefined()
@@ -380,6 +384,14 @@ describe('WorkspaceController', () => {
     expect(mock.log.requests('workspace/rename')).toEqual([{ workspaceId: 'one', title: 'renamed' }])
     expect(mock.log.requests('workspace/insertBefore')).toEqual([{ workspaceId: 'one' }])
     expect(mock.log.requests('workspace/insertSessionBefore')).toEqual([{ workspaceId: 'one', sessionId: 'session' }])
+    // The move carries stopActivity only when asked; omission refuses running work.
+    await expect(controller.moveSession(sid('session'), wid('two'), { stopActivity: true })).resolves.toMatchObject({
+      sessionId: 'session', workspaceId: 'two',
+    })
+    expect(mock.log.requests('workspace/moveSession')).toEqual([
+      { sessionId: 'session', workspaceId: 'two' },
+      { sessionId: 'session', workspaceId: 'two', stopActivity: true },
+    ])
     await expect(controller.archiveSession(sid('session'), { stopActivity: true })).resolves.toBeUndefined()
     expect(mock.log.requests('workspace/archiveSession')).toEqual([{ sessionId: 'session' }, { sessionId: 'session', stopActivity: true }])
     expect(mock.log.requests('workspace/unarchiveSession')).toEqual([{ sessionId: 'session' }])
@@ -451,6 +463,23 @@ describe('WorkspaceController', () => {
     )))
     await expect(controller.insertSessionBefore(wid('missing'), sid('session')))
       .rejects.toThrow('workspace move failed: workspace/move-invalid: invalid move')
+
+    // A move's active-session refusal keeps its structured activity, and an
+    // unusable destination is the same move-invalid code.
+    const moveActive = new RemoteError('workspace/session-active', 'session is active', {
+      sessionId: sid('session'), activity: [{ kind: 'probe' }],
+    })
+    mock.remote.workspace.moveSession.mockResolvedValueOnce(err(moveActive))
+    const refusedMove = controller.moveSession(sid('session'), wid('two'))
+    await expect(refusedMove).rejects.toBeInstanceOf(WorkspaceMoveSessionError)
+    await expect(refusedMove).rejects.toMatchObject({
+      rpcError: { code: 'workspace/session-active', details: { sessionId: 'session' } },
+    })
+    mock.remote.workspace.moveSession.mockResolvedValueOnce(err(new RemoteError(
+      'workspace/move-invalid', 'no directory', { workspaceId: wid('gone'), sessionId: sid('session') },
+    )))
+    await expect(controller.moveSession(sid('session'), wid('gone')))
+      .rejects.toThrow('workspace session move failed: workspace/move-invalid: no directory')
   })
 
   it('receives a carrier throw as the client\'s gateway/internal fold, never as a rejection', async ({ mock, start }) => {

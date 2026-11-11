@@ -197,6 +197,13 @@ describe('WorkspaceController commands', () => {
     await expect(controller.archiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(archiveFailure)
 
+    const sessionMoveFailure = new Error('project storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'moveSession').mockRejectedValueOnce(sessionMoveFailure)
+    await expect(controller.moveSession({
+      sessionId: SessionId('session'),
+      workspaceId: created.workspace.workspaceId,
+    })).rejects.toBe(sessionMoveFailure)
+
     const unarchiveFailure = new Error('unarchive storage failed')
     vi.spyOn(ctx.workspaceRegistry, 'unarchiveSession').mockRejectedValueOnce(unarchiveFailure)
     await expect(controller.unarchiveSession({ sessionId: SessionId('session') }))
@@ -310,6 +317,96 @@ describe('WorkspaceController commands', () => {
       .resolves.toEqual({ archivedSessionIds: [] })
   })
 
+
+  it('moves a Session to another project, refusing running work and unusable destinations', async () => {
+    const { controller, ctx, root } = await harness()
+    const origin = await controller.create({ path: stageDir(root, 'move-origin') })
+    const destination = await controller.create({ path: stageDir(root, 'move-destination') })
+    const session = ctx.sessions.create(SessionId('movable'), { meta: { cwd: origin.workspace.path } })
+    await ctx.workspaceRegistry.get(origin.workspace.workspaceId)!.attachSession(session.id)
+
+    // The move answers with the resulting ownership and the destination row.
+    await expect(controller.moveSession({
+      sessionId: session.id,
+      workspaceId: destination.workspace.workspaceId,
+    })).resolves.toMatchObject({
+      sessionId: session.id,
+      workspaceId: destination.workspace.workspaceId,
+      projectPath: destination.workspace.path,
+      previousWorkspaceId: origin.workspace.workspaceId,
+      previousProjectPath: origin.workspace.path,
+      workspace: { workspaceId: destination.workspace.workspaceId, sessionIds: [session.id] },
+    })
+    expect(ctx.workspaceRegistry.get(origin.workspace.workspaceId)!.sessionIds).toEqual([])
+    expect(ctx.workspaceRegistry.get(destination.workspace.workspaceId)!.sessionIds).toEqual([session.id])
+
+    // A Session no Workspace accounted for yet answers without the previous
+    // fields, because the move established its first ownership.
+    const loose = ctx.sessions.create(SessionId('loose'), { meta: { cwd: origin.workspace.path } })
+    const firstOwnership = await controller.moveSession({
+      sessionId: loose.id,
+      workspaceId: destination.workspace.workspaceId,
+    })
+    expect(firstOwnership.previousWorkspaceId).toBeUndefined()
+    expect(firstOwnership.previousProjectPath).toBeUndefined()
+    expect(firstOwnership.workspaceId).toBe(destination.workspace.workspaceId)
+    expect(firstOwnership.workspace.sessionIds).toContain(loose.id)
+
+    // A destination that cannot own a Session is the stable move-invalid code.
+    await expect(controller.moveSession({
+      sessionId: session.id,
+      workspaceId: 'missing' as WorkspaceId,
+    })).rejects.toMatchObject({
+      code: 'workspace/move-invalid',
+      details: { workspaceId: 'missing', sessionId: session.id },
+    })
+    // An unknown Session is not a move at all.
+    await expect(controller.moveSession({
+      sessionId: SessionId('ghost'),
+      workspaceId: destination.workspace.workspaceId,
+    })).rejects.toMatchObject({ code: 'session/not-found', details: { sessionId: 'ghost' } })
+
+    // Running work is refused with what still runs, and nothing moves.
+    const third = await controller.create({ path: stageDir(root, 'move-third') })
+    const activity = [{ kind: 'probe' as const }]
+    const stopReporting = ctx.on('workspace/session-activity', async ({ sessionId }, next) =>
+      sessionId === session.id ? [...activity, ...(await next())] : next())
+    const refusal = await controller.moveSession({
+      sessionId: session.id,
+      workspaceId: third.workspace.workspaceId,
+    }).then(() => undefined, (error: unknown) => error as Error & { code: string; details: unknown })
+    expect(refusal?.code).toBe('workspace/session-active')
+    expect(refusal?.details).toEqual({ sessionId: session.id, activity })
+    expect(refusal?.message).toContain('cannot move session')
+    expect(ctx.workspaceRegistry.get(third.workspace.workspaceId)!.sessionIds).toEqual([])
+
+    // stopActivity moves it anyway and asks the providers to stop afterwards.
+    const stops: string[] = []
+    const stopListening = ctx.on('workspace/session-stop', ({ sessionId }) => { stops.push(String(sessionId)) })
+    await expect(controller.moveSession({
+      sessionId: session.id,
+      workspaceId: third.workspace.workspaceId,
+      stopActivity: true,
+    })).resolves.toMatchObject({ workspaceId: third.workspace.workspaceId })
+    expect(stops).toEqual([String(session.id)])
+    stopListening()
+    stopReporting()
+  })
+
+  it('rejects a move to a destination whose directory is gone', async () => {
+    const { controller, ctx, root } = await harness()
+    const origin = await controller.create({ path: stageDir(root, 'gone-origin') })
+    const destination = await controller.create({ path: stageDir(root, 'gone-destination') })
+    const session = ctx.sessions.create(SessionId('survivor'), { meta: { cwd: origin.workspace.path } })
+    await ctx.workspaceRegistry.get(origin.workspace.workspaceId)!.attachSession(session.id)
+    rmSync(destination.workspace.path, { recursive: true, force: true })
+
+    await expect(controller.moveSession({
+      sessionId: session.id,
+      workspaceId: destination.workspace.workspaceId,
+    })).rejects.toMatchObject({ code: 'workspace/move-invalid' })
+    expect(ctx.workspaceRegistry.get(origin.workspace.workspaceId)!.sessionIds).toEqual([session.id])
+  })
 
   it('deletes a conversation permanently, refuses running work, and reports an incomplete registry prune', async () => {
     const { controller, ctx, root, removed } = await harness()

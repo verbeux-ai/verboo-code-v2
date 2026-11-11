@@ -334,6 +334,8 @@ export type RowToast =
   | { kind: 'defaultWorkspaceFailed' }
   | { kind: 'forkRequiresOpen'; sessionId: SessionId }
   | { kind: 'shortcutForkFailed'; reason: 'unavailable' | 'failed' }
+  /** A conversation now works in `workspaceTitle`; the notice names where it went. */
+  | { kind: 'moved'; sessionId: SessionId; workspaceTitle: string }
   /**
    * An explicit New Session request that failed. `message` is untranslated:
    * a Host refusal as `code: message` — the stable code stays in the copy so
@@ -472,6 +474,45 @@ export interface SessionIdInjected {
   copySessionId: (sessionId: SessionId) => Promise<void>
 }
 
+/**
+ * Move-to-project action share: the row only raises the request, and the
+ * dialog entry answers it. Moving cannot be undone by the same gesture, so the
+ * action never calls the Host on its own.
+ */
+export interface MoveSessionInjected {
+  /** Ask for the move dialog for this Session. */
+  requestSessionMove: (sessionId: SessionId, displayTitle: string) => void
+}
+
+/** A move-to-project request the menu action asked for. */
+export interface SessionMoveRequest {
+  /** Session to move. */
+  sessionId: SessionId
+  /** The row's display title, named in the dialog. */
+  readonly displayTitle: string
+  /** Workspace currently owning the Session; it is not offered as a destination. */
+  readonly currentWorkspaceId?: WorkspaceId
+}
+
+/**
+ * Move dialog share: the pending request, its settlement, and the move hop the
+ * dialog confirms with.
+ */
+export interface SessionMoveDialogInjected {
+  hooks: {
+    /** The move asked for, until the dialog consumes or cancels it. */
+    moveRequest: HostObservable<SessionMoveRequest | null>
+  }
+  /** Consume or cancel the pending request. */
+  settleSessionMove: () => void
+  /**
+   * Move a Session to another Workspace, which becomes its project; resolves
+   * once the Host made the move durable and raises the moved notice.
+   * Rejects with the Host's refusal, which the dialog reports in place.
+   */
+  moveSession: (sessionId: SessionId, workspaceId: WorkspaceId) => Promise<void>
+}
+
 /** A Session rename the rename action asked for; the dialog entry opens on it. */
 export interface SessionRenameTarget {
   /** Session to rename. */
@@ -532,6 +573,16 @@ export type SessionDeleteConfirmProps =
   & PropsLocale<'workspace'>
   & Omit<SessionDeleteConfirmInjected, 'hooks'>
   & PropsHooks<SessionDeleteConfirmInjected['hooks']>
+
+/**
+ * Props of the move-to-project dialog entry in `shell.overlay`. The choices
+ * come from the global Workspaces hook, so the dialog needs no owner data.
+ */
+export type SessionMoveDialogProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionMoveDialogInjected, 'hooks'>
+  & PropsHooks<SessionMoveDialogInjected['hooks']>
 
 /** Props of the existing overlay's keyed notice dispatcher. */
 export type RowToastProps =

@@ -27,13 +27,13 @@
   en: 148f2ab562fecc09
   zh: 9ba7c07999705b31
 /deepseek-ai-dsh-client-ui-workspace/use-this-package/managing-sessions:
-  en: 72a5d0478e400e84
-  zh: f45f51f397ebe2a4
+  en: d5d1bfa70112cd1b
+  zh: bdd3082edf549cbc
 /deepseek-ai-dsh-client-ui-workspace/use-this-package/pending-interactions:
   en: 9fb88260380bf093
   zh: 3bace2b96ecd4a82
 /deepseek-ai-dsh-client-ui-workspace/use-this-package/active-schedule-markers:
-  en: cb2dea9fe7e3b060
+  en: 9c8ecba247e65b3d
   zh: f8d65c3920ff2cff
 /deepseek-ai-dsh-client-ui-workspace/understand-the-implementation:
   en: e14859b6f1043860
@@ -42,8 +42,8 @@
   en: 868904dbfb5713f8
   zh: 35d3c285ed770885
 /deepseek-ai-dsh-client-ui-workspace/understand-the-implementation/session-row-actions:
-  en: 511408e373ff8c70
-  zh: 7ae3b396171821a4
+  en: a5df032623f297bc
+  zh: f5188a7cfb63f58c
 /deepseek-ai-dsh-client-ui-workspace/understand-the-implementation/session-row-actions/packaged-client-plugin:
   en: 36934671b80b11ae
   zh: 8e0aea6162e35e77

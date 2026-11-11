@@ -7,6 +7,7 @@ import {
   WorkspaceArchivedSessionPinError,
   WorkspaceId,
   WorkspaceMoveInvalidError,
+  WorkspaceMoveTargetInvalidError,
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
@@ -23,6 +24,8 @@ import type {
   WorkspaceDeleteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -151,6 +154,63 @@ export class WorkspaceCommands {
       )
     }
     return { workspace: workspaceView(workspace) }
+  }
+
+  /**
+   * Move one Session to another Workspace and make that Workspace its project.
+   *
+   * The transcript and the Session's immutable creation directory are kept;
+   * the conversation afterwards works in the destination project. Without
+   * `stopActivity` a Session with running work is refused as
+   * `workspace/session-active` with the activity the registry's providers
+   * reported; with it, the providers stop that work after the move is durable.
+   * A destination that cannot own a Session — unknown, or with a missing
+   * directory — is refused as `workspace/move-invalid`.
+   * @param request - Session, destination Workspace, and whether to stop its work.
+   * @returns the resulting project ownership and the destination Workspace row.
+   */
+  async moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue> {
+    try {
+      const outcome = await this.ctx.workspaceRegistry.moveSession(
+        request.sessionId,
+        WorkspaceId(request.workspaceId),
+        request.stopActivity === true ? { stopActivity: true } : {},
+      )
+      const workspace = this.requireWorkspace(request.workspaceId)
+      return {
+        sessionId: outcome.sessionId,
+        workspaceId: outcome.workspaceId,
+        projectPath: outcome.projectPath,
+        ...outcome.previousWorkspaceId === undefined
+          ? {}
+          : { previousWorkspaceId: outcome.previousWorkspaceId },
+        ...outcome.previousProjectPath === undefined
+          ? {}
+          : { previousProjectPath: outcome.previousProjectPath },
+        workspace: workspaceView(workspace),
+      }
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownSessionError) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      if (error instanceof WorkspaceActiveSessionError) {
+        throw new RemoteError(
+          'workspace/session-active',
+          error.message,
+          { sessionId: request.sessionId, activity: error.activity },
+          { cause: error },
+        )
+      }
+      if (error instanceof WorkspaceMoveTargetInvalidError) {
+        throw new RemoteError(
+          'workspace/move-invalid',
+          error.message,
+          { workspaceId: request.workspaceId, sessionId: request.sessionId },
+          { cause: error },
+        )
+      }
+      throw error
+    }
   }
 
   /**

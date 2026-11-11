@@ -2,7 +2,7 @@
 
 [English](workspace.md) | 中文
 
-工作区（workspace）是用户工作目录的持久记录：一个建立在规范路径之上的稳定 id、一个显示标题，以及归属于它的会话的有序账本。该子系统是单个包（package）（[dsh-workspace](../../packages/workspace/workspace)，`ctx.workspaceRegistry`）——一项宿主侧可选能力，不属于 agent loop（智能体循环）主干，并且对模型不可见（没有工具、没有提示词文本、没有会话事件）。它通过[存储领域数据形式](storage.zh.md)存储自己的记录，并对照 [`SessionHeader.cwd`](persistence.zh.md#sessionheader--metadata-beside-the-log) 校验会话成员资格，因此 `storageDomain` 与 `sessionPersistence` 是必需的启动依赖：持久化这一依赖不可用时，插件保持 pending，而不是把这种不可用误当作空历史。设计记录：[领域 KV 存储 Agent Note（agent 决策记录）](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)；引导与 GUI 顺序：[Workspace UI 产品流程 Agent Note](../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md)。
+工作区（workspace）是用户工作目录的持久记录：一个建立在规范路径之上的稳定 id、一个显示标题，以及归属于它的会话的有序账本。该子系统是单个包（package）（[dsh-workspace](../../packages/workspace/workspace)，`ctx.workspaceRegistry`）——一项宿主侧可选能力，不属于 agent loop（智能体循环）主干，并且对模型不可见（没有工具、没有提示词文本、没有会话事件）。它通过[存储领域数据形式](storage.zh.md)存储自己的记录，并通过唯一的权威解析每个会话的项目——存在持久的[项目归属](#project-assignment)时取归属，否则取 [`SessionHeader.cwd`](persistence.zh.md#sessionheader--metadata-beside-the-log)——因此 `storageDomain` 与 `sessionPersistence` 是必需的启动依赖：持久化这一依赖不可用时，插件保持 pending，而不是把这种不可用误当作空历史。设计记录：[领域 KV 存储 Agent Note（agent 决策记录）](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)；引导与 GUI 顺序：[Workspace UI 产品流程 Agent Note](../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md)；项目移动：[移动 Agent Note](../../.agents/notes/implemented/architecture/2026-11-10-project-assignment-and-session-moves.zh.md)。
 
 源码：[`packages/workspace/workspace/src/types.ts`](../../packages/workspace/workspace/src/types.ts)
 
@@ -119,11 +119,59 @@ interface Workspace {
 
 所有权的真源是记录中有序的 `sessionIds`，绝不从会话 cwd 派生。成员资格将记录的 header cwd 与工作区路径校验；已有候选的完全限定 cwd 在路径解析或目录 stat 时返回 `ENOENT`，仍保留其归属。这会保留目录缺失或符号链接失效时的记账关系，但不会接纳新会话。失败的写入会拒绝（`insertSessionBefore` 的账本错误以 `WorkspaceMoveInvalidError` 拒绝，存储失败以普通错误拒绝）；每次被接受的变更都盖上 `updatedAt` 时间戳，并持久修剪不再通过成员资格检查的候选项。
 
+<a id="project-assignment"></a>
+
+## 项目归属
+
+`SessionHeader.cwd` 不可变，因此它本身无法表达「这个会话现在在另一个项目中工作」。代替它的是由注册表拥有的第二个事实：持久的项目归属，存放在领域（domain）的 `session_projects` 表中，以会话 id 为键。每行是一个 `projectPath`（写入归属时所属工作区的规范目录）和一个 `assignedAt` 时刻。该表本身是可选的，所以在它之前写入的单元（unit）解析后只是没有任何归属记录。
+
+`WorkspaceRegistry.projectPathOf(sessionId)` 是「这个会话属于哪个项目」的唯一权威：存在归属时取归属，否则取不可变 header 的规范 cwd。`candidateMatches`、`attachSession`、历史引导，以及每一个消费项目目录的包都通过它解析，因此任一时刻只存在一个答案。由此有两个结果。成员资格对已移动的会话读取归属而不是 header，header 则继续记录会话创建时所在的目录。没有注册表的组合会回退到 header，这也是 `sandbox-policy` 与 `workspace-files` 以可选方式读取该服务、而不是把它声明为注入的原因。
+
+<a id="moving-a-session-between-projects"></a>
+
+## 在工作区之间移动会话
+
+`moveSession(sessionId, targetWorkspaceId, options?)` 为一个会话重新指定项目。它像归档一样拒绝仍有运行中工作的会话——`workspace/session-activity` waterfall 只询问一次，任何上报的活动都会在写入任何内容之前以 `WorkspaceActiveSessionError` 拒绝——并且拒绝无法拥有会话的目标：未知工作区，或目录当前不存在的目标，都以 `WorkspaceMoveTargetInvalidError` 拒绝。注册表不认识的会话以 `WorkspaceUnknownSessionError` 拒绝。
+
+```ts type-equiv
+/** Caller choices for {@link WorkspaceRegistry.moveSession}. */
+interface MoveSessionOptions {
+  /**
+   * Ask the composed providers to stop the session's running work instead of
+   * refusing the move because of it. Without this, any reported activity
+   * rejects with {@link WorkspaceActiveSessionError} and nothing is written.
+   */
+  readonly stopActivity?: boolean
+}
+```
+
+被接受的移动会先写入归属，并带上一个命名 `{ operation: 'move', sessionId, workspaceId }` 的 `pendingMutation` 标记；随后把会话从其他所有账本中解除，再前插到目标工作区。归属最先落地，因为它正是让成员资格解析到目标的依据；标记最后清除，因此中途任何一处被打断，都会在下次启动或下一次注册表操作时补完，而不是让会话失去归属或被两个工作区同时记账。`validateStoredState` 仍会对被两个工作区同时记账的情况大声失败，现在还额外对「归属的 `projectPath` 与记账该会话的记录不一致」失败。
+
+```ts type-equiv
+/** The project ownership that resulted from {@link WorkspaceRegistry.moveSession}. */
+interface SessionMoveOutcome {
+  /** The moved session. */
+  readonly sessionId: SessionId
+  /** The Workspace that owns the session after the move. */
+  readonly workspaceId: WorkspaceId
+  /** Canonical project directory the session works in after the move. */
+  readonly projectPath: string
+  /** The Workspace that owned the session before the move, when it had one. */
+  readonly previousWorkspaceId?: WorkspaceId
+  /** Canonical project directory the session worked in before the move, when one resolved. */
+  readonly previousProjectPath?: string
+}
+```
+
+移动到已经拥有该会话的工作区不是错误，也不会写入任何内容。传输层接口是[工作区控制器](../../packages/api/workspace-controller/src/types.ts)的 `workspace/moveSession`，它把三种拒绝映射为 `workspace/session-active`、`workspace/move-invalid` 和 `session/not-found`，并用移动结果加上目标行作答，使 Client 可以立刻反映这次移动。
+
+会话在下一个请求时才开始在目标项目中工作，而不是在移动过程中：[工作目录](working-directory.zh.md)所有者监听 `agent/created`，比较 `projectPathOf` 与已记录的目录，二者不同就提交一次 `working-directory/change`。正是这次提交抵达了模型、沙箱可写根、`@` 文件引用与各 shell，因此移动既不需要重写 header，也不需要搬移会话记录（transcript）。
+
 ## 注册表：`ctx.workspaceRegistry`
 
-`WorkspaceRegistry`（[签名](#ctxworkspaceregistry--workspaceregistry)）拥有注册与解析。`create(path, title?)` 要求完全限定路径并将其规范化，拒绝不存在的路径（原样传出原始 `ENOENT`）或非目录；当规范路径已被拥有时原样返回既有实体；否则创建一条标题为 `title ?? defaultWorkspaceTitle(path)` 的记录并前插到持久的注册表顺序中（不同规范路径可以共享同一显示标题，没有最终路径段时使用根路径拼写）。`get(id)` 与有序的 `list()` 是同步缓存读取；`resolveByPath(path)` 应用同一套完全限定 realpath 规范但不创建。`delete(id)` 只移除注册记录、顺序条目和会话账本——目录、用户文件、实时会话和已持久化日志一概不动，因此这些会话变为 Ungrouped（[参考](../../packages/workspace/workspace/README.zh.md)）；未知 id 返回 `false`。create 与 delete 会在其两次写入（记录 + 顺序）可能分叉之前先持久写入一个待定变更标记；启动时恰好解决被标记的那次变更——通过删除被标记的表行：这会补完被中断的 delete，并回滚被中断的 create（注册可以重建，因此回滚是安全方向）——而没有标记的顺序/表不一致则作为损坏大声失败。
+`WorkspaceRegistry`（[签名](#ctxworkspaceregistry--workspaceregistry)）拥有注册与解析。`create(path, title?)` 要求完全限定路径并将其规范化，拒绝不存在的路径（原样传出原始 `ENOENT`）或非目录；当规范路径已被拥有时原样返回既有实体；否则创建一条标题为 `title ?? defaultWorkspaceTitle(path)` 的记录并前插到持久的注册表顺序中（不同规范路径可以共享同一显示标题，没有最终路径段时使用根路径拼写）。`get(id)` 与有序的 `list()` 是同步缓存读取；`resolveByPath(path)` 应用同一套完全限定 realpath 规范但不创建。`delete(id)` 只移除注册记录、顺序条目和会话账本——目录、用户文件、实时会话和已持久化日志一概不动，因此这些会话变为 Ungrouped（[参考](../../packages/workspace/workspace/README.zh.md)）；未知 id 返回 `false`。create 与 delete 会在其两次写入（记录 + 顺序）可能分叉之前先持久写入一个待定变更标记；启动时恰好解决被标记的那次变更——通过删除被标记的表行：这会补完被中断的 delete，并回滚被中断的 create（注册可以重建，因此回滚是安全方向）——而没有标记的顺序/表不一致则作为损坏大声失败。被标记的 move 是该回滚方向上的例外：它会被补完，因为[归属](#project-assignment)是项目成员资格的唯一写入方。
 
-会话的 cwd 在创建时由创建者赋予，而不是由本注册表赋予——API 网关从所选工作区的 `path` 解析新会话的 cwd（回退到显式或默认 cwd），先创建会话使 cwd 落入其不可变的 [`SessionHeader`](persistence.zh.md#sessionheader--metadata-beside-the-log)，再调用 `attachSession`，后者会把已存储的 header cwd 与工作区路径重新校验一遍。首次成功启动时，注册表仅凭已持久化的 header（`id`、`cwd`、`createdAt`——绝不读事件正文）引导历史：把规范 cwd 有效的会话按目录分组为工作区，最新的排在最前；「已初始化」标记最后写入，因此被中断的引导可以安全续跑。引导只发生这一次：没有 cwd 的历史遗留会话保持 Ungrouped，此后创建的会话只能通过 `attachSession` 加入工作区。
+会话的 cwd 在创建时由创建者赋予，而不是由本注册表赋予——API 网关从所选工作区的 `path` 解析新会话的 cwd（回退到显式或默认 cwd），先创建会话使 cwd 落入其不可变的 [`SessionHeader`](persistence.zh.md#sessionheader--metadata-beside-the-log)，再调用 `attachSession`，后者会把该项目的目录与工作区路径重新校验一遍。已移动的会话会被挂到其[归属](#project-assignment)所指的工作区，因此已存储的 header cwd 不参与其中。首次成功启动时，注册表仅凭已持久化的 header（`id`、`cwd`、`createdAt`——绝不读事件正文）引导历史：把规范 cwd 有效的会话按目录分组为工作区，最新的排在最前；归属会先于 header 决定这一分组，且显式归属不需要任何文件系统检查。「已初始化」标记最后写入，因此被中断的引导可以安全续跑。引导只发生这一次：没有 cwd 的历史遗留会话保持 Ungrouped，此后创建的会话只能通过 `attachSession` 加入工作区。
 
 ## 默认工作区初始化
 
@@ -357,6 +405,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * @returns the updated Workspace projection.
  */
 @Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
+
+/**
+ * Move one Session to another Workspace, which becomes its project.
+ * @param request - Session, destination Workspace, and whether to stop its running work.
+ * @returns the resulting project ownership and the destination Workspace projection.
+ */
+@Remote('moveSession') moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue>
 
 /**
  * Hide one known Session from Workspace grouping surfaces.
@@ -616,6 +671,58 @@ pinSession(sessionId: SessionId): Promise<void>
  * @returns resolution after durability.
  */
 unpinSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Move one session to another Workspace and make that Workspace its project.
+ *
+ * The immutable session header keeps the directory the session was created
+ * in. What changes is the durable project assignment this registry owns: it
+ * outranks the header for membership, for the directory executing tools use,
+ * and for workspace-scoped file access, so the conversation afterwards
+ * works in the destination project.
+ *
+ * The session must exist (live or in session persistence). The destination
+ * must be a registered Workspace whose directory is currently an existing
+ * directory. Without `stopActivity` the session must also be inactive: the
+ * `workspace/session-activity` waterfall is asked once, and any reported
+ * activity rejects with {@link WorkspaceActiveSessionError} before anything
+ * is written. With `stopActivity` the stops are requested and never awaited
+ * to settlement, because moving an idle-in-effect session is the caller's
+ * stated intent.
+ *
+ * A session whose project already is the destination is not an error and
+ * writes nothing. The assignment is written under a `pendingMutation`
+ * marker: an interrupted move completes at the next startup or registry
+ * operation, and no reachable state accounts the session in two Workspaces.
+ * @param sessionId - The session to move.
+ * @param targetWorkspaceId - The Workspace that becomes its project.
+ * @param options - Whether running work is stopped instead of refusing.
+ * @returns the resulting ownership, naming the previous project when one existed.
+ */
+moveSession( sessionId: SessionId, targetWorkspaceId: WorkspaceId, options: MoveSessionOptions = {}, ): Promise<SessionMoveOutcome>
+
+/**
+ * The Workspace currently accounting a session, if any.
+ * @param sessionId - Session to locate.
+ * @returns the owning Workspace id, or undefined when no record accounts it.
+ */
+ownerOf(sessionId: SessionId): WorkspaceId | undefined
+
+/**
+ * Resolve the project directory of one session: its explicit project
+ * assignment when one exists, otherwise the canonical cwd of its immutable
+ * header.
+ *
+ * This is the single authority for "which project does this conversation
+ * work in". The assignment decides without touching the header or the
+ * filesystem, so a moved session resolves to its destination project while
+ * its header keeps the directory it was created in. The header fallback
+ * reports only a canonical path that resolved to an existing directory when
+ * the header was indexed.
+ * @param sessionId - Session to resolve.
+ * @returns the canonical project directory, or undefined when neither input resolves one.
+ */
+projectPathOf(sessionId: SessionId): string | undefined
 
 /**
  * Resolve by canonical directory path without creating or mutating a

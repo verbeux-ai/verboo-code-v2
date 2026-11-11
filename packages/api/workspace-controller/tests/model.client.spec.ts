@@ -14,6 +14,8 @@ import type {
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspaceOrderValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
@@ -88,6 +90,14 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   ) => Promise<RemoteResult<WorkspaceValue>> = request => Promise.resolve(remoteOk({
     workspace: workspace(String(request.workspaceId), [request.sessionId]),
   }))
+  onMoveSession: (
+    request: WorkspaceMoveSessionRequest,
+  ) => Promise<RemoteResult<WorkspaceMoveSessionValue>> = request => Promise.resolve(remoteOk({
+    sessionId: request.sessionId,
+    workspaceId: request.workspaceId,
+    projectPath: `/w/${String(request.workspaceId)}`,
+    workspace: workspace(String(request.workspaceId), [request.sessionId]),
+  }))
   onArchiveSession: (
     request: WorkspaceArchiveSessionRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
@@ -131,6 +141,11 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<RemoteResult<WorkspaceValue>> {
     this.record('insertSessionBefore', request)
     return this.onInsertSessionBefore(request)
+  }
+
+  moveSession(request: WorkspaceMoveSessionRequest): Promise<RemoteResult<WorkspaceMoveSessionValue>> {
+    this.record('moveSession', request)
+    return this.onMoveSession(request)
   }
 
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
@@ -385,8 +400,42 @@ describe('ClientWorkspaceModel', () => {
   })
 
 
-  it('deletes a Session only through the Host and forwards stopActivity faithfully', async () => {
+  it('moves a Session to another project and merges only the destination row', async () => {
     const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [workspace('one', [sid('moved')]), workspace('two')])
+
+    const result = await model.moveSession(sid('moved'), wid('two'))
+    expect(result).toMatchObject({
+      ok: true,
+      value: { sessionId: 'moved', workspaceId: 'two', projectPath: '/w/two' },
+    })
+    expect(remote.calls).toContainEqual({ method: 'moveSession', request: { sessionId: 'moved', workspaceId: 'two' } })
+    // Omission and false both mean "refuse running work", never "stop it".
+    await model.moveSession(sid('moved'), wid('two'), { stopActivity: false })
+    expect(remote.calls.at(-1)).toEqual({ method: 'moveSession', request: { sessionId: 'moved', workspaceId: 'two' } })
+    await model.moveSession(sid('moved'), wid('two'), { stopActivity: true })
+    expect(remote.calls.at(-1)).toEqual({
+      method: 'moveSession', request: { sessionId: 'moved', workspaceId: 'two', stopActivity: true },
+    })
+
+    // The destination row carries the moved session; the origin row keeps the
+    // account the Host's own follow frame will replace.
+    const rows = model.getSnapshot().items
+    expect(rows.find(row => row.workspaceId === 'two')?.sessionIds).toEqual(['moved'])
+    expect(rows.find(row => row.workspaceId === 'one')?.sessionIds).toEqual(['moved'])
+
+    remote.onMoveSession = () => Promise.resolve(workspaceError(
+      new RemoteError('workspace/session-active', 'busy', {
+        sessionId: sid('moved'),
+        activity: [{ kind: 'turn' }],
+      }),
+    ))
+    await expect(model.moveSession(sid('moved'), wid('two'))).resolves.toMatchObject({ ok: false })
+    expect(model.getSnapshot().items.find(row => row.workspaceId === 'one')?.sessionIds).toEqual(['moved'])
+  })
+
+  it('deletes a Session only through the Host and forwards stopActivity faithfully', async () => {    const remote = new FakeWorkspaceRemote()
     const model = modelFor(remote)
     baseline(model, [], [], [sid('pinned')])
 
