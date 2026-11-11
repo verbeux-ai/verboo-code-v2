@@ -30,8 +30,11 @@
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
       openExternal(url) {
         const target = new URL(url)
-        if (target.username || target.password || (target.protocol !== 'https:'
-          && !(target.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname)))) {
+        // Same allowlist the native navigation hook applies: a browsable page on
+        // either scheme, or a destination another program registered. Credentials
+        // never leave this document.
+        if (target.username || target.password
+          || !['https:', 'http:', 'mailto:', 'tel:'].includes(target.protocol)) {
           return Promise.reject(new Error('Verboo Code: external_url_invalid'))
         }
         return invoke('plugin:opener|open_url', { url: target.href, with: null })

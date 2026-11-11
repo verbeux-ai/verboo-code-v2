@@ -48,11 +48,21 @@ test('does not report successful product startup for a generic mounted root', as
   assert.equal(calls.includes('client_ready'), false)
 })
 
-test('opens OAuth in the system browser and rejects local file or script protocols', async (t) => {
+test('opens allowlisted destinations in the system browser and rejects embedded or script protocols', async (t) => {
   const { dom, requests } = page(t, '<main>workspace</main>')
-  await dom.window.__VERBOO_DESKTOP__.openExternal('https://code.verboo.ai/oauth/authorize?state=fixture')
-  assert.deepEqual(JSON.parse(JSON.stringify(requests.at(-1))), { command: 'plugin:opener|open_url', args: { url: 'https://code.verboo.ai/oauth/authorize?state=fixture', with: null } })
-  for (const url of ['file:///private/fixture', 'javascript:void(0)', 'http://remote.example.invalid', 'https://user:password@code.verboo.ai']) {
+  for (const url of [
+    'https://code.verboo.ai/oauth/authorize?state=fixture',
+    'http://intranet.example.invalid/wiki',
+    'mailto:dev@example.com',
+    'tel:+5511999999999',
+  ]) {
+    await dom.window.__VERBOO_DESKTOP__.openExternal(url)
+    assert.deepEqual(JSON.parse(JSON.stringify(requests.at(-1))), { command: 'plugin:opener|open_url', args: { url, with: null } })
+  }
+  for (const url of [
+    'file:///private/fixture', 'javascript:void(0)', 'data:text/html,<b>x</b>', 'ftp://example.invalid/x',
+    'https://user:password@code.verboo.ai', 'verboo://open',
+  ]) {
     await assert.rejects(dom.window.__VERBOO_DESKTOP__.openExternal(url))
   }
 })
