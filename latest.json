@@ -1,22 +1,22 @@
 {
-  "version": "0.2.2-alpha.14",
-  "pub_date": "2026-11-11T14:38:18.185Z",
+  "version": "0.2.2-alpha.15",
+  "pub_date": "2026-11-11T19:36:42.772Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOWZNRU9FNEdod1pSOWY0aEJCaldTTk5TdmlLWWFSbGdBWEpzMjBFQVpxL0NsZ0pkTktsamxUdXJnV3FmZWgxdTA5czJ2SFMyVjdoQ0RsOU5WMUlyNlFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDA2NDc0CWZpbGU6VmVyYm9vIENvZGUuYXBwLnRhci5negl2ZXJzaW9uOjAuMi4yLWFscGhhLjE0CmRhcGNLa1pSenlKWnkxcXRqZjUybFVqd1kwSHJ4NEZXQUhSdXZYbGtXa3lxY2dNdFp2Wk9raTZGbHJ1aDc2V21ZWTBvVndpc2x2cTJWc0I4VXRUVURnPT0K",
-      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.14/Verboo-Code-v2-0.2.2-alpha.14-macOS-Apple-Silicon.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOWU0NjVSSFZsRW5xRHQxZlg0UUFkd082dEg3OW5abXNocnhqbW5lV21YY01jV0xJejRwM3JEUS80OXVHSy95dFl6RjJGeFYvUUV0UloxdTcyaDIvS2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDI1MTU5CWZpbGU6VmVyYm9vIENvZGUuYXBwLnRhci5negl2ZXJzaW9uOjAuMi4yLWFscGhhLjE1Ck1uQnhlY29qcFhCcE03QitaV1Q3b0l6NTVNRDhQSkRkSjNRRlJQMWRmSkJmVERVOHgyTkFITnFOTTY5K01PK1JWYXJaeFQwb3QxTXRGMTlNdktFeURnPT0K",
+      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.15/Verboo-Code-v2-0.2.2-alpha.15-macOS-Apple-Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOVJyUWVRV3VuUis0elF6TDJ2cFVwcFdxcXZaVWhQemR1Y0NteE1Ob042UWhwa3pieTEvNlJyRTRqWTRuaGFWb0RUc0NHeWpWYzN3OEpwSWRKZUxsVHdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDA3MTEzCWZpbGU6VmVyYm9vIENvZGUuYXBwLnRhci5negl2ZXJzaW9uOjAuMi4yLWFscGhhLjE0CmJML3h5Wk51YW5GVEFBY3JpcEZaVm0wa2o3M01kWVZuWTJRV1c5WTJpWnBLcWt6dzJoSEhHcEU5QUFpZitXR3dTMldtUEYyRXBkbFg4V3kxRitUNkRnPT0K",
-      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.14/Verboo-Code-v2-0.2.2-alpha.14-macOS-Intel.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOVVJckFSTWpsTlg5akJZU3BndkVnNFZ1UzdaaGxpT0VZbG54Kzhoay9oZHJDdUhIdEZnNE9ybmEzL0FuZ1I0NkkwMTBmM1Vha3ZERG81aEMvN0V0NEFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDI1MDM0CWZpbGU6VmVyYm9vIENvZGUuYXBwLnRhci5negl2ZXJzaW9uOjAuMi4yLWFscGhhLjE1CmhJeFJtU0RIeVI4RERmdVlkQXlIN3lBbG5TNFFTb3JHMytMYUgxSlhHeC9Ha0k4ZUFIcFRvZE9SWFUrU0hVNGVpT092OG45S0l2ZnFCT2ZiTzVqckRnPT0K",
+      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.15/Verboo-Code-v2-0.2.2-alpha.15-macOS-Intel.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOVRNbFFZN2g4eFlyUnhJMnFCZkI5NWdLZlNiWGRuNEFVTm5CQ3E3aEJoa3psOVJnV3BNWkMxMjR5QkpTRG53SmZWQmo0aUtGM2tIVE1zODM5NENRTEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDA1MjgwCWZpbGU6VmVyYm9vIENvZGVfMC4yLjItYWxwaGEuMTRfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4yLWFscGhhLjE0CkFjdGZkd2E2aE9pSDRPY1BvYlArVDlubDlqSVdDdWE5YlBsdjc4ck1ZYWtXbmpIdGZ4cCsxRjNOcmxxeVV0WXdDNVVtOW83TjZYUFd2TGFkcEhqRENnPT0K",
-      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.14/Verboo-Code-v2-0.2.2-alpha.14-Windows-x64-Setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOVkyYWFVMEhGSXIwak15QUNCSXZxNDJlbXZ0RW1YWGd3dTVYYm9BcmtkMTZGU1V2TDZKZjVWRndha2w2ZWZiaElBT2pUQ0taaFZCamVCd24rUWt1c1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDI0OTI0CWZpbGU6VmVyYm9vIENvZGVfMC4yLjItYWxwaGEuMTVfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4yLWFscGhhLjE1Cm9rWmFZOVBjL3RlaHNIMFcwNFZiOHhwcStQRjY1dXhMQVVBTTdsNCtiajhmWWp3N01DbkdRR3FBdEhlWHlGR0I0NjJXZUFsZFBYK1BUbG00aVV6WURBPT0K",
+      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.15/Verboo-Code-v2-0.2.2-alpha.15-Windows-x64-Setup.exe"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOVNGR25NOTVjQ0JYTkZ3WHQwMlN1S0EzZG9ERTNod1luOUNZSEJsSGxRTkZYOWxVZkIvdEE4VWlsT2gyeVpFZ2pHMkFEeU50cUZaTVloUVh0N2xLTUFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDA0NTQyCWZpbGU6VmVyYm9vIENvZGVfMC4yLjItYWxwaGEuMTRfYW1kNjQuQXBwSW1hZ2UJdmVyc2lvbjowLjIuMi1hbHBoYS4xNApTWURSS3BabHdtUjlSSDFKMEZDMkVnN1dmeEZVbnZWejZNMXY1T2VPdzZFQVAxR1NuOGNtNFExVjNWdzhrNHhYMm8vV0xGV1Q1ZGpJZ3BUSDdKUkdDZz09Cg==",
-      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.14/Verboo-Code-v2-0.2.2-alpha.14-Linux-x64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUOTcvZG43MmFLOWJRYW5vVlQzMXNJVWs3MEQwaXFzQnVRenQ4Ri9uWjJsd1l1eittRE5qRjZ6U0M1a2dtZGRkL1FnWFlhaXNqa1g1UDRhWS9YYUpiMTZ0ZGR1U0E2TkE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDI0NjAxCWZpbGU6VmVyYm9vIENvZGVfMC4yLjItYWxwaGEuMTVfYW1kNjQuQXBwSW1hZ2UJdmVyc2lvbjowLjIuMi1hbHBoYS4xNQpUTlRLQmtQWDRGQWRnNC9ZMHJPVDFySmZycHVwdHdNL3B0MXJ2NlQ5L2U4RGdNWHNNM3BPd0dlMmVmQW5jMWJtMHVjVGlTTWlaRTVMeW5GQk9SSGJBQT09Cg==",
+      "url": "https://github.com/verbeux-ai/verboo-code-v2/releases/download/v0.2.2-alpha.15/Verboo-Code-v2-0.2.2-alpha.15-Linux-x64.AppImage"
     }
   }
 }
