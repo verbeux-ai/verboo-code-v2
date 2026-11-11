@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verboo Code</title>
+    <style>
+      @font-face {
+        font-family: 'Verboo Nunito';
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url('fonts/nunito-latin-variable.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'Verboo Nunito';
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url('fonts/nunito-latin-ext-variable.woff2') format('woff2');
+        unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+
+      :root {
+        --surface: #ffffff;
+        --border: #e4e4e7;
+        --ink: #18181b;
+        --muted: #71717a;
+        --accent: #8e22d3;
+        --track: #f0e8f7;
+        --danger: #b03846;
+        --radius: 12px;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #0a0a0a;
+          --border: #282828;
+          --ink: #fafafa;
+          --muted: #a1a1a1;
+          --accent: #c078ff;
+          --track: #241a2e;
+          --danger: #e99b9b;
+          color-scheme: dark;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--border);
+        font-family: 'Verboo Nunito', system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.55;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 16px 22px 0;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.01em;
+      }
+      header img { width: 22px; height: 22px; flex: none; }
+      header .wordmark { color: var(--muted); }
+
+      main { padding: 14px 22px 0; display: grid; align-content: start; gap: 6px; }
+      h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+      p { margin: 0; color: var(--muted); }
+      .version { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+
+      /* The bar is the only moving element: a purple fill on a quiet track. */
+      .progress { margin-top: 18px; display: grid; gap: 8px; }
+      .track {
+        position: relative;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--track);
+        overflow: hidden;
+      }
+      .fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0%;
+        border-radius: 999px;
+        background: var(--accent);
+        transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      /* Indeterminate arm: the Host cannot report content length for every feed. */
+      .fill[data-indeterminate='true'] {
+        width: 34%;
+        transition: none;
+        animation: sweep 1.35s ease-in-out infinite;
+      }
+      @keyframes sweep {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(295%); }
+      }
+      .meter { display: flex; justify-content: space-between; align-items: baseline; }
+      .percent { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
+
+      footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 18px 22px 18px;
+      }
+      button {
+        min-height: 34px;
+        padding: 7px 15px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+      }
+      .primary { background: var(--accent); color: #fff; }
+      .quiet { background: transparent; border-color: var(--border); color: var(--ink); }
+      @media (hover: hover) {
+        .primary:hover { filter: brightness(1.06); }
+        .quiet:hover { background: var(--track); }
+      }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button:disabled { opacity: 0.55; cursor: default; filter: none; }
+
+      .failure { color: var(--danger); }
+      .meter[data-failed='true'] { justify-content: flex-start; }
+      [hidden] { display: none !important; }
+      @media (prefers-reduced-motion: reduce) {
+        .fill { transition: none; }
+        .fill[data-indeterminate='true'] { animation: none; width: 100%; opacity: 0.45; }
+      }
+    </style>
+  </head>
+  <body>
+    <header data-tauri-drag-region>
+      <img src="verboo-mascot.png" alt="" data-tauri-drag-region />
+      <span data-tauri-drag-region>Verboo Code</span>
+      <span class="wordmark" data-tauri-drag-region data-role="version"></span>
+    </header>
+
+    <main>
+      <h1 data-role="title"></h1>
+      <p data-role="body"></p>
+
+      <section class="progress" data-role="progress" hidden>
+        <div class="track">
+          <div class="fill" data-role="fill"></div>
+        </div>
+        <div class="meter">
+          <span data-role="status"></span>
+          <span class="percent" data-role="percent"></span>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <button type="button" class="quiet" data-role="later"></button>
+      <button type="button" class="primary" data-role="install"></button>
+    </footer>
+
+    <script>
+      // Copy arrives from Rust so every language stays in one place.
+      const invoke = (command) => window.__TAURI_INTERNALS__.invoke(command)
+      const copy = window.__VERBOO_UPDATE__
+      const role = name => document.querySelector(`[data-role="${name}"]`)
+      const progress = role('progress')
+      const fill = role('fill')
+      const percent = role('percent')
+      const status = role('status')
+      const install = role('install')
+      const later = role('later')
+
+      // The feed's version may already carry its own "v".
+      role('version').textContent = String(copy.version).replace(/^v/i, '')
+      role('title').textContent = copy.title
+      role('body').textContent = copy.body
+      install.textContent = copy.install
+      later.textContent = copy.later
+
+      /** Reflect one download step without announcing every tick. */
+      window.__setProgress = (ratio) => {
+        const clamped = Math.max(0, Math.min(1, Number(ratio) || 0))
+        fill.dataset.indeterminate = 'false'
+        fill.style.width = `${clamped * 100}%`
+        percent.textContent = `${Math.round(clamped * 100)}%`
+        progress.setAttribute('aria-valuenow', String(Math.round(clamped * 100)))
+      }
+      /** The feed reported no length: show motion, not a false percentage. */
+      window.__setIndeterminate = () => {
+        fill.dataset.indeterminate = 'true'
+        fill.style.width = ''
+        percent.textContent = ''
+        progress.removeAttribute('aria-valuenow')
+      }
+      /** Swap the offer for the running state; the buttons leave the flow. */
+      window.__enterProgress = (runningCopy) => {
+        role('title').textContent = runningCopy.title
+        role('body').textContent = runningCopy.body
+        status.textContent = runningCopy.status
+        progress.hidden = false
+        progress.setAttribute('role', 'progressbar')
+        progress.setAttribute('aria-label', runningCopy.status)
+        progress.setAttribute('aria-valuemin', '0')
+        progress.setAttribute('aria-valuemax', '100')
+        install.hidden = true
+        later.hidden = true
+        window.__setProgress(0)
+        install.blur()
+      }
+      /** Report a failed install in place instead of leaving a frozen bar. */
+      window.__fail = (message) => {
+        fill.dataset.indeterminate = 'false'
+        fill.style.width = '100%'
+        fill.style.background = 'var(--danger)'
+        progress.removeAttribute('aria-valuenow')
+        progress.removeAttribute('aria-label')
+        status.textContent = message
+        status.classList.add('failure')
+        status.parentElement.dataset.failed = 'true'
+        percent.textContent = ''
+        // A failed attempt always ends on one action, whichever state it came from.
+        install.hidden = true
+        progress.hidden = false
+        later.hidden = false
+        later.textContent = copy.close
+        later.focus()
+      }
+
+      install.addEventListener('click', () => {
+        install.disabled = true
+        later.disabled = true
+        invoke('update_install').catch(() => {
+          window.__fail(copy.failed)
+        })
+      })
+      later.addEventListener('click', () => {
+        invoke('update_close').catch(() => {})
+      })
+      // Escape declines only while the offer is still on screen; once the download
+      // starts the window stays, because the app restarts on its own.
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !install.hidden) {
+          invoke('update_close').catch(() => {})
+        }
+      })
+      install.focus()
+    </script>
+  </body>
+</html>
