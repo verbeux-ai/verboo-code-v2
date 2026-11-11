@@ -79,6 +79,18 @@ export interface QuotaNoticeState {
   seq: number
 }
 
+/**
+ * Facts naming the reply row that closes its Turn. A Turn renders one reply
+ * row per Assistant step, so a mark drawn on every row repeats once per step.
+ */
+export interface AssistantMarkOwnerProps {
+  /**
+   * Whether this row carries the Turn's finalized answer. At most one row per
+   * Turn reports it, and a Turn without a finalized answer reports it nowhere.
+   */
+  readonly closing: boolean
+}
+
 /** Original and display-ready reasoning offered to the expanded Body Slot. */
 export interface ReasoningBodyOwnerProps {
   /** Complete or streaming model output. */
@@ -461,8 +473,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: UserBeforeOwnerProps
     }
-    /** Optional product mark beside an Assistant reply; absent entries reserve no space. */
-    'conversation.chat.assistant.mark': { kind: 'single'; scope: 'session' }
+    /**
+     * Optional product mark beside an Assistant reply; absent entries reserve
+     * no space. Every non-reasoning reply row renders the slot, so a mark that
+     * identifies the Turn instead of the step reads `closing` and draws on
+     * that row only.
+     */
+    'conversation.chat.assistant.mark': { kind: 'single'; scope: 'session'; owner: AssistantMarkOwnerProps }
     /**
      * Renderer for one consecutive group of durable message images. The owner
      * supplies image references, an authorized loader, and alignment. A

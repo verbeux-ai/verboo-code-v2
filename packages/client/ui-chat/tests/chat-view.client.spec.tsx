@@ -28,7 +28,7 @@ import type {
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
-import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { KeyedSnapshotSelectorHook, OwnerOf, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ConnectionState } from '@deepseek-ai/dsh-client-connection/client'
@@ -92,6 +92,7 @@ beforeEach(() => {
 
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = Parameters<NodeRenderer>[1]
+type AssistantMarkOwner = OwnerOf<'conversation.chat.assistant.mark'>
 
 interface TestSessionSnapshot extends SessionSnapshot {
   readonly testInbox?: InboxState
@@ -380,6 +381,11 @@ function HarnessChatNode({
   }
 }
 
+/** Read the mark owner's `closing` flag from the generic slot owner this harness receives. */
+function readClosing(owner: object): boolean {
+  return 'closing' in owner && owner.closing === true
+}
+
 function makeHarness(
   init: HarnessUpdate = {},
   sessionOverrides: Partial<TestSessionSnapshot> = {},
@@ -446,7 +452,7 @@ function makeHarness(
   const useOriginRenderer = bindSnapshotSelector(originRenderer)
   let nodeSlotOverride: NodeRenderer | undefined
   let imageSlotOverride: ImageRenderer | undefined
-  let assistantMark: string | undefined
+  let assistantMark: ((owner: AssistantMarkOwner) => React.ReactNode) | undefined
   const renderImages = (name: string, owner: object, options?: { fallback?: React.ReactNode }) => {
     if ((name !== 'conversation.chat.user.images' && name !== 'conversation.chat.message.images') || !isImageOwner(owner)) {
       throw new Error(`Unexpected Chat image Slot: ${name}`)
@@ -454,7 +460,7 @@ function makeHarness(
     return imageSlotOverride?.(owner) ?? options?.fallback ?? null
   }
   const renderAssistantSlot: React.ComponentProps<typeof AssistantNodeView>['renderSlot'] = (name, owner, options) =>
-    name === 'conversation.chat.assistant.mark' ? assistantMark ?? null :
+    name === 'conversation.chat.assistant.mark' ? assistantMark?.({ closing: readClosing(owner) }) ?? null :
       name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoningSlot(name, owner, options)
   const renderNodeSlot: NodeRenderer = (key, owner, opts) => {
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key, owner, opts)
@@ -591,7 +597,9 @@ function makeHarness(
     setFoldedReplies: (replies: FoldedReplies) => { foldedReplies.set(replies) },
     setNodeRenderer: (renderer: NodeRenderer) => { nodeSlotOverride = renderer },
     setImageRenderer: (renderer: ImageRenderer) => { imageSlotOverride = renderer },
-    setAssistantMark: (mark: string) => { assistantMark = mark },
+    setAssistantMark: (mark: React.ReactNode | ((owner: AssistantMarkOwner) => React.ReactNode)) => {
+      assistantMark = typeof mark === 'function' ? mark : () => mark
+    },
     setOriginRenderer: (renderer: UserChainRenderer | undefined) => { originRenderer.set({ renderer }) },
   }
 }
@@ -720,6 +728,46 @@ describe('Chat node rendering', () => {
     render(<ChatView {...h.props} />)
     expect(screen.getByText('Product mark')).toBeTruthy()
     expect(screen.getByText('Assistant answer')).toBeTruthy()
+  })
+
+  it('marks a multi-reply Turn once, on the reply that closes it', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'question'),
+        assistant(3, 'stage reply', 1, 2),
+        toolResult(4, 'a'),
+        assistant(5, 'final answer', 1, 3),
+      ],
+      turnEnds: new Map([[1, 6]]),
+    })
+    // The owner decides, exactly as a product mark does: earlier reply rows of
+    // the same Turn draw nothing.
+    h.setAssistantMark(owner => owner.closing
+      ? <img data-testid="mark" src="mascot" alt="" />
+      : null)
+    const view = render(<ChatView {...h.props} />)
+
+    const marks = [...view.container.querySelectorAll('[data-chat-assistant-mark] img')]
+    expect(marks).toHaveLength(1)
+    expect(marks[0]?.closest('[data-chat-node-key]')?.textContent).toContain('final answer')
+    // An unmarked row leaves the cell empty, which is what its `:empty` rule
+    // hides, so the row keeps no 28px column and no gap.
+    const stageCell = view.getByText('stage reply')
+      .closest('[data-chat-node-key]')?.querySelector('[data-chat-assistant-mark]')
+    expect(stageCell?.childNodes).toHaveLength(0)
+  })
+
+  it('leaves every reply row unmarked while a Turn has no finalized answer', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), assistant(3, 'stage reply', 1, 2)],
+      partial: { turn: 1, step: 3, blocks: [{ kind: 'reasoning', text: 'still working' }] },
+    })
+    h.setAssistantMark(owner => owner.closing
+      ? <img data-testid="mark" src="mascot" alt="" />
+      : null)
+    const view = render(<ChatView {...h.props} />)
+
+    expect(view.container.querySelectorAll('[data-chat-assistant-mark] img')).toHaveLength(0)
   })
 
   it('adapts Markdown targets with the original Session and resolves file paths when each gesture begins', () => {

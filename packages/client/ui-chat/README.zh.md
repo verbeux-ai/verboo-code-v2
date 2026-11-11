@@ -50,9 +50,9 @@ Session 作用域的 `conversation.chat.user.content` Factory 只渲染用户内
 
 独立的 Markdown 图片以内嵌预览显示，点击打开共享图片浮层；本地路径在消息落定后基于当前查看的工作区解析。图片文件链接保持点击打开侧栏，鼠标停留或键盘聚焦时显示缩略图，Esc 关闭缩略图。图片加载失败时保留本地化状态与图片说明；不执行重复图片过滤。
 
-设置 → 通用设置 → 网页链接默认打开方式控制普通点击 Chat HTTP(S) 链接时的目标：「应用内侧边栏」（默认）打开新的右侧 Sidebar Browser tab，「默认浏览器」打开外部标签页。该设置项位于快捷键之后，仅在 Sidebar Browser 可用时显示。若 Sidebar Browser 未注册，两种选择均使用外部浏览器；带修饰键的点击保留原生行为。已认证浏览器的 `ui-chat.linkOpening` 偏好在 Host 上持久化，设置无法持久化写入时仅在当前进程内生效。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
+设置 → 通用设置 → 网页链接默认打开方式控制普通点击 Chat 中可打开页面的链接时的目标：「应用内侧边栏」（默认）打开新的右侧 Sidebar Browser tab，「默认浏览器」打开外部标签页。Chat 本身不打开任何窗口：每次点击都交给[外部链接服务](../external-links/README.zh.md)，后者在手势内预留弹窗、把桌面端目标交给系统浏览器，并报告拒绝。该设置项仅在 Sidebar Browser 可用时显示，因此没有它的配置不会提供无法兑现的选择；带修饰键的点击保留原生行为。已认证浏览器的 `ui-chat.linkOpening` 偏好在 Host 上持久化，设置无法持久化写入时仅在当前进程内生效。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
-Assistant 节点在回复正文旁拥有可选的 Session 作用域 `conversation.chat.assistant.mark` Slot。产品可注册装饰性标志，无需替换 Markdown 或推理渲染器。仅包含推理的分组片段不显示标志；空 Slot 不预留列空间。
+Assistant 节点在回复正文旁拥有可选的 Session 作用域 `conversation.chat.assistant.mark` Slot。产品可注册装饰性标志，无需替换 Markdown 或推理渲染器。每个非推理的回复行都渲染该 Slot，其 `closing` owner 事实标识承载该 Turn 最终答案的那一行，因此标识整个 Turn 的标志只绘制一次，而不是每个 Assistant step 各绘制一次；每个 Turn 至多一行报告该事实，没有最终答案的 Turn 不在任何行报告。仅包含推理的分组片段不渲染该 Slot，返回空内容的标志不预留列空间。
 
 <a id="system-prompt-row"></a>
 ## Chat 隐藏的行
