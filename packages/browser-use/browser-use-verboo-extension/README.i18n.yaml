@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/browser-use/browser-use-verboo-extension/README.md
+/:
+  en: 62ce2203742ba741
+  zh: d59926bb9dd98da7
+/deepseek-ai-dsh-browser-use-verboo-extension:
+  en: bf228b9cf634686a
+  zh: 249787c0d513f3c6
+/deepseek-ai-dsh-browser-use-verboo-extension/summary:
+  en: 9f6df6929d1d8f88
+  zh: c1363bd87d802739
+/deepseek-ai-dsh-browser-use-verboo-extension/table-of-contents:
+  en: 76368b6b1da79c80
+  zh: c8961ca66c25fc06
+/deepseek-ai-dsh-browser-use-verboo-extension/use-this-package:
+  en: cc823cd9e718495f
+  zh: aff60d332f32667a
+/deepseek-ai-dsh-browser-use-verboo-extension/configuration:
+  en: dff2dd3d27836f17
+  zh: 46215bf2afe93a18
+/deepseek-ai-dsh-browser-use-verboo-extension/understand-the-implementation:
+  en: b133aec309313211
+  zh: e2ad1481dfb81c11
+/deepseek-ai-dsh-browser-use-verboo-extension/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-browser-use-verboo-extension/model-experience/product-integration:
+  en: e4b4b7973e495a62
+  zh: 658ad0d57ec52b75
+/deepseek-ai-dsh-browser-use-verboo-extension/model-experience/product-integration/what-the-model-sees:
+  en: 58e6077a5f4e85ec
+  zh: e3e2992024372281
+/deepseek-ai-dsh-browser-use-verboo-extension/model-experience/product-integration/token-effect:
+  en: 5310a85f2a921beb
+  zh: 883862ef4785909d
+/deepseek-ai-dsh-browser-use-verboo-extension/model-experience/product-integration/kv-cache-effect:
+  en: 035be4e61f639b11
+  zh: c6cefc932957fda5
+/deepseek-ai-dsh-browser-use-verboo-extension/known-limitations-and-deferred-work:
+  en: 5ad3d554ffacc521
+  zh: 2a2d1754dae4b022
+/deepseek-ai-dsh-browser-use-verboo-extension/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

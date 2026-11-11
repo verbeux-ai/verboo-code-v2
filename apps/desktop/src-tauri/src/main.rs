@@ -2,6 +2,7 @@
 
 mod host;
 mod locale;
+mod native_messaging;
 mod update;
 
 use host::{authenticated_url, HostEvent, HostProcess, RuntimeConfig, STARTUP_DEADLINE};
@@ -171,6 +172,9 @@ fn main() {
             client_diagnostic
         ])
         .setup(move |app| {
+            if let Err(code) = native_messaging::register(&app.handle()) {
+                eprintln!("Verboo Code: {code}");
+            }
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Verboo Code")

@@ -28,6 +28,8 @@ pnpm run start:desktop
 
 `pnpm run build:desktop` 为当前主机平台构建 Tauri 应用。它打包工作区依赖与 peer 闭包，保留经过审核的补丁和构建脚本权限，使用 SHA-256 验证官方独立 Node 压缩包，并在调用 Tauri 打包器前运行真实配置冒烟测试。运行时不包含开发目录或模型凭据。产物位于 `apps/desktop/.desktop-build/tauri/target/release/bundle`。
 
+构建还会生成 Chrome Native Messaging 可执行文件。发行版必须将 `VERBOO_CHROME_EXTENSION_ID` 设为已发布的 Chrome Web Store 扩展 ID；若 ID 缺失或无效，启动器会拒绝构建。GitHub 发布工作流读取公开仓库变量 `VERBOO_CHROME_EXTENSION_ID`，该变量必须设置为 Chrome Web Store 签发的扩展 ID。开发环境可不设置 ID 并在不注册 Native Messaging 的情况下运行，也可设置 Chrome 分配给未打包扩展的 ID。应用启动时会安装每用户 Native Messaging 清单，并在 Windows 上写入 Chrome 注册表项。扩展源码与 Web Store 打包流程位于独立的 [verboo-code-browser-extension 仓库](https://github.com/verbeux-ai/verboo-code-browser-extension)。
+
 Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会保留 glibc 系统和 FFI 插件、主机 PTY 预构建文件以及静态 Landlock launcher。未使用的 musl 和其他平台 PTY 二进制文件仅从暂存目录中移除，源代码包保持完整。
 
 保留的 Electron 安装器和更新器测试属于[Electron 参考](../README.zh.md)描述的旧工具。Tauri 改用自带的更新器，不再连接 Electron 更新服务。

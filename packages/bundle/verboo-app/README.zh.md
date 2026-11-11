@@ -27,7 +27,7 @@ kind: "package-bundle"
 
 构建仓库后，使用 `pnpm dsh --profile verboo --no-open` 预览浏览器界面，或使用 `pnpm run dev:desktop` 进行 Tauri 开发。此配置按顺序叠加基础、Web 与产品 bundle。
 
-产品使用精简 Chat 详情，并省略诊断用 Trajectory 视图。界面通过类型化 Slot 覆盖活动与词元统计底栏单元，并替换上下文用量控件。权限、模型选择、处理状态和账号耐力仍保留各自的控件。
+产品使用精简 Chat 详情，并省略诊断用 Trajectory 视图。界面通过类型化 Slot 覆盖活动与词元统计底栏单元，并替换上下文用量控件。权限、模型选择、处理状态和账号耐力仍保留各自的控件。此 bundle 还会挂载 Chrome 扩展提供方，为每个会话添加浏览器工具，并连接用户现有的 Chrome 配置文件。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现
@@ -35,7 +35,7 @@ kind: "package-bundle"
 <details>
 <summary>实现细节</summary>
 
-[产品补丁](cordis.patch.yml)通过稳定条目 ID 替换账号和界面提供方，并加载连接扩展。上游内部包名与已保存的模型提供方路由仍为技术标识。更新上游时，合并引擎与 Web 组合、审查少量共享扩展修改、重新构建，并执行产品浏览器 QA 与共享 GUI 检查。
+[产品补丁](cordis.patch.yml)通过稳定条目 ID 替换账号和界面提供方，并加载连接与 Chrome 浏览器扩展。上游内部包名与已保存的模型提供方路由仍为技术标识。更新上游时，合并引擎与 Web 组合、审查少量共享扩展修改、重新构建，并执行产品浏览器 QA 与共享 GUI 检查。
 
 产品通过 `system-prompt.identity` 设置身份，不重写预设工具列表，因此上游 persona 保留所选模型的介绍。
 
