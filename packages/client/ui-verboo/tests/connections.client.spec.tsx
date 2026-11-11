@@ -46,6 +46,7 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
   const state: ProductSnapshot = {
     view: null,
     profile: null,
+    profilePreviouslyVerified: false,
     initialized: true,
     accountFailed: false,
     actionFailed: null,

@@ -23,6 +23,8 @@ import type {
 export interface ProductSnapshot {
   view: AccountView | null
   profile: AccountProfile | null
+  /** Whether this Client has successfully verified a stored account at least once. */
+  profilePreviouslyVerified: boolean
   initialized: boolean
   accountFailed: boolean
   actionFailed:
@@ -151,6 +153,7 @@ export interface ProductApi {
 const initial = (): ProductSnapshot => ({
   view: null,
   profile: null,
+  profilePreviouslyVerified: false,
   initialized: false,
   accountFailed: false,
   actionFailed: null,
@@ -447,7 +450,7 @@ export class ProductModel {
           this.mcpRequest = undefined
           this.patch({ plans: null, connections: null })
         }
-        this.patch({ profile, accountFailed: false })
+        this.patch({ profile, profilePreviouslyVerified: true, accountFailed: false })
         void this.loadPlans()
         void this.loadConnections()
         void this.loadMcpServers()
