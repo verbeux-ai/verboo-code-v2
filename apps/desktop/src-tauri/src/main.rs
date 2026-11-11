@@ -231,10 +231,10 @@ fn main() {
                     .on_navigation({
                         let state = setup_state.clone();
                         let app = app.handle().clone();
-                        move |url| match navigation_decision(&url, state.origin.get()) {
+                        move |url| match navigation_decision(url, state.origin.get()) {
                             NavigationDecision::NavigateHere => true,
                             NavigationDecision::OpenExternally => {
-                                open_externally(&app, &url);
+                                open_externally(&app, url);
                                 false
                             }
                             NavigationDecision::Deny => false,
