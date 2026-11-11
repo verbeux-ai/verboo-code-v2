@@ -18,6 +18,7 @@ type BrowserOperation =
   | 'task.start'
   | 'task.finish'
   | 'tabs.list'
+  | 'groups.update'
   | 'tabs.open'
   | 'tabs.navigate'
   | 'page.observe'
