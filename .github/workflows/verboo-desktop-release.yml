@@ -114,7 +114,7 @@ jobs:
           node --input-type=module <<'JS'
           import { execFileSync } from 'node:child_process'
           import { readFileSync, readdirSync } from 'node:fs'
-          import { join } from 'node:path'
+          import { join, resolve } from 'node:path'
           const product = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'))
           const [, version, prerelease] = /^(\d+\.\d+\.\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(product.version) ?? []
           if (!version) throw Error('Unsupported RPM product version')
@@ -124,9 +124,10 @@ jobs:
           const directory = `apps/desktop/.desktop-build/tauri/target/${process.env.RELEASE_TARGET}/release/bundle/rpm`
           const files = readdirSync(directory).filter(name => name.endsWith('.rpm'))
           if (files.length !== 1) throw Error('Expected one RPM installer')
-          const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', join(directory, files[0])], { encoding: 'utf8' }).trim()
+          const rpmPath = resolve(directory, files[0])
+          const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', rpmPath], { encoding: 'utf8' }).trim()
           if (identity !== `${version}-${release}`) throw Error('RPM version identity mismatch')
-          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'signer', 'sign', '--app-version', product.version, join(directory, files[0])], { stdio: 'inherit' })
+          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'signer', 'sign', '--app-version', product.version, rpmPath], { stdio: 'inherit' })
           console.log(`Verified RPM ${identity}; product ${product.version}`)
           JS
       - name: Verify the installed Windows runtime
