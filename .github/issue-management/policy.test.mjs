@@ -990,11 +990,11 @@ test('performs no lifecycle requests for removed signals or title-only edits', a
   assert.deepEqual(fixture.requests, [])
 })
 
-test('keeps trusted preflight before token minting and required policy unconditional', () => {
+test('scopes required policy to its configured repository and keeps trusted preflight before token minting', () => {
   const source = readFileSync(new URL('../workflows/issue-policy.yml', import.meta.url), 'utf8')
   const job = source.slice(source.indexOf('  policy:'))
   assert.ok(job.includes('    name: Issue policy'))
-  assert.ok(!job.slice(0, job.indexOf('    steps:')).includes('    if:'))
+  assert.ok(job.slice(0, job.indexOf('    steps:')).includes("    if: github.repository == 'deepseek-harness/deepseek-harness'"))
   assert.ok(source.includes('types: [opened, edited, synchronize, reopened, labeled, unlabeled, ready_for_review, review_requested]'))
   const steps = job.split('      - name: ').slice(1)
   assert.equal(steps.length, 4)

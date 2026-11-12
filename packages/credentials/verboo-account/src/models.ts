@@ -352,7 +352,6 @@ class VerbooAdapter extends PiAiAdapter {
           continue
         }
         if (
-          chunk.type === 'finish' &&
           chunk.reason.kind === 'error' &&
           chunk.reason.failure.code === 'AUTH' &&
           !outputStarted &&
