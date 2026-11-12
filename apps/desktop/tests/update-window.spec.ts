@@ -28,7 +28,8 @@ const COPY = JSON.parse(
   failed: string
   diagnosticLabel: string
   running: { title: string; body: string; status: string }
-  applied: { title: string; body: string; dwellMs: number }
+  finalizing: { status: string }
+  applied: { title: string; body: string; okLabel: string }
 }>
 
 const LANGUAGES = Object.keys(COPY)
@@ -233,6 +234,20 @@ describe('the running state', () => {
     expect(window.role('progress').getAttribute('aria-valuenow')).toBeNull()
   })
 
+  it('shows a finalizing state after download reaches 100 percent', async () => {
+    const { copy, window } = await offer()
+    window.evalInPage(`window.__enterProgress(${JSON.stringify(copy.running)})`)
+    window.evalInPage('window.__setProgress(1)')
+    expect(window.role('percent').textContent).toBe('100%')
+
+    window.evalInPage(`window.__enterFinalizing({ status: ${JSON.stringify(copy.finalizing.status)} })`)
+    expect(window.role('status').textContent).toBe(copy.finalizing.status)
+    expect(window.role('progress').getAttribute('aria-label')).toBe(copy.finalizing.status)
+    expect(window.role('fill').dataset.indeterminate).toBe('true')
+    expect(window.role('percent').textContent).toBe('')
+    expect(window.role('progress').getAttribute('aria-valuenow')).toBeNull()
+  })
+
   it('returns to a stated percentage when a length becomes known', async () => {
     const { copy, window } = await offer()
     window.evalInPage(`window.__enterProgress(${JSON.stringify(copy.running)})`)
@@ -319,22 +334,22 @@ describe('the applied notice', () => {
     const window = await render('updated.html', '__VERBOO_UPDATED__', copy.applied)
     expect(window.role('title').textContent).toBe(copy.applied.title)
     expect(window.role('body').textContent).toBe(copy.applied.body)
+    expect(window.role('ok').textContent).toBe(copy.applied.okLabel)
   })
 
   it('names the version that is now running', async () => {
     const window = await render('updated.html', '__VERBOO_UPDATED__', COPY.pt!.applied)
-    expect(window.role('body').textContent).toContain('0.2.2-alpha.13')
+    expect(window.role('body').textContent).toContain('0.2.2-alpha.19')
   })
 
-  it('closes itself after the dwell the Rust side chose', async () => {
+  it('stays open until the user confirms the success notice', async () => {
     vi.useFakeTimers()
     try {
-      const payload = { ...COPY.en!.applied, dwellMs: 1200 }
-      const window = await render('updated.html', '__VERBOO_UPDATED__', payload)
+      const window = await render('updated.html', '__VERBOO_UPDATED__', COPY.en!.applied)
       expect(window.invoke).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(1199)
+      await vi.advanceTimersByTimeAsync(10_000)
       expect(window.invoke).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(1)
+      window.click('ok')
       await vi.waitFor(() => { expect(window.invoke).toHaveBeenCalledWith('update_close') })
     } finally {
       vi.useRealTimers()

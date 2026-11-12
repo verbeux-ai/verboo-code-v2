@@ -12,9 +12,7 @@ use std::sync::Mutex;
 use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_updater::{Error as UpdateError, Update, UpdaterExt};
 
-use logic::{
-    APPLIED_FILE, APPLIED_DWELL_MS, DECLINED_FILE, UPDATE_WINDOW, UPDATED_WINDOW,
-};
+use logic::{APPLIED_FILE, DECLINED_FILE, UPDATED_WINDOW, UPDATE_WINDOW};
 
 fn config_file(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
     app.path()
@@ -57,28 +55,32 @@ pub struct Offered(Mutex<Option<Prepared>>);
 /// Open the offer window for a version the feed announced.
 fn open_offer(app: &tauri::AppHandle, version: &str) -> tauri::Result<WebviewWindow> {
     let copy = locale::update_copy(version);
-    let window = WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::App("update.html".into()))
-        .title("Verboo Code")
-        .inner_size(468.0, 328.0)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .focused(true)
-        .center()
-        .initialization_script(&logic::copy_script(&logic::OfferCopy {
-            version,
-            title: &copy.title,
-            body: &copy.body,
-            install: &copy.install,
-            later: &copy.later,
-            close: &copy.close,
-            failed: &copy.failed,
-            diagnostic_label: &copy.diagnostic_label,
-        }))
-        .build()?;
-    grant(app, UPDATE_WINDOW);
+    // Update cards are frameless; don't inherit the product window's native menu.
+    let menu = tauri::menu::Menu::new(app)?;
+    grant(app, UPDATE_WINDOW)?;
+    let window =
+        WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::App("update.html".into()))
+            .menu(menu)
+            .title("Verboo Code")
+            .inner_size(468.0, 328.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .focused(true)
+            .center()
+            .initialization_script(&logic::copy_script(&logic::OfferCopy {
+                version,
+                title: &copy.title,
+                body: &copy.body,
+                install: &copy.install,
+                later: &copy.later,
+                close: &copy.close,
+                failed: &copy.failed,
+                diagnostic_label: &copy.diagnostic_label,
+            }))
+            .build()?;
     Ok(window)
 }
 
@@ -129,6 +131,10 @@ pub async fn update_install(
     let mut reported = i64::MAX;
     let mut indeterminate = false;
     let progress_window = window.clone();
+    let finalizing_window = window.clone();
+    let finalizing_status = copy.finalizing_status.clone();
+    let marker_app = app.clone();
+    let marker_version = version.clone();
     let result = update
         .download_and_install(
             move |chunk: usize, total: Option<u64>| {
@@ -148,18 +154,24 @@ pub async fn update_install(
                 reported = percent;
                 let _ = progress_window.eval(logic::progress_script(ratio));
             },
-            || {},
+            move || {
+                let _ = finalizing_window.eval(&logic::finalizing_script(&finalizing_status));
+                // Windows exits inside the installer call, before it can return success.
+                // The next launch acknowledges this target only if it is actually running.
+                write_marker(&marker_app, APPLIED_FILE, &marker_version);
+            },
         )
         .await;
 
     match result {
         Ok(()) => {
-            // Record the version now running, so the next launch can say so once.
-            write_marker(&app, APPLIED_FILE, &version);
             eprintln!("Verboo Code: update_installed");
             app.restart()
         }
         Err(error) => {
+            if let Some(path) = config_file(&app, APPLIED_FILE) {
+                let _ = std::fs::remove_file(path);
+            }
             let code = update_failure_code(&error);
             eprintln!("Verboo Code: update_failed code={code} detail={error}");
             let _ = window.eval(logic::fail_script(&copy.failed, code));
@@ -181,12 +193,16 @@ fn update_failure_code(error: &UpdateError) -> &'static str {
         UpdateError::DebInstallFailed => "deb-install-failed",
         UpdateError::PackageInstallFailed => "package-install-failed",
         UpdateError::TempDirNotOnSameMountPoint => "filesystem-mount",
-        UpdateError::Io(error) if error.kind() == std::io::ErrorKind::PermissionDenied => "permission-denied",
+        UpdateError::Io(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            "permission-denied"
+        }
         UpdateError::Reqwest(_)
         | UpdateError::Http(_)
         | UpdateError::Network(_)
         | UpdateError::ReleaseNotFound => "network",
-        UpdateError::TargetNotFound(_) | UpdateError::TargetsNotFound(_) => "package-target-not-found",
+        UpdateError::TargetNotFound(_) | UpdateError::TargetsNotFound(_) => {
+            "package-target-not-found"
+        }
         UpdateError::FailedToDetermineExtractPath | UpdateError::TempDirNotFound => "install-path",
         UpdateError::BinaryNotFoundInArchive => "invalid-installer-format",
         UpdateError::PreviousAppNotRestored(_) => "rollback-failed",
@@ -196,20 +212,24 @@ fn update_failure_code(error: &UpdateError) -> &'static str {
 
 /// Close an update window; declining the offer is remembered for that version.
 #[tauri::command]
-pub fn update_close(app: tauri::AppHandle, window: WebviewWindow, state: State<'_, Offered>) -> Result<(), String> {
+pub fn update_close(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    state: State<'_, Offered>,
+) -> Result<(), String> {
     if window.label() != UPDATE_WINDOW && window.label() != UPDATED_WINDOW {
         return Err("update_close_denied".into());
     }
     if window.label() == UPDATE_WINDOW {
-        if let Some(Prepared { version, .. }) = state.0.lock().ok().and_then(|mut slot| slot.take()) {
+        if let Some(Prepared { version, .. }) = state.0.lock().ok().and_then(|mut slot| slot.take())
+        {
             write_marker(&app, DECLINED_FILE, &version);
         }
     }
-    let _ = window.close();
-    Ok(())
+    window.close().map_err(|_| "update_close_failed".into())
 }
 
-/// Say once that the running version came from the update installed last launch.
+/// Acknowledge an update once, only when its target matches the running version.
 pub fn show_applied(app: &tauri::AppHandle) {
     let Some(version) = read_marker(app, APPLIED_FILE) else {
         return;
@@ -219,41 +239,44 @@ pub fn show_applied(app: &tauri::AppHandle) {
     };
     // The notice is one-shot even when the window cannot open.
     let _ = std::fs::remove_file(path);
-    if version.is_empty() {
+    if !logic::should_acknowledge(&version, &app.package_info().version.to_string()) {
         return;
     }
-    let (title, body) = locale::updated_copy(&version);
-    let script = logic::applied_script(&title, &body, APPLIED_DWELL_MS);
-    if WebviewWindowBuilder::new(app, UPDATED_WINDOW, WebviewUrl::App("updated.html".into()))
-        .title("Verboo Code")
-        .inner_size(428.0, 112.0)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .focused(false)
-        .center()
-        .initialization_script(&script)
-        .build()
-        .is_err()
-    {
+    if grant(app, UPDATED_WINDOW).is_err() {
+        eprintln!("Verboo Code: update_capability_failed");
+        return;
+    }
+    let (title, body, ok_label) = locale::updated_copy(&version);
+    let script = logic::applied_script(&title, &body, &ok_label);
+    let result = tauri::menu::Menu::new(app).and_then(|menu| {
+        WebviewWindowBuilder::new(app, UPDATED_WINDOW, WebviewUrl::App("updated.html".into()))
+            .menu(menu)
+            .title("Verboo Code")
+            .inner_size(428.0, 156.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .focused(false)
+            .center()
+            .initialization_script(&script)
+            .build()
+    });
+    if result.is_err() {
         eprintln!("Verboo Code: update_notice_unavailable");
-    } else {
-        grant(app, UPDATED_WINDOW);
     }
 }
 
 /// Grant one update window the two commands it may call.
-fn grant(app: &tauri::AppHandle, label: &str) {
+fn grant(app: &tauri::AppHandle, label: &str) -> tauri::Result<()> {
     use tauri::ipc::CapabilityBuilder;
     let capability = CapabilityBuilder::new(format!("update-window-{label}"))
-        .local(false)
+        // The update card is served by `WebviewUrl::App`, so local IPC must be enabled.
+        .local(true)
         .window(label)
         .permission("update-window");
-    if app.add_capability(capability).is_err() {
-        eprintln!("Verboo Code: update_capability_failed");
-    }
+    app.add_capability(capability)
 }
 
 /// Own the offered-update slot and show the notice for the previous install.

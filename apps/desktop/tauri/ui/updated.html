@@ -39,10 +39,13 @@
       html, body { height: 100%; }
       body {
         margin: 0;
-        display: flex;
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        grid-template-rows: 1fr auto;
         align-items: center;
-        gap: 14px;
-        padding: 22px 24px;
+        column-gap: 14px;
+        row-gap: 12px;
+        padding: 18px 22px 14px;
         background: var(--surface);
         color: var(--ink);
         border: 1px solid var(--border);
@@ -71,6 +74,22 @@
       p { margin: 0; color: var(--muted); font-size: 12px; }
       .version { font-variant-numeric: tabular-nums; }
 
+      footer { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+      button {
+        min-width: 66px;
+        min-height: 34px;
+        padding: 6px 16px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.08); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
       @keyframes enter {
         from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: none; }
@@ -89,16 +108,21 @@
       <h1 data-role="title"></h1>
       <p class="version" data-role="body"></p>
     </div>
+    <footer>
+      <button type="button" data-role="ok"></button>
+    </footer>
 
     <script>
       const invoke = (command) => window.__TAURI_INTERNALS__.invoke(command)
       const copy = window.__VERBOO_UPDATED__
       document.querySelector('[data-role="title"]').textContent = copy.title
       document.querySelector('[data-role="body"]').textContent = copy.body
-      // The notice has nothing to act on, so it leaves on its own.
-      setTimeout(() => {
-        invoke('update_close').catch(() => {})
-      }, copy.dwellMs)
+      const ok = document.querySelector('[data-role="ok"]')
+      ok.textContent = copy.okLabel
+      ok.addEventListener('click', () => invoke('update_close').catch(() => {}))
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') invoke('update_close').catch(() => {})
+      })
     </script>
   </body>
 </html>

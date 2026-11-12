@@ -1,162 +1,186 @@
 {
   "pt": {
-    "body": "A versão v0.2.2-alpha.13 do Verboo Code está pronta para instalar. O app reinicia sozinho ao terminar.",
+    "body": "A versão v0.2.2-alpha.19 do Verboo Code está pronta para instalar. O app reinicia sozinho ao terminar.",
     "close": "Fechar",
     "failed": "Não foi possível concluir a atualização.",
     "diagnosticLabel": "Código de diagnóstico",
     "install": "Baixar e reiniciar",
     "later": "Agora não",
     "title": "Atualização disponível",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "Isso leva alguns instantes. O app reinicia assim que a instalação terminar.",
       "status": "Baixando",
       "title": "Atualizando o Verboo Code"
     },
     "applied": {
-      "body": "Agora você está na versão 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "Seu Verboo Code está atualizado!"
+      "body": "Agora você está na versão 0.2.2-alpha.19.",
+      "title": "Seu Verboo Code está atualizado!",
+      "okLabel": "OK"
+    },
+    "finalizing": {
+      "status": "Finalizando a instalação"
     }
   },
   "en": {
-    "body": "Verboo Code v0.2.2-alpha.13 is ready to install. The app restarts on its own when it finishes.",
+    "body": "Verboo Code v0.2.2-alpha.19 is ready to install. The app restarts on its own when it finishes.",
     "close": "Close",
     "failed": "The update could not be completed.",
     "diagnosticLabel": "Diagnostic code",
     "install": "Download and restart",
     "later": "Not now",
     "title": "Update available",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "This takes a moment. The app restarts as soon as the installation finishes.",
       "status": "Downloading",
       "title": "Updating Verboo Code"
     },
     "applied": {
-      "body": "You are now on version 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "Your Verboo Code is up to date!"
+      "body": "You are now on version 0.2.2-alpha.19.",
+      "title": "Your Verboo Code is up to date!",
+      "okLabel": "OK"
+    },
+    "finalizing": {
+      "status": "Finalizing installation"
     }
   },
   "zh": {
-    "body": "Verboo Code v0.2.2-alpha.13 已可安装。安装完成后应用会自动重启。",
+    "body": "Verboo Code v0.2.2-alpha.19 已可安装。安装完成后应用会自动重启。",
     "close": "关闭",
     "failed": "无法完成更新。",
     "diagnosticLabel": "诊断代码",
     "install": "下载并重启",
     "later": "稍后",
     "title": "有可用更新",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "这需要一点时间。安装完成后应用会自动重启。",
       "status": "正在下载",
       "title": "正在更新 Verboo Code"
     },
     "applied": {
-      "body": "当前版本为 0.2.2-alpha.13。",
-      "dwellMs": 4200,
-      "title": "Verboo Code 已更新！"
+      "body": "当前版本为 0.2.2-alpha.19。",
+      "title": "Verboo Code 已更新！",
+      "okLabel": "确定"
+    },
+    "finalizing": {
+      "status": "正在完成安装"
     }
   },
   "ja": {
-    "body": "Verboo Code v0.2.2-alpha.13 をインストールできます。完了すると自動的に再起動します。",
+    "body": "Verboo Code v0.2.2-alpha.19 をインストールできます。完了すると自動的に再起動します。",
     "close": "閉じる",
     "failed": "アップデートを完了できませんでした。",
     "diagnosticLabel": "診断コード",
     "install": "ダウンロードして再起動",
     "later": "後で",
     "title": "アップデートがあります",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "しばらくお待ちください。インストールが終わると自動的に再起動します。",
       "status": "ダウンロード中",
       "title": "Verboo Code を更新しています"
     },
     "applied": {
-      "body": "現在のバージョンは 0.2.2-alpha.13 です。",
-      "dwellMs": 4200,
-      "title": "Verboo Code が最新になりました！"
+      "body": "現在のバージョンは 0.2.2-alpha.19 です。",
+      "title": "Verboo Code が最新になりました！",
+      "okLabel": "OK"
+    },
+    "finalizing": {
+      "status": "インストールを完了しています"
     }
   },
   "es": {
-    "body": "La versión v0.2.2-alpha.13 de Verboo Code está lista para instalarse. La aplicación se reinicia sola al terminar.",
+    "body": "La versión v0.2.2-alpha.19 de Verboo Code está lista para instalarse. La aplicación se reinicia sola al terminar.",
     "close": "Cerrar",
     "failed": "No se pudo completar la actualización.",
     "diagnosticLabel": "Código de diagnóstico",
     "install": "Descargar y reiniciar",
     "later": "Ahora no",
     "title": "Actualización disponible",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "Esto tarda un momento. La aplicación se reinicia en cuanto termine la instalación.",
       "status": "Descargando",
       "title": "Actualizando Verboo Code"
     },
     "applied": {
-      "body": "Ahora estás en la versión 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "¡Tu Verboo Code está actualizado!"
+      "body": "Ahora estás en la versión 0.2.2-alpha.19.",
+      "title": "¡Tu Verboo Code está actualizado!",
+      "okLabel": "Aceptar"
+    },
+    "finalizing": {
+      "status": "Finalizando la instalación"
     }
   },
   "fr": {
-    "body": "La version v0.2.2-alpha.13 de Verboo Code est prête à être installée. L’application redémarre seule à la fin.",
+    "body": "La version v0.2.2-alpha.19 de Verboo Code est prête à être installée. L’application redémarre seule à la fin.",
     "close": "Fermer",
     "failed": "La mise à jour n’a pas pu aboutir.",
     "diagnosticLabel": "Code de diagnostic",
     "install": "Télécharger et redémarrer",
     "later": "Plus tard",
     "title": "Mise à jour disponible",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "Cela prend un instant. L’application redémarre dès que l’installation est terminée.",
       "status": "Téléchargement",
       "title": "Mise à jour de Verboo Code"
     },
     "applied": {
-      "body": "Vous êtes maintenant en version 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "Votre Verboo Code est à jour !"
+      "body": "Vous êtes maintenant en version 0.2.2-alpha.19.",
+      "title": "Votre Verboo Code est à jour !",
+      "okLabel": "OK"
+    },
+    "finalizing": {
+      "status": "Finalisation de l’installation"
     }
   },
   "de": {
-    "body": "Verboo Code v0.2.2-alpha.13 kann installiert werden. Die App startet danach automatisch neu.",
+    "body": "Verboo Code v0.2.2-alpha.19 kann installiert werden. Die App startet danach automatisch neu.",
     "close": "Schließen",
     "failed": "Das Update konnte nicht abgeschlossen werden.",
     "diagnosticLabel": "Diagnosecode",
     "install": "Laden und neu starten",
     "later": "Später",
     "title": "Update verfügbar",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "Das dauert einen Moment. Die App startet neu, sobald die Installation fertig ist.",
       "status": "Wird geladen",
       "title": "Verboo Code wird aktualisiert"
     },
     "applied": {
-      "body": "Du bist jetzt auf Version 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "Dein Verboo Code ist aktuell!"
+      "body": "Du bist jetzt auf Version 0.2.2-alpha.19.",
+      "title": "Dein Verboo Code ist aktuell!",
+      "okLabel": "OK"
+    },
+    "finalizing": {
+      "status": "Installation wird abgeschlossen"
     }
   },
   "ru": {
-    "body": "Версия Verboo Code v0.2.2-alpha.13 готова к установке. По завершении приложение перезапустится само.",
+    "body": "Версия Verboo Code v0.2.2-alpha.19 готова к установке. По завершении приложение перезапустится само.",
     "close": "Закрыть",
     "failed": "Не удалось завершить обновление.",
     "diagnosticLabel": "Код диагностики",
     "install": "Загрузить и перезапустить",
     "later": "Не сейчас",
     "title": "Доступно обновление",
-    "version": "0.2.2-alpha.13",
+    "version": "0.2.2-alpha.19",
     "running": {
       "body": "Это займёт немного времени. Приложение перезапустится сразу после установки.",
       "status": "Загрузка",
       "title": "Обновление Verboo Code"
     },
     "applied": {
-      "body": "Теперь у вас версия 0.2.2-alpha.13.",
-      "dwellMs": 4200,
-      "title": "Ваш Verboo Code обновлён!"
+      "body": "Теперь у вас версия 0.2.2-alpha.19.",
+      "title": "Ваш Verboo Code обновлён!",
+      "okLabel": "ОК"
+    },
+    "finalizing": {
+      "status": "Завершение установки"
     }
   }
 }

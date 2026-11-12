@@ -212,6 +212,9 @@ fn main() {
             }
         })
         .on_window_event(move |window, event| {
+            if window.label() != "main" {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if !window_state.exit_ready.load(Ordering::SeqCst) {
                     api.prevent_close();

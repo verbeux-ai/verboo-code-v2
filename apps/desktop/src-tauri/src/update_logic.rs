@@ -8,15 +8,12 @@
 
 /// Version the operator declined, stored so the same update asks once.
 pub const DECLINED_FILE: &str = "update-declined";
-/// Version installed by the previous launch, shown once as a notice.
+/// Target of the last update attempt, acknowledged only by that running version.
 pub const APPLIED_FILE: &str = "update-applied";
 /// The window offering and reporting the update.
 pub const UPDATE_WINDOW: &str = "update";
 /// The window confirming that the update was applied.
 pub const UPDATED_WINDOW: &str = "updated";
-/// How long the applied notice stays on screen, in milliseconds.
-pub const APPLIED_DWELL_MS: u64 = 4200;
-
 /// Copy for the update window, in both its offer and running states.
 pub struct OfferCopy<'a> {
     /// Version the feed announced.
@@ -75,12 +72,12 @@ pub fn copy_script(copy: &OfferCopy<'_>) -> String {
 /// Hand the notice window its copy before the document loads.
 /// @param title - heading of the notice.
 /// @param body - detail line naming the running version.
-/// @param dwell_ms - how long the notice stays before it closes itself.
+/// @param ok_label - localized action label that closes the notice.
 /// @returns a script statement assigning `window.__VERBOO_UPDATED__`.
-pub fn applied_script(title: &str, body: &str, dwell_ms: u64) -> String {
+pub fn applied_script(title: &str, body: &str, ok_label: &str) -> String {
     assignment(
         "__VERBOO_UPDATED__",
-        serde_json::json!({ "title": title, "body": body, "dwellMs": dwell_ms }),
+        serde_json::json!({ "title": title, "body": body, "okLabel": ok_label }),
     )
 }
 
@@ -95,6 +92,16 @@ pub fn running_script(copy: &RunningCopy<'_>) -> String {
             "body": copy.body,
             "status": copy.status,
         }),
+    )
+}
+
+/// Switch from download progress to an indeterminate finalization state.
+/// @param status - localized text shown while verification and installation run.
+/// @returns the statement that clears the percentage and shows motion.
+pub fn finalizing_script(status: &str) -> String {
+    format!(
+        "window.__enterFinalizing({});",
+        serde_json::json!({ "status": status })
     )
 }
 
@@ -147,6 +154,14 @@ pub fn should_offer(declined: Option<&str>, version: &str) -> bool {
     declined != Some(version)
 }
 
+/// Whether the update target was reached by the running application.
+/// @param target - version recorded before invoking the installer.
+/// @param running - version embedded in the running application.
+/// @returns true only for a nonempty target equal to the running version.
+pub fn should_acknowledge(target: &str, running: &str) -> bool {
+    !target.is_empty() && target == running
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,17 +190,27 @@ mod tests {
     #[test]
     fn script_names_are_the_ones_the_pages_read() {
         assert!(copy_script(&offer("1.0.0")).starts_with("window.__VERBOO_UPDATE__ = "));
-        assert!(applied_script("a", "b", 1).starts_with("window.__VERBOO_UPDATED__ = "));
+        assert!(applied_script("a", "b", "OK").starts_with("window.__VERBOO_UPDATED__ = "));
         assert_eq!(running_script(&running()), "window.__enterProgress({\"body\":\"This takes a moment.\",\"status\":\"Downloading\",\"title\":\"Updating Verboo Code\"});");
+        assert_eq!(
+            finalizing_script("Finalizing installation"),
+            "window.__enterFinalizing({\"status\":\"Finalizing installation\"});"
+        );
         assert_eq!(progress_script(0.5), "window.__setProgress(0.5);");
-        assert_eq!(fail_script("boom", "invalid-installer-format"), "window.__fail({\"code\":\"invalid-installer-format\",\"message\":\"boom\"});");
+        assert_eq!(
+            fail_script("boom", "invalid-installer-format"),
+            "window.__fail({\"code\":\"invalid-installer-format\",\"message\":\"boom\"});"
+        );
     }
 
     #[test]
     fn a_mark_prefixed_version_is_shown_once() {
         for version in ["v0.2.2-alpha.12", "V0.2.2-alpha.12", "0.2.2-alpha.12"] {
             let script = copy_script(&offer(version));
-            assert!(script.contains("\"version\":\"0.2.2-alpha.12\""), "{version} -> {script}");
+            assert!(
+                script.contains("\"version\":\"0.2.2-alpha.12\""),
+                "{version} -> {script}"
+            );
         }
     }
 
@@ -207,10 +232,14 @@ mod tests {
         let statements = [
             // Assignment form: strip the assignment, keep the value.
             copy_script(&copy),
-            applied_script("a \"b\" c", "d « e »", APPLIED_DWELL_MS),
+            applied_script("a \"b\" c", "d « e »", "OK"),
             // Call form: strip the call wrapper, keep the single argument.
             fail_script("bad \"value\" and \\ backslash", "network"),
-            running_script(&RunningCopy { title: "x \"y\"", body: "z", status: "s" }),
+            running_script(&RunningCopy {
+                title: "x \"y\"",
+                body: "z",
+                status: "s",
+            }),
         ];
         for script in statements {
             assert!(!script.contains("\\\"undefined\\\""), "{script}");
@@ -286,6 +315,13 @@ mod tests {
         assert_eq!(UPDATED_WINDOW, "updated");
         assert_eq!(DECLINED_FILE, "update-declined");
         assert_eq!(APPLIED_FILE, "update-applied");
-        assert_eq!(APPLIED_DWELL_MS, 4200);
+    }
+
+    #[test]
+    fn success_notice_requires_the_installed_target_to_be_running() {
+        assert!(should_acknowledge("0.2.2-alpha.19", "0.2.2-alpha.19"));
+        assert!(!should_acknowledge("0.2.2-alpha.19", "0.2.2-alpha.18"));
+        assert!(!should_acknowledge("0.2.2-alpha.18", "0.2.2-alpha.19"));
+        assert!(!should_acknowledge("", ""));
     }
 }

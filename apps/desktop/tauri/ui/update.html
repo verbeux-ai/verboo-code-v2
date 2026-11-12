@@ -207,6 +207,12 @@
         percent.textContent = ''
         progress.removeAttribute('aria-valuenow')
       }
+      /** The download ended; signature verification and installation still run. */
+      window.__enterFinalizing = ({ status: finalizingStatus }) => {
+        status.textContent = finalizingStatus
+        progress.setAttribute('aria-label', finalizingStatus)
+        window.__setIndeterminate()
+      }
       /** Swap the offer for the running state; the buttons leave the flow. */
       window.__enterProgress = (runningCopy) => {
         role('title').textContent = runningCopy.title

@@ -111,6 +111,8 @@ pub struct UpdateCopy {
     pub running_body: String,
     /// Status line above the percentage.
     pub status: String,
+    /// Status line while validating and installing the downloaded package.
+    pub finalizing_status: String,
     /// Dismiss button after a failed install.
     pub close: String,
     /// Message shown when the install fails.
@@ -140,6 +142,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Atualizando o Verboo Code".into(),
             running_body: "Isso leva alguns instantes. O app reinicia assim que a instalação terminar.".into(),
             status: "Baixando".into(),
+            finalizing_status: "Finalizando a instalação".into(),
             close: "Fechar".into(),
             failed: "Não foi possível concluir a atualização.".into(),
             diagnostic_label: "Código de diagnóstico".into(),
@@ -152,6 +155,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "正在更新 Verboo Code".into(),
             running_body: "这需要一点时间。安装完成后应用会自动重启。".into(),
             status: "正在下载".into(),
+            finalizing_status: "正在完成安装".into(),
             close: "关闭".into(),
             failed: "无法完成更新。".into(),
             diagnostic_label: "诊断代码".into(),
@@ -164,6 +168,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Verboo Code を更新しています".into(),
             running_body: "しばらくお待ちください。インストールが終わると自動的に再起動します。".into(),
             status: "ダウンロード中".into(),
+            finalizing_status: "インストールを完了しています".into(),
             close: "閉じる".into(),
             failed: "アップデートを完了できませんでした。".into(),
             diagnostic_label: "診断コード".into(),
@@ -176,6 +181,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Actualizando Verboo Code".into(),
             running_body: "Esto tarda un momento. La aplicación se reinicia en cuanto termine la instalación.".into(),
             status: "Descargando".into(),
+            finalizing_status: "Finalizando la instalación".into(),
             close: "Cerrar".into(),
             failed: "No se pudo completar la actualización.".into(),
             diagnostic_label: "Código de diagnóstico".into(),
@@ -188,6 +194,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Mise à jour de Verboo Code".into(),
             running_body: "Cela prend un instant. L’application redémarre dès que l’installation est terminée.".into(),
             status: "Téléchargement".into(),
+            finalizing_status: "Finalisation de l’installation".into(),
             close: "Fermer".into(),
             failed: "La mise à jour n’a pas pu aboutir.".into(),
             diagnostic_label: "Code de diagnostic".into(),
@@ -200,6 +207,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Verboo Code wird aktualisiert".into(),
             running_body: "Das dauert einen Moment. Die App startet neu, sobald die Installation fertig ist.".into(),
             status: "Wird geladen".into(),
+            finalizing_status: "Installation wird abgeschlossen".into(),
             close: "Schließen".into(),
             failed: "Das Update konnte nicht abgeschlossen werden.".into(),
             diagnostic_label: "Diagnosecode".into(),
@@ -212,6 +220,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Обновление Verboo Code".into(),
             running_body: "Это займёт немного времени. Приложение перезапустится сразу после установки.".into(),
             status: "Загрузка".into(),
+            finalizing_status: "Завершение установки".into(),
             close: "Закрыть".into(),
             failed: "Не удалось завершить обновление.".into(),
             diagnostic_label: "Код ошибки".into(),
@@ -224,6 +233,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             running_title: "Updating Verboo Code".into(),
             running_body: "This takes a moment. The app restarts as soon as the installation finishes.".into(),
             status: "Downloading".into(),
+            finalizing_status: "Finalizing installation".into(),
             close: "Close".into(),
             failed: "The update could not be completed.".into(),
             diagnostic_label: "Diagnostic code".into(),
@@ -233,25 +243,57 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
 
 /// Copy for the notice shown once an update has been applied.
 /// @param version - the version now running.
-/// @returns the heading and detail line for the notice.
-pub fn updated_copy(version: &str) -> (String, String) {
+/// @returns the heading, detail line and confirmation action label.
+pub fn updated_copy(version: &str) -> (String, String, String) {
     updated_copy_in(&language(), version)
 }
 
 /// Copy for the applied notice in one language.
 /// @param language - two-letter language of the operating system.
 /// @param version - the version now running.
-/// @returns the heading and detail line for the notice.
-pub fn updated_copy_in(language: &str, version: &str) -> (String, String) {
+/// @returns the heading, detail line and confirmation action label.
+pub fn updated_copy_in(language: &str, version: &str) -> (String, String, String) {
     match language {
-        "pt" => ("Seu Verboo Code está atualizado!".into(), format!("Agora você está na versão {version}.")),
-        "zh" => ("Verboo Code 已更新！".into(), format!("当前版本为 {version}。")),
-        "ja" => ("Verboo Code が最新になりました！".into(), format!("現在のバージョンは {version} です。")),
-        "es" => ("¡Tu Verboo Code está actualizado!".into(), format!("Ahora estás en la versión {version}.")),
-        "fr" => ("Votre Verboo Code est à jour !".into(), format!("Vous êtes maintenant en version {version}.")),
-        "de" => ("Dein Verboo Code ist aktuell!".into(), format!("Du bist jetzt auf Version {version}.")),
-        "ru" => ("Ваш Verboo Code обновлён!".into(), format!("Теперь у вас версия {version}.")),
-        _ => ("Your Verboo Code is up to date!".into(), format!("You are now on version {version}.")),
+        "pt" => (
+            "Seu Verboo Code está atualizado!".into(),
+            format!("Agora você está na versão {version}."),
+            "OK".into(),
+        ),
+        "zh" => (
+            "Verboo Code 已更新！".into(),
+            format!("当前版本为 {version}。"),
+            "确定".into(),
+        ),
+        "ja" => (
+            "Verboo Code が最新になりました！".into(),
+            format!("現在のバージョンは {version} です。"),
+            "OK".into(),
+        ),
+        "es" => (
+            "¡Tu Verboo Code está actualizado!".into(),
+            format!("Ahora estás en la versión {version}."),
+            "Aceptar".into(),
+        ),
+        "fr" => (
+            "Votre Verboo Code est à jour !".into(),
+            format!("Vous êtes maintenant en version {version}."),
+            "OK".into(),
+        ),
+        "de" => (
+            "Dein Verboo Code ist aktuell!".into(),
+            format!("Du bist jetzt auf Version {version}."),
+            "OK".into(),
+        ),
+        "ru" => (
+            "Ваш Verboo Code обновлён!".into(),
+            format!("Теперь у вас версия {version}."),
+            "ОК".into(),
+        ),
+        _ => (
+            "Your Verboo Code is up to date!".into(),
+            format!("You are now on version {version}."),
+            "OK".into(),
+        ),
     }
 }
 
@@ -274,13 +316,17 @@ mod tests {
                 ("running_title", &copy.running_title),
                 ("running_body", &copy.running_body),
                 ("status", &copy.status),
+                ("finalizing_status", &copy.finalizing_status),
                 ("close", &copy.close),
                 ("failed", &copy.failed),
                 ("diagnostic_label", &copy.diagnostic_label),
             ] {
                 assert!(!value.trim().is_empty(), "{language} {field} is empty");
                 // Control characters would break the injected script layout.
-                assert!(!value.chars().any(|c| c.is_control() && c != '\n'), "{language} {field} has a control character");
+                assert!(
+                    !value.chars().any(|c| c.is_control() && c != '\n'),
+                    "{language} {field} has a control character"
+                );
             }
         }
     }
@@ -289,16 +335,20 @@ mod tests {
     fn the_offer_names_the_version_it_announces() {
         for language in LANGUAGES {
             let copy = update_copy_in(language, "9.9.9-rc.1");
-            assert!(copy.body.contains("9.9.9-rc.1"), "{language} omits the version");
+            assert!(
+                copy.body.contains("9.9.9-rc.1"),
+                "{language} omits the version"
+            );
         }
     }
 
     #[test]
     fn the_applied_notice_names_the_running_version() {
         for language in LANGUAGES {
-            let (title, body) = updated_copy_in(language, "9.9.9-rc.1");
+            let (title, body, ok) = updated_copy_in(language, "9.9.9-rc.1");
             assert!(!title.trim().is_empty(), "{language} title empty");
             assert!(body.contains("9.9.9-rc.1"), "{language} omits the version");
+            assert!(!ok.trim().is_empty(), "{language} OK label empty");
         }
     }
 
@@ -313,13 +363,20 @@ mod tests {
         }
         // Each localized table states its own heading; only a missing table may
         // repeat the English one.
-        assert_eq!(distinct, LANGUAGES.len(), "a language reuses the English heading");
+        assert_eq!(
+            distinct,
+            LANGUAGES.len(),
+            "a language reuses the English heading"
+        );
     }
 
     #[test]
     fn an_unknown_language_falls_back_to_english() {
         assert_eq!(update_copy_in("xx", "1.0.0").title, "Update available");
-        assert_eq!(updated_copy_in("xx", "1.0.0").0, "Your Verboo Code is up to date!");
+        assert_eq!(
+            updated_copy_in("xx", "1.0.0").0,
+            "Your Verboo Code is up to date!"
+        );
     }
 
     /// The exact phrase each language uses to promise the automatic restart.
@@ -345,6 +402,8 @@ mod tests {
                 copy.body,
             );
         }
-        assert!(update_copy_in("en", "1.0.0").body.contains("restarts on its own"));
+        assert!(update_copy_in("en", "1.0.0")
+            .body
+            .contains("restarts on its own"));
     }
 }
