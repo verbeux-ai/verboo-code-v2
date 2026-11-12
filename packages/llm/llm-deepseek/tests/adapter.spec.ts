@@ -461,7 +461,7 @@ describe('Cordis provider composition', () => {
     ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',
       rejectToken: (token: string): Promise<void> => rejectToken(token) } as DeepSeekAccount)
     expect((await chunks(ctx.llm.stream(options({ provider: 'deepseek-account' })))).at(-1)).toMatchObject({
-      type: 'finish', reason: { kind: 'error', failure: { code: 'AUTH' } },
+      type: 'finish', reason: { kind: 'error', failure: { code: 'AUTH_FORBIDDEN' } },
     })
     expect(rejectToken).not.toHaveBeenCalled()
   })

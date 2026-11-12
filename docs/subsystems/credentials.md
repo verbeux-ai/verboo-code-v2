@@ -345,6 +345,18 @@ abstract watch(signal: AbortSignal, includeIdentityChanges?: boolean): AsyncIter
 abstract resolveToken(url: string): Promise<string | undefined>
 
 /**
+ * Refresh one inference-rejected token when the provider supports refresh.
+ * A provider without refresh support returns undefined. Implementations must compare the exact rejected token
+ * before changing credentials, return a newer current token when another operation already refreshed it, and
+ * preserve the stored grant when refresh fails for a transient or local reason.
+ * @param _url - actual request destination that rejected the token.
+ * @param _rejectedToken - exact token sent by that request.
+ * @param _signal - optional caller cancellation for the refresh request.
+ * @returns a current replacement token, or undefined when no replacement is available.
+ */
+refreshRejectedToken( _url: string, _rejectedToken: string, _signal?: AbortSignal, ): Promise<string | undefined>
+
+/**
  * Remove an inference-rejected token only while it still matches the stored login.
  * @param token - token captured by the rejected inference request.
  * @returns after matching credentials are removed and the expiry notification is emitted.
@@ -564,6 +576,6 @@ Local grant removal has completed.
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
-The account Service Definition exposes getState, getProfile, getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).
+The account Service Definition exposes getState, getProfile, getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken, refreshRejectedToken, rejectToken, and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).
 
 `AccountClientMetadata` carries `version` from the caller’s `DSH_CLIENT_VERSION`, its active UI `locale`, and `timezoneOffsetSeconds` sampled when the operation begins. The offset is local time minus UTC in seconds: UTC+8 is `28800`. It contains no credentials. Login attempts retain their initiating metadata through exchange and cancellation; sign-out retains its metadata for revocation retries.

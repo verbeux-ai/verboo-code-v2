@@ -765,6 +765,9 @@ function requestErrorMessage(
   t: TrajectoryTranslate,
 ): string | undefined {
   if (request.errorCode === 'AUTH') return t('details.failure.auth')
+  if (request.errorCode === 'AUTH_FORBIDDEN') return t('details.failure.permission')
+  if (request.errorCode === 'ACCOUNT_REFRESH_FAILED') return t('details.failure.accountRefresh')
+  if (request.errorCode === 'TIMEOUT') return t('details.failure.timeout')
   if (request.error === COMPACTION_INTERRUPTED_ERROR) return t('layout.compactionInterrupted')
   return request.error
 }

@@ -27,6 +27,8 @@ Sign in to Verboo with OAuth PKCE and use the models authorized for that account
 
 The `verboo` profile supplies the public API origin, router URL and OAuth client ID. [Config](src/config.ts) defines deployment settings. The production client uses `https://code.verboo.ai`, its `/router/v1` gateway and the registered public `verboo-code-cli` client. Loopback HTTP requires an explicit development setting. Each inference request sends a generated `X-Request-Id` and logs that id with its route; malformed tool-call diagnostics log only their category and available provider response id. The account route rejects malformed calls before dispatch and retries one malformed model request by default; `malformedResponseRetries: 0` disables that additional request.
 
+When an inference request returns HTTP 401, the account route forces one refresh for the exact token used by the request and replays the request once if the login still matches. A repeated 401 is returned without another refresh. HTTP 403 is reported as an access denial and does not refresh or remove the login. Refresh timeouts and network failures preserve the stored grant and stop the model request without automatic replay.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

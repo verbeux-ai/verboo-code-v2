@@ -27,6 +27,8 @@ kind: "package-reference"
 
 `verboo` 配置提供公开 API 地址、路由地址与 OAuth 客户端 ID。[Config](src/config.ts) 定义部署设置。生产客户端使用 `https://code.verboo.ai`、其 `/router/v1` 网关与已注册的公开客户端 `verboo-code-cli`。本地 HTTP 必须显式启用开发设置。每次推理请求都会发送生成的 `X-Request-Id`，并记录该 id 与路由；格式错误的工具调用诊断只记录故障类别和可用的提供方响应 id。账户路由会在分派工具前拒绝格式错误的调用，并默认对格式错误的模型响应重试一次；`malformedResponseRetries: 0` 会禁用这次额外请求。
 
+推理请求收到 HTTP 401 时，账户路由会针对该请求使用的精确 token 强制刷新一次；只有登录身份未变时才会重放一次请求。再次收到 401 后会直接返回错误，不再刷新。HTTP 403 会报告为访问被拒绝，不会刷新或删除登录凭据。刷新超时或网络失败会保留已存储的授权记录，并停止模型请求，不会自动重放。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

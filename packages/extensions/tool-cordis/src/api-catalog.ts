@@ -1042,6 +1042,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'stored token, or undefined for other origins or a signed-out account.',
       },
       {
+        signature: 'refreshRejectedToken( _url: string, _rejectedToken: string, _signal?: AbortSignal, ): Promise<string | undefined>',
+        description: 'Refresh one inference-rejected token when the provider supports refresh. A provider without refresh support returns undefined. Implementations must compare the exact rejected token before changing credentials, return a newer current token when another operation already refreshed it, and preserve the stored grant when refresh fails for a transient or local reason.',
+        parameters: [{ name: '_url', description: 'actual request destination that rejected the token.' }, { name: '_rejectedToken', description: 'exact token sent by that request.' }, { name: '_signal', description: 'optional caller cancellation for the refresh request.' }],
+        returns: 'a current replacement token, or undefined when no replacement is available.',
+      },
+      {
         signature: 'abstract rejectToken(token: string): Promise<void>',
         description: 'Remove an inference-rejected token only while it still matches the stored login.',
         parameters: [{ name: 'token', description: 'token captured by the rejected inference request.' }],

@@ -15,6 +15,8 @@ getUnnotifiedBonuses returns the granted bonuses Platform has not yet recorded a
 
 `rejectToken` accepts a Host inference request’s rejected token and removes only the matching current login; a late rejection cannot clear a replacement credential.
 
+`refreshRejectedToken` lets a provider renew the exact inference token rejected by the gateway. Providers without refresh support return no replacement. A timeout or other transient refresh failure leaves the stored grant untouched.
+
 `deepseek-account/session-expired` notifies current subscribers once after a rejected credential is removed. Account snapshots carry no expiry notice, so reconnecting does not repeat the toast.
 
 ## Summary
