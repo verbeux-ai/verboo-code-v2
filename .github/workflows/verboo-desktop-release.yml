@@ -23,27 +23,8 @@ jobs:
     name: Build ${{ matrix.label }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            label: macOS-Apple-Silicon
-            bundles: app
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            label: macOS-Intel
-            bundles: app
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: Windows-x64
-            bundles: nsis
-            directory: 'D:\v'
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            label: Linux-x64
-            bundles: appimage,deb
+      matrix: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64) && '{"include":[{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}' || '{"include":[{"runner":"macos-15","target":"aarch64-apple-darwin","label":"macOS-Apple-Silicon","bundles":"app"},{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}') }}
     runs-on: ${{ matrix.runner }}
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.omit_macos_arm64 || matrix.label != 'macOS-Apple-Silicon' }}
     timeout-minutes: 120
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -188,7 +169,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
-      - name: Verify the complete installer set and attach it to the release
+      - name: Verify the selected installer set and attach it to the release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
