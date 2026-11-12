@@ -52,18 +52,23 @@ async function stage(root, label, { signed = true } = {}) {
     await mkdir(path, { recursive: true })
     for (const name of names) await writeFile(join(path, name), `bundle:${label}:${name}`)
   }
-  const updater = label === 'Windows-x64'
-    ? join(root, target, 'release/bundle/nsis')
+  const updaterDirectories = label === 'Windows-x64'
+    ? ['nsis']
     : label.startsWith('macOS')
-      ? join(root, target, 'release/bundle/macos')
-      : join(root, target, 'release/bundle/appimage')
-  const [bundle] = label === 'Windows-x64' ? files.nsis : label.startsWith('macOS') ? files.macos : files.appimage
-  if (signed) await writeFile(join(updater, `${bundle}.sig`), `${signature}\n`)
+      ? ['macos']
+      : ['appimage', 'deb', 'rpm']
+  if (signed) {
+    for (const directory of updaterDirectories) {
+      const bundleDirectory = join(root, target, 'release/bundle', directory)
+      const [bundle] = files[directory]
+      await writeFile(join(bundleDirectory, `${bundle}.sig`), `${signature}\n`)
+    }
+  }
   const assets = join(root, 'assets')
   return { bundles: root, assets }
 }
 
-test('collects the installer set and the signed updater bundle', async t => {
+test('collects each Linux installer as its own signed updater bundle', async t => {
   const root = await mkdtemp(join(tmpdir(), 'verboo-collect-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const staged = await stage(root, 'Linux-x64')
@@ -84,10 +89,15 @@ test('collects the installer set and the signed updater bundle', async t => {
     `Verboo-Code-v2-${configuration.version}-Linux-x64.deb`,
     `Verboo-Code-v2-${configuration.version}-Linux-x64.rpm`,
   ])
-  // The AppImage is both the installer and the updater bundle on Linux.
-  assert.deepEqual(manifest.updaters.map(entry => entry.name), [`Verboo-Code-v2-${configuration.version}-Linux-x64.AppImage`])
-  assert.equal(manifest.updaters[0].signature, signature)
-  assert.equal(manifest.updaters[0].sha256, manifest.installers[0].sha256)
+  assert.deepEqual(manifest.updaters.map(entry => [entry.target, entry.name]), [
+    ['linux-x86_64-appimage', `Verboo-Code-v2-${configuration.version}-Linux-x64.AppImage`],
+    ['linux-x86_64-deb', `Verboo-Code-v2-${configuration.version}-Linux-x64.deb`],
+    ['linux-x86_64-rpm', `Verboo-Code-v2-${configuration.version}-Linux-x64.rpm`],
+  ])
+  for (const [index, updater] of manifest.updaters.entries()) {
+    assert.equal(updater.signature, signature)
+    assert.equal(updater.sha256, manifest.installers[index].sha256)
+  }
 })
 
 test('archives the macOS application bundle instead of the disk image', async t => {

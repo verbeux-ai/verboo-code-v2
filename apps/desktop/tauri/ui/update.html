@@ -135,6 +135,7 @@
       button:disabled { opacity: 0.55; cursor: default; filter: none; }
 
       .failure { color: var(--danger); }
+      .diagnostic { color: var(--muted); font-size: 11px; user-select: text; }
       .meter[data-failed='true'] { justify-content: flex-start; }
       [hidden] { display: none !important; }
       @media (prefers-reduced-motion: reduce) {
@@ -162,6 +163,7 @@
           <span data-role="status"></span>
           <span class="percent" data-role="percent"></span>
         </div>
+        <small class="diagnostic" data-role="diagnostic" hidden></small>
       </section>
     </main>
 
@@ -179,6 +181,7 @@
       const fill = role('fill')
       const percent = role('percent')
       const status = role('status')
+      const diagnostic = role('diagnostic')
       const install = role('install')
       const later = role('later')
 
@@ -220,13 +223,20 @@
         install.blur()
       }
       /** Report a failed install in place instead of leaving a frozen bar. */
-      window.__fail = (message) => {
+      window.__fail = ({ message, code }) => {
         fill.dataset.indeterminate = 'false'
         fill.style.width = '100%'
         fill.style.background = 'var(--danger)'
+        progress.removeAttribute('role')
         progress.removeAttribute('aria-valuenow')
         progress.removeAttribute('aria-label')
+        progress.removeAttribute('aria-valuemin')
+        progress.removeAttribute('aria-valuemax')
         status.textContent = message
+        status.setAttribute('role', 'status')
+        status.setAttribute('aria-live', 'polite')
+        diagnostic.hidden = !code
+        diagnostic.textContent = code ? `${copy.diagnosticLabel}: ${code}` : ''
         status.classList.add('failure')
         status.parentElement.dataset.failed = 'true'
         percent.textContent = ''
@@ -234,6 +244,7 @@
         install.hidden = true
         progress.hidden = false
         later.hidden = false
+        later.disabled = false
         later.textContent = copy.close
         later.focus()
       }
@@ -241,8 +252,12 @@
       install.addEventListener('click', () => {
         install.disabled = true
         later.disabled = true
-        invoke('update_install').catch(() => {
-          window.__fail(copy.failed)
+        invoke('update_install').catch((error) => {
+          const value = typeof error === 'string' ? error : error?.message
+          const code = typeof value === 'string' && /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(value)
+            ? value
+            : 'unknown'
+          window.__fail({ message: copy.failed, code })
         })
       })
       later.addEventListener('click', () => {
@@ -251,7 +266,7 @@
       // Escape declines only while the offer is still on screen; once the download
       // starts the window stays, because the app restarts on its own.
       document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !install.hidden) {
+        if (event.key === 'Escape' && (!install.hidden || (!later.hidden && !later.disabled))) {
           invoke('update_close').catch(() => {})
         }
       })

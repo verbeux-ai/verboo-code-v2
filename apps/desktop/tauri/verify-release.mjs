@@ -11,15 +11,32 @@ const source = process.env.GITHUB_SHA
 if (!/^[a-f0-9]{40}$/.test(source ?? '')) throw new Error('exact source SHA is required')
 const directory = resolve(process.argv[2])
 const platforms = {
-  'macOS-Apple-Silicon': ['aarch64-apple-darwin', ['dmg'], 'darwin-aarch64', '-macOS-Apple-Silicon.app.tar.gz'],
-  'macOS-Intel': ['x86_64-apple-darwin', ['dmg'], 'darwin-x86_64', '-macOS-Intel.app.tar.gz'],
-  'Windows-x64': ['x86_64-pc-windows-msvc', ['exe'], 'windows-x86_64', '-Windows-x64-Setup.exe'],
-  'Linux-x64': ['x86_64-unknown-linux-gnu', ['AppImage', 'deb', 'rpm'], 'linux-x86_64', '-Linux-x64.AppImage'],
+  'macOS-Apple-Silicon': {
+    target: 'aarch64-apple-darwin', extensions: ['dmg'],
+    updaters: [{ target: 'darwin-aarch64-app', alias: 'darwin-aarch64', suffix: '-macOS-Apple-Silicon.app.tar.gz' }],
+  },
+  'macOS-Intel': {
+    target: 'x86_64-apple-darwin', extensions: ['dmg'],
+    updaters: [{ target: 'darwin-x86_64-app', alias: 'darwin-x86_64', suffix: '-macOS-Intel.app.tar.gz' }],
+  },
+  'Windows-x64': {
+    target: 'x86_64-pc-windows-msvc', extensions: ['exe'],
+    updaters: [{ target: 'windows-x86_64-nsis', alias: 'windows-x86_64', suffix: '-Windows-x64-Setup.exe' }],
+  },
+  'Linux-x64': {
+    target: 'x86_64-unknown-linux-gnu', extensions: ['AppImage', 'deb', 'rpm'],
+    updaters: [
+      { target: 'linux-x86_64-appimage', alias: 'linux-x86_64', suffix: '-Linux-x64.AppImage' },
+      { target: 'linux-x86_64-deb', suffix: '-Linux-x64.deb' },
+      { target: 'linux-x86_64-rpm', suffix: '-Linux-x64.rpm' },
+    ],
+  },
 }
 const allowed = new Set(['SHA256SUMS', 'RELEASE.md'])
 const checksums = []
 const feed = { version: configuration.version, pub_date: new Date().toISOString(), platforms: {} }
-for (const [label, [target, extensions, updaterTarget, updaterSuffix]] of Object.entries(platforms)) {
+for (const [label, platform] of Object.entries(platforms)) {
+  const { target, extensions, updaters: expectedUpdaters } = platform
   const manifest = `manifest-${label}.json`
   allowed.add(manifest)
   const data = JSON.parse(await readFile(join(directory, manifest), 'utf8'))
@@ -39,23 +56,27 @@ for (const [label, [target, extensions, updaterTarget, updaterSuffix]] of Object
     if (hash.digest('hex') !== entry.sha256) throw new Error(`installer digest mismatch: ${label}`)
     checksums.push(`${entry.sha256}  ${name}`)
   }
-  if (!Array.isArray(data.updaters) || data.updaters.length !== 1) throw new Error(`missing updater bundle: ${label}`)
-  const updater = data.updaters[0]
-  if (updater.name !== `Verboo-Code-v2-${configuration.version}${updaterSuffix}`) throw new Error(`unexpected updater name: ${label}`)
-  if (!/^[A-Za-z0-9+/=\s]+$/.test(updater.signature ?? '')) throw new Error(`missing updater signature: ${label}`)
-  allowed.add(updater.name)
-  const updaterPath = join(directory, updater.name)
-  const updaterStat = await lstat(updaterPath)
-  if (!updaterStat.isFile() || updaterStat.size === 0 || updaterStat.size !== updater.bytes) throw new Error(`invalid updater file: ${label}`)
-  const updaterHash = createHash('sha256')
-  for await (const chunk of createReadStream(updaterPath)) updaterHash.update(chunk)
-  if (updaterHash.digest('hex') !== updater.sha256) throw new Error(`updater digest mismatch: ${label}`)
-  feed.platforms[updaterTarget] = {
-    signature: updater.signature,
-    url: `https://github.com/verbeux-ai/verboo-code-v2/releases/download/v${configuration.version}/${updater.name}`,
+  if (!Array.isArray(data.updaters) || data.updaters.length !== expectedUpdaters.length) throw new Error(`missing updater bundle: ${label}`)
+  for (const expected of expectedUpdaters) {
+    const updater = data.updaters.find(entry => entry.target === expected.target)
+    if (!updater || updater.name !== `Verboo-Code-v2-${configuration.version}${expected.suffix}`) throw new Error(`unexpected updater bundle: ${label} (${expected.target})`)
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(updater.signature ?? '')) throw new Error(`missing updater signature: ${label} (${expected.target})`)
+    allowed.add(updater.name)
+    const updaterPath = join(directory, updater.name)
+    const updaterStat = await lstat(updaterPath)
+    if (!updaterStat.isFile() || updaterStat.size === 0 || updaterStat.size !== updater.bytes) throw new Error(`invalid updater file: ${label} (${expected.target})`)
+    const updaterHash = createHash('sha256')
+    for await (const chunk of createReadStream(updaterPath)) updaterHash.update(chunk)
+    if (updaterHash.digest('hex') !== updater.sha256) throw new Error(`updater digest mismatch: ${label} (${expected.target})`)
+    const platform = {
+      signature: updater.signature,
+      url: `https://github.com/verbeux-ai/verboo-code-v2/releases/download/v${configuration.version}/${updater.name}`,
+    }
+    feed.platforms[expected.target] = platform
+    if (expected.alias) feed.platforms[expected.alias] = platform
   }
 }
-if (Object.keys(feed.platforms).length !== Object.keys(platforms).length) throw new Error('incomplete update feed')
+if (Object.keys(feed.platforms).length !== 10) throw new Error('incomplete update feed')
 for (const name of await readdir(directory)) if (!allowed.has(name)) throw new Error('unexpected release artifact')
 await writeFile(join(directory, 'SHA256SUMS'), checksums.sort().join('\n') + '\n')
 await writeFile(join(directory, 'RELEASE.md'), `Verboo Code v2 ${configuration.version}\n\n- Até quatro chats simultâneos, com painéis redimensionáveis.\n- Troca de conversa pelo cabeçalho e indicação do painel selecionado.\n- Esc interrompe a resposta do chat selecionado.\n- Setas para cima e para baixo percorrem o histórico de mensagens enviadas.\n- Leitura de Stamina compartilhada entre os chats da mesma conta.\n\nInstaladores para macOS ${configuration.bundle.macOS.minimumSystemVersion}+ (Apple Silicon e Intel), Windows x64 e Linux x64.\n\nO instalador Windows não é assinado; o macOS usa assinatura ad hoc, sem notarização da Apple. Confira a integridade em SHA256SUMS.\n\nSource: ${source}\n`)

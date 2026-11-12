@@ -36,9 +36,9 @@ The retained Electron installers and updater tests are legacy tools described in
 
 ## Updates
 
-The Tauri updater ships with the application: it reads one feed once per launch, after the Host is serving the product, and installs a confirmed version in place. Linux replaces the AppImage, Windows reuses the NSIS installer in `passive` mode, and macOS replaces the application bundle from the archived `.app`. Debian and RPM installations keep updating through the package manager. Development builds never check, so a checkout cannot install a release over itself.
+The Tauri updater ships with the application: it reads one feed once per launch, after the Host is serving the product, and installs a confirmed version in place. Linux selects a signed AppImage, Debian package, or RPM that matches the installed bundle type; Windows reuses the NSIS installer in `passive` mode, and macOS replaces the application bundle from the archived `.app`. Development builds never check, so a checkout cannot install a release over itself.
 
-`bundle.createUpdaterArtifacts` makes the bundler emit the bundle and its signature, and the release workflow signs it with `TAURI_SIGNING_PRIVATE_KEY`. The public key in `plugins.updater.pubkey` is the only trust anchor, and the updater refuses any bundle another key signed; losing the private key means shipping installers that can never update.
+`bundle.createUpdaterArtifacts` makes the bundler emit the bundle and its signature, and the release workflow signs the RPM with the product version because its package metadata uses a normalized prerelease version. The public key in `plugins.updater.pubkey` is the only trust anchor, and the updater refuses any bundle another key signed; losing the private key means shipping installers that can never update.
 
 The feed is `latest.json` on the `update-feed` branch rather than a release asset, because `releases/latest` never resolves to a prerelease. `verify-release.mjs` writes it from the verified manifests and `publish-feed.mjs` commits it after the release is public; a re-run of an older release cannot move the feed backwards. Users who decline an offer are not asked again for that version.
 

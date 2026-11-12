@@ -26,6 +26,7 @@ const COPY = JSON.parse(
   later: string
   close: string
   failed: string
+  diagnosticLabel: string
   running: { title: string; body: string; status: string }
   applied: { title: string; body: string; dwellMs: number }
 }>
@@ -150,14 +151,18 @@ describe('the update offer window', () => {
 
   it('reports a refused install instead of freezing the window', async () => {
     const { copy, window } = await offer()
-    window.invoke.mockRejectedValueOnce(new Error('update_install_unprepared'))
+    window.invoke.mockRejectedValueOnce('update_install_unprepared')
     window.click('install')
     await vi.waitFor(() => { expect(window.role('status').textContent).toBe(copy.failed) })
     expect(window.role('status').classList.contains('failure')).toBe(true)
     // The only way out is the dismiss button, which now reads as a close action.
     expect(window.role('later').hidden).toBe(false)
     expect(window.role('later').textContent).toBe(copy.close)
+    expect(window.role('diagnostic').textContent).toBe(`${copy.diagnosticLabel}: update_install_unprepared`)
     expect((window.role('install') as HTMLButtonElement).hidden).toBe(true)
+    expect((window.role('later') as HTMLButtonElement).disabled).toBe(false)
+    window.click('later')
+    await vi.waitFor(() => { expect(window.invoke).toHaveBeenLastCalledWith('update_close') })
   })
 
   it('does not answer Escape once the download is running', async () => {
@@ -168,6 +173,16 @@ describe('the update offer window', () => {
     )
     // The window must survive: the app restarts on its own when it finishes.
     expect(window.invoke).not.toHaveBeenCalled()
+  })
+
+  it('closes the failed update window on Escape', async () => {
+    const { copy, window } = await offer()
+    window.evalInPage(`window.__enterProgress(${JSON.stringify(copy.running)})`)
+    window.evalInPage(`window.__fail(${JSON.stringify({ message: copy.failed, code: 'network' })})`)
+    window.dom.window.document.dispatchEvent(
+      new window.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await vi.waitFor(() => { expect(window.invoke).toHaveBeenCalledWith('update_close') })
   })
 })
 
@@ -231,9 +246,12 @@ describe('the running state', () => {
   it('marks a failure with an error state and a dismiss action', async () => {
     const { copy, window } = await offer()
     window.evalInPage(`window.__enterProgress(${JSON.stringify(copy.running)})`)
-    window.evalInPage(`window.__fail(${JSON.stringify(copy.failed)})`)
+    window.evalInPage(`window.__fail(${JSON.stringify({ message: copy.failed, code: 'network' })})`)
     expect(window.role('status').textContent).toBe(copy.failed)
     expect(window.role('status').classList.contains('failure')).toBe(true)
+    expect(window.role('status').getAttribute('role')).toBe('status')
+    expect(window.role('diagnostic').textContent).toBe(`${copy.diagnosticLabel}: network`)
+    expect(window.role('progress').getAttribute('role')).toBeNull()
     expect(window.role('fill').style.width).toBe('100%')
     expect(window.role('fill').style.background).toContain('--danger')
     expect(window.role('later').hidden).toBe(false)
@@ -260,11 +278,12 @@ describe('a whole update, state after state', () => {
     expect(window.role('percent').textContent).toBe('75%')
 
     // 4. The install fails; the percentage and the bar's range both go away.
-    window.evalInPage(`window.__fail(${JSON.stringify(copy.failed)})`)
+    window.evalInPage(`window.__fail(${JSON.stringify({ message: copy.failed, code: 'installation-failed' })})`)
     expect(window.role('percent').textContent).toBe('')
     expect(window.role('progress').getAttribute('aria-valuenow')).toBeNull()
     expect(window.role('progress').getAttribute('aria-label')).toBeNull()
     expect(window.role('status').textContent).toBe(copy.failed)
+    expect(window.role('diagnostic').textContent).toBe(`${copy.diagnosticLabel}: installation-failed`)
 
     // 5. Dismissing reports the same command the decline button uses.
     window.click('later')
@@ -279,7 +298,7 @@ describe('a whole update, state after state', () => {
     expect(visible()).toEqual(['install', 'later'])
     window.evalInPage(`window.__enterProgress(${JSON.stringify(copy.running)})`)
     expect(visible()).toEqual([])
-    window.evalInPage(`window.__fail(${JSON.stringify(copy.failed)})`)
+    window.evalInPage(`window.__fail(${JSON.stringify({ message: copy.failed, code: 'network' })})`)
     expect(visible()).toEqual(['later'])
   })
 

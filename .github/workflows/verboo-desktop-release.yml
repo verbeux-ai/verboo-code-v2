@@ -89,7 +89,9 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs
+      - name: Test update window
+        run: pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
       - name: Prepare native test resources
         run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
       - name: Test native process ownership
@@ -124,6 +126,7 @@ jobs:
           if (files.length !== 1) throw Error('Expected one RPM installer')
           const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', join(directory, files[0])], { encoding: 'utf8' }).trim()
           if (identity !== `${version}-${release}`) throw Error('RPM version identity mismatch')
+          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'signer', 'sign', '--app-version', product.version, join(directory, files[0])], { stdio: 'inherit' })
           console.log(`Verified RPM ${identity}; product ${product.version}`)
           JS
       - name: Verify the installed Windows runtime

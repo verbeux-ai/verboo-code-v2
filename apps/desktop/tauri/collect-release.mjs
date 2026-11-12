@@ -17,18 +17,21 @@ const platforms = {
 }
 
 /**
- * Where the updater bundle lives per platform: its bundle directory, the suffix
- * that selects it, and the suffix it is published under.
+ * Updater bundles and target names Tauri uses when choosing a package.
  *
  * Tauri reuses the installer on Linux and Windows, where an update replaces the
  * same bytes, and archives the application bundle on macOS, where the installer
  * is a disk image the updater cannot swap in place.
  */
 const updaterBundles = {
-  'macOS-Apple-Silicon': ['macos', '.app.tar.gz', '.app.tar.gz'],
-  'macOS-Intel': ['macos', '.app.tar.gz', '.app.tar.gz'],
-  'Windows-x64': ['nsis', '.exe', '-Setup.exe'],
-  'Linux-x64': ['appimage', '.AppImage', '.AppImage'],
+  'macOS-Apple-Silicon': [{ directory: 'macos', suffix: '.app.tar.gz', publishedSuffix: '-macOS-Apple-Silicon.app.tar.gz', target: 'darwin-aarch64-app' }],
+  'macOS-Intel': [{ directory: 'macos', suffix: '.app.tar.gz', publishedSuffix: '-macOS-Intel.app.tar.gz', target: 'darwin-x86_64-app' }],
+  'Windows-x64': [{ directory: 'nsis', suffix: '.exe', publishedSuffix: '-Windows-x64-Setup.exe', target: 'windows-x86_64-nsis' }],
+  'Linux-x64': [
+    { directory: 'appimage', suffix: '.AppImage', publishedSuffix: '-Linux-x64.AppImage', target: 'linux-x86_64-appimage' },
+    { directory: 'deb', suffix: '.deb', publishedSuffix: '-Linux-x64.deb', target: 'linux-x86_64-deb' },
+    { directory: 'rpm', suffix: '.rpm', publishedSuffix: '-Linux-x64.rpm', target: 'linux-x86_64-rpm' },
+  ],
 }
 
 if (!(label in platforms) || !/^[a-z0-9_-]+$/.test(target ?? '') || !/^[a-f0-9]{40}$/.test(source ?? '')) {
@@ -80,14 +83,16 @@ for (const extension of platforms[label]) {
   entries.push(await collect(join(directory, await only(directory, `.${extension}`)), name))
 }
 
-const [updaterDirectory, suffix, publishedSuffix] = updaterBundles[label]
-const updaterRoot = join(bundles, updaterDirectory)
-const bundle = await only(updaterRoot, suffix)
-if (!(await readdir(updaterRoot)).includes(`${bundle}.sig`)) throw new Error(`missing updater signature for ${label}`)
-const updaterName = `Verboo-Code-v2-${configuration.version}-${label}${publishedSuffix}`
-updaters.push({
-  ...(await collect(join(updaterRoot, bundle), updaterName)),
-  signature: (await readFile(join(updaterRoot, `${bundle}.sig`), 'utf8')).trim(),
-})
+for (const { directory, suffix, publishedSuffix, target: updaterTarget } of updaterBundles[label]) {
+  const updaterRoot = join(bundles, directory)
+  const bundle = await only(updaterRoot, suffix)
+  if (!(await readdir(updaterRoot)).includes(`${bundle}.sig`)) throw new Error(`missing updater signature for ${label} (${updaterTarget})`)
+  const updaterName = `Verboo-Code-v2-${configuration.version}${publishedSuffix}`
+  updaters.push({
+    ...(await collect(join(updaterRoot, bundle), updaterName)),
+    target: updaterTarget,
+    signature: (await readFile(join(updaterRoot, `${bundle}.sig`), 'utf8')).trim(),
+  })
+}
 
 await writeFile(join(output, `manifest-${label}.json`), JSON.stringify({ version: 1, source, productVersion: configuration.version, label, target, installers: entries, updaters }, null, 2) + '\n')

@@ -33,6 +33,8 @@ pub struct OfferCopy<'a> {
     pub close: &'a str,
     /// Message shown when the install fails.
     pub failed: &'a str,
+    /// Label for the safe diagnostic code shown after a failed install.
+    pub diagnostic_label: &'a str,
 }
 
 /// Copy shown once the download is running.
@@ -65,6 +67,7 @@ pub fn copy_script(copy: &OfferCopy<'_>) -> String {
             "later": copy.later,
             "close": copy.close,
             "failed": copy.failed,
+            "diagnosticLabel": copy.diagnostic_label,
         }),
     )
 }
@@ -105,8 +108,11 @@ pub fn progress_script(ratio: f64) -> String {
 /// Report an install failure in place.
 /// @param message - what the window should say.
 /// @returns the statement that replaces the bar with the failure.
-pub fn fail_script(message: &str) -> String {
-    format!("window.__fail({});", serde_json::json!(message))
+pub fn fail_script(message: &str, diagnostic_code: &str) -> String {
+    format!(
+        "window.__fail({});",
+        serde_json::json!({ "message": message, "code": diagnostic_code }),
+    )
 }
 
 /// Compute the completed fraction of one download step.
@@ -154,6 +160,7 @@ mod tests {
             later: "Not now",
             close: "Close",
             failed: "The update could not be completed.",
+            diagnostic_label: "Diagnostic code",
         }
     }
 
@@ -171,7 +178,7 @@ mod tests {
         assert!(applied_script("a", "b", 1).starts_with("window.__VERBOO_UPDATED__ = "));
         assert_eq!(running_script(&running()), "window.__enterProgress({\"body\":\"This takes a moment.\",\"status\":\"Downloading\",\"title\":\"Updating Verboo Code\"});");
         assert_eq!(progress_script(0.5), "window.__setProgress(0.5);");
-        assert_eq!(fail_script("boom"), "window.__fail(\"boom\");");
+        assert_eq!(fail_script("boom", "invalid-installer-format"), "window.__fail({\"code\":\"invalid-installer-format\",\"message\":\"boom\"});");
     }
 
     #[test]
@@ -194,6 +201,7 @@ mod tests {
             later: "Plus tard",
             close: "Fermer",
             failed: "Échec: \"quoted\"",
+            diagnostic_label: "Code de diagnostic",
         };
         // Every statement shape the module emits, with its own decoder.
         let statements = [
@@ -201,7 +209,7 @@ mod tests {
             copy_script(&copy),
             applied_script("a \"b\" c", "d « e »", APPLIED_DWELL_MS),
             // Call form: strip the call wrapper, keep the single argument.
-            fail_script("bad \"value\" and \\ backslash"),
+            fail_script("bad \"value\" and \\ backslash", "network"),
             running_script(&RunningCopy { title: "x \"y\"", body: "z", status: "s" }),
         ];
         for script in statements {

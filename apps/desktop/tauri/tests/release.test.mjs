@@ -14,16 +14,33 @@ const configuration = JSON.parse(await readFile(join(desktop, 'src-tauri/tauri.c
 const source = 'a'.repeat(40)
 const run = promisify(execFile)
 const platforms = {
-  'macOS-Apple-Silicon': ['aarch64-apple-darwin', ['dmg'], '-macOS-Apple-Silicon.app.tar.gz'],
-  'macOS-Intel': ['x86_64-apple-darwin', ['dmg'], '-macOS-Intel.app.tar.gz'],
-  'Windows-x64': ['x86_64-pc-windows-msvc', ['exe'], '-Windows-x64-Setup.exe'],
-  'Linux-x64': ['x86_64-unknown-linux-gnu', ['AppImage', 'deb', 'rpm'], '-Linux-x64.AppImage'],
+  'macOS-Apple-Silicon': {
+    target: 'aarch64-apple-darwin', extensions: ['dmg'],
+    updaters: [{ target: 'darwin-aarch64-app', suffix: '-macOS-Apple-Silicon.app.tar.gz' }],
+  },
+  'macOS-Intel': {
+    target: 'x86_64-apple-darwin', extensions: ['dmg'],
+    updaters: [{ target: 'darwin-x86_64-app', suffix: '-macOS-Intel.app.tar.gz' }],
+  },
+  'Windows-x64': {
+    target: 'x86_64-pc-windows-msvc', extensions: ['exe'],
+    updaters: [{ target: 'windows-x86_64-nsis', suffix: '-Windows-x64-Setup.exe' }],
+  },
+  'Linux-x64': {
+    target: 'x86_64-unknown-linux-gnu', extensions: ['AppImage', 'deb', 'rpm'],
+    updaters: [
+      { target: 'linux-x86_64-appimage', suffix: '-Linux-x64.AppImage' },
+      { target: 'linux-x86_64-deb', suffix: '-Linux-x64.deb' },
+      { target: 'linux-x86_64-rpm', suffix: '-Linux-x64.rpm' },
+    ],
+  },
 }
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'verboo-release-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
-  for (const [label, [target, extensions, updaterSuffix]] of Object.entries(platforms)) {
+  for (const [label, platform] of Object.entries(platforms)) {
+    const { target, extensions, updaters: updaterSpecs } = platform
     const installers = []
     for (const extension of extensions) {
       const name = `Verboo-Code-v2-${configuration.version}-${label}${extension === 'exe' ? '-Setup' : ''}.${extension}`
@@ -31,20 +48,25 @@ async function fixture(t) {
       await writeFile(join(directory, name), bytes)
       installers.push({ name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
     }
-    const updaterName = `Verboo-Code-v2-${configuration.version}${updaterSuffix}`
-    // Linux and Windows reuse the installer bytes, so those two names collide.
-    const reused = installers.find(installer => installer.name === updaterName)
-    const updaterBytes = reused ? Buffer.from(`installer:${label}:${[...extensions][0]}`) : Buffer.from(`updater:${label}`)
-    if (!reused) await writeFile(join(directory, updaterName), updaterBytes)
-    const updaters = [{
-      name: updaterName,
-      bytes: updaterBytes.length,
-      sha256: createHash('sha256').update(updaterBytes).digest('hex'),
-      signature: 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=',
-    }]
+    const updaters = []
+    for (const spec of updaterSpecs) {
+      const name = `Verboo-Code-v2-${configuration.version}${spec.suffix}`
+      const reused = installers.find(installer => installer.name === name)
+      const installerExtension = name.endsWith('.AppImage') ? 'AppImage' : name.split('.').at(-1)
+      const updaterBytes = reused ? Buffer.from(`installer:${label}:${installerExtension}`) : Buffer.from(`updater:${label}:${spec.target}`)
+      if (!reused) await writeFile(join(directory, name), updaterBytes)
+      updaters.push({
+        target: spec.target,
+        name,
+        bytes: updaterBytes.length,
+        sha256: createHash('sha256').update(updaterBytes).digest('hex'),
+        signature: 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQo=',
+      })
+    }
     await writeFile(join(directory, `manifest-${label}.json`), JSON.stringify({ version: 1, source, productVersion: configuration.version, label, target, installers, updaters }))
   }
-  return { directory, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: join(directory, '..', `feed-${randomUUID()}.json`) } }) }
+  const feed = join(directory, '..', `feed-${randomUUID()}.json`)
+  return { directory, feed, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: feed } }) }
 }
 
 test('publishes checksums only for the complete exact-source installer set', async t => {
@@ -53,6 +75,15 @@ test('publishes checksums only for the complete exact-source installer set', asy
   assert.equal(JSON.parse(result.stdout).installers, 6)
   assert.equal((await readFile(join(f.directory, 'SHA256SUMS'), 'utf8')).trim().split('\n').length, 6)
   assert.match(await readFile(join(f.directory, 'RELEASE.md'), 'utf8'), new RegExp(source))
+  const feed = JSON.parse(await readFile(f.feed, 'utf8'))
+  assert.deepEqual(Object.keys(feed.platforms).sort(), [
+    'darwin-aarch64', 'darwin-aarch64-app', 'darwin-x86_64', 'darwin-x86_64-app',
+    'linux-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb', 'linux-x86_64-rpm',
+    'windows-x86_64', 'windows-x86_64-nsis',
+  ])
+  assert.match(feed.platforms['linux-x86_64-deb'].url, /Linux-x64\.deb$/)
+  assert.match(feed.platforms['linux-x86_64-rpm'].url, /Linux-x64\.rpm$/)
+  assert.match(feed.platforms['linux-x86_64'].url, /Linux-x64\.AppImage$/)
 })
 
 for (const failure of ['missing platform', 'tampered installer', 'wrong source', 'unexpected artifact', 'missing updater', 'unsigned updater', 'tampered updater']) {
