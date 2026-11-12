@@ -36,10 +36,11 @@ const platforms = {
   },
 }
 
-async function fixture(t) {
+async function fixture(t, { includeAppleSilicon = true, omitAppleSilicon = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'verboo-release-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   for (const [label, platform] of Object.entries(platforms)) {
+    if (!includeAppleSilicon && label === 'macOS-Apple-Silicon') continue
     const { target, extensions, updaters: updaterSpecs } = platform
     const installers = []
     for (const extension of extensions) {
@@ -66,7 +67,7 @@ async function fixture(t) {
     await writeFile(join(directory, `manifest-${label}.json`), JSON.stringify({ version: 1, source, productVersion: configuration.version, label, target, installers, updaters }))
   }
   const feed = join(directory, '..', `feed-${randomUUID()}.json`)
-  return { directory, feed, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: feed } }) }
+  return { directory, feed, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: feed, VERBOO_RELEASE_OMIT_MACOS_ARM64: omitAppleSilicon ? 'true' : 'false' } }) }
 }
 
 test('publishes checksums only for the complete exact-source installer set', async t => {
@@ -84,6 +85,24 @@ test('publishes checksums only for the complete exact-source installer set', asy
   assert.match(feed.platforms['linux-x86_64-deb'].url, /Linux-x64\.deb$/)
   assert.match(feed.platforms['linux-x86_64-rpm'].url, /Linux-x64\.rpm$/)
   assert.match(feed.platforms['linux-x86_64'].url, /Linux-x64\.AppImage$/)
+})
+
+test('publishes the other platforms when Apple Silicon is explicitly omitted', async t => {
+  const f = await fixture(t, { includeAppleSilicon: false, omitAppleSilicon: true })
+  const result = await f.verify()
+  assert.equal(JSON.parse(result.stdout).installers, 5)
+  const feed = JSON.parse(await readFile(f.feed, 'utf8'))
+  assert.deepEqual(Object.keys(feed.platforms).sort(), [
+    'darwin-x86_64', 'darwin-x86_64-app',
+    'linux-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb', 'linux-x86_64-rpm',
+    'windows-x86_64', 'windows-x86_64-nsis',
+  ])
+  assert.match(await readFile(join(f.directory, 'RELEASE.md'), 'utf8'), /não inclui Apple Silicon/)
+})
+
+test('still rejects a missing Apple Silicon build unless it was explicitly omitted', async t => {
+  const f = await fixture(t, { includeAppleSilicon: false })
+  await assert.rejects(f.verify())
 })
 
 for (const failure of ['missing platform', 'tampered installer', 'wrong source', 'unexpected artifact', 'missing updater', 'unsigned updater', 'tampered updater']) {

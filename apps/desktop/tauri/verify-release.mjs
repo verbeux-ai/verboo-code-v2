@@ -32,6 +32,11 @@ const platforms = {
     ],
   },
 }
+const omitAppleSilicon = process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64 === 'true'
+if (process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64 !== undefined && !['true', 'false'].includes(process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64)) {
+  throw new Error('invalid Apple Silicon release omission setting')
+}
+if (omitAppleSilicon) delete platforms['macOS-Apple-Silicon']
 const allowed = new Set(['SHA256SUMS', 'RELEASE.md'])
 const checksums = []
 const feed = { version: configuration.version, pub_date: new Date().toISOString(), platforms: {} }
@@ -76,10 +81,17 @@ for (const [label, platform] of Object.entries(platforms)) {
     if (expected.alias) feed.platforms[expected.alias] = platform
   }
 }
-if (Object.keys(feed.platforms).length !== 10) throw new Error('incomplete update feed')
+if (Object.keys(feed.platforms).length !== (omitAppleSilicon ? 8 : 10)) throw new Error('incomplete update feed')
 for (const name of await readdir(directory)) if (!allowed.has(name)) throw new Error('unexpected release artifact')
 await writeFile(join(directory, 'SHA256SUMS'), checksums.sort().join('\n') + '\n')
-await writeFile(join(directory, 'RELEASE.md'), `Verboo Code v2 ${configuration.version}\n\n- Até quatro chats simultâneos, com painéis redimensionáveis.\n- Troca de conversa pelo cabeçalho e indicação do painel selecionado.\n- Esc interrompe a resposta do chat selecionado.\n- Setas para cima e para baixo percorrem o histórico de mensagens enviadas.\n- Leitura de Stamina compartilhada entre os chats da mesma conta.\n\nInstaladores para macOS ${configuration.bundle.macOS.minimumSystemVersion}+ (Apple Silicon e Intel), Windows x64 e Linux x64.\n\nO instalador Windows não é assinado; o macOS usa assinatura ad hoc, sem notarização da Apple. Confira a integridade em SHA256SUMS.\n\nSource: ${source}\n`)
+const availablePlatforms = omitAppleSilicon
+  ? 'macOS Intel, Windows x64 e Linux x64'
+  : 'macOS Apple Silicon e Intel, Windows x64 e Linux x64'
+const platformNote = omitAppleSilicon
+  ? '\n\nEsta versão não inclui Apple Silicon; usuários Mac ARM não receberão a atualização até uma próxima versão.'
+  : ''
+const releaseNotes = 'Verboo Code v2 ' + configuration.version + '\n\n- Até quatro chats simultâneos, com painéis redimensionáveis.\n- Troca de conversa pelo cabeçalho e indicação do painel selecionado.\n- Esc interrompe a resposta do chat selecionado.\n- Setas para cima e para baixo percorrem o histórico de mensagens enviadas.\n- Leitura de Stamina compartilhada entre os chats da mesma conta.\n\nInstaladores para ' + availablePlatforms + '.\n' + platformNote + '\n\nO instalador Windows não é assinado; o macOS usa assinatura ad hoc, sem notarização da Apple. Confira a integridade em SHA256SUMS.\n\nSource: ' + source + '\n'
+await writeFile(join(directory, 'RELEASE.md'), releaseNotes)
 // The feed is a published index rather than a release asset, so it stays out of
 // the verified directory: publication regenerates it from the same manifests.
 const feedPath = process.env.VERBOO_UPDATE_FEED_PATH ?? join(dirname(directory), 'update-feed', 'latest.json')

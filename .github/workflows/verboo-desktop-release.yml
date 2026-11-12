@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      omit_macos_arm64:
+        description: Skip Apple Silicon when its hosted runner is unavailable; ARM users will not receive this release.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +43,7 @@ jobs:
             label: Linux-x64
             bundles: appimage,deb
     runs-on: ${{ matrix.runner }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.omit_macos_arm64 || matrix.label != 'macOS-Apple-Silicon' }}
     timeout-minutes: 120
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -185,8 +192,10 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
         run: node apps/desktop/tauri/publish-release.mjs release-assets
       - name: Publish the update feed the installed app reads
         env:
           GH_TOKEN: ${{ github.token }}
+          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
         run: node apps/desktop/tauri/publish-feed.mjs update-feed/latest.json
