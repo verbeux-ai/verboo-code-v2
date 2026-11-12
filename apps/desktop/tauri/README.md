@@ -22,6 +22,8 @@ pnpm run start:desktop
 
 Startup opens only the native chat window, including when a user profile enables automatic browser startup. Browser sign-in and explicitly requested external links use the system browser.
 
+The native Close command (Command+W on macOS, Control+W on Windows) closes the focused conversation pane instead of the application window. Pressing Command+Q on macOS or Control+Q on Windows shows a localized hint; pressing the shortcut a second time within three seconds quits. Escape, losing focus, hiding the document or waiting three seconds cancels the confirmation. Holding the keys never counts as a second press. The native menu Quit action and window close button still ask for confirmation before interrupting work or disposing the Host. Cancel keeps the window and all work running; confirmation retains the bounded graceful shutdown. Repeated quit requests share one confirmation and cannot bypass Host disposal.
+
 The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` overrides it. Generated configuration contains paths, never credentials. Build outputs and development state are gitignored.
 
 ## Native distribution

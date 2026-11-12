@@ -40,7 +40,7 @@ import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationContent } from './skeleton/ConversationContent.tsx'
 import { ConversationPanel } from './skeleton/ConversationPanel.tsx'
-import { ConversationHeader } from './skeleton/ConversationHeader.tsx'
+import { ConversationHeader, ConversationHeaderAdapter } from './skeleton/ConversationHeader.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
@@ -432,6 +432,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
 
   const registerHeader = () => slots.register({
     name: 'conversation.header',
+  }, ConversationHeaderAdapter)
+
+  const registerHeaderContent = () => slots.registerFactory({
+    name: 'conversation.header.content',
+    scope: 'session-maybe',
     children: {
       'conversation.header.leading': { kind: 'single', scope: 'root' },
       'conversation.session.header': { kind: 'single', scope: 'session' },
@@ -460,6 +465,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, ConversationSessionHeader)
 
+  const promptHistories = new Map<SessionId, { index: number; savedDraft: ReturnType<typeof inputHub.shell>['draftSnapshot'] | undefined; recalledText: string | undefined; loading: boolean; generation: number }>()
   const registerComposerBar = () => slots.register({
     name: 'conversation.composer.bar',
     locale: NS,
@@ -486,6 +492,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           retryFileUpload: undefined,
           toggleCommandMenu: undefined,
           stop: undefined,
+          promptHistory: undefined,
+          promptHistoryActive: undefined,
           hooks: {
             stopShortcut,
             busyEnter: submissionPolicy.busyEnter,
@@ -498,6 +506,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       }
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
+      let history = promptHistories.get(sessionId)
+      if (history === undefined) {
+        history = { index: -1, savedDraft: undefined, recalledText: undefined, loading: false, generation: 0 }
+        promptHistories.set(sessionId, history)
+      }
+      const historyState = history
       const inputTriggers = inputHub.inputTriggers(sessionId)
       const bridge = hostPathBridge()
       return {
@@ -565,6 +579,73 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             })
           },
         stop: () => { stop(sessionId) },
+        promptHistoryActive: () => historyState.index >= 0 && shell.snapshot.draft === historyState.recalledText,
+        promptHistory: (direction) => {
+          const binding = sessions.binding(sessionId)
+          if (binding === undefined) return false
+          if (historyState.index >= 0 && shell.snapshot.draft !== historyState.recalledText) {
+            historyState.index = -1
+            historyState.savedDraft = undefined
+          }
+          const readMessages = () => binding.eventSource.getSnapshot().entries.flatMap((entry) => {
+            if (entry.type !== 'event' || entry.event.type !== 'user/message' || entry.event.data.source.kind !== 'user') return []
+            const text = entry.event.data.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+            return text.trim() === '' ? [] : [text]
+          }).reverse()
+          const messages = readMessages()
+          if (direction === 'up') {
+            if (historyState.loading) return true
+            if (historyState.index + 1 >= messages.length) {
+              if (!binding.eventSource.getSnapshot().hasMore) return false
+              const expectedIndex = historyState.index
+              const expectedDraft = shell.snapshot.draft
+              const originalDraft = shell.draftSnapshot
+              historyState.loading = true
+              const generation = ++historyState.generation
+              void (async () => {
+                try {
+                  while (binding.eventSource.getSnapshot().hasMore) {
+                    const revision = binding.eventSource.getSnapshot().revision
+                    await binding.session.loadOlder()
+                    if (historyState.generation !== generation || sessions.binding(sessionId) !== binding
+                      || historyState.index !== expectedIndex
+                      || !shell.editor.getRootElement()?.contains(document.activeElement)
+                      || shell.snapshot.draft !== expectedDraft) return
+                    const older = readMessages()
+                    if (expectedIndex + 1 < older.length) {
+                      if (expectedIndex === -1) historyState.savedDraft = originalDraft
+                      historyState.index = expectedIndex + 1
+                      historyState.recalledText = older[historyState.index]
+                      shell.setDraft(historyState.recalledText ?? '')
+                      return
+                    }
+                    if (binding.eventSource.getSnapshot().revision === revision) return
+                  }
+                } finally {
+                  if (historyState.generation === generation) historyState.loading = false
+                }
+              })().catch(() => {})
+              return true
+            }
+            if (historyState.index === -1) historyState.savedDraft = shell.draftSnapshot
+            historyState.index += 1
+            historyState.recalledText = messages[historyState.index]
+            shell.setDraft(historyState.recalledText ?? '')
+            return true
+          }
+          if (historyState.loading) { historyState.generation += 1; historyState.loading = false; return true }
+          if (historyState.index < 0) return false
+          historyState.index -= 1
+          if (historyState.index < 0) {
+            shell.setDraft(historyState.savedDraft ?? '')
+            historyState.savedDraft = undefined
+            historyState.recalledText = undefined
+          } else {
+            historyState.recalledText = messages[historyState.index]
+            shell.setDraft(historyState.recalledText ?? '')
+          }
+          return true
+        },
         hooks: {
           stopShortcut,
           busyEnter: submissionPolicy.busyEnter,
@@ -587,6 +668,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield registerConversationContent()
     yield registerConversationSession()
     yield registerHeader()
+    yield registerHeaderContent()
     yield registerSessionHeader()
     yield registerComposerBar()
   })

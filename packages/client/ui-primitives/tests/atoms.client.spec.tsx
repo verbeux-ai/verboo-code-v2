@@ -9,6 +9,25 @@ import buttonCss from '../src/Button.module.css'
 
 afterEach(cleanup)
 
+it('leaves Tab and select arrows to native controls in a form menu', () => {
+  const select = vi.fn()
+  const close = vi.fn()
+  render(<Menu open nativeTab anchor={<button>Trigger</button>} onClose={close}>
+    <input aria-label="Search" />
+    <select aria-label="Project"><option>One</option><option>Two</option></select>
+    <MenuItemButton onSelect={select}>Conversation</MenuItemButton>
+  </Menu>)
+  const row = screen.getByRole('menuitem', { name: 'Conversation' })
+  row.focus()
+  expect(fireEvent.keyDown(row, { key: 'Tab' })).toBe(true)
+  expect(select).not.toHaveBeenCalled()
+  expect(close).not.toHaveBeenCalled()
+  const project = screen.getByRole('combobox', { name: 'Project' })
+  project.focus()
+  expect(fireEvent.keyDown(project, { key: 'ArrowDown' })).toBe(true)
+  expect(document.activeElement).toBe(project)
+})
+
 describe('isMobileDevice', () => {
   beforeEach(() => { vi.resetModules() })
 
@@ -158,6 +177,13 @@ describe('Input', () => {
 })
 
 describe('MenuItemButton', () => {
+  it('supports ordinary inline actions without exposing popup menu semantics', () => {
+    const onSelect = vi.fn()
+    render(<MenuItemButton role="button" onSelect={onSelect}>Open conversation</MenuItemButton>)
+    fireEvent.click(screen.getByRole('button', { name: 'Open conversation' }))
+    expect(screen.queryByRole('menuitem')).toBeNull()
+    expect(onSelect).toHaveBeenCalledOnce()
+  })
   it('exposes the current page without preventing activation and clears it when selection moves', () => {
     const onSelect = vi.fn()
     const { rerender } = render(<MenuItemButton current onSelect={onSelect}>Notes</MenuItemButton>)

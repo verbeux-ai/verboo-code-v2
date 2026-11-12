@@ -521,7 +521,7 @@ currentSelection(): ModelSelection
 
 /**
  * Save the complete default model selection. A deployment without a configuration
- * editor keeps its composition entry. Saves commit in submission order; a failed
+ * editor, or with rememberSelection disabled, keeps its composition entry. Saves commit in submission order; a failed
  * save rejects its caller without blocking later saves.
  * @param next - resolved selection accepted by an entry point.
  * @returns fulfillment after the optional profile write settles.

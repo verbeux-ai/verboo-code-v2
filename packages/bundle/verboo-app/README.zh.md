@@ -29,6 +29,9 @@ kind: "package-bundle"
 
 产品使用精简 Chat 详情，并省略诊断用 Trajectory 视图。界面通过类型化 Slot 覆盖活动与词元统计底栏单元，并替换上下文用量控件。权限、模型选择、处理状态和账号耐力仍保留各自的控件。
 
+新对话默认使用 `deepseek-account` / `pro/deepseek-v4.1-flash`。产品关闭 `agent-default-model.rememberSelection`，因此切换某个对话的模型只影响该对话，后续新对话仍使用 Flash。已有的模型选择保持不变。
+
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

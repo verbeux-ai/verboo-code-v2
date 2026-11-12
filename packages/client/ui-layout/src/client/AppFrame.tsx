@@ -46,7 +46,10 @@ function CenterColumn(props: { children?: ReactNode; inert: boolean }) {
 function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
   const panelId = usePanelInfo(info => info.activePanelId)
   return <div className={css.mainPanel} data-global-panel={panelId !== null || undefined}>
-    {renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })}
+    <div style={{ height: '100%' }} hidden={panelId !== null}>
+      {renderSlot('main', {}, { entryKey: 'conversation' })}
+    </div>
+    {panelId !== null && renderSlot('main', {}, { entryKey: panelId })}
   </div>
 }
 

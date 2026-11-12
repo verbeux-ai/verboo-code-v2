@@ -61,6 +61,8 @@ export type Config = z.infer<typeof Config>
 ```ts config-catalog
 /** Default model selection supplied by plugin configuration. */
 export interface Config {
+  /** Remember the last selected model as the default; false retains the configured route. */
+  rememberSelection: Volatile<boolean>
   /** Registered provider route. */
   provider: Volatile<string>
   /** Provider-owned model id. */

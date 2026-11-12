@@ -235,6 +235,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: {
         /** Parent-owned visibility shared with the header container styling. */
         hideChrome: boolean
+        /** Optional embedding-owned action for selecting another conversation. */
+        onChooseConversation?: (() => void) | undefined
       }
     }
     /** Optional replacement for one Session breadcrumb title; overlays must portal because the title area clips overflow. */
@@ -363,6 +365,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotFactoryMap {
+    /** Reusable header retaining the original controls and optional conversation selection. */
+    'conversation.header.content': {
+      scope: 'session-maybe'
+      props: { onChooseConversation?: (() => void) | undefined }
+      children: {
+        'conversation.header.leading': { kind: 'single'; scope: 'root' }
+        'conversation.session.header': { kind: 'single'; scope: 'session' }
+      }
+    }
     /** Reusable Conversation content instantiated by presentation hosts. */
     'conversation.content': {
       scope: 'session-maybe'
@@ -576,6 +587,10 @@ export interface ComposerBarInjected {
   retryFileUpload: ((id: DraftAttachmentId) => void) | undefined
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
   stop: (() => void) | undefined
+  /** Move through this Session's sent text while preserving its draft. */
+  promptHistory?: ((direction: 'up' | 'down') => boolean) | undefined
+  /** Whether the current draft is an unedited recalled message. */
+  promptHistoryActive?: (() => boolean) | undefined
   hooks: {
     /** Readable sequence while the fixed Stop command is registered. */
     stopShortcut: ObservableSnapshot<readonly string[]>
@@ -681,6 +696,7 @@ export type ConversationSessionSlotProps =
 export type ConversationHeaderProps =
   PropsRuntime<'conversation.header'>
   & PropsRenderSlots<'conversation.header.leading' | 'conversation.session.header'>
+  & { onChooseConversation?: (() => void) | undefined }
 
 /** Full props of the strict Session header. */
 export type ConversationSessionHeaderSlotProps =

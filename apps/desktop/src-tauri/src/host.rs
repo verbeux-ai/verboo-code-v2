@@ -1,5 +1,7 @@
 //! Own the Node profile's startup protocol and graceful process shutdown.
 use serde::Deserialize;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
@@ -10,8 +12,6 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 
 const PROTOCOL: &str = "VERBOO_HOST_V1\t";
 

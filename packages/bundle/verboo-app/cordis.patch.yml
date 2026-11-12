@@ -13,7 +13,8 @@
 - id: agent-default-model
   config:
     provider: deepseek-account
-    model: jev-router
+    model: pro/deepseek-v4.1-flash
+    rememberSelection: false
 - id: ui-sidebar
   disabled: true
 - id: ui-settings-account

@@ -27,7 +27,10 @@ Run the Verboo Code product on the upstream Harness engine with Verboo login, a 
 
 After building the checkout, launch `pnpm dsh --profile verboo --no-open` for a browser preview or `pnpm run dev:desktop` for Tauri development. The profile layers base, Web and this product bundle in that order.
 
+New conversations default to `deepseek-account` / `pro/deepseek-v4.1-flash`. The product disables `agent-default-model.rememberSelection`, so changing a conversation’s model keeps that choice local and preserves the Flash default for subsequent conversations. Existing saved selections remain unchanged.
+
 The product uses compact Chat details and omits the diagnostic Trajectory view. Its UI shadows the activity and token-statistic dock cells and replaces the context meter through typed slots. Permissions, model selection, running feedback and account stamina retain their own controls.
+
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

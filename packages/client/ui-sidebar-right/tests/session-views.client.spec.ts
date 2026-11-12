@@ -58,7 +58,7 @@ it('keeps one reference per View until the final committed root of a retired Vie
   expect(disposed).toHaveBeenCalledExactlyOnceWith(view)
 })
 
-it('retires only unselected Views without retained bodies and rejects released reference identities', async () => {
+it('retires unselected Views and tolerates a stale commit only for its own retired reference', async () => {
   const r = await runtime()
   const views = new SidebarSessionViews(r.sessions)
   owners.push(views)
@@ -78,7 +78,10 @@ it('retires only unselected Views without retained bodies and rejects released r
   expect(release).not.toHaveBeenCalled()
   unmount()
   expect(release).toHaveBeenCalledOnce()
-  expect(() => views.mount(a.reference)).toThrow('no longer owned')
+  views.mount(a.reference)()
+  const foreign = r.sessions.retain(A, { source: 'sidebarView' })
+  expect(() => views.mount(foreign)).toThrow('no longer owned')
+  foreign.release()
   views.select(undefined)
   expect(views.source.getSnapshot()).toEqual([])
   views.dispose()
@@ -111,4 +114,22 @@ it('reports opening failure and releases Views even when committed roots are sti
   expect(release).toHaveBeenCalledOnce()
   unmount()
   expect(release).toHaveBeenCalledOnce()
+})
+
+it('does not report an opening failure after that view was retired', async () => {
+  const r = await runtime()
+  const reference = r.sessions.retain(A, { source: 'sidebarView' })
+  let reject!: (error: Error) => void
+  const ready = new Promise<never>((_resolve, fail) => { reject = fail })
+  vi.spyOn(r.sessions, 'retain').mockReturnValueOnce({
+    sessionId: A, get binding() { return reference.binding }, ready,
+    release: () => { reference.release() }, [Symbol.dispose]: () => { reference.release() },
+  })
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const view = new SidebarSessionView(A, r.sessions, () => {}, () => {})
+  view.retire()
+  const failure = new Error('reference released during navigation')
+  reject(failure)
+  await expect(ready).rejects.toBe(failure)
+  expect(error).not.toHaveBeenCalled()
 })

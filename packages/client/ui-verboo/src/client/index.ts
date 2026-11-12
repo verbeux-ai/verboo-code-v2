@@ -27,6 +27,7 @@ import { en, pt, zh } from './locales.ts'
 import { Config } from '../config.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
+import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
@@ -44,6 +45,8 @@ import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
+import { installPanes } from './panes/install.ts'
+import type { ConversationAppearanceInjected } from './ConversationAppearance.tsx'
 
 /** Product replacement for optional diagnostic readouts. */
 function OmittedDiagnostic() { return null }
@@ -67,6 +70,8 @@ export const inject = [
   'remoteAccess',
   'contextMenus',
   'connection',
+  'sessions',
+  'conversation',
 ]
 /**
  * Install product UI without changing the engine, Session persistence or chat transport.
@@ -85,6 +90,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     () => ctx.theme.overrideIcons('verboo-code', icons),
     'Verboo: icon family',
   )
+  installPanes(ctx, config)
   const navigationEntries = createSnapshotStore<
     readonly { id: MainPanelId; label: string }[]
   >([])
@@ -346,7 +352,16 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   const debugFace = (sessionId?: SessionId) => {
     const product = staminaFace(sessionId)
-    return { ...product, ...debugActions, hooks: { ...product.hooks, ...debugActions.hooks } }
+    return { ...product, ...debugActions, ...appearanceActions,
+      hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks } }
+  }
+  const appearanceConfig = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
+  const appearanceActions: ConversationAppearanceInjected = {
+    hooks: { conversationAppearance: appearanceConfig },
+    async setMinimalist(enabled) {
+      try { return await appearanceConfig.set('minimalist', enabled) }
+      catch (_error) { return false } // The preference reports an unsuccessful write inline.
+    },
   }
   ctx.remoteAccess.whenAccess('account/watch', function* () {
     const stream = ctx.remote.$stream<AccountView>({
@@ -412,6 +427,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('shell.overlay', function* () {
+    yield ctx.slots.register({ name: 'shell.overlay', id: 'verboo.quit-hold', order: 120, locale: 'verboo' }, DesktopQuitHold)
     yield ctx.slots.register(
       {
         name: 'shell.overlay',

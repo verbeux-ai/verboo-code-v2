@@ -46,6 +46,19 @@ function fixture() {
 }
 
 describe('account-scoped stamina resource', () => {
+  it('publishes a changed account reading to both chat subscribers', async () => {
+    const f = fixture()
+    const otherChat = f.registry.source(staminaAddress(f.account.getSnapshot()))
+    f.hold()
+    releases.push(otherChat.subscribe(() => {}))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.read).toHaveBeenCalledOnce()
+    const decreased = { ...reading, remainingPercent: 35 }
+    f.read.mockResolvedValueOnce({ ok: true, value: { ok: true, data: [decreased] } })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.source.getSnapshot()).toMatchObject({ status: 'live', value: [decreased] })
+    expect(otherChat.getSnapshot()).toMatchObject({ status: 'live', value: [decreased] })
+  })
   it('shares one in-flight read between the composer and My plan', async () => {
     const f = fixture()
     const pending = Promise.withResolvers<Awaited<ReturnType<ClientRemote['verboo']['getStamina']>>>()

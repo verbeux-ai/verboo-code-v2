@@ -28,6 +28,7 @@
   Object.defineProperty(window, '__VERBOO_DESKTOP__', {
     value: Object.freeze({
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
+      quit: () => invoke('quit_after_hold'),
       openExternal(url) {
         const target = new URL(url)
         // Same allowlist the native navigation hook applies: a browsable page on
