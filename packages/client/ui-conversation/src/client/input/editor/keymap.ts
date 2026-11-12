@@ -27,6 +27,10 @@ import { $isQuoteNode } from './QuoteNode.tsx'
 
 /** The bar-supplied behavior behind each intercepted gesture. */
 export interface ComposerKeymapHandlers {
+  /** Recall sent text when the caret is at an editor edge. */
+  history?(direction: 'up' | 'down'): boolean
+  /** Whether the user is browsing recalled messages. */
+  historyActive?(): boolean
   /** Keyboard arbitration while the menu is open ('pass' when no pipeline). */
   arbitrate(key: ArbitrateKey, composing: boolean): ArbitrateOutcome
   /** Space adjudication; true = a claim was applied — the keystroke is consumed. */
@@ -200,6 +204,24 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     if (handlers.arbitrate(key, inComposition) !== 'pass') {
       event?.preventDefault()
       return true
+    }
+    if (event !== null && (key === 'up' || key === 'down') && !inComposition
+      && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+      && rootElement?.closest('[data-verboo-panes]') !== null) {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection) && selection.isCollapsed()) {
+        const span = rootElement?.ownerDocument.getSelection()
+        if (span?.isCollapsed && rootElement !== null && span.focusNode !== null) {
+          const range = rootElement.ownerDocument.createRange()
+          range.selectNodeContents(rootElement)
+          if (key === 'up') range.setEnd(span.focusNode, span.focusOffset)
+          else range.setStart(span.focusNode, span.focusOffset)
+          if ((handlers.historyActive?.() || !range.toString().includes('\n')) && handlers.history?.(key)) {
+            event.preventDefault()
+            return true
+          }
+        }
+      }
     }
     return false
   }

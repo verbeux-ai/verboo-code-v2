@@ -35,8 +35,15 @@ export function installStopShortcut(
       || gesture.control || gesture.alt || gesture.shift || gesture.meta || context.modal !== null
       || context.region === 'terminal' || context.target === null) { reset(); return }
     const target = context.target
+    const targetPane = target.closest<HTMLElement>('[data-pane-id]')
+    const outsideEditor = target.closest('input, textarea, [contenteditable=true], [role=menu], [role=dialog]')
+    const workspace = document.querySelector<HTMLElement>('[data-verboo-panes]')
+    const pane = target.closest<HTMLElement>('[data-pane-focused]')
+      ?? (targetPane === null && outsideEditor === null && workspace?.getClientRects().length
+        ? workspace.querySelector<HTMLElement>('[data-pane-focused]') : null)
     const occurrence = target.closest<HTMLElement>('[data-conversation-session]')
-    const region = target.closest('[data-conversation-region]')
+      ?? pane?.querySelector<HTMLElement>('[data-conversation-session]') ?? null
+    const region = target.closest('[data-conversation-region]') ?? occurrence
     if (occurrence === null || region === null || !occurrence.contains(region)
       || target.closest('[data-approval-key], iframe, .xterm, [inert]') !== null) { reset(); return }
     const sessionId = occurrence.dataset.conversationSession as SessionId
@@ -53,6 +60,11 @@ export function installStopShortcut(
     const turn = currentTurn()
     if (turn === undefined) { reset(); return }
     input.consume()
+    if (pane !== null && pane.closest('[data-verboo-panes]') !== null) {
+      reset()
+      cancel(sessionId)
+      return
+    }
     const stopped = sequence.press({ sessionId, turn, generation: binding, region, cancel: () => { cancel(sessionId) } })
     if (stopped) return
     const changed = (): void => {

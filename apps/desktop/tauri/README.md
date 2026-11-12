@@ -22,6 +22,8 @@ pnpm run start:desktop
 
 Startup opens only the native chat window, including when a user profile enables automatic browser startup. Browser sign-in and explicitly requested external links use the system browser.
 
+The native Close command (Command+W on macOS, Control+W on Windows) closes the focused conversation pane instead of the application window. Pressing Command+Q on macOS or Control+Q on Windows shows a localized hint; pressing the shortcut a second time within three seconds quits. Escape, losing focus, hiding the document or waiting three seconds cancels the confirmation. Holding the keys never counts as a second press. The native menu Quit action and window close button still ask for confirmation before interrupting work or disposing the Host. Cancel keeps the window and all work running; confirmation retains the bounded graceful shutdown. Repeated quit requests share one confirmation and cannot bypass Host disposal.
+
 The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` overrides it. Generated configuration contains paths, never credentials. Build outputs and development state are gitignored.
 
 ## Native distribution
@@ -34,9 +36,9 @@ The retained Electron installers and updater tests are legacy tools described in
 
 ## Updates
 
-The Tauri updater ships with the application: it reads one feed once per launch, after the Host is serving the product, and installs a confirmed version in place. Linux replaces the AppImage, Windows reuses the NSIS installer in `passive` mode, and macOS replaces the application bundle from the archived `.app`. Debian and RPM installations keep updating through the package manager. Development builds never check, so a checkout cannot install a release over itself.
+The Tauri updater ships with the application: it reads one feed once per launch, after the Host is serving the product, and installs a confirmed version in place. Linux selects a signed AppImage, Debian package, or RPM that matches the installed bundle type; Windows reuses the NSIS installer in `passive` mode, and macOS replaces the application bundle from the archived `.app`. Development builds never check, so a checkout cannot install a release over itself.
 
-`bundle.createUpdaterArtifacts` makes the bundler emit the bundle and its signature, and the release workflow signs it with `TAURI_SIGNING_PRIVATE_KEY`. The public key in `plugins.updater.pubkey` is the only trust anchor, and the updater refuses any bundle another key signed; losing the private key means shipping installers that can never update.
+`bundle.createUpdaterArtifacts` makes the bundler emit the bundle and its signature, and the release workflow signs the RPM with the product version because its package metadata uses a normalized prerelease version. The public key in `plugins.updater.pubkey` is the only trust anchor, and the updater refuses any bundle another key signed; losing the private key means shipping installers that can never update.
 
 The feed is `latest.json` on the `update-feed` branch rather than a release asset, because `releases/latest` never resolves to a prerelease. `verify-release.mjs` writes it from the verified manifests and `publish-feed.mjs` commits it after the release is public; a re-run of an older release cannot move the feed backwards. Users who decline an offer are not asked again for that version.
 

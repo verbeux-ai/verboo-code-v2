@@ -38,7 +38,7 @@ async function until(check: () => Promise<boolean>): Promise<void> {
 }
 
 async function fixture(
-  options: { expiresIn?: number; attemptTimeoutMs?: number } = {},
+  options: { expiresIn?: number; attemptTimeoutMs?: number; requestTimeoutMs?: number; refreshDelayMs?: number } = {},
 ) {
   const home = await mkdtemp(join(tmpdir(), 'verboo-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
@@ -56,6 +56,7 @@ async function fixture(
     inferences: 0,
     inferenceMalformed: false,
     inferenceStatus: 200,
+    inferenceStatuses: [] as number[],
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
@@ -79,6 +80,8 @@ async function fixture(
       const refresh = form.get('grant_type') === 'refresh_token'
       if (refresh) state.refreshes++
       else state.exchanges++
+      if (refresh && options.refreshDelayMs !== undefined)
+        await delay(options.refreshDelayMs)
       if (refresh && state.rejectRefresh) {
         res.writeHead(400).end('{"error":"invalid_grant"}')
         return
@@ -129,9 +132,10 @@ async function fixture(
       )
     } else if (req.url === '/router/v1/chat/completions') {
       state.inferences++
-      if (state.inferenceStatus !== 200) {
+      const status = state.inferenceStatuses.shift() ?? state.inferenceStatus
+      if (status !== 200) {
         res
-          .writeHead(state.inferenceStatus)
+          .writeHead(status)
           .end('{"error":{"message":"fixture rejection"}}')
         return
       }
@@ -234,13 +238,13 @@ async function fixture(
       `    routerBaseURL: ${origin}/router/v1`,
       '    allowLoopbackHttp: true',
       `    attemptTimeoutMs: ${options.attemptTimeoutMs ?? 5000}`,
-      '    requestTimeoutMs: 1000',
+      `    requestTimeoutMs: ${options.requestTimeoutMs ?? 1000}`,
       '- name: cordis:models',
       '  config:',
       `    apiOrigin: ${origin}`,
       `    routerBaseURL: ${origin}/router/v1`,
       '    allowLoopbackHttp: true',
-      '    requestTimeoutMs: 1000',
+      `    requestTimeoutMs: ${options.requestTimeoutMs ?? 1000}`,
       '',
     ].join('\n'),
   )
@@ -643,11 +647,11 @@ it('signs out locally and revokes the refresh grant with an empty success respon
   ).toBeUndefined()
 })
 
-it('expires an inference credential only after the account server confirms revocation', async () => {
+it('expires an inference credential only after the refresh grant is rejected', async () => {
   const app = await fixture()
   await app.login()
-  app.state.inferenceStatus = 401
-  app.state.profileStatus = 401
+  app.state.inferenceStatuses.push(401)
+  app.state.rejectRefresh = true
   const chunks: StreamChunk[] = []
   for await (const chunk of app.ctx.llm.stream({
     provider: 'deepseek-account',
@@ -663,17 +667,92 @@ it('expires an inference credential only after the account server confirms revoc
   expect(app.state.inferences).toBe(1)
 })
 
+it('refreshes a rejected inference token and replays the request once', async () => {
+  const app = await fixture()
+  await app.login()
+  const before = await app.ctx.deepseekAccount.getPlatformSession()
+  app.state.inferenceStatuses.push(401)
+
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({
+    provider: 'deepseek-account',
+    model: 'max/qwen3.6-27b',
+    messages: [],
+  })) chunks.push(chunk)
+
+  const inferences = app.requests.filter(value => value.path === '/router/v1/chat/completions')
+  const after = await app.ctx.deepseekAccount.getPlatformSession()
+  expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  expect(app.state.inferences).toBe(2)
+  expect(app.state.refreshes).toBe(1)
+  expect(inferences.map(value => value.authorization)).toEqual([
+    'Bearer fixture-access-1-0',
+    'Bearer fixture-access-1-1',
+  ])
+  expect(after).toMatchObject({ sessionId: before?.sessionId })
+  expect(after?.token).not.toBe(before?.token)
+  expect((await app.ctx.deepseekAccount.getState()).status).toBe('credential-stored')
+})
+
+it('does not refresh or replay more than once after a repeated inference 401', async () => {
+  const app = await fixture()
+  await app.login()
+  app.state.inferenceStatuses.push(401, 401)
+
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({
+    provider: 'deepseek-account',
+    model: 'max/qwen3.6-27b',
+    messages: [],
+  })) chunks.push(chunk)
+
+  expect(chunks.at(-1)).toMatchObject({
+    type: 'finish',
+    reason: { kind: 'error', failure: { code: 'AUTH' } },
+  })
+  expect(app.state.inferences).toBe(2)
+  expect(app.state.refreshes).toBe(1)
+  expect((await app.ctx.deepseekAccount.getState()).status).toBe('credential-stored')
+})
+
+it('preserves the account and makes no extra inference request when token refresh times out', async () => {
+  const app = await fixture({ requestTimeoutMs: 250, refreshDelayMs: 500 })
+  await app.login()
+  const before = await app.ctx.deepseekAccount.getPlatformSession()
+  app.state.inferenceStatuses.push(401)
+
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({
+    provider: 'deepseek-account',
+    model: 'max/qwen3.6-27b',
+    messages: [],
+  })) chunks.push(chunk)
+
+  expect(chunks.at(-1)).toMatchObject({
+    type: 'finish',
+    reason: { kind: 'error', failure: { code: 'ACCOUNT_REFRESH_FAILED' } },
+  })
+  expect(app.state.inferences).toBe(1)
+  expect(app.state.refreshes).toBe(1)
+  expect((await app.ctx.deepseekAccount.getPlatformSession())?.token).toBe(before?.token)
+  expect((await app.ctx.deepseekAccount.getState()).status).toBe('credential-stored')
+})
+
 it('preserves a valid account when the gateway rejects an entitlement', async () => {
   const app = await fixture()
   await app.login()
   app.state.inferenceStatus = 403
-  for await (const _chunk of app.ctx.llm.stream({
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({
     provider: 'deepseek-account',
     model: 'max/qwen3.6-27b',
     messages: [],
-  })) {
-    /* consume terminal failure */
-  }
+  })) chunks.push(chunk)
+  expect(chunks.at(-1)).toMatchObject({
+    type: 'finish',
+    reason: { kind: 'error', failure: { code: 'AUTH_FORBIDDEN' } },
+  })
+  expect(app.state.refreshes).toBe(0)
   expect((await app.ctx.deepseekAccount.getState()).status).toBe(
     'credential-stored',
   )

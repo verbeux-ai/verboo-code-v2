@@ -6,9 +6,10 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { verifyPanes, verifySendLifecycle, verifyHeaderHover, verifyComposerActivation } from './panes-qa.mjs'
 const root = process.cwd(),
   require = createRequire(join(root, 'apps/web/package.json'))
-const { chromium } = require('playwright')
+const { chromium, webkit } = require('playwright')
 const home = await mkdtemp(join(tmpdir(), 'verboo-redesign-qa-'))
 const dir =
   process.env.VERBOO_QA_OUTPUT ??
@@ -172,7 +173,13 @@ const server = createServer(async (req, res) => {
           {
             id: 'max/qwen3.6-27b',
             display_name: 'Qwen Code',
-            context_length: 65536,
+            context_length: 262144,
+            max_output_tokens: 8192,
+          },
+          {
+            id: 'pro/deepseek-v4.1-flash',
+            display_name: 'DeepSeek V4.1 Flash',
+            context_length: 262144,
             max_output_tokens: 8192,
           },
         ],
@@ -187,7 +194,7 @@ const server = createServer(async (req, res) => {
     res.setHeader('cache-control', 'no-cache')
     const chunk = (delta, finish_reason = null, usage) => res.write('data: ' + JSON.stringify({
       id: 'chatcmpl-verboo-qa', object: 'chat.completion.chunk', created: 1,
-      model: 'max/qwen3.6-27b', choices: [{ index: 0, delta, finish_reason }],
+      model: input.model, choices: [{ index: 0, delta, finish_reason }],
       ...(usage ? { usage } : {}),
     }) + '\n\n')
     chunk({ role: 'assistant', content: '' })
@@ -196,6 +203,7 @@ const server = createServer(async (req, res) => {
       chunk({}, 'stop', { prompt_tokens: 200, completion_tokens: 10, total_tokens: 210 })
       res.end('data: [DONE]\n\n')
     }
+    if (state.agentFixture?.(input, chunk, finish, res)) return
     if (JSON.stringify(input).includes('connections_list')) {
       state.finishModel = () => { finish('Pronto. Podemos começar pelo seu projeto.'); state.finishModel = null }
     } else finish(`Acesso ao MCP GitHub via Composio e revisão completa do projeto ${++state.titleSequence}`)
@@ -275,7 +283,9 @@ const server = createServer(async (req, res) => {
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const origin = 'http://127.0.0.1:' + server.address().port
-const child = spawn(
+let hostLog = ''
+function launchQaHost() {
+const hostChild = spawn(
   process.execPath,
   [
     join(root, 'apps/desktop/tauri/host.mjs'),
@@ -293,7 +303,10 @@ const child = spawn(
     stdio: ['pipe', 'pipe', 'pipe'],
   },
 )
-child.stderr.on('data', () => {})
+  hostChild.stderr.on('data', chunk => { hostLog = (hostLog + chunk.toString()).slice(-20000) })
+  return hostChild
+}
+let child = launchQaHost()
 let browser
 let page
 let refreshedAccountFrame = false
@@ -315,15 +328,15 @@ async function capture(name) {
   if (/\bDSH\b|DeepSeek Harness|\bdsh web\b/.test(text)) throw new Error('Legacy branding is visible on ' + name)
   await page.screenshot({ path: join(dir, name), animations: 'disabled' })
 }
-try {
-  const ready = await new Promise((resolve, reject) => {
+async function waitForQaHost(hostChild) {
+  return await new Promise((resolve, reject) => {
     let buffer = ''
     const timer = setTimeout(
       () => reject(new Error('QA Host readiness deadline')),
       45000,
     )
-    child.once('exit', (code) => reject(new Error('QA Host exited ' + code)))
-    child.stdout.on('data', (chunk) => {
+    hostChild.once('exit', (code) => reject(new Error('QA Host exited ' + code)))
+    hostChild.stdout.on('data', (chunk) => {
       buffer += chunk
       let at
       while ((at = buffer.indexOf('\n')) >= 0) {
@@ -339,10 +352,25 @@ try {
       }
     })
   })
-  browser = await chromium.launch({
-    ...(process.env.VERBOO_QA_CHROME
+}
+async function restartQaHost() {
+  let timer
+  const exited = new Promise((resolve, reject) => {
+    child.once('exit', resolve)
+    timer = setTimeout(() => reject(new Error('QA Host shutdown deadline')), 16000)
+  })
+  child.stdin.write('{"type":"shutdown"}\n')
+  try { await exited } finally { clearTimeout(timer) }
+  child = launchQaHost()
+  return await waitForQaHost(child)
+}
+try {
+  const ready = await waitForQaHost(child)
+  const useWebkit = process.env.VERBOO_QA_BROWSER === 'webkit'
+  browser = await (useWebkit ? webkit : chromium).launch({
+    ...(!useWebkit && process.env.VERBOO_QA_CHROME
       ? { executablePath: process.env.VERBOO_QA_CHROME }
-      : process.platform === 'darwin'
+      : !useWebkit && process.platform === 'darwin'
         ? {
             executablePath:
               '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -354,6 +382,16 @@ try {
     viewport: { width: 1366, height: 900 },
     locale: 'pt-BR',
     colorScheme: 'light',
+  })
+  if (process.env.VERBOO_QA_PANES === '1') await context.addInitScript(() => {
+    // Native capabilities are the external boundary; the real product handles the gestures.
+    Object.defineProperty(window, '__VERBOO_DESKTOP__', { value: Object.freeze({
+      framework: 'tauri',
+      openExternal: async url => { window.open(url, '_blank') },
+      quit: async () => {
+        document.documentElement.dataset.qaQuitCalls = String(Number(document.documentElement.dataset.qaQuitCalls ?? 0) + 1)
+      },
+    }) })
   })
   await context.route('**/favicon.ico', (route) =>
     route.fulfill({ status: 204, body: '' }),
@@ -367,9 +405,10 @@ try {
       if (state.refreshes > 0 && String(payload).includes('"credentialRevision"') && String(payload).includes('"credential-stored"')) refreshedAccountFrame = true
     })
   })
-  page.on('pageerror', (error) =>
-    errors.push(error.message.replace(/https?:\S+/g, '[url]')),
-  )
+  page.on('pageerror', (error) => {
+    const detail = (error.stack ?? error.message).replace(/https?:\S+/g, '[url]')
+    errors.push(detail)
+  })
   page.on('console', (message) => {
     if (['error', 'warning', 'warn'].includes(message.type()))
       errors.push(
@@ -433,6 +472,24 @@ try {
   await page.waitForTimeout(700)
   await capture('workspace-light.png')
   await page.emulateMedia({colorScheme:'dark'}); await page.waitForTimeout(250); await capture('workspace-dark.png'); await page.emulateMedia({colorScheme:'light'})
+  if (process.env.VERBOO_QA_FOCUS === '1') {
+    await verifyComposerActivation(page, state, dir)
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Screenshots:', dir)
+  } else if (process.env.VERBOO_QA_HEADER === '1') {
+    await verifyHeaderHover(page, state, dir)
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Screenshots:', dir)
+  } else if (process.env.VERBOO_QA_SEND === '1') {
+    await verifySendLifecycle(page, state, dir)
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Screenshots:', dir)
+  } else if (process.env.VERBOO_QA_PANES === '1') {
+    await verifyPanes(page, context, state, dir)
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Screenshots:', dir)
+  } else {
+  await page.getByRole('button', { name: 'Abrir navegação', exact: true }).click()
   const composer = page.locator('[data-composer-card] [contenteditable=true]')
   const placeholderText = await composer.getAttribute('data-placeholder')
   if (!placeholderText) throw new Error('Composer placeholder is missing')
@@ -735,7 +792,9 @@ try {
     'Actual Verboo profile browser QA: OAuth PKCE, live token refresh, vault, conversation execution states, non-overlapping sidebar rows, 1718 searchable connectors, public services, connection tool composition, no legacy branding, navigation, plan handoff, accessible dialogs, both palettes and 390px passed.',
   )
   console.log('Screenshots:', dir)
+  }
 } catch (error) {
+  await writeFile(join(dir, 'host-diagnostic.log'), hostLog)
   if (page) {
     await page.screenshot({ path: join(dir, 'failure.png') })
     console.log(
@@ -750,7 +809,7 @@ try {
     )
     console.log('API routes:', requests)
   }
-  console.error(error.message.replace(/https?:\S+/g, '[url]'))
+  console.error((error.stack ?? error.message).replace(/https?:\S+/g, '[url]'))
   process.exitCode = 1
 } finally {
   state.finishModel?.()
@@ -764,6 +823,7 @@ try {
   await exited
   clearTimeout(stopHost)
   clearTimeout(killHost)
+  await writeFile(join(dir, 'host-diagnostic.log'), hostLog)
   server.closeAllConnections()
   await new Promise((resolve) => server.close(resolve))
   try {

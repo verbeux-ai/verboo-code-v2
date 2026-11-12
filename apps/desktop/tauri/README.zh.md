@@ -22,6 +22,8 @@ pnpm run start:desktop
 
 启动时仅打开原生聊天窗口，即使用户配置启用了自动打开浏览器。浏览器登录和用户明确请求的外部链接仍使用系统浏览器。
 
+原生关闭命令（macOS 的 Command+W、Windows 的 Control+W）关闭当前对话窗格，不关闭应用窗口。macOS 按下 Command+Q 或 Windows 按下 Control+Q 会显示提示；三秒内再次按下该快捷键即可退出。按 Escape、失去焦点、隐藏文档或等待三秒会取消确认。长按不会算作第二次按键。原生菜单退出和窗口关闭按钮仍会先请求确认，再中断工作或释放 Host。取消后窗口与工作保持运行，确认后仍执行有时限的正常关闭。重复退出请求共用一个确认，不能跳过 Host 释放。
+
 开发目录为 `apps/desktop/.desktop-build/tauri/home`，可用 `DSH_HOME` 覆盖。生成配置仅包含路径，不含凭据。构建产物和开发状态均已被 Git 忽略。
 
 ## 原生分发

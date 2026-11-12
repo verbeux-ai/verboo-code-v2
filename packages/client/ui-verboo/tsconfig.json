@@ -103,6 +103,9 @@
     },
     {
       "path": "../ui-model-selection"
+    },
+    {
+      "path": "../../util/crypto"
     }
   ]
 }

@@ -1,0 +1,4 @@
+- Same editor after global navigation: true
+- Same transcript scroll position: true
+- Restored draft: Keep this unsubmitted draft
+- Recorded assistant answer visible: true

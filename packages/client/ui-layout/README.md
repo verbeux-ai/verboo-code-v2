@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides the Web GUI's three-column AppFrame, edge-column widths, and `ctx.layout` presentation control. The right column concedes space before the center; its occupant renders fullscreen while the frame retains the wide-screen track underneath. The theme presenter owns color scheme, alias tokens, font sizes, font lists, and document metadata. Layout state resets on reload.
+This package provides the Web GUI's three-column AppFrame, edge-column widths, and `ctx.layout` presentation control. The right column concedes space before the center; its occupant renders fullscreen while the frame retains the wide-screen track underneath. The theme presenter owns color scheme, alias tokens, font sizes, font lists, and document metadata. Frame geometry resets on reload; product-owned pane arrangements may persist separately.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ When the browser reports a folded device in landscape and the frame is at least 
 
 The drawer mask fades with the panel’s transition duration and easing on both open and close; reduced motion disables both transitions. Entering drawer mode from an already collapsed sidebar hides the drawer immediately; an expanded sidebar keeps its closing slide. The drawer has no edge divider, and its frame does not scroll. On macOS, the drawer uses the same opaque background as Web; window vibrancy applies only to the ordinary sidebar. The frame fills the shell’s layout viewport, retaining its height while the keyboard opens. Drawer backing and mask cover the shell’s full height, including `shell.bottom`, above fullscreen and floating right panels. Browser-owned status and address bars remain outside the shell; the layout adds no synthetic safe-area insets.
 
-Global panels occupy the root-scoped `main` keyed slot; `conversation` is the reserved key for the Conversation. `ctx.layout.selectPanel(id)` selects a registered panel, and `null` selects the Conversation without changing the current Session. The Plugins page contributes one of the shipped global panels.
+The Conversation remains mounted while a global panel is selected, preserving its input and scroll state. Global panels occupy the root-scoped `main` keyed slot; `conversation` is the reserved key for the Conversation. `ctx.layout.selectPanel(id)` selects a registered panel, and `null` selects the Conversation without changing the current Session. The Plugins page contributes one of the shipped global panels.
 
 The single root-scoped `shell.bottom` slot spans the full width below the three columns. Its occupant controls its own height and visibility; the columns shrink by that height, and empty content reserves no space. Main-panel navigation preserves the bottom component. Column resize handles stop above it, while `shell.overlay` covers the whole frame. The default composition leaves this slot empty.
 

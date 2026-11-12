@@ -1524,6 +1524,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(lifecycleJob.if).toContain("github.event.review.state == 'changes_requested'")
     expect(lifecycleJob.if).toContain('github.event.changes.body != null')
     // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
@@ -1549,7 +1550,7 @@ describe('Issue lifecycle workflow', () => {
     expect(tokenStep?.if).toBeUndefined()
     expect(handleStep?.if).toBeUndefined()
 
-    // issue-policy owns PR validation; it is read-only and a real gate.
+    // issue-policy owns PR validation in its configured canonical repository.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
@@ -1566,7 +1567,7 @@ describe('Issue lifecycle workflow', () => {
     expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
     expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
-    expect(policyJob.if).toBeUndefined()
+    expect(policyJob.if).toBe("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
 
     expect(tokenStep).toMatchObject({
@@ -1654,6 +1655,8 @@ describe('npm release workflows', () => {
       isRecord(step) && typeof step.run === 'string' ? [step.run] : [])
 
     expect(Object.keys(workflow.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch'])
+    expect(dependencies.if).toBe("github.repository == 'deepseek-harness/deepseek-harness'")
+    expect(workflowJob(workflow, 'pack').if).toBe("github.repository == 'deepseek-harness/deepseek-harness'")
     // Both verifications run from one step so the lane pays their longer half.
     const combined = commands.find(command => command.includes('verify-package-dependencies'))
     expect(combined).toContain('verify-npm-install-layout')

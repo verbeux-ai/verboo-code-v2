@@ -11,6 +11,76 @@ fn language() -> String {
         .to_string()
 }
 
+/// Close the focused chat view rather than the native application window.
+pub fn close_pane() -> &'static str {
+    match language().as_str() {
+        "pt" => "Fechar painel",
+        "zh" => "关闭窗格",
+        "ja" => "ペインを閉じる",
+        "es" => "Cerrar panel",
+        "fr" => "Fermer le volet",
+        "de" => "Bereich schließen",
+        "ru" => "Закрыть панель",
+        _ => "Close pane",
+    }
+}
+
+/// Confirmation appears before shutting down the Host or interrupting running work.
+pub fn quit_title() -> &'static str {
+    match language().as_str() {
+        "pt" => "Sair do Verboo Code?",
+        "zh" => "退出 Verboo Code？",
+        "ja" => "Verboo Code を終了しますか？",
+        "es" => "¿Salir de Verboo Code?",
+        "fr" => "Quitter Verboo Code ?",
+        "de" => "Verboo Code beenden?",
+        "ru" => "Выйти из Verboo Code?",
+        _ => "Quit Verboo Code?",
+    }
+}
+
+/// Explain the consequence of quitting without implying that pane closure stops work.
+pub fn quit_message() -> &'static str {
+    match language().as_str() {
+        "pt" => "O trabalho em andamento será interrompido. Seu histórico continuará salvo.",
+        "zh" => "正在进行的工作将被中断。对话历史仍会保存。",
+        "ja" => "実行中の作業は中断されます。会話履歴は保存されます。",
+        "es" => "Se interrumpirá el trabajo en curso. El historial permanecerá guardado.",
+        "fr" => "Le travail en cours sera interrompu. L’historique restera enregistré.",
+        "de" => "Laufende Arbeit wird unterbrochen. Der Verlauf bleibt gespeichert.",
+        "ru" => "Текущая работа будет прервана. История останется сохранённой.",
+        _ => "Work in progress will be interrupted. Your conversation history will remain saved.",
+    }
+}
+
+/// Explicit app-exit action.
+pub fn quit_confirm() -> &'static str {
+    match language().as_str() {
+        "pt" => "Sair",
+        "zh" => "退出",
+        "ja" => "終了",
+        "es" => "Salir",
+        "fr" => "Quitter",
+        "de" => "Beenden",
+        "ru" => "Выйти",
+        _ => "Quit",
+    }
+}
+
+/// Dismiss the exit confirmation and keep all work running.
+pub fn quit_cancel() -> &'static str {
+    match language().as_str() {
+        "pt" => "Cancelar",
+        "zh" => "取消",
+        "ja" => "キャンセル",
+        "es" => "Cancelar",
+        "fr" => "Annuler",
+        "de" => "Abbrechen",
+        "ru" => "Отмена",
+        _ => "Cancel",
+    }
+}
+
 /// Startup failure copy.
 pub fn startup_failure() -> &'static str {
     match language().as_str() {
@@ -45,6 +115,8 @@ pub struct UpdateCopy {
     pub close: String,
     /// Message shown when the install fails.
     pub failed: String,
+    /// Label for the safe diagnostic code shown after a failed install.
+    pub diagnostic_label: String,
 }
 
 /// Copy for the update window offering `version`.
@@ -70,6 +142,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Baixando".into(),
             close: "Fechar".into(),
             failed: "Não foi possível concluir a atualização.".into(),
+            diagnostic_label: "Código de diagnóstico".into(),
         },
         "zh" => UpdateCopy {
             title: "有可用更新".into(),
@@ -81,6 +154,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "正在下载".into(),
             close: "关闭".into(),
             failed: "无法完成更新。".into(),
+            diagnostic_label: "诊断代码".into(),
         },
         "ja" => UpdateCopy {
             title: "アップデートがあります".into(),
@@ -92,6 +166,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "ダウンロード中".into(),
             close: "閉じる".into(),
             failed: "アップデートを完了できませんでした。".into(),
+            diagnostic_label: "診断コード".into(),
         },
         "es" => UpdateCopy {
             title: "Actualización disponible".into(),
@@ -103,6 +178,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Descargando".into(),
             close: "Cerrar".into(),
             failed: "No se pudo completar la actualización.".into(),
+            diagnostic_label: "Código de diagnóstico".into(),
         },
         "fr" => UpdateCopy {
             title: "Mise à jour disponible".into(),
@@ -114,6 +190,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Téléchargement".into(),
             close: "Fermer".into(),
             failed: "La mise à jour n’a pas pu aboutir.".into(),
+            diagnostic_label: "Code de diagnostic".into(),
         },
         "de" => UpdateCopy {
             title: "Update verfügbar".into(),
@@ -125,6 +202,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Wird geladen".into(),
             close: "Schließen".into(),
             failed: "Das Update konnte nicht abgeschlossen werden.".into(),
+            diagnostic_label: "Diagnosecode".into(),
         },
         "ru" => UpdateCopy {
             title: "Доступно обновление".into(),
@@ -136,6 +214,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Загрузка".into(),
             close: "Закрыть".into(),
             failed: "Не удалось завершить обновление.".into(),
+            diagnostic_label: "Код ошибки".into(),
         },
         _ => UpdateCopy {
             title: "Update available".into(),
@@ -147,6 +226,7 @@ pub fn update_copy_in(language: &str, version: &str) -> UpdateCopy {
             status: "Downloading".into(),
             close: "Close".into(),
             failed: "The update could not be completed.".into(),
+            diagnostic_label: "Diagnostic code".into(),
         },
     }
 }
@@ -196,6 +276,7 @@ mod tests {
                 ("status", &copy.status),
                 ("close", &copy.close),
                 ("failed", &copy.failed),
+                ("diagnostic_label", &copy.diagnostic_label),
             ] {
                 assert!(!value.trim().is_empty(), "{language} {field} is empty");
                 // Control characters would break the injected script layout.

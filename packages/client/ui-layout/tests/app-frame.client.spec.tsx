@@ -279,16 +279,23 @@ describe('AppFrame', () => {
     expect(queryByTestId('shell.leading-content')).toBeNull()
   })
 
-  it('switches only the keyed main outlet when the active panel changes', () => {
+  it('keeps the conversation mounted while showing a keyed global panel', () => {
     selectedSessionTitle = 'Session title'
-    const { instance, frame, slotCalls, getByTestId } = mountFrame()
+    const { instance, frame, slotCalls } = mountFrame()
+    const conversation = frame.querySelector('[data-entry-key=conversation]')
     const sessionId = selectedSession
     const layoutInfo = instance.getSnapshot().layoutInfo
     for (const panelId of ['panel-a' as MainPanelId, 'panel-b' as MainPanelId, null]) {
       slotCalls.length = 0
       act(() => { instance.actions.selectPanel(panelId) })
-      expect(slotCalls).toEqual([{ key: 'main', props: {}, options: { entryKey: panelId ?? 'conversation' } }])
-      expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe(panelId ?? 'conversation')
+      expect(slotCalls).toEqual([
+        { key: 'main', props: {}, options: { entryKey: 'conversation' } },
+        ...panelId === null ? [] : [{ key: 'main', props: {}, options: { entryKey: panelId } }],
+      ])
+      expect(frame.querySelector('[data-entry-key=conversation]')).toBe(conversation)
+      expect(conversation?.parentElement?.hidden).toBe(panelId !== null)
+      const visible = [...frame.querySelectorAll('[data-entry-key]')].find(element => element.closest('[hidden]') === null)
+      expect(visible?.getAttribute('data-entry-key')).toBe(panelId ?? 'conversation')
       expect(instance.getSnapshot().panelInfo).toEqual({ activePanelId: panelId })
       expect(instance.getSnapshot().layoutInfo).toBe(layoutInfo)
       expect(tracks(frame)).toEqual([280, 0])

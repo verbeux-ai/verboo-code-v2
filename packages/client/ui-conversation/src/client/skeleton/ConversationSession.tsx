@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Button, IconEllipsisOutlineRegular, Menu, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconEllipsisOutlineRegular, IconChevronDownOutlineRegular, Menu, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -107,7 +107,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, hideChrome, useSessions, useConversationViews, useStore,
-  renderSlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions,
+  renderSlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions, onChooseConversation,
 }: ConversationSessionHeaderProps) {
   const { getTriggerProps } = useContextMenu()
   const tabs = useConversationViews(value => value)
@@ -157,9 +157,13 @@ export function ConversationSessionHeader({
                   // base.css) and leave the title inert for dragging too.
                   const title = last
                     ? (
-                      <span className={clsx(css.crumb, css.crumbCurrent)}>
+                      onChooseConversation === undefined ? <span className={clsx(css.crumb, css.crumbCurrent)}>
                         {summary.displayTitle}
-                      </span>
+                      </span> : <button type="button" className={clsx(css.crumb, css.crumbCurrent)}
+                        data-conversation-selector="" aria-haspopup="menu" onClick={onChooseConversation}>
+                        <span>{summary.displayTitle}</span>
+                        <IconChevronDownOutlineRegular size={14} />
+                      </button>
                     )
                     : (
                       <button
@@ -202,11 +206,11 @@ export function ConversationSessionHeader({
                 })}
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
-              <div className={css.headerActions}>
+              <div className={css.headerActions} data-conversation-header-actions="">
                 {renderSlot('conversation.session.header.actions', {})}
               </div>
             </div>
-            <div className={css.headerUtilities}>
+            <div className={css.headerUtilities} data-conversation-header-utilities="">
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
           </>

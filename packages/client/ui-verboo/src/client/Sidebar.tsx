@@ -1,9 +1,11 @@
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Menu,
   Modal,
   Tooltip,
+  isBehindModal,
   useModalLayer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
@@ -252,8 +254,38 @@ export function Sidebar(props: SidebarProps) {
   const state = props.useProduct(s => s)
   const extras = props.useNavigation(s => s)
   const selected = usePanelInfo(s => s.activePanelId)
-  const wide = drawer || !collapsed
+  const [preview, setPreview] = useState(false)
+  const floating = collapsed && !drawer && preview
+  const wide = drawer || !collapsed || floating
   const ref = useRef<HTMLDivElement>(null)
+  const pointerInside = useRef(false)
+  const focusFrame = useRef<number | null>(null)
+  const returningFocus = useRef(false)
+  const previewDismissed = useRef(false)
+  useEffect(() => { if (!floating) pointerInside.current = false }, [floating])
+  useEffect(() => () => {
+    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current)
+  }, [])
+  useEffect(() => {
+    if (!collapsed || drawer) { setPreview(false); return }
+    const edge = (event: PointerEvent) => {
+      if (event.clientX > 56) previewDismissed.current = false
+      if (!previewDismissed.current && !isBehindModal(ref.current) && event.pointerType === 'mouse' && event.clientX <= 10 && matchMedia('(hover: hover)').matches)
+        setPreview(true)
+    }
+    document.addEventListener('pointermove', edge)
+    return () => { document.removeEventListener('pointermove', edge) }
+  }, [collapsed, drawer])
+  useEffect(() => {
+    if (!floating) return
+    const outside = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || ref.current?.contains(event.target)
+        || event.target.closest('[data-menu-material], [role=dialog]')) return
+      setPreview(false)
+    }
+    document.addEventListener('pointerdown', outside)
+    return () => { document.removeEventListener('pointerdown', outside) }
+  }, [floating])
   useModalLayer(ref, drawer && !collapsed, toggleSidebar)
   const workspaces = props.useWorkspaces(s => s)
   const sessions = props.useSessions(s => s)
@@ -277,6 +309,7 @@ export function Sidebar(props: SidebarProps) {
     }
   }
   const closeDrawer = () => {
+    setPreview(false)
     if (drawer && !collapsed) toggleSidebar()
   }
   const go = (id: MainPanelId | null) => {
@@ -305,19 +338,58 @@ export function Sidebar(props: SidebarProps) {
       )
   const owned = new Set(workspaces.items.flatMap(w => w.sessionIds))
   const ungrouped = rows(sessions.ids.filter(id => !owned.has(id)))
-  return (
-    <div ref={ref} className={css.sidebar} data-wide={wide} data-verboo-shell>
+  const content = (
+    <div ref={ref} className={css.sidebar} data-wide={wide} data-verboo-shell
+      data-sidebar-preview={floating || undefined}
+      onPointerEnter={(event) => {
+        pointerInside.current = true
+        if (!previewDismissed.current && !isBehindModal(ref.current) && event.pointerType === 'mouse' && collapsed && !drawer) setPreview(true)
+      }}
+      onPointerLeave={() => {
+        pointerInside.current = false
+        if (!ref.current?.contains(document.activeElement) && document.querySelector('[role=menu], [role=dialog]') === null)
+          setPreview(false)
+      }}
+      onFocusCapture={(event) => {
+        if (returningFocus.current) { returningFocus.current = false; return }
+        if (event.target instanceof Element && event.target.closest('[data-sidebar-toggle]')) return
+        if (!collapsed || drawer || preview) return
+        const label = event.target instanceof Element ? event.target.getAttribute('aria-label') : null
+        setPreview(true)
+        focusFrame.current = requestAnimationFrame(() => {
+          if (ref.current?.contains(document.activeElement)) return
+          const original = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button[aria-label]') ?? [])
+            .find(button => label !== null && button.getAttribute('aria-label') === label)
+          const target = original ?? ref.current?.querySelector<HTMLButtonElement>('[data-sidebar-toggle]')
+          target?.focus()
+        })
+      }}
+      onBlurCapture={(event) => {
+        if (!pointerInside.current && !(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)))
+          setPreview(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented || !floating
+          || (event.target instanceof Element && event.target.closest('[role=menu], [role=dialog]'))) return
+        event.preventDefault()
+        previewDismissed.current = true
+        setPreview(false)
+        focusFrame.current = requestAnimationFrame(() => {
+          returningFocus.current = true
+          ref.current?.querySelector<HTMLButtonElement>('[data-sidebar-toggle]')?.focus({ preventScroll: true })
+        })
+      }}>
       <div className={css.sidebarHead}>
         {wide ? <Brand t={t} /> : <BrandMark />}
-        <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
+        <Tooltip portal label={t(floating ? 'pinNavigation' : collapsed ? 'expand' : 'collapse')}>
           <button
             className={css.iconButton}
-            aria-label={t(collapsed ? 'expand' : 'collapse')}
-            onClick={toggleSidebar}
+            aria-label={t(floating ? 'pinNavigation' : collapsed ? 'expand' : 'collapse')}
+            onClick={() => { previewDismissed.current = true; pointerInside.current = false; setPreview(false); toggleSidebar() }}
             data-sidebar-toggle
           >
             <Glyph
-              name={collapsed ? 'panel-left-open' : 'panel-left-close'}
+              name={floating ? 'pin' : collapsed ? 'panel-left-open' : 'panel-left-close'}
               size={17}
             />
           </button>
@@ -340,7 +412,7 @@ export function Sidebar(props: SidebarProps) {
         <Tooltip portal label={t('searchProjects')} disabled={wide}>
           <button className={css.navRow} aria-label={t('searchProjects')} aria-pressed={searching}
             onClick={() => {
-              if (!wide) toggleSidebar()
+              if (!wide) setPreview(true)
               setSearching(!searching)
             }}>
             <Glyph name="search" />
@@ -543,6 +615,7 @@ export function Sidebar(props: SidebarProps) {
       </footer>
     </div>
   )
+  return floating ? createPortal(content, document.body) : content
 }
 export function Leading(props: ProductProps) {
   return (

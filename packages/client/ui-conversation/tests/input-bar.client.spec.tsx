@@ -270,6 +270,44 @@ function bench(over?: BenchOptions) {
   }
 }
 
+it('keeps a focused editor compact until pointer or text input starts editing', () => {
+  const { view, textarea } = bench()
+  const card = view.container.querySelector('[data-composer-card]')!
+  fireEvent.focus(textarea)
+  expect(card.hasAttribute('data-composer-editing')).toBe(false)
+  fireEvent.pointerDown(textarea)
+  expect(card.getAttribute('data-composer-editing')).toBe('true')
+  fireEvent.blur(textarea, { relatedTarget: document.body })
+  fireEvent.focus(textarea)
+  expect(card.hasAttribute('data-composer-editing')).toBe(false)
+  fireEvent(textarea, new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: 'x' }))
+  expect(card.getAttribute('data-composer-editing')).toBe('true')
+  fireEvent.blur(textarea, { relatedTarget: document.body })
+  fireEvent.focus(textarea)
+  fireEvent.input(textarea)
+  expect(card.getAttribute('data-composer-editing')).toBe('true')
+})
+
+it('does not begin editing when the parent consumes a pointer selection', () => {
+  const { view, textarea } = bench()
+  const event = new Event('pointerdown', { bubbles: true, cancelable: true })
+  event.preventDefault()
+  fireEvent(textarea, event)
+  expect(view.container.querySelector('[data-composer-card]')!.hasAttribute('data-composer-editing')).toBe(false)
+})
+
+it('keeps editing after clearing a running draft until leaving the composer', () => {
+  const { view, textarea, shell } = bench({ running: true })
+  const card = view.container.querySelector('[data-composer-card]')!
+  fireEvent.input(textarea)
+  act(() => { shell.setDraft('Next message') })
+  act(() => { shell.setDraft('') })
+  expect(card.getAttribute('data-composer-empty')).toBe('true')
+  expect(card.getAttribute('data-composer-editing')).toBe('true')
+  fireEvent.blur(textarea, { relatedTarget: document.body })
+  expect(card.hasAttribute('data-composer-editing')).toBe(false)
+})
+
 function attachmentOwner(slotCalls: readonly { key: string; owner: unknown }[]): ComposerAttachmentsOwnerProps {
   for (let i = slotCalls.length - 1; i >= 0; i -= 1) {
     const call = slotCalls[i]
@@ -294,6 +332,20 @@ function writeDraft(shell: SessionInputShell, text: string): void {
 }
 
 describe('composer focus handoff', () => {
+  it('keeps focus in a sidebar tool when a model change unlocks the composer', () => {
+    const { view, props } = bench({ inert: true })
+    const sidebar = document.createElement('div')
+    sidebar.dataset.sidebarRightSession = SID
+    const handle = document.createElement('div')
+    handle.tabIndex = 0
+    handle.setAttribute('role', 'button')
+    sidebar.appendChild(handle)
+    document.body.appendChild(sidebar)
+    onTestFinished(() => { sidebar.remove() })
+    act(() => { handle.focus() })
+    view.rerender(<InputBar {...props} disabled={false} />)
+    expect(document.activeElement).toBe(handle)
+  })
   it.each(['hero', 'composer'] as const)('focuses the %s editor when its card background is pressed', (variant) => {
     const { view, shell, textarea } = bench({ variant })
     writeDraft(shell, 'draft text')

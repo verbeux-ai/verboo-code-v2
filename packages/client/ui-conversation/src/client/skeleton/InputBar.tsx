@@ -46,7 +46,7 @@ export type InputBarProps = ComposerBarProps
 export const InputBar = memo(function InputBar({
   useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments,
   retryFileUpload,
-  toggleCommandMenu, stop, t,
+  toggleCommandMenu, stop, promptHistory, promptHistoryActive, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
   useAccess,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
@@ -87,6 +87,18 @@ export const InputBar = memo(function InputBar({
     [resolveDraftAttachments, input?.attachmentIds],
   )
   const empty = draft.trim() === '' && attachments.length === 0
+  const [editing, setEditing] = useState(false)
+  // Restoring the caret selects the input without starting an editing session.
+  // Pointer interaction or text input opens it; submission closes it again.
+  useLayoutEffect(() => { setEditing(false) }, [sessionId])
+  useLayoutEffect(() => {
+    if (running) setEditing(false)
+  }, [running])
+  useLayoutEffect(() => {
+    if (input?.phase === 'submitting' || input?.phase === 'sending') {
+      setEditing(false)
+    }
+  }, [input?.phase])
   const uploads = useFileUploads(snapshot => snapshot)
   // Send waits for every picked file and every uploading image: uploading and
   // failed drafts both hold the gate (a failed upload is retried or removed,
@@ -141,6 +153,24 @@ export const InputBar = memo(function InputBar({
     return observeControlRow(row)
   }, [])
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const [paneShortcut, setPaneShortcut] = useState(false)
+  useLayoutEffect(() => {
+    setPaneShortcut(cardRef.current?.closest('[data-verboo-panes]') != null)
+  }, [])
+  useEffect(() => {
+    const card = cardRef.current
+    if (card === null) return
+    // The editor owns its input events under a separate Factory root.
+    const beginEditing = () => { setEditing(true) }
+    card.addEventListener('beforeinput', beginEditing, true)
+    card.addEventListener('input', beginEditing, true)
+    card.addEventListener('compositionstart', beginEditing, true)
+    return () => {
+      card.removeEventListener('beforeinput', beginEditing, true)
+      card.removeEventListener('input', beginEditing, true)
+      card.removeEventListener('compositionstart', beginEditing, true)
+    }
+  }, [])
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const continuable = subagent?.address.mode === 'continuable'
@@ -186,6 +216,10 @@ export const InputBar = memo(function InputBar({
   useEffect(() => {
     if (locked || editor === null) return
     if (isMobileDevice()) return
+    // A model switch can unlock the editor while the user is already using a sidebar tool.
+    const focused = document.activeElement
+    if (focused instanceof Element && focused.closest('[data-sidebar-right-session]') !== null
+      && !cardRef.current?.contains(focused)) return
     focusDraftEditor(editor, revealSelection)
   }, [locked, sessionId, editor])
 
@@ -280,11 +314,11 @@ export const InputBar = memo(function InputBar({
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
-    intakeFiles, uploadsPending, uploadsHeldText, showToast, canAcceptDrop,
+    intakeFiles, uploadsPending, uploadsHeldText, showToast, canAcceptDrop, promptHistory, promptHistoryActive,
   })
   gate.current = {
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
-    intakeFiles, uploadsPending, uploadsHeldText, showToast, canAcceptDrop,
+    intakeFiles, uploadsPending, uploadsHeldText, showToast, canAcceptDrop, promptHistory, promptHistoryActive,
   }
 
   useEffect(() => {
@@ -318,6 +352,7 @@ export const InputBar = memo(function InputBar({
     if (scrollRef.current?.contains(target)) return
     const control = target.closest('button, a, input, select, textarea, [role="button"], [contenteditable], [tabindex]')
     if (control !== null && control !== e.currentTarget && e.currentTarget.contains(control)) return
+    setEditing(true)
     e.preventDefault()
     // Lexical's stored selection can lag behind native caret moves, so calling
     // editor.focus() on a focused editor can restore an older caret.
@@ -431,6 +466,23 @@ export const InputBar = memo(function InputBar({
         tabIndex={-1}
         className={clsx(css.card, workspaceTrigger && css.cardWorkspaceTrigger)}
         data-composer-card
+        data-composer-running={running || undefined}
+        data-composer-empty={empty || undefined}
+        data-composer-editing={editing || undefined}
+        onFocusCapture={(event) => {
+          // Keyboard navigation can still reveal the composer's toolbar.
+          if (event.target !== event.currentTarget && event.target instanceof HTMLElement
+            && event.target.getAttribute('contenteditable') !== 'true') setEditing(true)
+        }}
+        onBlurCapture={(event) => {
+          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))
+            setEditing(false)
+        }}
+        onPointerDownCapture={(event) => {
+          if (!event.defaultPrevented && event.target instanceof Element && event.target.closest('[data-input-scroll]') !== null) {
+            setEditing(true)
+          }
+        }}
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
         onMouseDown={onCardMouseDown}
@@ -472,8 +524,8 @@ export const InputBar = memo(function InputBar({
           hint={hint}
           showPlaceholder={draft === '' && attachments.length === 0 && !claimActive}
         />
-        <div ref={rowRef} className={css.row}>
-          <div className={css.tools} hidden={activity}>
+        <div ref={rowRef} className={css.row} data-composer-toolbar="">
+          <div className={css.tools} hidden={activity} data-composer-tools="">
             <Tooltip label={t('input.commands')} side="top" delayMs={500} portal>
               <button
                 type="button"
@@ -505,7 +557,7 @@ export const InputBar = memo(function InputBar({
               : renderSlot('conversation.input.left', {})}
           </div>
           <div className={clsx(css.trailing, activity && css.trailingActive)}>
-            <div className={css.standardControls} hidden={activity}>
+            <div className={css.standardControls} hidden={activity} data-composer-secondary="">
               {input === undefined || sessionId === undefined
                 ? null
                 : renderSlot('conversation.input.right', {})}
@@ -515,7 +567,7 @@ export const InputBar = memo(function InputBar({
               {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
             </div>}
             {interruptible && !cancelDenied && (
-              <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>
+              <Tooltip label={t('input.stop')} shortcutKeys={paneShortcut ? ['Esc'] : stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>
                 <button
                   type="button"
                   className={css.primary}
@@ -531,7 +583,7 @@ export const InputBar = memo(function InputBar({
               </Tooltip>
             )}
             {(primaryStops ? cancelDenied : promptDenied) ? null : (
-              <Tooltip label={primaryStops ? t('input.stop') : primaryLabel} shortcutKeys={primaryStops ? stopKeys : undefined} side="top" delayMs={500} disabled={primaryDisabled} portal>
+              <Tooltip label={primaryStops ? t('input.stop') : primaryLabel} shortcutKeys={primaryStops ? (paneShortcut ? ['Esc'] : stopKeys) : undefined} side="top" delayMs={500} disabled={primaryDisabled} portal>
                 <button
                   type="button"
                   className={css.primary}
@@ -546,17 +598,18 @@ export const InputBar = memo(function InputBar({
                   <span className={css.primaryBackground} data-composer-primary-background aria-hidden="true">
                     {renderSlot('conversation.input.primary.background', {})}
                   </span>
+                  {/* Distinct glyphs prevent WebKit from retaining the spinner animation on Send or Stop. */}
                   {primaryStops ? (
-                    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <svg key="stop" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
                     </svg>
                   ) : sending ? (
-                    <svg className={css.sendingSpinner} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <svg key="sending" className={css.sendingSpinner} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
                       <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   ) : (
-                    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <svg key="send" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
                     </svg>
                   )}

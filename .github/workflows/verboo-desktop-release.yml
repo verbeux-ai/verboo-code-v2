@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      omit_macos_arm64:
+        description: Skip Apple Silicon when its hosted runner is unavailable; ARM users will not receive this release.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -17,25 +23,7 @@ jobs:
     name: Build ${{ matrix.label }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            label: macOS-Apple-Silicon
-            bundles: app
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            label: macOS-Intel
-            bundles: app
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            label: Windows-x64
-            bundles: nsis
-            directory: 'D:\v'
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            label: Linux-x64
-            bundles: appimage,deb
+      matrix: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64) && '{"include":[{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}' || '{"include":[{"runner":"macos-15","target":"aarch64-apple-darwin","label":"macOS-Apple-Silicon","bundles":"app"},{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -89,7 +77,9 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs
+      - name: Test update window
+        run: pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
       - name: Prepare native test resources
         run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
       - name: Test native process ownership
@@ -112,7 +102,7 @@ jobs:
           node --input-type=module <<'JS'
           import { execFileSync } from 'node:child_process'
           import { readFileSync, readdirSync } from 'node:fs'
-          import { join } from 'node:path'
+          import { join, resolve } from 'node:path'
           const product = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'))
           const [, version, prerelease] = /^(\d+\.\d+\.\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(product.version) ?? []
           if (!version) throw Error('Unsupported RPM product version')
@@ -122,8 +112,10 @@ jobs:
           const directory = `apps/desktop/.desktop-build/tauri/target/${process.env.RELEASE_TARGET}/release/bundle/rpm`
           const files = readdirSync(directory).filter(name => name.endsWith('.rpm'))
           if (files.length !== 1) throw Error('Expected one RPM installer')
-          const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', join(directory, files[0])], { encoding: 'utf8' }).trim()
+          const rpmPath = resolve(directory, files[0])
+          const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', rpmPath], { encoding: 'utf8' }).trim()
           if (identity !== `${version}-${release}`) throw Error('RPM version identity mismatch')
+          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'signer', 'sign', '--app-version', product.version, rpmPath], { stdio: 'inherit' })
           console.log(`Verified RPM ${identity}; product ${product.version}`)
           JS
       - name: Verify the installed Windows runtime
@@ -177,12 +169,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
-      - name: Verify the complete installer set and attach it to the release
+      - name: Verify the selected installer set and attach it to the release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
         run: node apps/desktop/tauri/publish-release.mjs release-assets
       - name: Publish the update feed the installed app reads
         env:
           GH_TOKEN: ${{ github.token }}
+          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
         run: node apps/desktop/tauri/publish-feed.mjs update-feed/latest.json

@@ -71,6 +71,41 @@ async function bench() {
 }
 
 describe('fixed stop routing', () => {
+  it('stops the selected pane from navigation while leaving search fields alone', async () => {
+    const b = await bench()
+    const workspace = document.createElement('div')
+    workspace.dataset.verbooPanes = ''
+    vi.spyOn(workspace, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
+    const pane = document.createElement('section')
+    pane.dataset.paneFocused = 'true'
+    pane.append(b.root)
+    workspace.append(pane)
+    document.body.append(workspace)
+    const navigation = document.createElement('button')
+    document.body.append(navigation)
+    const search = document.createElement('input')
+    document.body.append(search)
+    expect(b.press({}, search)).not.toHaveBeenCalled()
+    expect(b.cancel).not.toHaveBeenCalled()
+    expect(b.press({}, navigation)).toHaveBeenCalledOnce()
+    await Promise.resolve()
+    expect(b.cancel).toHaveBeenCalledOnce()
+  })
+  it('stops the selected Verboo pane on one Escape and leaves modal Escape alone', async () => {
+    const b = await bench()
+    const workspace = document.createElement('div')
+    workspace.dataset.verbooPanes = ''
+    const pane = document.createElement('section')
+    pane.dataset.paneFocused = 'true'
+    workspace.append(pane)
+    pane.append(b.root)
+    document.body.append(workspace)
+    expect(b.press({}, b.input, { modal: 'menu' })).not.toHaveBeenCalled()
+    expect(b.cancel).not.toHaveBeenCalled()
+    expect(b.press()).toHaveBeenCalledOnce()
+    await Promise.resolve()
+    expect(b.cancel).toHaveBeenCalledOnce()
+  })
   it('cancels through the scoped ConversationController only after two eligible Escapes', async () => {
     const b = await bench()
     expect(b.press()).toHaveBeenCalledOnce()

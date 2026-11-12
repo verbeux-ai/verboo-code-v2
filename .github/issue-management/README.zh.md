@@ -8,7 +8,7 @@ description: "面向仓库维护者的 Issue 策略强制范围、Project 访问
 
 ## 摘要
 
-贡献者可以引用 Issue 作为背景，而无需让 PR（Pull Request）校验依赖 Project 可用性。解决型引用还会强制检查 Project Priority。必需的 `Issue policy` job 与独立的生命周期工作流使用受信任的默认分支代码。
+贡献者可以引用 Issue 作为背景，而无需让 PR（Pull Request）校验依赖 Project 可用性。解决型引用还会强制检查 Project Priority。必需的 `Issue policy` job 与独立的生命周期工作流仅在拥有已配置 Project 和 GitHub App 的 `deepseek-harness/deepseek-harness` 中使用受信任的默认分支代码。
 
 ## 目录
 

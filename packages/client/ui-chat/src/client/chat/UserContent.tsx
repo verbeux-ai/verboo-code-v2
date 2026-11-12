@@ -19,7 +19,7 @@ FactoryComponentPropsOf<'conversation.chat.user.content'>) {
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || extraBlocks.length > 0
   return (
-    <div className={css.userStack}>
+    <div className={css.userStack} data-chat-user-content="">
       {attachments.length > 0 && (
         <div className={css.attachmentRow} data-message-attachments>
           {attachments.map((attachment, index) => attachment.type === 'image'

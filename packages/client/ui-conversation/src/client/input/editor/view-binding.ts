@@ -40,6 +40,8 @@ interface DraftViewGate {
   uploadsHeldText: string
   showToast: (text: string) => void
   canAcceptDrop: boolean
+  promptHistory: ((direction: 'up' | 'down') => boolean) | undefined
+  promptHistoryActive: (() => boolean) | undefined
 }
 
 /**
@@ -131,6 +133,8 @@ export function installDraftKeymap(
 ): () => void {
   return registerComposerKeymap(editor, {
     arbitrate: (key, composing) => keyboard.arbitrate(key, composing),
+    history: direction => !gate.current.locked && !gate.current.machineBusy && (gate.current.promptHistory?.(direction) ?? false),
+    historyActive: () => gate.current.promptHistoryActive?.() ?? false,
     space: () => {
       if (gate.current.machineBusy || gate.current.locked) return false
       return keyboard.space()

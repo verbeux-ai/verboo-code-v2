@@ -19,6 +19,7 @@ export class SidebarSessionViews {
   readonly source = createSnapshotStore<readonly SidebarSessionViewSnapshot[]>([])
   private readonly views = new Map<SessionId, SidebarSessionView>()
   private readonly viewsByReference = new Map<SessionReference, SidebarSessionView>()
+  private readonly retiredReferences = new WeakSet<SessionReference>()
   private selected: SessionId | undefined
   private closed = false
 
@@ -34,6 +35,7 @@ export class SidebarSessionViews {
     if (sessionId !== undefined && !this.views.has(sessionId)) {
       const view = new SidebarSessionView(sessionId, this.sessions, (disposed) => {
         this.viewsByReference.delete(disposed.reference)
+        this.retiredReferences.add(disposed.reference)
       }, (released) => { this.prune(released) })
       this.views.set(sessionId, view)
       this.viewsByReference.set(view.reference, view)
@@ -44,13 +46,14 @@ export class SidebarSessionViews {
 
   /**
    * Bind a committed root; release retired references after that root unmounts.
+   * A withdrawn snapshot may still commit; its retired reference gets a no-op mount. Foreign references remain errors.
    * @param reference - framework target published by this owner.
    * @returns releases this committed mount.
    */
   mount(reference: SessionReference): () => void {
     const view = this.viewsByReference.get(reference)
     if (view === undefined) {
-      if (this.closed) return () => {}
+      if (this.closed || this.retiredReferences.has(reference)) return () => {}
       throw new Error('Sidebar Session view reference is no longer owned')
     }
     return view.mount()

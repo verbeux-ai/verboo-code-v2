@@ -101,6 +101,23 @@ export abstract class DeepSeekAccount extends Service {
    */
   abstract resolveToken(url: string): Promise<string | undefined>
   /**
+   * Refresh one inference-rejected token when the provider supports refresh.
+   * A provider without refresh support returns undefined. Implementations must compare the exact rejected token
+   * before changing credentials, return a newer current token when another operation already refreshed it, and
+   * preserve the stored grant when refresh fails for a transient or local reason.
+   * @param _url - actual request destination that rejected the token.
+   * @param _rejectedToken - exact token sent by that request.
+   * @param _signal - optional caller cancellation for the refresh request.
+   * @returns a current replacement token, or undefined when no replacement is available.
+   */
+  refreshRejectedToken(
+    _url: string,
+    _rejectedToken: string,
+    _signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    return Promise.resolve(undefined)
+  }
+  /**
    * Remove an inference-rejected token only while it still matches the stored login.
    * @param token - token captured by the rejected inference request.
    * @returns after matching credentials are removed and the expiry notification is emitted.

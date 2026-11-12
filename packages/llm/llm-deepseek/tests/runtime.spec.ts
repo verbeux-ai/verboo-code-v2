@@ -1373,7 +1373,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
   it.each([
     [401, 'AUTH'],
-    [403, 'AUTH'],
+    [403, 'AUTH_FORBIDDEN'],
     [429, 'RATE_LIMIT'],
     [400, 'INVALID_REQUEST'],
     [500, 'SERVER'],

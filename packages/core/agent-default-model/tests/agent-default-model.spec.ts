@@ -32,6 +32,19 @@ it('persists complete selections through its owning profile entry', async () => 
   expect(standalone.agentDefaultModel.currentSelection().model).toBe('original')
 })
 
+it('keeps the configured default when remembering session selections is disabled', async () => {
+  const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = [...ctx.loader.entries()].find(item => item.options.id === 'default-model')
+  if (entry === undefined) throw new Error('Default model fixture has no profile entry')
+  await ctx.configEditor.edit(entry, config => ({ ...config, rememberSelection: false }))
+  const before = ctx.agentDefaultModel.currentSelection()
+  const edit = vi.spyOn(ctx.configEditor, 'edit')
+  await ctx.agentDefaultModel.saveSelection({ provider: 'test', model: 'another-conversation' })
+  expect(ctx.agentDefaultModel.currentSelection()).toEqual(before)
+  expect(edit).not.toHaveBeenCalled()
+})
+
 it('serializes overlapping saves and continues after a rejected write', async () => {
   const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
   const { ctx } = await configurationFixture({ hmr: false })

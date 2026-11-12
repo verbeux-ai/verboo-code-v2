@@ -126,7 +126,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveSelection(next: ModelSelection): Promise<void>',
-        description: 'Save the complete default model selection. A deployment without a configuration editor keeps its composition entry. Saves commit in submission order; a failed save rejects its caller without blocking later saves.',
+        description: 'Save the complete default model selection. A deployment without a configuration editor, or with rememberSelection disabled, keeps its composition entry. Saves commit in submission order; a failed save rejects its caller without blocking later saves.',
         parameters: [{ name: 'next', description: 'resolved selection accepted by an entry point.' }],
         returns: 'fulfillment after the optional profile write settles.',
       },
@@ -1040,6 +1040,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve a credential only for the inference origin allowed by the provider.',
         parameters: [{ name: 'url', description: 'actual request destination or API base URL.' }],
         returns: 'stored token, or undefined for other origins or a signed-out account.',
+      },
+      {
+        signature: 'refreshRejectedToken( _url: string, _rejectedToken: string, _signal?: AbortSignal, ): Promise<string | undefined>',
+        description: 'Refresh one inference-rejected token when the provider supports refresh. A provider without refresh support returns undefined. Implementations must compare the exact rejected token before changing credentials, return a newer current token when another operation already refreshed it, and preserve the stored grant when refresh fails for a transient or local reason.',
+        parameters: [{ name: '_url', description: 'actual request destination that rejected the token.' }, { name: '_rejectedToken', description: 'exact token sent by that request.' }, { name: '_signal', description: 'optional caller cancellation for the refresh request.' }],
+        returns: 'a current replacement token, or undefined when no replacement is available.',
       },
       {
         signature: 'abstract rejectToken(token: string): Promise<void>',

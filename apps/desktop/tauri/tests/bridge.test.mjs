@@ -67,6 +67,15 @@ test('opens allowlisted destinations in the system browser and rejects embedded 
   }
 })
 
+test('hands a completed quit hold to the native shutdown owner', async (t) => {
+  const { dom, calls } = page(t, '<main>workspace</main>')
+  await dom.window.__VERBOO_DESKTOP__.quit()
+  assert.equal(calls.filter(command => command === 'quit_after_hold').length, 1)
+  const permissions = await readFile(new URL('../../src-tauri/permissions/desktop.toml', import.meta.url), 'utf8')
+  const allowed = JSON.parse(permissions.match(/^commands\.allow = (.+)$/m)[1])
+  assert.ok(allowed.includes('quit_after_hold'), 'native ACL must allow the completed gesture')
+})
+
 test('native diagnostics contain asset coordinates and never error-message contents', async (t) => {
   const { dom, requests } = page(t, '<main>workspace</main>')
   const error = new dom.window.Error('fixture-private-account@example.invalid fixture-private-token')

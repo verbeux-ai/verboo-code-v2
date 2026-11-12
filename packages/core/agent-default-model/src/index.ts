@@ -22,6 +22,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Default model selection supplied by plugin configuration. */
 export interface Config {
+  /** Remember the last selected model as the default; false retains the configured route. */
+  rememberSelection: Volatile<boolean>
   /** Registered provider route. */
   provider: Volatile<string>
   /** Provider-owned model id. */
@@ -49,6 +51,7 @@ export class AgentDefaultModelConfig extends Service {
   private saves: Promise<void> = Promise.resolve()
 
   static Config = z.object({
+    rememberSelection: z.boolean().default(true).volatile(),
     provider: z.string().required().volatile(),
     model: z.string().required().volatile(),
     reasoningEffort: z.string().volatile(),
@@ -74,12 +77,13 @@ export class AgentDefaultModelConfig extends Service {
 
   /**
    * Save the complete default model selection. A deployment without a configuration
-   * editor keeps its composition entry. Saves commit in submission order; a failed
+   * editor, or with rememberSelection disabled, keeps its composition entry. Saves commit in submission order; a failed
    * save rejects its caller without blocking later saves.
    * @param next - resolved selection accepted by an entry point.
    * @returns fulfillment after the optional profile write settles.
    */
   async saveSelection(next: ModelSelection): Promise<void> {
+    if (!this.config.rememberSelection.get()) return
     const entry = this.ownerContext.fiber.entry
     if (entry === undefined) return
     const editor = this.ctx.get('configEditor')

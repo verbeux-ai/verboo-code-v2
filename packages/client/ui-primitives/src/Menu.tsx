@@ -46,6 +46,8 @@ export type MenuEntry = MenuItem | MenuSeparator | MenuLabel
 
 /** Props for one component-rendered menu row. */
 export interface MenuItemButtonProps {
+  /** Inline action lists use ordinary buttons; popup menus retain menu-item semantics. */
+  role?: 'menuitem' | 'button'
   /** Visible row label. */
   children: ReactNode
   /** Effective binding supplied by the command owner; omitted for unbound actions. */
@@ -82,6 +84,7 @@ export interface MenuItemButtonProps {
  * without any shared state. Closing the menu stays the owner's decision, as
  * it is for data rows.
  * @param props.children - visible row label.
+ * @param props.role - menu-item semantics by default; ordinary button for inline lists.
  * @param props.shortcut - effective key labels and accessible combination.
  * @param props.icon - optional leading icon.
  * @param props.current - whether the row identifies the currently displayed page or view.
@@ -93,7 +96,7 @@ export interface MenuItemButtonProps {
  * @returns one menu-item row.
  */
 export function MenuItemButton({
-  children, shortcut, icon, current, disabled = false, disabledReason, danger = false, separatorBefore = false, onSelect,
+  children, role = 'menuitem', shortcut, icon, current, disabled = false, disabledReason, danger = false, separatorBefore = false, onSelect,
 }: MenuItemButtonProps) {
   const reasonId = useId()
   // Native disabled buttons do not deliver the hover/focus events Tooltip needs,
@@ -106,7 +109,7 @@ export function MenuItemButton({
       <Tooltip label={disabledReason ?? ''} disabled={!explained} side="bottom" delayMs={500} maxWidth={300} portal>
         <button
           type="button"
-          role="menuitem"
+          role={role}
           className={clsx(css.item, danger && css.danger)}
           disabled={disabled && !explained}
           aria-disabled={explained || undefined}
@@ -208,9 +211,10 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.listClassName - extra class on the dropdown card itself; the
  * only style hook that reaches a portaled list, which renders under
  * document.body outside the owner's DOM subtree.
+ * @param props.nativeTab - retain native Tab traversal and form-control arrow keys.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, minWidthFromAnchor = false, footer, className, listClassName, contextual = false, exiting, returnFocus }: {
+export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, minWidthFromAnchor = false, footer, className, listClassName, contextual = false, exiting, returnFocus, nativeTab = false }: {
   open: boolean
   /** Pointer-positioned popup: cursor clearance, grouped icons, and context gestures. */
   contextual?: boolean
@@ -219,6 +223,8 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
   /** Retain a dismissed context popup during its short fade. */
   exiting?: 'dismiss' | 'replace' | undefined
   autoFocus?: boolean
+  /** Allow native Tab traversal for menus containing form controls. */
+  nativeTab?: boolean
   anchor: ReactNode
   items?: readonly MenuEntry[]
   children?: ReactNode
@@ -381,6 +387,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       // the trigger or inside the list is intercepted: Tab elsewhere on the
       // page keeps the browser's traversal even while a menu is open.
       if (e.key === 'Tab') {
+        if (nativeTab) return
         const list = listRef.current
         if (list === null || !anchored) return
         if (e.shiftKey) {
@@ -423,6 +430,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       // otherwise re-enter at the near end on every press and the walk would
       // alternate between two rows.
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+      if (nativeTab && insideList && focused instanceof Element && focused.getAttribute('role') !== 'menuitem') return
       const list = listRef.current
       if (list === null || !anchored) return
       const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
@@ -457,7 +465,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       document.removeEventListener('keydown', onEscape, true)
       window.removeEventListener('blur', onWindowBlur)
     }
-  }, [open, onClose, autoFocus, contextual, exiting])
+  }, [open, onClose, autoFocus, contextual, exiting, nativeTab])
 
   useLayoutEffect(() => {
     if (exiting === 'dismiss' && listRef.current?.contains(document.activeElement)) refocusAnchor()

@@ -1,0 +1,19 @@
+.hint {
+  position: fixed;
+  z-index: 1500;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: calc(100vw - 40px);
+  box-sizing: border-box;
+  padding: 14px 20px;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--verboo-surface);
+  color: var(--verboo-ink);
+  box-shadow: var(--verboo-shadow);
+  pointer-events: none;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+}

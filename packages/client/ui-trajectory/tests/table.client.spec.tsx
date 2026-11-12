@@ -1054,7 +1054,7 @@ describe('TrajectoryTable', () => {
     expect(panel.getByText('upstream 503').className).toContain('error')
   })
 
-  it('localizes a sanitized AUTH request failure from its stable code', () => {
+  it('localizes a sanitized AUTH request failure without calling every credential an API key', () => {
     const turns: readonly TrajectoryTurnModel[] = [{
       turn: 1,
       groups: [{
@@ -1087,7 +1087,41 @@ describe('TrajectoryTable', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Request #1' }))
-    expect(screen.getByText('API key is invalid')).toBeTruthy()
+    expect(screen.getByText('The provider rejected the configured credential.')).toBeTruthy()
+  })
+
+  it('localizes a provider permission denial separately from credential rejection', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [{ index: 1, kind: 'message', text: '', requestOnly: true, isError: true, timeSeconds: 0.1 }],
+      }],
+    }]
+    render(
+      <TrajectoryTable turns={turns} requestNumbers={[{
+        turn: 1, step: 1, seq: 1, group: 'Step 1', number: 1, status: 'error', error: '', errorCode: 'AUTH_FORBIDDEN',
+      }]} {...FOLD_PROPS} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Request #1' }))
+    expect(screen.getByText('The provider denied access to this request.')).toBeTruthy()
+  })
+
+  it('localizes a model request timeout', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [{ index: 1, kind: 'message', text: '', requestOnly: true, isError: true, timeSeconds: 0.1 }],
+      }],
+    }]
+    render(
+      <TrajectoryTable turns={turns} requestNumbers={[{
+        turn: 1, step: 1, seq: 1, group: 'Step 1', number: 1, status: 'error', error: 'pi-ai stream idle timeout after 300000ms', errorCode: 'TIMEOUT',
+      }]} {...FOLD_PROPS} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Request #1' }))
+    expect(screen.getByText('The model request timed out while waiting for the provider. Try again.')).toBeTruthy()
   })
 
   it('shows the custom role tooltip only from the responsive icon', () => {

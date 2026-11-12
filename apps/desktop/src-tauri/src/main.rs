@@ -2,6 +2,7 @@
 
 mod host;
 mod locale;
+mod menu;
 mod update;
 mod update_logic;
 
@@ -32,6 +33,9 @@ struct HostState {
     bootstrap: Mutex<Option<url::Url>>,
     quitting: AtomicBool,
     client_ready: AtomicBool,
+    quit_confirmation: AtomicBool,
+    exit_ready: AtomicBool,
+    quit_hold_confirmed: AtomicBool,
 }
 
 impl HostState {
@@ -53,6 +57,18 @@ fn owned_window(window: &WebviewWindow, state: &HostState) -> Result<(), String>
     if window.label() != "main" || state.origin.get() != Some(&origin) {
         return Err("desktop_access_denied".into());
     }
+    Ok(())
+}
+
+#[tauri::command]
+fn quit_after_hold(
+    window: WebviewWindow,
+    state: tauri::State<'_, Arc<HostState>>,
+) -> Result<(), String> {
+    owned_window(&window, &state)?;
+    state.quit_hold_confirmed.store(true, Ordering::SeqCst);
+    eprintln!("Verboo Code: quit_hold_confirmed");
+    window.app_handle().exit(0);
     Ok(())
 }
 
@@ -159,6 +175,7 @@ fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
         .message(locale::startup_failure())
         .title("Verboo Code")
         .blocking_show();
+    state.exit_ready.store(true, Ordering::SeqCst);
     app.exit(1);
 }
 
@@ -175,7 +192,33 @@ fn open_externally(app: &tauri::AppHandle, url: &url::Url) {
 fn main() {
     let state = Arc::new(HostState::default());
     let setup_state = state.clone();
+    let window_state = state.clone();
     let app = tauri::Builder::default()
+        .menu(menu::build)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == menu::QUIT {
+                app.exit(0);
+                return;
+            }
+            if event.id().as_ref() == menu::CLOSE_PANE {
+                if let Some(window) = app.get_webview_window("main") {
+                    if window
+                        .eval("window.dispatchEvent(new Event('verboo-close-pane'))")
+                        .is_err()
+                    {
+                        eprintln!("Verboo Code: close_pane_failed");
+                    }
+                }
+            }
+        })
+        .on_window_event(move |window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if !window_state.exit_ready.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -186,7 +229,8 @@ fn main() {
             client_ready,
             client_diagnostic,
             update::update_install,
-            update::update_close
+            update::update_close,
+            quit_after_hold
         ])
         .setup(move |app| {
             update::install(&app.handle());
@@ -322,22 +366,53 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Verboo Code: native application initialization failed");
     app.run(move |app, event| {
-        if let RunEvent::ExitRequested { api, .. } = event {
-            if !state.quitting.swap(true, Ordering::SeqCst) {
+        if let RunEvent::ExitRequested { api, code, .. } = event {
+            if !state.exit_ready.load(Ordering::SeqCst) {
                 api.prevent_exit();
+                if state.quitting.load(Ordering::SeqCst) {
+                    return;
+                }
+                if state.quit_confirmation.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let held = state.quit_hold_confirmed.swap(false, Ordering::SeqCst);
                 let app = app.clone();
                 let state = state.clone();
                 thread::spawn(move || {
+                    if code != Some(tauri::RESTART_EXIT_CODE) && !held {
+                        eprintln!("Verboo Code: quit_confirmation_requested");
+                        let dialog = app
+                            .dialog()
+                            .message(locale::quit_message())
+                            .title(locale::quit_title())
+                            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                                locale::quit_confirm().to_string(),
+                                locale::quit_cancel().to_string(),
+                            ));
+                        let dialog = match app.get_webview_window("main") {
+                            Some(window) => dialog.parent(&window),
+                            None => dialog,
+                        };
+                        let confirmed = dialog.blocking_show();
+                        if !confirmed {
+                            eprintln!("Verboo Code: quit_cancelled");
+                            state.quit_confirmation.store(false, Ordering::SeqCst);
+                            return;
+                        }
+                    }
+                    eprintln!("Verboo Code: quit_confirmed");
+                    state.quitting.store(true, Ordering::SeqCst);
                     let code = match state.stop() {
                         Ok(()) => {
                             eprintln!("Verboo Code: host_shutdown_complete");
-                            0
+                            code.unwrap_or(0)
                         }
                         Err(code) => {
                             eprintln!("Verboo Code: {code}");
                             1
                         }
                     };
+                    state.exit_ready.store(true, Ordering::SeqCst);
                     app.exit(code);
                 });
             }

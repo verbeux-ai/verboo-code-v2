@@ -73,6 +73,8 @@ declare global {
     readonly protocolVersion: number
     /** Host-reported runtime identity shown in the account sheet. */
     deviceInfo?(): Promise<string>
+    /** Quit the native application after the user holds the shortcut. */
+    quit?(this: void): Promise<void>
     /**
      * Open a destination in the system browser.
      * @param url - absolute URL the bridge allowlist accepts.
