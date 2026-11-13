@@ -23,16 +23,23 @@ export type SubscriptionUsageProps = ProductProps & StaminaModelProps & {
 
 /**
  * Format the reset countdown as a duration the reader can act on.
+ *
+ * The units come from the locale rather than from the source, so a language
+ * that spells hours and minutes differently is not left with English
+ * abbreviations.
  * @param seconds - seconds until the window resets, or null when unknown.
+ * @param locale - BCP-47 tag of the interface language.
  * @returns a short localized duration, or undefined when the provider stated none.
  */
-function resetText(seconds: number | null): string | undefined {
+function resetText(seconds: number | null, locale: string): string | undefined {
   if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return undefined
   const minutes = Math.ceil(seconds / 60)
-  if (minutes < 60) return `${String(minutes)} min`
-  const hours = Math.floor(minutes / 60)
+  const short = new Intl.NumberFormat(locale, { style: 'unit', unit: 'minute', unitDisplay: 'short' })
+  if (minutes < 60) return short.format(minutes)
+  const hours = new Intl.NumberFormat(locale, { style: 'unit', unit: 'hour', unitDisplay: 'short' })
+  const whole = Math.floor(minutes / 60)
   const rest = minutes % 60
-  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`
+  return rest === 0 ? hours.format(whole) : `${hours.format(whole)} ${short.format(rest)}`
 }
 
 /**
@@ -52,7 +59,7 @@ export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.doc
   const state = stateOf(usage)
   if (!subscriptionUsageVisible(state)) return null
   const plan = usage.planType === null ? props.t('subscription.plan') : props.t('subscription.planNamed', { plan: usage.planType })
-  const reset = resetText(usage.resetAfterSeconds)
+  const reset = resetText(usage.resetAfterSeconds, props.usePreferences(state => state.locale))
   const label = state === 'unlimited'
     ? props.t('subscription.unlimited', { plan })
     : state === 'exhausted'

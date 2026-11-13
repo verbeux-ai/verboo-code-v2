@@ -13,6 +13,7 @@
 # The external subscription route stays off until the user signs in through the
 # account package; with no stored session it offers no model at all.
 - id: openai-account
+- id: openai-account-login
 - id: llm-openai-account
 - id: agent-default-model
   config:
