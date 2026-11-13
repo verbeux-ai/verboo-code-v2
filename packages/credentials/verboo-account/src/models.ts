@@ -64,10 +64,15 @@ type DispatchLevel = typeof DISPATCH_LEVELS[number]
  * Translate the levels the router accepts into the map pi-ai dispatches through.
  *
  * The router names its levels in its own vocabulary and sends the level itself
- * as the wire value, so each accepted level maps to itself. Levels pi-ai cannot
- * spell are dropped rather than guessed at, and a listing that advertises
- * nothing leaves the field absent, which keeps the installed catalog's
- * capability instead of claiming levels the route never offered.
+ * as the wire value. The adapter reads a level absent from the map as
+ * unsupported, so only the offered levels appear; pinning the rest to `null`
+ * would instead mean "offered, sends nothing", which the adapter refuses for
+ * every level but `off` and which fails the whole listing. `off` is the one
+ * level that legitimately sends nothing, so it alone carries `null`.
+ *
+ * A listing offering nothing beyond `off` leaves the field absent: the adapter
+ * refuses a declaration with no thinking level, and absence keeps whatever the
+ * installed catalog says instead of naming a capability the route lacks.
  * @param reasoning - the listing's reasoning field, a bare flag or the level object.
  * @returns the offered levels keyed by name, or `undefined` when the router named none.
  */
@@ -83,11 +88,9 @@ function reasoningEffortsOf(
     .filter((level): level is string => typeof level === 'string')
     .map(level => level.trim().toLowerCase())
     .filter((level): level is DispatchLevel => DISPATCH_LEVELS.some(known => known === level))
-  if (offered.length === 0) return undefined
-  // Every level the router did not accept is pinned unsupported, so pi-ai cannot
-  // advertise a level this route would refuse.
+  if (!offered.some(level => level !== 'off')) return undefined
   return Object.fromEntries(
-    DISPATCH_LEVELS.map(level => [level, offered.includes(level) ? level : null]),
+    offered.map(level => [level, level === 'off' ? null : level]),
   )
 }
 
