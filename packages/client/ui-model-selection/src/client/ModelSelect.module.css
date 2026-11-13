@@ -378,3 +378,185 @@
   height: 12px;
   color: var(--dsw-alias-menu-icon);
 }
+
+/* Effort pane: one rail with a stop per level the selected model offers, so a
+ * model with two levels and a model with five both read as the same control. */
+.effort {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 8px 8px;
+}
+
+.effortHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.effortHeading {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effortValue {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* The thumb is the widest part of the control, so the rail is inset by half of
+ * it; the native thumb then travels exactly between the first and last stop. */
+.effortSlider {
+  position: relative;
+  height: 20px;
+}
+
+.effortRail {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  left: 7px;
+  height: 4px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-border-l1);
+  transform: translateY(-50%);
+}
+
+.effortFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.effortStop {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-border-l2);
+  transform: translate(-50%, -50%);
+}
+
+.effortStopReached {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.effortInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.effortInput:focus-visible {
+  outline: none;
+}
+
+.effortInput::-webkit-slider-thumb {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-bg-layer-1);
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+  cursor: grab;
+  appearance: none;
+}
+
+.effortInput::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-bg-layer-1);
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+  cursor: grab;
+}
+
+.effortInput:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.effortInput:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+/* Each label is centred under its own stop rather than spread between the ends,
+ * so a model declaring seven levels keeps every name readable instead of
+ * truncating all of them. Labels may overlap their neighbours; the one in use
+ * paints above them. */
+.effortScale {
+  position: relative;
+  height: 15px;
+  margin: 0 7px;
+}
+
+.effortScaleLabel:first-child {
+  transform: translateX(0);
+}
+
+.effortScaleLabel:last-child {
+  transform: translateX(-100%);
+}
+
+.effortScaleLabel {
+  position: absolute;
+  top: 0;
+  /* One slot is the gap between two stops; a longer name truncates instead of
+   * running into its neighbour. */
+  max-width: calc(100% / var(--effort-slots, 1));
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.effortScaleLabelActive {
+  z-index: 1;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.effortDescription {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .effortFill,
+  .effortStop {
+    transition: width 120ms ease, background-color 120ms ease;
+  }
+}

@@ -42,6 +42,7 @@ import {
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
+import { effortDescription, effortName } from './effort-levels.ts'
 import { orderModelProviders } from './provider-order.ts'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
@@ -77,11 +78,15 @@ export function ModelSelect(
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const [selectionFocus, setSelectionFocus] = useState(false)
+  // Level the pointer or keyboard is on before the selection settles; null shows
+  // the committed one.
+  const [draggedEffort, setDraggedEffort] = useState<number | null>(null)
+  const effortInputRef = useRef<HTMLInputElement>(null)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
   // action was a load.
-  const lastActionRef = useRef<'load' | 'select'>('load')
+  const lastActionRef = useRef<'load' | 'select' | 'effort'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -138,13 +143,18 @@ export function ModelSelect(
   const currentChoice = choices[selectedIndex]
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
+  // The level in use, whichever way the Host named it; a saved id the catalog no
+  // longer offers has no entry, so it keeps the Host's own spelling.
+  const selectedEffort = reasoning?.efforts.find(level => level.id === effectiveEffort)
   const effortLabel = currentChoice === undefined
     ? undefined
     : reasoning === undefined
       ? state.retainedEffort
       : effectiveEffort === undefined
         ? t('effort.providerDefault')
-        : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
+        : selectedEffort === undefined
+          ? effectiveEffort
+          : effortName(selectedEffort, t)
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
     : [
@@ -154,9 +164,21 @@ export function ModelSelect(
       ...reasoning.efforts.map((effort: ModelReasoningEffort) => ({
         key: `effort:${effort.id}`,
         effort: effort.id,
-        label: effort.name,
+        label: effortName(effort, t),
       })),
     ], [reasoning, t])
+  const effortIndex = effortChoices.findIndex(choice => choice.effort === effectiveEffort)
+  const selectedEffortDescription = selectedEffort === undefined ? undefined : effortDescription(selectedEffort, t)
+  // A saved effort the catalog no longer offers leaves no position; the rail
+  // then rests at its start while the header keeps the saved name.
+  const shownEffort = draggedEffort ?? (effortIndex < 0 ? 0 : effortIndex)
+  /**
+   * Where one level sits on the rail, as a percentage of its width.
+   * @param index - position of the level in the offered order.
+   * @returns the offset, or 0 when the model offers a single level.
+   */
+  const effortPercent = (index: number): number =>
+    effortChoices.length > 1 ? (index / (effortChoices.length - 1)) * 100 : 0
   const { pending } = state
   const busy = pending !== null
 
@@ -197,6 +219,10 @@ export function ModelSelect(
     if (intent === 'drill') {
       if (pane === 'model' && showSearch && !isMobileDevice()) {
         searchRef.current?.focus()
+        return
+      }
+      if (pane === 'effort' && effortInputRef.current !== null && !effortInputRef.current.disabled) {
+        effortInputRef.current.focus()
         return
       }
       // The checked row is the value in use; a pane without one opens on its
@@ -343,6 +369,8 @@ export function ModelSelect(
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      // The range input steps its own value; the row walk would swallow that.
+      if (event.target instanceof HTMLInputElement && event.target.type === 'range') return
       event.preventDefault()
       moveFocus(event.key === 'ArrowDown' ? 1 : -1)
     }
@@ -359,7 +387,9 @@ export function ModelSelect(
   const settleSelection = (result: Awaited<ReturnType<ModelSelectInjected['select']>>): void => {
     if (result === undefined) return
     if (result.ok) {
-      if (rootRef.current !== null) closeAfterSelection()
+      // An effort change keeps the slider on screen: a continuous control cannot
+      // dismiss itself after every step.
+      if (lastActionRef.current !== 'effort' && rootRef.current !== null) closeAfterSelection()
       return
     }
     const { error } = result
@@ -372,11 +402,13 @@ export function ModelSelect(
     })
   }
 
-  const submit = (selection: ModelSelection): void => {
-    lastActionRef.current = 'select'
-    // Disabled option rows cannot retain focus while a selection is pending.
-    setSelectionFocus(true)
-    triggerRef.current?.focus()
+  const submit = (selection: ModelSelection, action: 'select' | 'effort' = 'select'): void => {
+    lastActionRef.current = action
+    if (action === 'select') {
+      // Disabled option rows cannot retain focus while a selection is pending.
+      setSelectionFocus(true)
+      triggerRef.current?.focus()
+    }
     void select(selection).then(settleSelection)
   }
 
@@ -390,16 +422,25 @@ export function ModelSelect(
 
   const chooseEffort = (effort: string | undefined): void => {
     if (state.current === null) return
-    if (effectiveEffort === effort) {
-      closeAfterSelection()
-      return
-    }
+    if (effectiveEffort === effort) return
     const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
-    submit(selection)
+    submit(selection, 'effort')
+  }
+
+  /**
+   * Commit the level the pointer or keyboard left the slider on.
+   * @returns nothing; an uncommitted gesture returns the rail to the stored level.
+   */
+  const settleEffort = (): void => {
+    const index = draggedEffort
+    setDraggedEffort(null)
+    if (index === null || busy) return
+    const choice = effortChoices[index]
+    if (choice !== undefined) chooseEffort(choice.effort)
   }
 
   const waiting = currentChoice === undefined && state.status === 'loading'
@@ -633,32 +674,74 @@ export function ModelSelect(
                   <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
                 </div>
               )}
-              <div className={clsx(css.groups, 'scrollable')}>
-                {effortChoices.length === 0
-                  ? <div className={css.empty}>{t('empty.efforts')}</div>
-                  : effortChoices.map(level => (
-                    <button
-                      ref={itemRef()}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={effectiveEffort === level.effort}
-                      className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
-                      key={level.key}
-                      disabled={busy}
-                      onClick={() => { chooseEffort(level.effort) }}
-                    >
-                      <span className={css.optionCopy}>
-                        <span className={css.modelName}>{level.label}</span>
-                      </span>
-                      <span className={css.check}>
+              {effortChoices.length === 0
+                ? <div className={clsx(css.groups, 'scrollable')}><div className={css.empty}>{t('empty.efforts')}</div></div>
+                : (
+                  <div className={css.effort}>
+                    <div className={css.effortHead}>
+                      <span className={css.effortHeading}>{t('effort.levelLabel')}</span>
+                      <span className={css.effortValue}>
                         {pending !== null && pending.provider === state.current?.provider
-                          && pending.model === state.current.model && pending.reasoningEffort === level.effort
+                          && pending.model === state.current.model
                           ? <StateDot state="ongoing" />
-                          : effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
+                          : null}
+                        {effortChoices[shownEffort]?.label ?? effortLabel}
                       </span>
-                    </button>
-                  ))}
-              </div>
+                    </div>
+                    {/* The rail, its fill, and the level stops are decoration: the
+                      * range input over them carries the value, the keyboard, and
+                      * the accessible name, and every stop is announced through
+                      * aria-valuetext rather than a number. */}
+                    <div className={css.effortSlider}>
+                      <div className={css.effortRail} aria-hidden="true">
+                        <span className={css.effortFill} style={{ width: `${effortPercent(shownEffort)}%` }} />
+                        {effortChoices.map((level, index) => (
+                          <span
+                            key={level.key}
+                            className={clsx(css.effortStop, index <= shownEffort && css.effortStopReached)}
+                            style={{ left: `${effortPercent(index)}%` }}
+                          />
+                        ))}
+                      </div>
+                      <input
+                        ref={effortInputRef}
+                        type="range"
+                        className={css.effortInput}
+                        min={0}
+                        max={Math.max(0, effortChoices.length - 1)}
+                        step={1}
+                        value={Math.max(0, shownEffort)}
+                        aria-label={t('effort.levelLabel')}
+                        aria-valuetext={effortChoices[shownEffort]?.label}
+                        onChange={(event) => { setDraggedEffort(Number(event.target.value)) }}
+                        onPointerUp={settleEffort}
+                        onKeyUp={(event) => {
+                          if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End'
+                            || event.key === 'PageUp' || event.key === 'PageDown') settleEffort()
+                        }}
+                        onBlur={settleEffort}
+                      />
+                    </div>
+                    <div
+                      className={css.effortScale}
+                      style={{ '--effort-slots': Math.max(1, effortChoices.length - 1) } as CSSProperties}
+                      aria-hidden="true"
+                    >
+                      {effortChoices.map((level, index) => (
+                        <span
+                          key={level.key}
+                          className={clsx(css.effortScaleLabel, index === shownEffort && css.effortScaleLabelActive)}
+                          style={{ left: `${effortPercent(index)}%` }}
+                        >
+                          {level.label}
+                        </span>
+                      ))}
+                    </div>
+                    {selectedEffortDescription !== undefined
+                      ? <p className={css.effortDescription}>{selectedEffortDescription}</p>
+                      : null}
+                  </div>
+                )}
             </>
           )}
         </MenuSurface>,
