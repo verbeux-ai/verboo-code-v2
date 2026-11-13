@@ -106,3 +106,15 @@ declare module '@deepseek-ai/cordis' {
     openaiAccount?: OpenAiAccountService
   }
 }
+
+/** What one model-discovery sweep concluded for the signed-in account. */
+export interface SweepResult {
+  /** Models the provider accepted. */
+  readonly supported: readonly string[]
+  /** Models the provider refused for this account. */
+  readonly unsupported: readonly string[]
+  /** Models left unprobed because the sweep stopped. */
+  readonly skipped: readonly string[]
+  /** Whether the sweep stopped early on a limit rather than completing. */
+  readonly stoppedAtLimit: boolean
+}

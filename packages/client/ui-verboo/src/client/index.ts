@@ -238,8 +238,18 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const completeOpenAiSignIn = async (handle: string): Promise<boolean> => {
     try {
       const finished = await ctx.remote.openaiAccountLogin.awaitLogin(handle)
-      if (finished.ok) subscriptionUsage.refresh()
-      return finished.ok
+      if (!finished.ok) return false
+      subscriptionUsage.refresh()
+      // Which models this account serves is the provider's answer, not the
+      // catalog's. The sweep spends one small request per model, so it runs in
+      // the background and never holds the dialog open.
+      void ctx.remote.llmOpenaiAccount.discoverModels().then(() => {
+        // A finished sweep changes the menu, so the model directory re-reads it.
+        void ctx.remote.session.initializeDefaultModel?.()
+      }).catch(() => {
+        // Discovery is an enhancement; a failed sweep leaves the catalog intact.
+      })
+      return true
     } catch (_error) { return false } // The dialog reports an unsuccessful exchange inline.
   }
   const openAiStatus = async (): Promise<OpenAiStatus> => {

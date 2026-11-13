@@ -14,6 +14,8 @@
  * @module @deepseek-ai/dsh-llm-openai-account/availability
  */
 
+import type { SweepResult } from './types.ts'
+
 /** Provider wording that identifies a model this account may not use. */
 const UNSUPPORTED_WORDING = /not supported when using Codex with a ChatGPT account/i
 
@@ -31,6 +33,14 @@ export interface AvailabilityEntry {
   readonly expiresAt: number
 }
 
+/** One model's cost, as the catalog states it per million tokens. */
+export interface ModelCost {
+  /** Catalog model id. */
+  readonly id: string
+  /** Input price per million tokens, when the catalog states one. */
+  readonly input: number
+}
+
 /**
  * Whether one provider failure says this account may not use the model.
  *
@@ -42,6 +52,26 @@ export interface AvailabilityEntry {
  */
 export function isUnsupportedModel(failure: string): boolean {
   return UNSUPPORTED_WORDING.test(failure)
+}
+
+/**
+ * Order models so the cheapest is probed first.
+ *
+ * Discovery spends one small request per model, so the order matters when the
+ * account is close to its limit: the cheapest answers buy the most information
+ * before a refusal could stop the sweep. A model the catalog prices at nothing
+ * or not at all sorts last, because its cost is unknown rather than zero.
+ * @param models - catalog entries with their stated input price.
+ * @returns the ids, cheapest first.
+ */
+export function cheapestFirst(models: readonly ModelCost[]): readonly string[] {
+  return [...models]
+    .sort((a, b) => {
+      const left = a.input > 0 ? a.input : Number.POSITIVE_INFINITY
+      const right = b.input > 0 ? b.input : Number.POSITIVE_INFINITY
+      return left === right ? a.id.localeCompare(b.id) : left - right
+    })
+    .map(model => model.id)
 }
 
 /**
@@ -104,6 +134,16 @@ export class ModelAvailability {
     verdicts.set(model, verdict)
     this.account = account
     this.entry = { verdicts, expiresAt: this.now() + this.ttlMs }
+  }
+
+  /**
+   * Record a whole sweep's outcome for one account.
+   * @param account - identifier of the signed-in account.
+   * @param result - what the sweep concluded.
+   */
+  recordSweep(account: string, result: SweepResult): void {
+    for (const model of result.supported) this.record(account, model, 'supported')
+    for (const model of result.unsupported) this.record(account, model, 'unsupported')
   }
 
   /** Forget every verdict, as a new sign-in must. */

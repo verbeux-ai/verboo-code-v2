@@ -60,6 +60,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
    */
   interface TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74 {
     usage: (signal?: AbortSignal) => Promise<RemoteResult<SubscriptionUsage | undefined>>
+    discoverModels: () => Promise<RemoteResult<{
+      readonly supported: readonly string[]
+      readonly unsupported: readonly string[]
+      readonly skipped: readonly string[]
+      readonly stoppedAtLimit: boolean
+    }>>
   }
   interface TypertRemoteNamespaceMap {
     'llmOpenaiAccount': TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74
