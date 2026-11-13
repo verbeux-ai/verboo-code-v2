@@ -35,7 +35,9 @@ it('serves the usage reading at the endpoint the Client addresses', async () => 
   expect(binding).toMatchObject({ serviceKey: 'llmOpenaiAccount', namespace: 'llmOpenaiAccount' })
   const markers = remoteMethods(service)
   expect(markers.map(marker => `${binding.namespace}/${marker.exportName ?? marker.method}`))
-    .toEqual(['llmOpenaiAccount/usage'])
+    // Two surfaces: the reading the composer shows, and the discovery a
+    // sign-in starts so the menu offers only what the account can use.
+    .toEqual(['llmOpenaiAccount/discoverModels', 'llmOpenaiAccount/usage'])
 })
 
 it('never throws from the Remote method, so the carrier reports no failure', async () => {

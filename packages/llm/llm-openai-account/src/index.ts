@@ -30,9 +30,11 @@ import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { DISPLAY_NAME, OpenAiAccountAdapter } from './adapter.ts'
-import { ModelAvailability } from './availability.ts'
+import { ModelAvailability, cheapestFirst, isUnsupportedModel } from './availability.ts'
+import type { SweepResult } from './types.ts'
 import { CATALOG_PROVIDER, Config, PROVIDER, resolveConfig } from './config.ts'
 import { readUsage } from './usage.ts'
+import { classifyLimit } from './limits.ts'
 import type { SubscriptionUsage } from './types.ts'
 
 export { Config, BASE_URL, CATALOG_PROVIDER, PROVIDER, USAGE_PATH } from './config.ts'
@@ -69,6 +71,8 @@ export class OpenAiAccountRoute extends TypertRemoteService {
   static Config = Config
 
   private readonly usageTimeoutMs: number
+  /** Deadline one discovery request keeps, in milliseconds. */
+  private readonly probeTimeoutMs = 20_000
   private readonly profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /** Remembered per-model verdicts for the signed-in account. */
   private readonly availability = new ModelAvailability()
@@ -87,6 +91,95 @@ export class OpenAiAccountRoute extends TypertRemoteService {
       // A status read that fails means no usable session to scope by.
       return undefined
     }
+  }
+
+  /** One in-flight sweep per account, so a second trigger joins the first. */
+  private sweeping: Promise<SweepResult> | undefined
+  private sweepingFor: string | undefined
+
+  /**
+   * Probe every catalog model once, cheapest first, and remember the verdicts.
+   *
+   * Discovery spends one small request per model, so it starts with the cheapest
+   * and stops the moment the provider reports a limit: spending the rest of a
+   * nearly-spent window to learn what the next window would say is a poor trade.
+   * @param account - identifier the verdicts are scoped by.
+   * @returns what the sweep concluded.
+   */
+  /**
+   * Discover which models this account may use, cheapest first.
+   *
+   * Called after a sign-in. A second trigger while a sweep runs joins it rather
+   * than spending the account's quota twice.
+   * @returns what the sweep concluded, or an empty result while signed out.
+   */
+  @Remote('discoverModels')
+  async discoverModels(): Promise<SweepResult> {
+    const account = await this.accountIdentifier()
+    if (account === undefined) return { supported: [], unsupported: [], skipped: [], stoppedAtLimit: false }
+    if (this.sweeping !== undefined && this.sweepingFor === account) return this.sweeping
+    this.sweepingFor = account
+    this.sweeping = this.sweep(account).finally(() => {
+      this.sweeping = undefined
+      this.sweepingFor = undefined
+    })
+    return this.sweeping
+  }
+
+  private async sweep(account: string): Promise<SweepResult> {
+    const profile = this.profiles.get(CATALOG_PROVIDER)
+    const installed = profile?.piProvider
+    if (installed === undefined) return { supported: [], unsupported: [], skipped: [], stoppedAtLimit: false }
+    const ordered = cheapestFirst(installed.getModels().map(model => ({
+      id: model.id,
+      input: model.cost?.input ?? 0,
+    })))
+    const supported: string[] = []
+    const unsupported: string[] = []
+    const skipped: string[] = []
+    let stoppedAtLimit = false
+    for (const [index, model] of ordered.entries()) {
+      if (stoppedAtLimit) { skipped.push(...ordered.slice(index)); break }
+      const verdict = await this.probe(model)
+      if (verdict === 'supported') supported.push(model)
+      else if (verdict === 'unsupported') unsupported.push(model)
+      else if (verdict === 'limit') { stoppedAtLimit = true; skipped.push(...ordered.slice(index)); break }
+      // An inconclusive probe records nothing and the sweep moves on.
+    }
+    const result: SweepResult = { supported, unsupported, skipped, stoppedAtLimit }
+    this.availability.recordSweep(account, result)
+    return result
+  }
+
+  /**
+   * Ask the provider whether this account may use one model.
+   *
+   * The request is deliberately tiny: one word out, one token in, so the sweep
+   * costs as little of the subscription as the protocol allows.
+   * @param model - catalog model id.
+   * @returns what the attempt proved.
+   */
+  private async probe(model: string): Promise<'supported' | 'unsupported' | 'limit' | 'unknown'> {
+    let failure: string | undefined
+    try {
+      for await (const chunk of this.ctx.llm.stream({
+        provider: PROVIDER,
+        model,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
+        maxTokens: 1,
+        signal: AbortSignal.timeout(this.probeTimeoutMs),
+      })) {
+        if (chunk.type === 'finish' && chunk.reason?.kind === 'error') failure = chunk.reason.failure?.message
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+    if (failure === undefined) return 'supported'
+    if (isUnsupportedModel(failure)) return 'unsupported'
+    // A limit is the one failure that must stop the sweep rather than continue
+    // through models that would each be refused the same way.
+    if (classifyLimit({ message: failure }) !== undefined) return 'limit'
+    return 'unknown'
   }
 
   /**
