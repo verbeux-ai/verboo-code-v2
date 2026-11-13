@@ -31,8 +31,8 @@ export type SubscriptionUsageProps = ProductProps & StaminaModelProps & {
  * @param locale - BCP-47 tag of the interface language.
  * @returns a short localized duration, or undefined when the provider stated none.
  */
-function resetText(seconds: number | null, locale: string): string | undefined {
-  if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return undefined
+function resetText(seconds: number | undefined, locale: string): string | undefined {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return undefined
   const minutes = Math.ceil(seconds / 60)
   const short = new Intl.NumberFormat(locale, { style: 'unit', unit: 'minute', unitDisplay: 'short' })
   if (minutes < 60) return short.format(minutes)
@@ -58,7 +58,7 @@ export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.doc
   const stale = resource.status === 'failed'
   const state = stateOf(usage)
   if (!subscriptionUsageVisible(state)) return null
-  const plan = usage.planType === null ? props.t('subscription.plan') : props.t('subscription.planNamed', { plan: usage.planType })
+  const plan = usage.planType == null ? props.t('subscription.plan') : props.t('subscription.planNamed', { plan: usage.planType })
   const reset = resetText(usage.resetAfterSeconds, props.usePreferences(state => state.locale))
   const label = state === 'unlimited'
     ? props.t('subscription.unlimited', { plan })
@@ -83,13 +83,13 @@ export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.doc
           <div className={css.panel} role="dialog" aria-label={plan}>
             <p className={css.heading}>{label}</p>
             <dl className={css.rows}>
-              {usage.resetAfterSeconds !== null && (
+              {usage.resetAfterSeconds != null && (
                 <Fragment>
                   <dt>{props.t('subscription.resetsIn')}</dt>
                   <dd>{reset ?? props.t('subscription.unknown')}</dd>
                 </Fragment>
               )}
-              {usage.credits !== null && (
+              {usage.credits != null && (
                 <Fragment>
                   <dt>{props.t('subscription.credits')}</dt>
                   <dd>{String(usage.credits)}</dd>
@@ -113,6 +113,6 @@ export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.doc
  */
 function stateOf(usage: Reading): SubscriptionUsageState {
   if (usage.unlimited) return 'unlimited'
-  if (usage.reachedType !== null || usage.usedPercent >= 100) return 'exhausted'
+  if (usage.reachedType != null || usage.usedPercent >= 100) return 'exhausted'
   return usage.usedPercent >= 80 ? 'warn' : 'normal'
 }

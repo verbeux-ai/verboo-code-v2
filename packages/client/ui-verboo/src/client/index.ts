@@ -218,7 +218,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   )
   ctx.effect(() => ctx.resources.register(stamina.provider), 'Verboo: account stamina')
   const subscriptionUsage = createSubscriptionUsageResource(
-    signal => ctx.remote.verboo.getSubscriptionUsage(signal),
+    signal => ctx.remote.llmOpenaiAccount.usage(signal),
     model.state,
     config.staminaRefreshIntervalMs,
   )

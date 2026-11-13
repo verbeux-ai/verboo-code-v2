@@ -20,7 +20,6 @@ function reading(overrides: Partial<Reading> = {}): Reading {
     unlimited: false,
     planType: 'team',
     activeUntil: '2027-03-12T00:00:00+00:00',
-    reachedType: null,
     additionalLimits: [],
     asOf: '2026-11-13T02:00:00.000Z',
     ...overrides,
