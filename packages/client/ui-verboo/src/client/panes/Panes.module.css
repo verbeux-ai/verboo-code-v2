@@ -47,15 +47,21 @@
   --dsw-elevation-stroke-color: var(--dsw-alias-state-business-primary);
   --dsw-elevation-stroke: 0 0 0 1px var(--dsw-elevation-stroke-color);
 }
+/* A split pane's header sits on the elevated rung, so it rebinds the scrollbar
+   indirection; inheriting from `body` would carry the base rung's thumb colour. */
 .workspace[data-pane-split] :global([data-conversation-header]) {
   padding-top: 6px;
   padding-bottom: 6px;
   background: var(--dsw-alias-bg-layer-2);
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 .workspace[data-pane-split] .header {
   background: var(--dsw-alias-bg-layer-2);
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 .workspace :global([data-conversation-selector]) {
   display: inline-flex;
@@ -243,7 +249,7 @@
 .search {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l3);
+  border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: var(--dsw-radius-sm);
   padding: 11px 12px;
   background: var(--dsw-alias-bg-base);
@@ -260,7 +266,7 @@
   align-items: center;
   flex-wrap: wrap;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 .newConversation select {
   flex: 1;
@@ -296,7 +302,7 @@
   font: inherit;
   font-size: 13px;
   padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l3);
+  border: 0.5px solid var(--dsw-alias-border-l3);
   cursor: pointer;
   border-radius: var(--dsw-radius-sm);
 }
