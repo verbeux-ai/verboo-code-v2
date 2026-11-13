@@ -30,11 +30,13 @@ import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
 import { createStaminaResource } from './stamina-resource.ts'
+import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
+import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
@@ -214,6 +216,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     config.staminaRefreshIntervalMs,
   )
   ctx.effect(() => ctx.resources.register(stamina.provider), 'Verboo: account stamina')
+  const subscriptionUsage = createSubscriptionUsageResource(
+    signal => ctx.remote.verboo.getSubscriptionUsage(signal),
+    model.state,
+    config.staminaRefreshIntervalMs,
+  )
+  ctx.effect(() => ctx.resources.register(subscriptionUsage.provider), 'Verboo: subscription usage')
   const face = (): ProductInjected => ({
     hooks: { product: model.state, preferences, navigation: navigationEntries },
     refreshStamina: () => { stamina.refresh() },
@@ -355,6 +363,15 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     return { ...product, ...debugActions, ...appearanceActions,
       hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks } }
   }
+  // The pill reads the external subscription's own record; a Verboo route
+  // leaves it absent, so the dock never shows a borrowed number.
+  const subscriptionUsageFace = (sessionId?: SessionId) => {
+    const product = staminaFace(sessionId)
+    return {
+      ...product,
+      hooks: { ...product.hooks, subscriptionUsageAddress: model.state },
+    }
+  }
   const appearanceConfig = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
   const appearanceActions: ConversationAppearanceInjected = {
     hooks: { conversationAppearance: appearanceConfig },
@@ -491,6 +508,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         inject: debugFace,
       },
       StaminaDebug,
+    ),
+  )
+  // The external subscription's reading stays absent until it has something to
+  // say, so the dock keeps its resting height on a healthy window.
+  ctx.slots.inject('conversation.composer.dock', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.composer.dock', id: 'verboo.subscription-usage', order: 10, locale: 'verboo',
+        inject: subscriptionUsageFace,
+      },
+      SubscriptionUsage,
     ),
   )
   ctx.slots.inject('main', function* () {
