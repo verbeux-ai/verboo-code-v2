@@ -60,6 +60,9 @@ function failureMessage(
   if (code === 'AUTH_FORBIDDEN') return t('message.failure.permission')
   if (code === 'ACCOUNT_REFRESH_FAILED') return t('message.failure.accountRefresh')
   if (code === 'TIMEOUT') return t('message.failure.timeout')
+  // A plan that does not serve the model is fixed by choosing another one, not
+  // by waiting, so it gets its own sentence.
+  if (code === 'UNSUPPORTED_MODEL') return t('message.failure.unsupportedModel')
   return code === 'AUTH' ? t('message.failure.auth') : message
 }
 

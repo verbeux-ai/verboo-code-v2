@@ -47,6 +47,15 @@ export const USAGE_LIMIT_MESSAGE = 'The ChatGPT plan usage limit for this accoun
 export const CREDITS_MESSAGE = 'The ChatGPT credits for this account are depleted; requests resume after the credits are replenished.'
 
 /**
+ * Rewritten refusal for a model this account's plan does not serve.
+ *
+ * The provider names the account as the reason, which is the one fact the reader
+ * needs: switching to another model resolves it, waiting does not. The message
+ * says so and never repeats the provider's sentence about the wire protocol.
+ */
+export const UNSUPPORTED_MODEL_MESSAGE = 'This ChatGPT plan does not serve the selected model. Choose another model, or switch to a Verboo model.'
+
+/**
  * The harness credential plane pi-ai reads when a request carries no explicit
  * key. This route always passes the account access token as the request key,
  * so this store never holds anything: it exists because a pi-ai collection
@@ -123,6 +132,12 @@ export interface OpenAiAccountAdapterOptions {
  *   or the failure unchanged.
  */
 export function quotaFailure(failure: LlmFailure): LlmFailure {
+  // A model this plan does not serve is not a limit: waiting never helps, and
+  // the remedy is another model. It is classified before the limit codes so the
+  // reader is not told to wait for a window that would refuse them again.
+  if (isUnsupportedModel(failure.message)) {
+    return { ...failure, code: 'UNSUPPORTED_MODEL', message: UNSUPPORTED_MODEL_MESSAGE }
+  }
   const code = classifyLimit({
     ...failure.status === undefined ? {} : { status: failure.status },
     message: failure.message,

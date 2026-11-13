@@ -6,7 +6,7 @@ import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { resolveConfig } from '../src/config.ts'
 import { CATALOG_PROVIDER, PROVIDER } from '../src/config.ts'
-import { OpenAiAccountAdapter, quotaFailure } from '../src/adapter.ts'
+import { OpenAiAccountAdapter, quotaFailure, translatedChunks } from '../src/adapter.ts'
 
 /** A JWT-shaped fixture token carrying the account claim the transport reads. */
 function tokenFor(accountId: string): string {
@@ -71,6 +71,23 @@ it('keeps the provider text and code when the failure names no limit', () => {
   expect(quotaFailure(failure('upstream exploded', 500))).toEqual(failure('upstream exploded', 500))
 })
 
+it('names the model as the remedy when the plan does not serve it', () => {
+  // Waiting never helps here, so the sentence must send the reader to another
+  // model rather than to a reset window.
+  const refused = quotaFailure(failure("The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.", 400))
+  expect(refused.code).toBe('UNSUPPORTED_MODEL')
+  expect(refused.message).toContain('Choose another model')
+  expect(refused.message).not.toContain('Codex')
+  expect(refused.message).not.toContain('gpt-5.5')
+})
+
+it('keeps a limit a limit even when the model is also named', () => {
+  // A spent window is the fact that governs the request; the model is not the
+  // reason it was refused.
+  const limited = quotaFailure(failure('rate limit reached for gpt-5.5, try again later', 429))
+  expect(limited.code).not.toBe('UNSUPPORTED_MODEL')
+})
+
 it('does not rewrite a failure already carrying its final code', () => {
   const already: LlmFailure = { message: 'limit reached', code: QUOTA_EXCEEDED_CODE, status: 429 }
   expect(quotaFailure(already)).toBe(already)
@@ -114,4 +131,20 @@ it('serves prepareCall with the route key and the same translation', async () =>
   expect(prepared.model).toMatchObject({ provider: PROVIDER, id: 'gpt-5.5' })
   const chunks = await drain(prepared.stream({ provider: PROVIDER, model: 'gpt-5.5', messages: [] }))
   expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+})
+
+it('delivers the unsupported-model code in the finish chunk the loop records', async () => {
+  // The turn's recorded failure comes from this chunk, so the code must survive
+  // the translation rather than only existing in a helper.
+  const refusal = "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account."
+  const chunks = translatedChunks((async function* () {
+    yield { type: 'finish', reason: { kind: 'error', failure: { message: refusal, code: 'PI_AI_ERROR' } } } as never
+  })())
+  const seen: unknown[] = []
+  for await (const chunk of chunks) seen.push(chunk)
+  expect(seen).toHaveLength(1)
+  expect(seen[0]).toMatchObject({
+    type: 'finish',
+    reason: { kind: 'error', failure: { code: 'UNSUPPORTED_MODEL' } },
+  })
 })
