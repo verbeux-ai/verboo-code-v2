@@ -19,7 +19,7 @@ import { leaves, MAX_PANES, minimumSize, rectangles, boxAt } from './layout.ts'
 import type { PaneAxis, PaneLeaf, PaneNode, PaneRect, PaneSplit } from './layout.ts'
 import { Glyph } from '../Glyph.tsx'
 import { Busy } from '../PageParts.tsx'
-import { paneShortcutLabels } from './shortcut-labels.ts'
+import { paneShortcutKeys } from './shortcut-labels.ts'
 import css from './Panes.module.css'
 
 /** Narrow pane commands and independent layout observation. */
@@ -451,7 +451,7 @@ function PaneButtons({
   closePane: PanesInjected['closePane']
   t: PaneProps['t']
 }) {
-  const shortcuts = paneShortcutLabels()
+  const shortcuts = paneShortcutKeys()
   return (
     <div className={css.actions}>
       <Tooltip label={t('paneSplitRight')} shortcutKeys={shortcuts.right} portal>

@@ -5,14 +5,14 @@ import { Glyph } from './Glyph.tsx'
 import { PageHead } from './PageParts.tsx'
 import { StaminaDebugToggle, type StaminaDebugProps } from './StaminaDebug.tsx'
 import { ConversationAppearance, type ConversationAppearanceProps } from './ConversationAppearance.tsx'
-import { paneShortcutLabels } from './panes/shortcut-labels.ts'
+import { paneShortcutKeys } from './panes/shortcut-labels.ts'
 import css from './Product.module.css'
 /** Preferences are an ordinary page. Destructive session changes use one accessible confirmation. */
 export function PreferencesPage(props: PageProps & StaminaDebugProps & ConversationAppearanceProps) {
   const state = props.useProduct(s => s)
   const preference = props.usePreferences(s => s)
   const [signOut, setSignOut] = useState(false)
-  const shortcuts = paneShortcutLabels()
+  const shortcuts = paneShortcutKeys()
   return (
     <main className={css.page} data-verboo-page="preferences">
       <PageHead
