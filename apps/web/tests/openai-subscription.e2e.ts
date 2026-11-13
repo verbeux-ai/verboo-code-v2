@@ -30,10 +30,6 @@ function idToken(expSeconds: number): string {
   })}.signature`
 }
 
-// No operating-system credential store exists in this lane, which is a
-// deployment the account must survive: the route stays signed out.
-process.env.DSH_DISABLE_OS_KEYRING = '1'
-
 describe('web e2e: [OI] subscription sign-in and limit control', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -141,19 +137,18 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
     expect(started.url).toContain('redirect_uri=')
   })
 
-  it('reports an unusable credential store instead of storing nothing silently', async () => {
+  it('completes the exchange and reports the plan the token names', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-openai-subscription'))
     const login = scaffold.ctx.get('openaiAccountLogin') as {
       beginLogin(uri: string, signal: AbortSignal): { url: string; handle: string }
-      completeLogin(handle: string, code: string, signal: AbortSignal): Promise<unknown>
+      completeLogin(handle: string, code: string, signal: AbortSignal): Promise<{ signedIn: boolean; planType?: string }>
     }
     const signal = new AbortController().signal
     const started = login.beginLogin(`${originOf(double)}/callback`, signal)
-    // This lane has no OS credential store. The exchange must say so through the
-    // fixed code rather than surfacing the store's own error, so the reader can
-    // act on it and no grant is written where it could not be read.
-    await expect(login.completeLogin(started.handle, 'good-code', signal))
-      .rejects.toThrow(/credential_store_unavailable/)
+    // The double answers the exchange the way the provider does, so a stored
+    // session must report the plan its ID token names.
+    const status = await login.completeLogin(started.handle, 'good-code', signal)
+    expect(status).toMatchObject({ signedIn: true, planType: 'team' })
   })
 
   it('refuses a replayed authorization code', async () => {
