@@ -43,6 +43,7 @@ export interface OpenAiStatus {
   readonly activeUntil?: string
 }
 
+/** The actions and stores the product face contributes to every surface it mounts. */
 export interface ProductInjected {
   hooks: {
     product: HostObservable<ProductSnapshot>
