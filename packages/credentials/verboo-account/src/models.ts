@@ -96,7 +96,7 @@ function reasoningEffortsOf(
   // advertise a level this route would refuse.
   return Object.fromEntries(
     DISPATCH_LEVELS.map(level => [level, offered.includes(level) ? level : null]),
-  ) as Partial<Record<DispatchLevel, string | null>>
+  )
 }
 
 /**
