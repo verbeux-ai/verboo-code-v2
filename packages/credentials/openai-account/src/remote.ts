@@ -25,6 +25,8 @@ import type { OpenAiAccount } from './account.ts'
 interface PendingSignIn {
   readonly verifier: string
   readonly redirectUri: string
+  /** Epoch milliseconds after which the attempt is abandoned. */
+  readonly expiresAt: number
 }
 
 /**
@@ -36,6 +38,8 @@ interface PendingSignIn {
 export class OpenAiAccountLogin extends TypertRemoteService {
   static inject = ['openaiAccount']
   private readonly pending = new Map<string, PendingSignIn>()
+  /** Deadline one abandoned attempt keeps its verifier, in milliseconds. */
+  private readonly attemptTimeoutMs = 300_000
 
   /**
    * @param ctx - owning Cordis context, which already holds the account service.
@@ -66,9 +70,19 @@ export class OpenAiAccountLogin extends TypertRemoteService {
    */
   @Remote('beginLogin')
   beginLogin(redirectUri: string, signal: AbortSignal): SignInStart {
+    // Abandoned attempts would otherwise hold their verifier for the life of the
+    // process; pruning here keeps the map bounded by attempts in progress.
+    const now = Date.now()
+    for (const [handle, attempt] of this.pending) {
+      if (attempt.expiresAt <= now) this.pending.delete(handle)
+    }
     const handle = randomHandle()
     const started = this.account.begin(redirectUri, signal)
-    this.pending.set(handle, { verifier: started.verifier, redirectUri })
+    this.pending.set(handle, {
+      verifier: started.verifier,
+      redirectUri,
+      expiresAt: now + this.attemptTimeoutMs,
+    })
     return { url: started.url, handle }
   }
 
@@ -85,7 +99,8 @@ export class OpenAiAccountLogin extends TypertRemoteService {
     const pending = this.pending.get(handle)
     // A handle this service did not issue cannot carry a verifier it never
     // created, so an unknown one is refused rather than retried.
-    if (pending === undefined) throw new Error('[OI] account: unknown sign-in attempt')
+    if (pending === undefined || pending.expiresAt <= Date.now())
+      throw new Error('[OI] account: unknown or expired sign-in attempt')
     this.pending.delete(handle)
     return this.account.complete(code, pending.verifier, pending.redirectUri, signal)
   }

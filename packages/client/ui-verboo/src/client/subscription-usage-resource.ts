@@ -3,8 +3,7 @@
  * cache, cancellation, and account scoping with account stamina. The reading
  * belongs to the accepted composer route's provider, never to a display name.
  */
-import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ProductError, Result } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type { ProductError } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -16,22 +15,22 @@ import type {} from './contracts.ts'
 export interface SubscriptionUsage {
   /** Share of the current window already consumed, in percent. */
   usedPercent: number
-  /** Length of the usage window in seconds; null when the provider reports none. */
-  windowSeconds: number | null
-  /** Seconds until the window resets; null when unknown. */
-  resetAfterSeconds: number | null
-  /** Remaining provider credits; null when the provider reports none. */
-  credits: number | null
+  /** Length of the usage window in seconds; absent when the provider reports none. */
+  windowSeconds?: number
+  /** Seconds until the window resets; absent when unknown. */
+  resetAfterSeconds?: number
+  /** Remaining provider credits; absent when the provider reports none. */
+  credits?: number
   /** Whether the provider reports the plan as unlimited; never inferred locally. */
   unlimited: boolean
-  /** Provider plan label, for example `team`; null when unknown. */
-  planType: string | null
-  /** ISO instant the subscription stays active until; null when unknown. */
-  activeUntil: string | null
+  /** Provider plan label, for example `team`; absent when unknown. */
+  planType?: string
+  /** ISO instant the subscription stays active until; absent when unknown. */
+  activeUntil?: string
   /** Provider reason for a reached limit, for example `workspace_member_usage_limit_reached`. */
-  reachedType: string | null
+  reachedType?: string
   /** Additional provider rate limits shown as extra rows in the panel. */
-  additionalLimits: readonly { label: string; usedPercent: number }[]
+  additionalLimits?: readonly { label: string; usedPercent: number }[]
   /** ISO instant of this reading. */
   asOf: string
 }
@@ -52,15 +51,18 @@ type UsageAccount = Pick<ProductSnapshot, 'view' | 'profile'>
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
-    'verboo/subscription-usage-unavailable': { reason: ProductError | 'offline' }
+    'verboo/subscription-usage-unavailable': { reason: ProductError | 'offline' | 'unreported' }
   }
   /**
-   * The external-subscription usage read. The Host exposes it next to
-   * `getStamina`; declaring it here keeps the Client typed until the generated
-   * remote face carries the method.
+   * The external-subscription usage read the route serves. The Host owns the
+   * same interface name, so this declaration merges with the generated face
+   * instead of restating a second namespace.
    */
-  interface TypertRemoteNamespace$766572626f6f {
-    getSubscriptionUsage: (signal?: AbortSignal) => Promise<RemoteResult<Result<SubscriptionUsage>>>
+  interface TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74 {
+    usage: (signal?: AbortSignal) => Promise<RemoteResult<SubscriptionUsage | undefined>>
+  }
+  interface TypertRemoteNamespaceMap {
+    'llmOpenaiAccount': TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74
   }
 }
 
@@ -85,7 +87,7 @@ export function subscriptionUsageAddress(account: UsageAccount): string {
 export function subscriptionUsageState(usage: SubscriptionUsage | undefined): SubscriptionUsageState {
   if (usage === undefined) return 'unavailable'
   if (usage.unlimited) return 'unlimited'
-  if (usage.reachedType !== null || usage.usedPercent >= 100) return 'exhausted'
+  if (usage.reachedType != null || usage.usedPercent >= 100) return 'exhausted'
   return usage.usedPercent >= WARN_PERCENT ? 'warn' : 'normal'
 }
 
@@ -108,7 +110,7 @@ export function subscriptionUsageVisible(state: SubscriptionUsageState): boolean
  * @returns the owned provider and a refresh command shared by its mounted views.
  */
 export function createSubscriptionUsageResource(
-  read: ClientRemote['verboo']['getSubscriptionUsage'],
+  read: (signal?: AbortSignal) => Promise<RemoteResult<SubscriptionUsage | undefined>>,
   account: ObservableSnapshot<UsageAccount>,
   intervalMs: number,
 ): { provider: ResourceProvider<'verboo-subscription-usage'>; refresh(): void } {
@@ -180,9 +182,11 @@ export function createSubscriptionUsageResource(
               if (aborted() || !owned()) return
               if (!visible() || !online()) continue
               if (!result.ok) yield result
-              else if (!result.value.ok) {
-                yield { ok: false, error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage could not be refreshed.', { reason: result.value.code }) }
-              } else yield { ok: true, value: result.value.data }
+              else if (result.value === undefined) {
+                // No reading is display data, not a failure: the control stays
+                // absent rather than painting a number the provider never gave.
+                yield { ok: false, error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage is unavailable.', { reason: 'unreported' }) }
+              } else yield { ok: true, value: result.value }
             } catch (_error) {
               if (aborted() || !owned()) return
               if (!visible() || !online()) continue
