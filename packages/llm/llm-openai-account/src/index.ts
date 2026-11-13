@@ -48,9 +48,6 @@ export type {
   SubscriptionUsage,
 } from './types.ts'
 
-/** Cordis service key, which is also the Remote wire namespace of this plugin. */
-const SERVICE_KEY = 'openaiAccount'
-
 /**
  * Credential reference the pi-ai route must name so its provider accepts the
  * per-request account token. Nothing is read from this environment variable:
@@ -78,7 +75,9 @@ export class OpenAiAccountRoute extends TypertRemoteService {
    * @param config - plugin configuration.
    */
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, SERVICE_KEY)
+    // Typert resolves the gateway service key from source, so it must be a
+    // string literal at the call site rather than a module constant.
+    super(ctx, 'llmOpenaiAccount')
     this.usageTimeoutMs = resolveConfig(config).usageTimeoutMs
     // One route over the installed catalog: the catalog supplies the endpoint,
     // the wire protocol, and the GPT model list, so this profile states only
@@ -139,3 +138,10 @@ export class OpenAiAccountRoute extends TypertRemoteService {
 }
 
 export default OpenAiAccountRoute
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The [OI] subscription route and its usage reading; absent in compositions without this plugin. */
+    llmOpenaiAccount: OpenAiAccountRoute
+  }
+}

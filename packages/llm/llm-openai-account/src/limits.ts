@@ -56,7 +56,18 @@ const USAGE_LIMIT_REASONS: readonly string[] = [
 const REACHED_TYPE_FIELD = 'rate_limit_reached_type'
 
 /** Wording that names depleted credits without the structured field. */
-const CREDITS_DEPLETED_WORDING = /\bcredits?[\s_-]+(?:depleted|exhausted)\b|\bout[\s_-]+of[\s_-]+credits\b/i
+const CREDITS_DEPLETED_WORDING = /\bcredits?\b[^.!?]{0,32}?\b(?:depleted|exhausted)\b|\bout[\s_-]+of[\s_-]+credits\b/i
+
+/**
+ * The sentence an [OI]-compatible transport renders for every 429 it receives,
+ * replacing the response body when that body carries no `error.message`. It is
+ * matched only to recover the retry class the status carried, never as
+ * evidence of a terminal limit on its own.
+ */
+const RENDERED_429_SENTENCE = /you have hit your chatgpt usage limit/i
+
+/** The reset hint the same transport appends when the body carried `resets_at`. */
+const RENDERED_RESET_HINT = /try again in ~\d+\s*min/i
 
 /**
  * One refusal's observable facts. The message is the provider's rendered error
@@ -114,30 +125,34 @@ export function creditsDepleted(evidence: LimitEvidence): boolean {
 }
 
 /**
- * Classify a refusal as a terminal subscription limit.
+ * Classify a failure as a subscription limit, or leave it unclassified.
  *
- * A status is required for the wording-based fallback, because the same words
- * can appear in an unrelated diagnostic; the structured reason is trusted
- * wherever it appears.
+ * Only failures reach this function, so each signal is a statement about a
+ * refusal rather than ordinary conversation text. The signals, strongest
+ * first:
+ *
+ * 1. A structured reason (response header, or the body field a transport folds
+ *    into the error text) or an explicit credits-depleted wording.
+ * 2. The sentence the Codex transport renders for a 429 it received, which it
+ *    substitutes for the body whenever the body carries no message of its own.
+ *    The status itself is lost by then, so the sentence is the only evidence
+ *    the refusal was a 429; a reset hint inside it means the backend named when
+ *    the window reopens, which is a spent window.
+ * 3. Quota wording the transport preserved from the body, for a status that
+ *    never reaches the 429 path.
  * @param evidence - the refusal facts.
  * @returns `ACCOUNT_QUOTA` for depleted credits, `QUOTA` for an exhausted
- *   window, and `undefined` when the refusal names no limit and stays
- *   transient.
+ *   window, `RATE_LIMIT` for a refusal the transport rendered as a limit but
+ *   which names no terminal reason, and `undefined` when nothing identifies it.
  */
 export function classifyLimit(evidence: LimitEvidence): string | undefined {
-  // A structured reason or a credits header is the backend stating a terminal
-  // refusal, so either classifies wherever it appears. Wording alone is not
-  // evidence: the same phrases show up in ordinary diagnostics and in answered
-  // requests, so it only counts on a refusal status.
-  const refusal = evidence.status === 429 || evidence.status === 402
-  const structured = reachedTypeOf(evidence) !== undefined
-    || headerOf(evidence.headers, HAS_CREDITS_HEADER) !== undefined
-  if (!refusal && !structured) return undefined
   if (creditsDepleted(evidence)) return ACCOUNT_QUOTA_EXCEEDED_CODE
   const reason = reachedTypeOf(evidence)
   if (reason !== undefined && (USAGE_LIMIT_REASONS.includes(reason) || isQuotaExceededError(reason))) {
     return QUOTA_EXCEEDED_CODE
   }
-  if (refusal && isQuotaExceededError(evidence.message)) return QUOTA_EXCEEDED_CODE
-  return undefined
+  if (RENDERED_429_SENTENCE.test(evidence.message)) {
+    return RENDERED_RESET_HINT.test(evidence.message) ? QUOTA_EXCEEDED_CODE : 'RATE_LIMIT'
+  }
+  return isQuotaExceededError(evidence.message) ? QUOTA_EXCEEDED_CODE : undefined
 }
