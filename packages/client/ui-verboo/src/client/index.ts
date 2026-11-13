@@ -223,21 +223,21 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     config.staminaRefreshIntervalMs,
   )
   ctx.effect(() => ctx.resources.register(subscriptionUsage.provider), 'Verboo: subscription usage')
-  // The provider redirects to a loopback page this build does not serve, so the
-  // dialog asks for the code from the address bar; the URL is the documented
-  // Codex redirect, which keeps the login working without a callback listener.
-  const OPENAI_REDIRECT_URI = 'http://localhost:1455/auth/callback'
+  // The Host serves the callback on its own loopback origin, so the reader never
+  // copies a code between windows: the browser returns there and the exchange
+  // finishes without leaving the dialog.
+  const openAiCallbackUrl = (): string => `${location.origin}/auth/callback`
   const openAiSignIn = async (): Promise<{ url: string; handle: string } | undefined> => {
     try {
-      const started = await ctx.remote.openaiAccountLogin.beginLogin(OPENAI_REDIRECT_URI)
+      const started = await ctx.remote.openaiAccountLogin.beginLogin(openAiCallbackUrl())
       if (!started.ok) return undefined
       await ctx.get('externalLinks')?.open(started.value.url)
       return started.value
     } catch (_error) { return undefined } // The dialog reports an unsuccessful start inline.
   }
-  const completeOpenAiSignIn = async (handle: string, code: string): Promise<boolean> => {
+  const completeOpenAiSignIn = async (handle: string): Promise<boolean> => {
     try {
-      const finished = await ctx.remote.openaiAccountLogin.completeLogin(handle, code)
+      const finished = await ctx.remote.openaiAccountLogin.awaitLogin(handle)
       if (finished.ok) subscriptionUsage.refresh()
       return finished.ok
     } catch (_error) { return false } // The dialog reports an unsuccessful exchange inline.
@@ -498,7 +498,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         name: 'shell.overlay', id: 'verboo.openai-signin', order: 130, locale: 'verboo',
         inject: () => {
           const product = face()
-          const current = externalDialogOpen.getSnapshot()
           return {
             ...product,
             hooks: { ...product.hooks, externalDialogOpen },
@@ -508,7 +507,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               signOut: product.signOutOpenAi,
               close: product.closeOpenAiDialog,
             },
-            visible: current.open,
           }
         },
       },

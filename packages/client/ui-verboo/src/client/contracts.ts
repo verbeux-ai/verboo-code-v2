@@ -74,8 +74,8 @@ export interface ProductInjected {
   loadConnections(): void
   /** Start one [OI] sign-in: build the URL, open it, and return the handle it issued. */
   beginOpenAiSignIn(): Promise<{ url: string; handle: string } | undefined>
-  /** Finish one [OI] sign-in with the code the provider redirected with. */
-  completeOpenAiSignIn(handle: string, code: string): Promise<boolean>
+  /** Wait for the browser to reach the callback, then finish the [OI] sign-in. */
+  completeOpenAiSignIn(handle: string): Promise<boolean>
   /** Read the stored [OI] session's plan facts. */
   openAiStatus(): Promise<OpenAiStatus>
   /** Remove the stored [OI] session. */

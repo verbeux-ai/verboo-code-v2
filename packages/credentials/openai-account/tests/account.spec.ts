@@ -239,3 +239,30 @@ describe('first sign-in on a fresh installation', () => {
       .resolves.toMatchObject({ signedIn: true, planType: 'team' })
   })
 })
+
+describe('the callback the browser returns to', () => {
+  it('accepts a code only when the state belongs to this attempt', () => {
+    // The provider echoes the state it was given; any other value did not come
+    // from this attempt, which is what stops a page handing over a foreign code.
+    expect(OpenAiAccount.stateMatches('abc', 'abc')).toBe(true)
+    expect(OpenAiAccount.stateMatches('abc', 'abd')).toBe(false)
+    expect(OpenAiAccount.stateMatches('abc', 'ab')).toBe(false)
+    expect(OpenAiAccount.stateMatches('abc', null)).toBe(false)
+    expect(OpenAiAccount.stateMatches('abc', '')).toBe(false)
+  })
+
+  it('carries the state in the authorization request', () => {
+    const service = new OpenAiAccount(new Context(), {})
+    const started = service.begin('http://127.0.0.1:1/cb', new AbortController().signal)
+    // The same value the callback must echo is the one the request carried.
+    expect(new URL(started.url).searchParams.get('state')).toBe(started.state)
+    expect(started.state.length).toBeGreaterThan(10)
+  })
+
+  it('issues a distinct state per attempt', () => {
+    const service = new OpenAiAccount(new Context(), {})
+    const first = service.begin('http://127.0.0.1:1/cb', new AbortController().signal)
+    const second = service.begin('http://127.0.0.1:1/cb', new AbortController().signal)
+    expect(first.state).not.toBe(second.state)
+  })
+})

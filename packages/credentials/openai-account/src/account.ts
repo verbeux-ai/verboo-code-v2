@@ -14,7 +14,7 @@
  * @module @deepseek-ai/dsh-openai-account/account
  */
 
-import { randomBytes, createHash } from 'node:crypto'
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -195,7 +195,7 @@ export class OpenAiAccount extends Service<never> {
    * @param signal - caller's cancellation signal.
    * @returns the authorization URL and the verifier the callback must present.
    */
-  begin(redirectUri: string, signal: AbortSignal): { url: string; verifier: string } {
+  begin(redirectUri: string, signal: AbortSignal): { url: string; verifier: string; state: string } {
     const pkce = pkcePair()
     const url = new URL(this.deployment.authorizeUrl)
     url.searchParams.set('response_type', 'code')
@@ -204,10 +204,30 @@ export class OpenAiAccount extends Service<never> {
     url.searchParams.set('scope', this.deployment.scopes.join(' '))
     url.searchParams.set('code_challenge', pkce.challenge)
     url.searchParams.set('code_challenge_method', 'S256')
-    url.searchParams.set('state', randomBytes(16).toString('base64url'))
+    const state = randomBytes(16).toString('base64url')
+    url.searchParams.set('state', state)
     for (const [key, value] of Object.entries(EXTRA_AUTHORIZE_PARAMS)) url.searchParams.set(key, value)
     void signal
-    return { url: url.href, verifier: pkce.verifier }
+    return { url: url.href, verifier: pkce.verifier, state }
+  }
+
+  /**
+   * Exchange one code the callback received, after proving the attempt's state.
+   *
+   * The provider echoes the state it was given; a response carrying any other
+   * value did not come from this attempt, which is what stops a page from
+   * handing over a code it obtained elsewhere.
+   * @param expected - state the authorization request carried.
+   * @param received - state the callback received, or null when it carried none.
+   * @returns true only for a matching, non-empty state.
+   */
+  static stateMatches(expected: string, received: string | null): boolean {
+    if (received === null) return false
+    const a = Buffer.from(expected)
+    const b = Buffer.from(received)
+    // A length difference alone would leak nothing, but comparing fixed-size
+    // buffers keeps the comparison constant time for equal lengths.
+    return a.length === b.length && timingSafeEqual(a, b)
   }
 
   /**
