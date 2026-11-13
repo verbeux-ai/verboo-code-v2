@@ -29,41 +29,53 @@ import type { SubscriptionAdditionalLimit, SubscriptionUsage } from './types.ts'
  * disclosed" instead of discarding the whole reading.
  */
 const windowFields = {
-  used_percent: z.number().optional(),
-  usedPercent: z.number().optional(),
-  limit_window_seconds: z.number().optional(),
-  windowSeconds: z.number().optional(),
-  reset_after_seconds: z.number().optional(),
-  resetAfterSeconds: z.number().optional(),
-  reached_type: z.string().optional(),
-  rate_limit_reached_type: z.string().optional(),
+  used_percent: z.number().nullish(),
+  usedPercent: z.number().nullish(),
+  limit_window_seconds: z.number().nullish(),
+  windowSeconds: z.number().nullish(),
+  reset_after_seconds: z.number().nullish(),
+  resetAfterSeconds: z.number().nullish(),
+  reached_type: z.string().nullish(),
+  rate_limit_reached_type: z.string().nullish(),
 }
 
 const windowSchema = z.object(windowFields).loose()
 
+/**
+ * The response nests its windows: `rate_limit.primary_window` carries the
+ * short window governing requests and `secondary_window` the long one. The
+ * flat spelling stays accepted so a deployment that hoists them still reads.
+ */
+const rateLimitSchema = z.object({
+  ...windowFields,
+  primary_window: windowSchema.nullish(),
+  secondary_window: windowSchema.nullish(),
+}).loose()
+
 const creditsSchema = z.object({
-  has_credits: z.boolean().optional(),
-  hasCredits: z.boolean().optional(),
-  unlimited: z.boolean().optional(),
-  balance: z.number().optional(),
+  has_credits: z.boolean().nullish(),
+  hasCredits: z.boolean().nullish(),
+  unlimited: z.boolean().nullish(),
+  // The live document reports the balance as a decimal string.
+  balance: z.union([z.number(), z.string()]).nullish(),
 }).loose()
 
 const additionalSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().optional(),
-  meter: z.string().optional(),
-  rate_limit: windowSchema.optional(),
+  id: z.string().nullish(),
+  name: z.string().nullish(),
+  meter: z.string().nullish(),
+  rate_limit: windowSchema.nullish(),
   ...windowFields,
 }).loose()
 
 const usageSchema = z.object({
-  plan_type: z.string().optional(),
-  planType: z.string().optional(),
-  active_until: z.string().optional(),
-  activeUntil: z.string().optional(),
-  rate_limit: windowSchema.optional(),
-  credits: creditsSchema.optional(),
-  additional_rate_limits: z.array(additionalSchema).optional(),
+  plan_type: z.string().nullish(),
+  planType: z.string().nullish(),
+  active_until: z.string().nullish(),
+  activeUntil: z.string().nullish(),
+  rate_limit: rateLimitSchema.nullish(),
+  credits: creditsSchema.nullish(),
+  additional_rate_limits: z.array(additionalSchema).nullish(),
   ...windowFields,
 }).loose()
 
@@ -131,7 +143,24 @@ function windowFacts(entry: z.infer<typeof windowSchema> | undefined): WindowFac
  * @returns the facts either spelling disclosed.
  */
 function mergedFacts(outer: z.infer<typeof usageSchema>): WindowFacts {
-  return { ...windowFacts(outer), ...windowFacts(outer.rate_limit) }
+  const rateLimit = outer.rate_limit
+  return {
+    ...windowFacts(outer),
+    // A hoisted deployment states the window on `rate_limit` itself; the live
+    // document nests it one level deeper, and the nested spelling wins.
+    ...windowFacts(rateLimit),
+    ...windowFacts(rateLimit?.primary_window),
+  }
+}
+
+/**
+ * The long window the provider enforces beside the short one, when disclosed.
+ * @param outer - the parsed usage document.
+ * @returns the secondary window's facts, or undefined when it reported none.
+ */
+function secondaryFacts(outer: z.infer<typeof usageSchema>): (WindowFacts & { usedPercent: number }) | undefined {
+  const facts = windowFacts(outer.rate_limit?.secondary_window)
+  return facts.usedPercent === undefined ? undefined : { ...facts, usedPercent: facts.usedPercent }
 }
 
 /** Read one header case-insensitively from an already-collected record. */
@@ -187,9 +216,10 @@ export function usageOf(input: {
   const headerReachedType = headerOf(input.headers, REACHED_TYPE_HEADER)
   const reachedType = headerReachedType ?? primary.reachedType
   if (primary.usedPercent === undefined) return undefined
-  const credits = document.credits?.balance ?? numericHeader(input.headers, CREDIT_BALANCE_HEADER)
+  const credits = balanceOf(document.credits?.balance) ?? numericHeader(input.headers, CREDIT_BALANCE_HEADER)
   const activeUntil = textOf(document.active_until ?? document.activeUntil)
   const planType = textOf(document.plan_type ?? document.planType)
+  const secondary = secondaryFacts(document)
   const additionalLimits = (document.additional_rate_limits ?? []).flatMap((entry, index): SubscriptionAdditionalLimit[] => {
     const facts = windowFacts({ ...entry, ...entry.rate_limit })
     const id = textOf(entry.id ?? entry.name ?? entry.meter) ?? `${index + 1}`
@@ -204,13 +234,38 @@ export function usageOf(input: {
     ...primary.windowSeconds === undefined ? {} : { windowSeconds: primary.windowSeconds },
     ...primary.resetAfterSeconds === undefined ? {} : { resetAfterSeconds: primary.resetAfterSeconds },
     ...credits === undefined ? {} : { credits },
-    unlimited: unlimitedOf(input.headers),
+    unlimited: unlimitedOf(input.headers) || document.credits?.unlimited === true,
     ...planType === undefined ? {} : { planType },
     ...activeUntil === undefined ? {} : { activeUntil },
     ...reach === undefined ? {} : { reachedType: reach },
-    ...additionalLimits.length === 0 ? {} : { additionalLimits },
+    // The long window is a real meter, so it is reported beside the short one
+    // rather than folded into it: a reader near both needs to see both.
+    ...secondary === undefined
+      ? additionalLimits.length === 0 ? {} : { additionalLimits }
+      : {
+        additionalLimits: [
+          ...additionalLimits,
+          {
+            id: 'secondary',
+            usedPercent: secondary.usedPercent,
+            ...secondary.windowSeconds === undefined ? {} : { windowSeconds: secondary.windowSeconds },
+            ...secondary.resetAfterSeconds === undefined ? {} : { resetAfterSeconds: secondary.resetAfterSeconds },
+          },
+        ],
+      },
     asOf: input.asOf,
   }
+}
+
+/**
+ * Read a credit balance the provider stated.
+ * @param value - the balance field, as a number or the decimal string the live document uses.
+ * @returns the balance, or undefined when it stated none or it is not a number.
+ */
+function balanceOf(value: number | string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 /**

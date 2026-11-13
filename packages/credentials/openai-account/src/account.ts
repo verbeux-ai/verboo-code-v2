@@ -158,6 +158,9 @@ export class OpenAiAccount extends Service<never> {
   private async writeGrant(grant: StoredGrant): Promise<void> {
     let sealed
     try {
+      // The vault creates its key only here; sealing reads an existing key, so a
+      // fresh installation would fail every first login without this.
+      await this.vault.prepare()
       sealed = await this.vault.seal(grant)
     } catch (cause) {
       throw new AccountRequestError('credential_store_unavailable', { cause })
