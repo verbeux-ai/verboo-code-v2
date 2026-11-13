@@ -86,3 +86,24 @@ describe('reasoning levels from the router', () => {
     expect(parse(true).reasoningEfforts).toBeUndefined()
   })
 })
+
+describe('a malformed capability hint never costs the listing', () => {
+  it.each([
+    ['null levels', { effort_levels: null }],
+    ['numeric levels', { effort_levels: [1, 2] }],
+    ['a bare string', { effort_levels: 'low' }],
+    ['object levels', { effort_levels: [{ id: 'low' }] }],
+    ['a numeric default', { default_effort: 3 }],
+    ['an empty object', {}],
+    ['a nested object', { reasoning: { effort_levels: ['low'] } }],
+  ])('keeps every model when the router sends %s', (_case, reasoning) => {
+    // A capability hint is optional decoration. Rejecting the response over it
+    // leaves the account with no models at all, which is what a strict schema
+    // here caused once already.
+    expect(parse(reasoning)).toBeDefined()
+  })
+
+  it('still reads the levels from a well-formed object', () => {
+    expect(parse({ effort_levels: ['low', 'high'] }).reasoningEfforts).toMatchObject({ low: 'low', high: 'high' })
+  })
+})

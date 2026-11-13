@@ -44,16 +44,10 @@ const listing = z.object({
           max_tokens: number,
           maxOutputTokens: number,
           vision: z.boolean().optional(),
-          // The router advertises the levels it accepts, so the selector can
-          // offer exactly those instead of a client-owned guess.
-          reasoning: z
-            .union([z.boolean(), z.object({
-              effort_levels: z.array(z.string()).optional(),
-              effortLevels: z.array(z.string()).optional(),
-              default_effort: z.string().optional(),
-              defaultEffort: z.string().optional(),
-            }).loose()])
-            .optional(),
+          // Accepted as the router spells it and read defensively below: a
+          // capability hint must never fail the whole listing, which would leave
+          // the account with no models at all.
+          reasoning: z.union([z.boolean(), z.object({}).loose()]).optional(),
         })
         .loose(),
     )
@@ -78,17 +72,15 @@ type DispatchLevel = typeof DISPATCH_LEVELS[number]
  * @returns the offered levels keyed by name, or `undefined` when the router named none.
  */
 function reasoningEffortsOf(
-  reasoning: boolean | {
-    effort_levels?: string[] | undefined
-    effortLevels?: string[] | undefined
-    default_effort?: string | undefined
-    defaultEffort?: string | undefined
-    [key: string]: unknown
-  } | undefined,
+  reasoning: unknown,
 ): Partial<Record<DispatchLevel, string | null>> | undefined {
-  if (reasoning === undefined || typeof reasoning === 'boolean') return undefined
-  const named = reasoning.effort_levels ?? reasoning.effortLevels ?? []
+  if (reasoning === null || typeof reasoning !== 'object' || Array.isArray(reasoning)) return undefined
+  const record = reasoning as Record<string, unknown>
+  const named = [record['effort_levels'], record['effortLevels']].find(Array.isArray)
+  if (named === undefined) return undefined
   const offered = named
+    // Anything that is not a string names no level this adapter can spell.
+    .filter((level): level is string => typeof level === 'string')
     .map(level => level.trim().toLowerCase())
     .filter((level): level is DispatchLevel => DISPATCH_LEVELS.some(known => known === level))
   if (offered.length === 0) return undefined
