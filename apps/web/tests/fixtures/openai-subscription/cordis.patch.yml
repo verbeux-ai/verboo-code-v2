@@ -1,0 +1,17 @@
+# The subscription scenario points the [OI] account at a loopback double and
+# seeds a grant, so the shipped account and route mount for real while no
+# provider is contacted. The scenario substitutes {{origin}} after the listener
+# binds.
+- insert:
+    - id: openai-account
+      name: '@deepseek-ai/dsh-openai-account'
+      config:
+        tokenUrl: "{{origin}}/oauth/token"
+        authorizeUrl: "{{origin}}/oauth/authorize"
+        allowLoopbackHttp: true
+    - id: llm-openai-account
+      name: '@deepseek-ai/dsh-llm-openai-account'
+- id: ui-settings-account
+  config:
+    step: done
+    completion: completed

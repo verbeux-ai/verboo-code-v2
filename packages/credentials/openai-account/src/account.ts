@@ -134,6 +134,8 @@ export class OpenAiAccount extends Service<never> {
   private grant: StoredGrant | undefined
   private reading: Promise<StoredGrant | undefined> | undefined
   private readonly grantFile: string
+  /** Whether the OS credential store is expected to answer. */
+  private readonly vaultUsable: boolean
 
   /**
    * @param ctx - owning Cordis context.
@@ -147,11 +149,19 @@ export class OpenAiAccount extends Service<never> {
     const home = launchEnvironmentOf(ctx).get('DSH_HOME')?.value ?? join(process.cwd(), '.verboo-code')
     this.grantFile = join(home, 'openai-account.grant.json')
     this.vault = vault ?? new GrantVault(this.deployment.tokenUrl, home)
+    // A Host without the OS credential store is a supported deployment: the
+    // route stays signed out rather than failing the whole boot.
+    this.vaultUsable = vault !== undefined || process.env.DSH_DISABLE_OS_KEYRING !== '1'
   }
 
   /** Persist one grant as a sealed envelope readable only by this issuer. */
   private async writeGrant(grant: StoredGrant): Promise<void> {
-    const sealed = await this.vault.seal(grant)
+    let sealed
+    try {
+      sealed = await this.vault.seal(grant)
+    } catch (cause) {
+      throw new AccountRequestError('credential_store_unavailable', { cause })
+    }
     // The key lives in the OS credential store, so the file holds ciphertext
     // only; the mode keeps another local account from reading even that.
     await writeFile(this.grantFile, `${JSON.stringify(sealed)}\n`, { mode: 0o600 })
@@ -226,6 +236,7 @@ export class OpenAiAccount extends Service<never> {
    * @returns the status; presence means a grant is stored, not that it is still accepted.
    */
   async status(): Promise<OpenAiAccountStatus> {
+    if (!this.vaultUsable) return { signedIn: false }
     const grant = await this.stored()
     return this.statusOf(grant)
   }
@@ -236,6 +247,7 @@ export class OpenAiAccount extends Service<never> {
    * @returns a usable access token, or `undefined` when no session is stored.
    */
   async accessToken(signal: AbortSignal): Promise<string | undefined> {
+    if (!this.vaultUsable) return undefined
     const grant = await this.stored()
     if (grant === undefined) return undefined
     if (grant.expiresAt - this.deployment.refreshLeewayMs > Date.now()) return grant.accessToken
