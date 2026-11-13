@@ -30,6 +30,7 @@ import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { DISPLAY_NAME, OpenAiAccountAdapter } from './adapter.ts'
+import { ModelAvailability } from './availability.ts'
 import { CATALOG_PROVIDER, Config, PROVIDER, resolveConfig } from './config.ts'
 import { readUsage } from './usage.ts'
 import type { SubscriptionUsage } from './types.ts'
@@ -69,6 +70,24 @@ export class OpenAiAccountRoute extends TypertRemoteService {
 
   private readonly usageTimeoutMs: number
   private readonly profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>
+  /** Remembered per-model verdicts for the signed-in account. */
+  private readonly availability = new ModelAvailability()
+
+  /**
+   * Identifier the discovery verdicts are scoped by.
+   * @returns the stored account id, or undefined while no session exists.
+   */
+  private async accountIdentifier(): Promise<string | undefined> {
+    const service = this.ctx.get('openaiAccount')
+    if (service === undefined) return undefined
+    try {
+      const status = await service.status()
+      return status.signedIn ? status.accountId : undefined
+    } catch {
+      // A status read that fails means no usable session to scope by.
+      return undefined
+    }
+  }
 
   /**
    * @param ctx - owning Cordis context.
@@ -90,6 +109,11 @@ export class OpenAiAccountRoute extends TypertRemoteService {
       profiles: () => this.profiles,
       accessToken: () => this.accessToken(),
       resolveAttachments: () => ctx.get('attachments'),
+      // Discovery is scoped to the signed-in account, so a second sign-in never
+      // inherits the previous one's refusals.
+      accountId: () => this.accountIdentifier(),
+      availability: account => this.availability.read(account),
+      record: (account, model, verdict) => { this.availability.record(account, model, verdict) },
     }))
   }
 
