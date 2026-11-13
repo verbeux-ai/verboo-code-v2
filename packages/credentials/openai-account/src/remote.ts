@@ -12,9 +12,10 @@
 
 import { Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { OpenAiAccountStatus, SignInStart } from './types.ts'
-import type { OpenAiAccount } from './account.ts'
+import { OpenAiAccount } from './account.ts'
 
 /**
  * One in-flight sign-in: the PKCE verifier and the redirect the request used.
@@ -25,9 +26,18 @@ import type { OpenAiAccount } from './account.ts'
 interface PendingSignIn {
   readonly verifier: string
   readonly redirectUri: string
+  /** State the authorization request carried, which the callback must echo. */
+  readonly state: string
   /** Epoch milliseconds after which the attempt is abandoned. */
   readonly expiresAt: number
+  /** Settles when the browser reaches the callback, or when the attempt expires. */
+  readonly settled: Promise<SignInStart & { readonly code: string } | undefined>
+  /** Resolves the attempt with the code the callback received. */
+  readonly accept: (code: string) => void
 }
+
+/** Path the provider redirects to; the Host's own webserver answers it. */
+const CALLBACK_PATH = '/auth/callback'
 
 /**
  * The sign-in surface the account dialog addresses.
@@ -36,7 +46,7 @@ interface PendingSignIn {
  * it contains.
  */
 export class OpenAiAccountLogin extends TypertRemoteService {
-  static inject = ['openaiAccount']
+  static inject = ['openaiAccount', 'webServer']
   private readonly pending = new Map<string, PendingSignIn>()
   /** Deadline one abandoned attempt keeps its verifier, in milliseconds. */
   private readonly attemptTimeoutMs = 300_000
@@ -46,6 +56,27 @@ export class OpenAiAccountLogin extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'openaiAccountLogin')
+    // One callback route serves every attempt: the state decides which one a
+    // response belongs to, so the path stays fixed.
+    ctx.effect(() => {
+      const server = ctx.get('webServer')
+      if (server === undefined) return () => undefined
+      return server.register({ kind: 'exact', path: CALLBACK_PATH, handler: (req: IncomingMessage, res: ServerResponse) => {
+        this.answerCallback(new URL(req.url ?? '/', 'http://127.0.0.1'), res)
+      } })
+    }, 'OpenAI account: sign-in callback')
+  }
+
+  /** Reply to one browser callback, then let the waiting attempt finish. */
+  private answerCallback(url: URL, res: ServerResponse): void {
+    const state = url.searchParams.get('state') ?? ''
+    const code = url.searchParams.get('code')
+    const denied = url.searchParams.get('error_description') ?? url.searchParams.get('error')
+    const accepted = code !== null && this.acceptCallback(state, code)
+    res.writeHead(accepted ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(accepted
+      ? '<!doctype html><meta charset="utf-8"><title>Signed in</title><body style="font-family:system-ui;padding:48px"><h2>Signed in</h2><p>You can close this tab and return to Verboo Code.</p></body>'
+      : `<!doctype html><meta charset="utf-8"><title>Sign-in failed</title><body style="font-family:system-ui;padding:48px"><h2>Sign-in failed</h2><p>${denied === null ? 'This response did not belong to a sign-in this app started.' : denied}</p></body>`)
   }
 
   /**
@@ -78,12 +109,60 @@ export class OpenAiAccountLogin extends TypertRemoteService {
     }
     const handle = randomHandle()
     const started = this.account.begin(redirectUri, signal)
+    let accept: (code: string) => void = () => undefined
+    const settled = new Promise<SignInStart & { readonly code: string } | undefined>((resolve) => {
+      accept = (code) => { resolve({ url: started.url, handle, code }) }
+    })
     this.pending.set(handle, {
       verifier: started.verifier,
       redirectUri,
+      state: started.state,
       expiresAt: now + this.attemptTimeoutMs,
+      settled,
+      accept,
     })
     return { url: started.url, handle }
+  }
+
+  /**
+   * Accept one code the browser delivered to the callback.
+   *
+   * The state is what proves the response belongs to an attempt this Host
+   * started: a code arriving with any other value is refused rather than
+   * exchanged.
+   * @param state - state echoed by the provider.
+   * @param code - authorization code the callback carried.
+   * @returns true when an in-flight attempt accepted the code.
+   */
+  acceptCallback(state: string, code: string): boolean {
+    for (const attempt of this.pending.values()) {
+      if (attempt.expiresAt <= Date.now()) continue
+      if (!OpenAiAccount.stateMatches(attempt.state, state)) continue
+      attempt.accept(code)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Wait for the browser to reach the callback, then exchange its code.
+   *
+   * The listener is the Host's own webserver, so the reader never copies a code
+   * between windows: the page the provider redirects to answers here.
+   * @param handle - handle returned by {@link beginLogin}.
+   * @param signal - caller's cancellation signal.
+   * @returns the status of the session the exchange stored.
+   * @throws when the handle is unknown, the attempt expires, or the exchange fails.
+   */
+  @Remote('awaitLogin')
+  async awaitLogin(handle: string, signal: AbortSignal): Promise<OpenAiAccountStatus> {
+    const pending = this.pending.get(handle)
+    if (pending === undefined || pending.expiresAt <= Date.now())
+      throw new Error('[OI] account: unknown or expired sign-in attempt')
+    const delivered = await pending.settled
+    if (delivered === undefined) throw new Error('[OI] account: the sign-in attempt expired')
+    this.pending.delete(handle)
+    return this.account.complete(delivered.code, pending.verifier, pending.redirectUri, signal)
   }
 
   /**

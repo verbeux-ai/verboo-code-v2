@@ -19,8 +19,8 @@ import css from './OpenAiSignIn.module.css'
 export interface OpenAiSignInActions {
   /** Build the authorization URL and open it; undefined when the start failed. */
   readonly begin: () => Promise<{ url: string; handle: string } | undefined>
-  /** Exchange the pasted code; true when a session was stored. */
-  readonly complete: (handle: string, code: string) => Promise<boolean>
+  /** Wait for the browser to reach the callback, then exchange its code. */
+  readonly complete: (handle: string) => Promise<boolean>
   /** Remove the stored session. */
   readonly signOut: () => Promise<void>
   /** Close the dialog. */
@@ -39,7 +39,6 @@ export function OpenAiSignIn({ status, actions, open, t }: {
 }) {
   if (!open) return null
   const [handle, setHandle] = useState<string | null>(null)
-  const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -88,19 +87,14 @@ export function OpenAiSignIn({ status, actions, open, t }: {
           {busy && <IconLoadingOutlineRegular size={14} />}{t('openAiSignInOpen')}
         </Button>
         : <>
-          <p className={css.step}>{t('openAiPasteCode')}</p>
-          <label className={css.field}>
-            <span>{t('openAiCodeLabel')}</span>
-            <input value={code} autoComplete="off" spellCheck={false}
-              onChange={event => { setCode(event.currentTarget.value) }} />
-          </label>
+          <p className={css.step}>{t('openAiWaiting')}</p>
           <div className={css.actions}>
             <Button variant="outline" onClick={actions.close}>{t('cancel')}</Button>
-            <Button variant="primary" disabled={busy || code.trim().length === 0} onClick={() => { void run(async () => {
-              const done = await actions.complete(handle, code.trim())
+            <Button variant="primary" disabled={busy} onClick={() => { void run(async () => {
+              const done = await actions.complete(handle)
               if (done) actions.close()
               return done
-            }) }}>{t('openAiFinish')}</Button>
+            }) }}>{busy && <IconLoadingOutlineRegular size={14} />}{t('openAiFinish')}</Button>
           </div>
         </>}
       {failed && <p className={css.failure} role="alert">{t('openAiSignInFailed')}</p>}

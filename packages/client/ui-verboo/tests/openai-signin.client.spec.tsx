@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The [OI] sign-in dialog: one step at a time, a refusal reported in place, and
- * a signed-in state that offers the way out again.
+ * The [OI] sign-in dialog: it opens the provider page, waits for the browser to
+ * come back to the callback, and reports a refusal where the reader can act on
+ * it. The reader never copies a code between windows.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -34,16 +35,16 @@ describe('[OI] sign-in dialog', () => {
     expect(container.textContent).toBe('')
   })
 
-  it('opens the provider page and only then asks for the code', () => {
+  it('offers one action that opens the provider page', () => {
     const driven = actions()
     render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
-    // The code field belongs to the second step; asking for it before the page
-    // opened would strand a reader who has nothing to paste.
-    expect(screen.queryByLabelText('Authorization code')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
     return vi.waitFor(() => {
       expect(driven.begin).toHaveBeenCalledTimes(1)
-      expect(screen.getByLabelText('Authorization code')).toBeTruthy()
+      // The reader is told to finish on the page that opened, and nothing asks
+      // them to carry a code back.
+      expect(screen.getByText(/Finish signing in on the page/)).toBeTruthy()
+      expect(screen.queryByLabelText(/code/i)).toBeNull()
     })
   })
 
@@ -52,28 +53,17 @@ describe('[OI] sign-in dialog', () => {
     render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
     fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
     await vi.waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
-    expect(screen.queryByLabelText('Authorization code')).toBeNull()
+    expect(screen.queryByText(/Finish signing in on the page/)).toBeNull()
   })
 
-  it('keeps the finish control disabled until a code is present', async () => {
+  it('finishes with the handle the start returned, and closes on success', async () => {
     const driven = actions()
     render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
     fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
     const finish = await screen.findByRole('button', { name: 'Finish sign-in' })
-    expect((finish as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText('Authorization code'), { target: { value: 'abc123' } })
-    expect((finish as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('closes once the exchange stores a session, and presents the handle it was given', async () => {
-    const driven = actions()
-    render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
-    fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
-    fireEvent.change(await screen.findByLabelText('Authorization code'), { target: { value: '  abc123  ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Finish sign-in' }))
+    fireEvent.click(finish)
     await vi.waitFor(() => {
-      // The pasted code is trimmed: a copied code carries stray whitespace.
-      expect(driven.complete).toHaveBeenCalledWith('handle-1', 'abc123')
+      expect(driven.complete).toHaveBeenCalledWith('handle-1')
       expect(driven.close).toHaveBeenCalledTimes(1)
     })
   })
@@ -82,8 +72,7 @@ describe('[OI] sign-in dialog', () => {
     const driven = actions({ complete: vi.fn(async () => false) })
     render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
     fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
-    fireEvent.change(await screen.findByLabelText('Authorization code'), { target: { value: 'bad' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Finish sign-in' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Finish sign-in' }))
     await vi.waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
     expect(driven.close).not.toHaveBeenCalled()
   })
@@ -103,18 +92,16 @@ describe('[OI] sign-in dialog', () => {
 
   it('never renders a token, only the plan it belongs to', () => {
     const { container } = render(
-      <OpenAiSignIn
-        status={{ signedIn: true, planType: 'team' }}
-        actions={actions()} open t={copy(en)}
-      />,
+      <OpenAiSignIn status={{ signedIn: true, planType: 'team' }} actions={actions()} open t={copy(en)} />,
     )
     const text = container.textContent ?? ''
     for (const secret of ['access-token', 'refresh-token', 'Bearer']) expect(text).not.toContain(secret)
   })
 
-  it('localizes both steps in Portuguese', () => {
+  it('localizes the flow in Portuguese', async () => {
     render(<OpenAiSignIn status={{ signedIn: false }} actions={actions()} open t={copy(pt)} />)
     expect(screen.getByText(/Use os modelos GPT/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Entrar com ChatGPT/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Entrar com ChatGPT/ }))
+    await vi.waitFor(() => { expect(screen.getByText(/Conclua o login na página/)).toBeTruthy() })
   })
 })

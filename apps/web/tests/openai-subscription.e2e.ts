@@ -137,18 +137,37 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
     expect(started.url).toContain('redirect_uri=')
   })
 
-  it('completes the exchange and reports the plan the token names', async () => {
+  it('serves the callback the browser returns to', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-openai-subscription'))
     const login = scaffold.ctx.get('openaiAccountLogin') as {
       beginLogin(uri: string, signal: AbortSignal): { url: string; handle: string }
-      completeLogin(handle: string, code: string, signal: AbortSignal): Promise<{ signedIn: boolean; planType?: string }>
+    }
+    const started = login.beginLogin(`${originOf(double)}/callback`, new AbortController().signal)
+    // The Host answers its own callback, so the reader never carries a code
+    // between windows. A response whose state it did not issue is refused.
+    const host = new URL(scaffold.authenticatedUrl).origin
+    const refused = await fetch(`${host}/auth/callback?state=not-ours&code=good-code`)
+    expect(refused.status).toBe(400)
+    // And the route is the one the authorization request points at.
+    expect(started.url).toContain('redirect_uri=')
+  })
+
+  it('finishes the sign-in from the callback alone, with no code copied', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-openai-subscription'))
+    const login = scaffold.ctx.get('openaiAccountLogin') as {
+      beginLogin(uri: string, signal: AbortSignal): { url: string; handle: string }
+      awaitLogin(handle: string, signal: AbortSignal): Promise<{ signedIn: boolean; planType?: string }>
     }
     const signal = new AbortController().signal
     const started = login.beginLogin(`${originOf(double)}/callback`, signal)
-    // The double answers the exchange the way the provider does, so a stored
-    // session must report the plan its ID token names.
-    const status = await login.completeLogin(started.handle, 'good-code', signal)
-    expect(status).toMatchObject({ signedIn: true, planType: 'team' })
+    const state = new URL(started.url).searchParams.get('state')!
+    // The browser reaching the callback is what completes the attempt; the
+    // waiting call settles from the delivered code.
+    const waiting = login.awaitLogin(started.handle, signal)
+    const host = new URL(scaffold.authenticatedUrl).origin
+    const answered = await fetch(`${host}/auth/callback?state=${encodeURIComponent(state)}&code=good-code`)
+    expect(answered.status).toBe(200)
+    await expect(waiting).resolves.toMatchObject({ signedIn: true, planType: 'team' })
   })
 
   it('refuses a replayed authorization code', async () => {
