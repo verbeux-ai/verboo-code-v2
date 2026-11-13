@@ -17,6 +17,7 @@ import type { McpServerInput } from '@deepseek-ai/dsh-api-verboo-mcp/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Key } from './locales.ts'
+import type { SubscriptionUsage } from './subscription-usage-resource.ts'
 import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client'
 /** Transport observations; a disconnected conversation cannot report a confirmed idle state. */
 export interface ExecutionInjected {
@@ -95,5 +96,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
     /** Public stamina for the account encoded in the resource address. */
     'verboo-stamina': StaminaStatus[]
+    /** Usage reading of the external subscription serving the account's ChatGPT route. */
+    'verboo-subscription-usage': SubscriptionUsage
   }
 }
