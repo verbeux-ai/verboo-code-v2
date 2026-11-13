@@ -5,6 +5,8 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-llm-openai-account
 
+English | [中文](README.zh.md)
+
 ## Summary
 
 Register the `openai-account` route on `ctx.llm`, serving the GPT models a ChatGPT plan includes. The plugin composes over the [pi-ai adapter](../llm-pi-ai/README.md): the installed `openai-codex` catalog supplies the endpoint, the `openai-codex-responses` wire protocol, and the model list, so this package owns only the route label, the per-request account token, the classification of a subscription refusal, and the usage reading. A stored [OI] account session comes from the optional `ctx.openaiAccount` service; without it the route serves no model instead of failing to boot.
