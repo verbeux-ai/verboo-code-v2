@@ -182,9 +182,9 @@ export class OpenAiAccount extends Service<never> {
     try {
       return await this.vault.open(JSON.parse(raw)) as StoredGrant
     } catch {
-      // A record sealed by another installation cannot be opened here, so it
-      // can never produce a token; it is removed rather than left to fail again.
-      await this.signOut()
+      // A record sealed for a different issuer belongs to that deployment, not
+      // to this one. Reporting no session is right; deleting would destroy a
+      // grant this configuration has no authority over.
       return undefined
     }
   }
