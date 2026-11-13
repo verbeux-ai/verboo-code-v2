@@ -44,14 +44,60 @@ const listing = z.object({
           max_tokens: number,
           maxOutputTokens: number,
           vision: z.boolean().optional(),
+          // The router advertises the levels it accepts, so the selector can
+          // offer exactly those instead of a client-owned guess.
           reasoning: z
-            .union([z.boolean(), z.object({}).loose()])
+            .union([z.boolean(), z.object({
+              effort_levels: z.array(z.string()).optional(),
+              effortLevels: z.array(z.string()).optional(),
+              default_effort: z.string().optional(),
+              defaultEffort: z.string().optional(),
+            }).loose()])
             .optional(),
         })
         .loose(),
     )
     .max(2000),
 })
+
+/** The thinking levels the pi-ai adapter can name on the wire, in escalation order. */
+const DISPATCH_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/** One level the pi-ai adapter can spell. */
+type DispatchLevel = typeof DISPATCH_LEVELS[number]
+
+/**
+ * Translate the levels the router accepts into the map pi-ai dispatches through.
+ *
+ * The router names its levels in its own vocabulary and sends the level itself
+ * as the wire value, so each accepted level maps to itself. Levels pi-ai cannot
+ * spell are dropped rather than guessed at, and a listing that advertises
+ * nothing leaves the field absent, which keeps the installed catalog's
+ * capability instead of claiming levels the route never offered.
+ * @param reasoning - the listing's reasoning field, a bare flag or the level object.
+ * @returns the offered levels keyed by name, or `undefined` when the router named none.
+ */
+function reasoningEffortsOf(
+  reasoning: boolean | {
+    effort_levels?: string[] | undefined
+    effortLevels?: string[] | undefined
+    default_effort?: string | undefined
+    defaultEffort?: string | undefined
+    [key: string]: unknown
+  } | undefined,
+): Partial<Record<DispatchLevel, string | null>> | undefined {
+  if (reasoning === undefined || typeof reasoning === 'boolean') return undefined
+  const named = reasoning.effort_levels ?? reasoning.effortLevels ?? []
+  const offered = named
+    .map(level => level.trim().toLowerCase())
+    .filter((level): level is DispatchLevel => DISPATCH_LEVELS.some(known => known === level))
+  if (offered.length === 0) return undefined
+  // Every level the router did not accept is pinned unsupported, so pi-ai cannot
+  // advertise a level this route would refuse.
+  return Object.fromEntries(
+    DISPATCH_LEVELS.map(level => [level, offered.includes(level) ? level : null]),
+  ) as Partial<Record<DispatchLevel, string | null>>
+}
 
 /**
  * Keep exact server model IDs, including plan prefixes; capabilities never depend on a name guess.
@@ -69,6 +115,7 @@ export function parseModels(
   return response.data.data.map((row) => {
     if (ids.has(row.id)) throw new AccountRequestError('contract_error')
     ids.add(row.id)
+    const efforts = reasoningEffortsOf(row.reasoning)
     const contextWindow =
       row.contextWindow ??
       row.context_length ??
@@ -87,6 +134,9 @@ export function parseModels(
       ),
       input: row.vision ? ['text', 'image'] : ['text'],
       reasoning: row.reasoning === true || typeof row.reasoning === 'object',
+      // Absent when the router named no levels, so the adapter keeps whatever
+      // the installed catalog declares instead of inventing a set.
+      ...efforts === undefined ? {} : { reasoningEfforts: efforts },
     }
   })
 }
