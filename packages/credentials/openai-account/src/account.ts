@@ -182,8 +182,9 @@ export class OpenAiAccount extends Service<never> {
     try {
       return await this.vault.open(JSON.parse(raw)) as StoredGrant
     } catch {
-      // A record sealed by another installation cannot be opened here; the
-      // account is treated as signed out rather than crashing the boot.
+      // A record sealed by another installation cannot be opened here, so it
+      // can never produce a token; it is removed rather than left to fail again.
+      await this.signOut()
       return undefined
     }
   }

@@ -41,6 +41,18 @@ const windowFields = {
 
 const windowSchema = z.object(windowFields).loose()
 
+/** One window object, or the rate-limit object that holds the windows. */
+type WindowInput = Readonly<Record<string, unknown>> & {
+  readonly used_percent?: number | null | undefined
+  readonly usedPercent?: number | null | undefined
+  readonly limit_window_seconds?: number | null | undefined
+  readonly windowSeconds?: number | null | undefined
+  readonly reset_after_seconds?: number | null | undefined
+  readonly resetAfterSeconds?: number | null | undefined
+  readonly reached_type?: string | null | undefined
+  readonly rate_limit_reached_type?: string | null | undefined
+}
+
 /**
  * The response nests its windows: `rate_limit.primary_window` carries the
  * short window governing requests and `secondary_window` the long one. The
@@ -100,17 +112,17 @@ interface WindowFacts {
 }
 
 /** A percent reading is usable only as a finite number within its own scale. */
-function percentOf(value: number | undefined): number | undefined {
-  return value !== undefined && Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined
+function percentOf(value: number | null | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined
 }
 
 /** A duration or delay is usable only as a positive finite count of seconds. */
-function secondsOf(value: number | undefined): number | undefined {
-  return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined
+function secondsOf(value: number | null | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 /** A non-empty identifier or reason, or nothing. */
-function textOf(value: string | undefined): string | undefined {
+function textOf(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed
 }
@@ -120,8 +132,8 @@ function textOf(value: string | undefined): string | undefined {
  * @param entry - the window object, either the top level or a nested `rate_limit`.
  * @returns the facts the entry disclosed.
  */
-function windowFacts(entry: z.infer<typeof windowSchema> | undefined): WindowFacts {
-  if (entry === undefined) return {}
+function windowFacts(entry: WindowInput | null | undefined): WindowFacts {
+  if (entry === null || entry === undefined) return {}
   const usedPercent = percentOf(entry.used_percent ?? entry.usedPercent)
   const windowSeconds = secondsOf(entry.limit_window_seconds ?? entry.windowSeconds)
   const resetAfterSeconds = secondsOf(entry.reset_after_seconds ?? entry.resetAfterSeconds)
@@ -262,8 +274,8 @@ export function usageOf(input: {
  * @param value - the balance field, as a number or the decimal string the live document uses.
  * @returns the balance, or undefined when it stated none or it is not a number.
  */
-function balanceOf(value: number | string | undefined): number | undefined {
-  if (value === undefined) return undefined
+function balanceOf(value: number | string | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
