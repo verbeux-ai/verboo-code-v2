@@ -615,6 +615,8 @@
       "@deepseek-ai/dsh-user-approval": ["./packages/interaction/user-approval/src"],
       "@deepseek-ai/dsh-user-questions": ["./packages/interaction/user-questions/src"],
       "@deepseek-ai/dsh-verboo-account": ["./packages/credentials/verboo-account/src"],
+      "@deepseek-ai/dsh-openai-account": ["./packages/credentials/openai-account/src"],
+      "@deepseek-ai/dsh-openai-account/types": ["./packages/credentials/openai-account/src/types.ts"],
       "@deepseek-ai/dsh-verboo-app": ["./packages/bundle/verboo-app/src"],
       "@deepseek-ai/dsh-verboo-connections": ["./packages/extensions/verboo-connections/src"],
       "@deepseek-ai/dsh-web": ["./packages/web/web/src"],
