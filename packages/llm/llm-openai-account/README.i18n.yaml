@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/llm/llm-openai-account/README.md
+/:
+  en: ca06255d2aee6571
+  zh: c9edaa6667121990
+/deepseek-ai-dsh-llm-openai-account:
+  en: 2a7ea6e4bfc35196
+  zh: 5f13c0e902729d75
+/deepseek-ai-dsh-llm-openai-account/summary:
+  en: cfe6866225d3e6b8
+  zh: bf1d10d23999ff3b
+/deepseek-ai-dsh-llm-openai-account/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 5116965997f5f24a
+/deepseek-ai-dsh-llm-openai-account/use-this-package:
+  en: a61ff02ea0fac631
+  zh: 8fd749d971588094
+/deepseek-ai-dsh-llm-openai-account/use-this-package/subscription-limits:
+  en: 3c7ae01bb3db8eb3
+  zh: c01ae9c768a1d5c5
+/deepseek-ai-dsh-llm-openai-account/use-this-package/usage-reading:
+  en: b5c7ee071297b177
+  zh: 82c515394fafc2e5
+/deepseek-ai-dsh-llm-openai-account/understand-the-implementation:
+  en: 5bb0756ae4ee0f77
+  zh: b57e017633ea52da
+/deepseek-ai-dsh-llm-openai-account/further-exploration:
+  en: 88bde011ae43150e
+  zh: 14803f1d9c676b90
+/deepseek-ai-dsh-llm-openai-account/model-experience:
+  en: 143c84127565e6ac
+  zh: f7804799226af225
+/deepseek-ai-dsh-llm-openai-account/model-experience/kv-cache-effect:
+  en: f464fcdcf511cfb2
+  zh: 9754709510ab7c2a
+/deepseek-ai-dsh-llm-openai-account/known-limitations-and-deferred-work:
+  en: 773ded517468dbbe
+  zh: a278375625f858ef
+/deepseek-ai-dsh-llm-openai-account/known-limitations-and-deferred-work/dev-note:
+  en: b9a653ecaf7b4860
+  zh: ec3aad5378a87aa7

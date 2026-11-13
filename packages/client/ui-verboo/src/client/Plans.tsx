@@ -10,6 +10,7 @@ import plansCss from './Plans.module.css'
 
 type PlanActions = Pick<ProductProps, 't' | 'billing'>
 type PlanPageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 't' | 'loadPlans' | 'billing'>
+  & Pick<PageProps, 'useExternalStatus' | 'openOpenAiDialog'>
 const money = (amount: number, currency: string, locale: string) =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount / 100)
 const currentStatuses = ['active', 'trialing', 'past_due', 'incomplete', 'paused']
@@ -75,6 +76,7 @@ export function PlanPage(props: PlanPageProps) {
   const loading = props.useProduct(s => s.loadingPlans)
   const handoff = props.useProduct(s => s.handoff)
   const locale = props.usePreferences(s => s.locale)
+  const external = props.useExternalStatus(s => s)
   const [selectedInterval, setSelectedInterval] = useState('month')
   const intervals = [...new Set(plans?.catalog.map(plan => plan.interval))]
   const interval = intervals.includes(selectedInterval) ? selectedInterval : intervals[0]
@@ -104,6 +106,26 @@ export function PlanPage(props: PlanPageProps) {
         {owned.map(subscription => <SubscriptionRow key={subscription.id} subscription={subscription}
           locale={locale} t={props.t} billing={props.billing} />)}
       </section> : <p className={plansCss.noPlan}>{props.t('noPlan')}. {props.t('noPlanDescription')}</p>}
+      {<section className={plansCss.owned} aria-label={props.t('openAiExternalTitle')}>
+        <h2>{props.t('openAiExternalTitle')}</h2>
+        <article className={plansCss.subscription} data-external="openai">
+          <div className={plansCss.subscriptionIdentity}>
+            <h3>{external.signedIn && external.planType !== undefined
+              ? props.t('openAiPlanNamed').replace('{plan}', external.planType)
+              : props.t('openAiPlan')}</h3>
+            <span className={plansCss.status}>{external.signedIn
+              ? props.t('openAiConnected')
+              : props.t('openAiDisconnected')}</span>
+            {external.activeUntil !== undefined && <p>
+              {props.t('openAiActiveUntil').replace('{date}',
+                new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(external.activeUntil)))}
+            </p>}
+          </div>
+          <Button variant="outline" className={plansCss.action} onClick={props.openOpenAiDialog}>
+            {props.t('openAiManage')}<Glyph name="arrow-up-right" size={13} />
+          </Button>
+        </article>
+      </section>}
       <section className={plansCss.catalog} aria-labelledby="verboo-plans-heading">
         <div className={plansCss.catalogHead}>
           <h2 id="verboo-plans-heading">{props.t('availablePlans')}</h2>

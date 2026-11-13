@@ -60,6 +60,13 @@
         allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
     - id: verboo-connections
       name: '@deepseek-ai/dsh-verboo-connections'
+    # The external subscription: one login surface, the credential it stores, and
+    # the route that serves the models the plan includes. With no stored session
+    # the route offers no model, so an unused sign-in changes nothing.
+    - id: openai-account
+      name: '@deepseek-ai/dsh-openai-account'
+    - id: llm-openai-account
+      name: '@deepseek-ai/dsh-llm-openai-account'
     # User-defined MCP servers: durable definitions, credential references and
     # one live registration per enabled server on the shared mcp-manager fleet.
     - id: verboo-mcp

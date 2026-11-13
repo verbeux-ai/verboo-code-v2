@@ -51,6 +51,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-context-menu': { kind: 'none', reason: 'Client menu presentation and contributed callbacks add no model input.' },
   'packages/client/external-links': { kind: 'none', reason: 'Chooses where a click opens and adds no model input or Session event.' },
+  'packages/credentials/openai-account': { kind: 'none', reason: 'Stores a subscription credential and reports plan facts; no model input or Session event.' },
   'packages/client/ui-file-actions': { kind: 'none', reason: 'Explicit user file saves and clipboard operations add no model input.' },
   'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },
   'packages/experimental/client-ui-cot-translation': { kind: 'indirect', reason: 'The translator owns optional paid queries; normal Session activation delegates startup context to the preset.' },
@@ -211,6 +212,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
   'packages/bundle/headless': { kind: 'none', reason: 'The one-shot runner submits the task as an ordinary user message; prompts and tools belong to the composed base and headless bundles.' },
   'packages/llm/llm': { kind: 'none', reason: 'The adapter registry forwards already-assembled requests unchanged.' },
+  'packages/llm/llm-openai-account': { kind: 'none', reason: 'The route composes over the pi-ai transport and adds no model-visible text of its own.' },
   'packages/llm/token-meter': { kind: 'indirect', reason: 'The measurement service leaves model-visible changes to its consumers.' },
   'packages/lsp/lsp': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-lsp.' },
   'packages/lsp/lsp-stdio': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-lsp.' },
