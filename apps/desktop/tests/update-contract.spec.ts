@@ -158,12 +158,21 @@ describe('the windows are described as the product window is', () => {
 })
 
 describe('the update flow keeps its guarantees', () => {
-  it('records the installed version before restarting', async () => {
+  it('records the install target before the installer runs and clears it on failure', async () => {
     const update = await read(RUST.update)
-    const applied = update.indexOf('write_marker(&app, APPLIED_FILE, &version)')
+    const install = update.indexOf('.download_and_install(')
+    const applied = update.indexOf('write_marker(&marker_app, APPLIED_FILE, &marker_version)')
     const restart = update.indexOf('app.restart()')
-    expect(applied).toBeGreaterThan(0)
+    // The target is recorded inside the download callback, before the installer
+    // runs: on Windows the installer call exits the process, so only the next
+    // launch can acknowledge the version that actually started.
+    expect(install).toBeGreaterThan(0)
+    expect(applied).toBeGreaterThan(install)
     expect(restart).toBeGreaterThan(applied)
+    // A failed install clears the target, so the next launch cannot announce it.
+    const failure = update.indexOf('Err(error) => {')
+    expect(failure).toBeGreaterThan(0)
+    expect(update.indexOf('remove_file(path)', failure)).toBeGreaterThan(failure)
   })
 
   it('shows the applied notice once and clears its marker', async () => {
