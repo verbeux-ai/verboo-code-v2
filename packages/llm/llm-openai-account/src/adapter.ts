@@ -16,6 +16,8 @@
  */
 
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { isUnsupportedModel, offeredModels } from './availability.ts'
+import type { AvailabilityEntry } from './availability.ts'
 import type {
   GenerateOptions,
   ImageAttachmentAccess,
@@ -83,6 +85,24 @@ export interface OpenAiAccountAdapterOptions {
    * @returns the bearer token, or `undefined` while no session is usable.
    */
   accessToken: () => Promise<string | undefined>
+  /**
+   * Identifier of the signed-in account, used to scope discovery verdicts.
+   * @returns the account id, or undefined while signed out.
+   */
+  accountId?: () => Promise<string | undefined>
+  /**
+   * Remembered model verdicts for one account.
+   * @param account - identifier of the signed-in account, or undefined.
+   * @returns the live entry, or undefined when none applies.
+   */
+  availability?: (account: string | undefined) => AvailabilityEntry | undefined
+  /**
+   * Remember one call's verdict about a model.
+   * @param account - identifier of the signed-in account.
+   * @param model - catalog model id the call used.
+   * @param verdict - what the provider proved.
+   */
+  record?: (account: string, model: string, verdict: 'supported' | 'unsupported') => void
   /** Resolve the durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
@@ -205,12 +225,20 @@ export class OpenAiAccountAdapter extends LlmAdapter {
       const profile = this.options.profiles().get(CATALOG_PROVIDER)
       const installed = profile?.piProvider
       if (installed === undefined) return []
-      return installed.getModels().map(model => ({
-        provider,
-        id: model.id,
-        name: model.name,
-        inputModalities: [...model.input],
-      }))
+      // The catalog lists every model the wire protocol knows; this account may
+      // serve fewer, and a refused one is withheld rather than offered.
+      const account = await this.options.accountId?.()
+      const ids = offeredModels(installed.getModels().map(model => model.id), this.options.availability?.(account))
+      const byId = new Map(installed.getModels().map(model => [model.id, model]))
+      return ids.flatMap((id) => {
+        const model = byId.get(id)
+        return model === undefined ? [] : [{
+          provider,
+          id: model.id,
+          name: model.name,
+          inputModalities: [...model.input],
+        }]
+      })
     })
   }
 
@@ -230,12 +258,40 @@ export class OpenAiAccountAdapter extends LlmAdapter {
       const prepared = await this.inner.prepareCall(CATALOG_PROVIDER, model, signal)
       return {
         model: { ...prepared.model, provider, id: model },
-        stream: options => translatedChunks(prepared.stream({ ...options, provider: CATALOG_PROVIDER, model })),
+        stream: options => this.observe(model, prepared.stream({ ...options, provider: CATALOG_PROVIDER, model })),
       }
     })
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return translatedChunks(this.inner.stream({ ...options, provider: CATALOG_PROVIDER }))
+    return this.observe(options.model, this.inner.stream({ ...options, provider: CATALOG_PROVIDER }))
+  }
+
+  /**
+   * Record what one call proved about this account's access to the model.
+   *
+   * The provider is the only authority here: a model it accepts is offered from
+   * then on, and one it refuses for the account is withheld. Any other failure
+   * records nothing, so a transient error never removes a model from the menu.
+   * @param model - catalog model id the call used.
+   * @param chunks - the translated stream to forward unchanged.
+   * @returns the same chunks, with the verdict recorded when the call settles.
+   */
+  private async *observe(model: string, chunks: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+    const account = await this.options.accountId?.()
+    let verdict: 'supported' | 'unsupported' | undefined
+    try {
+      for await (const chunk of translatedChunks(chunks)) {
+        if (chunk.type === 'finish') {
+          const failure = chunk.reason?.kind === 'error' ? chunk.reason.failure?.message : undefined
+          verdict = failure === undefined ? 'supported' : isUnsupportedModel(failure) ? 'unsupported' : undefined
+        }
+        yield chunk
+      }
+    } finally {
+      // A refusal settles the question even when the caller stopped reading, so
+      // the verdict is recorded before the stream is released.
+      if (account !== undefined && verdict !== undefined) this.options.record?.(account, model, verdict)
+    }
   }
 }
