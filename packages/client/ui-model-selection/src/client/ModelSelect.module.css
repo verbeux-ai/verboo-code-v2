@@ -526,6 +526,13 @@
   transform: translateX(-100%);
 }
 
+/* One level is both first and last; centring it on the only stop would push it
+ * past the card, so it sits at the start instead. */
+.effortScaleLabel:only-child {
+  max-width: 100%;
+  transform: translateX(0);
+}
+
 .effortScaleLabel {
   position: absolute;
   top: 0;

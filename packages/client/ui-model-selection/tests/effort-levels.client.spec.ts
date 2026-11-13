@@ -7,6 +7,7 @@
  * reader's language; an id this vocabulary does not name must keep the Host's
  * own words, because only the Host knows what that level means.
  */
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { effortDescription, effortName } from '../src/client/effort-levels.ts'
 import { en, pt, zh, ja, es, fr, de, ru, type ModelKey } from '../src/client/locales.ts'
@@ -85,5 +86,22 @@ describe('effort level vocabulary', () => {
       // Every level differs from English, so no dictionary silently falls back.
       expect(names, language).not.toEqual(english)
     }
+  })
+})
+
+describe('the rail under every level count', () => {
+  it('keeps a single level readable instead of centring it off the card', () => {
+    // A model that declares one level gives the rail no slots to divide. Its
+    // only label is both first and last, so the end anchors would fight; the
+    // stylesheet resolves that with `:only-child`, which this asserts exists.
+    const css = readFileSync(new URL('../src/client/ModelSelect.module.css', import.meta.url), 'utf8')
+    const single = /\.effortScaleLabel:only-child\s*\{[^}]*max-width:\s*100%[^}]*transform:\s*translateX\(0\)/s
+    expect(css).toMatch(single)
+  })
+
+  it('caps each label to its own slot so names cannot overlap', () => {
+    const css = readFileSync(new URL('../src/client/ModelSelect.module.css', import.meta.url), 'utf8')
+    // The cap is the gap between two stops, supplied by the component.
+    expect(css).toMatch(/max-width:\s*calc\(100% \/ var\(--effort-slots, 1\)\)/)
   })
 })
