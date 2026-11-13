@@ -15,6 +15,8 @@ export { OpenAiAccount, SERVICE_KEY, claimsOf, pkcePair } from './account.ts'
 export { AccountHttp, AccountRequestError, operation } from './http.ts'
 export type { JsonResponse, Operation as HttpOperation } from './http.ts'
 export { GrantVault } from './vault.ts'
+export { OpenAiAccountLogin } from './remote.ts'
+export type { SignInStart } from './types.ts'
 export type { SecretKeyStore } from './vault.ts'
 export type { OpenAiAccountErrorCode, OpenAiAccountStatus } from './types.ts'
 

@@ -48,6 +48,14 @@ export interface OpenAiAccountStatus {
   readonly activeUntil?: string
 }
 
+/** What a started sign-in tells the dialog. */
+export interface SignInStart {
+  /** Authorization URL to open in the browser. */
+  readonly url: string
+  /** Opaque handle the completion call must present with the code. */
+  readonly handle: string
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**

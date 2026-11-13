@@ -22,7 +22,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ProductInjected, PreferenceSnapshot } from './contracts.ts'
+import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
 import { en, pt, zh } from './locales.ts'
 import { Config } from '../config.ts'
 export { Config } from '../config.ts'
@@ -37,6 +37,7 @@ import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
+import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
@@ -222,9 +223,57 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     config.staminaRefreshIntervalMs,
   )
   ctx.effect(() => ctx.resources.register(subscriptionUsage.provider), 'Verboo: subscription usage')
+  // The provider redirects to a loopback page this build does not serve, so the
+  // dialog asks for the code from the address bar; the URL is the documented
+  // Codex redirect, which keeps the login working without a callback listener.
+  const OPENAI_REDIRECT_URI = 'http://localhost:1455/auth/callback'
+  const openAiSignIn = async (): Promise<{ url: string; handle: string } | undefined> => {
+    try {
+      const started = await ctx.remote.openaiAccountLogin.beginLogin(OPENAI_REDIRECT_URI)
+      if (!started.ok) return undefined
+      await ctx.get('externalLinks')?.open(started.value.url)
+      return started.value
+    } catch (_error) { return undefined } // The dialog reports an unsuccessful start inline.
+  }
+  const completeOpenAiSignIn = async (handle: string, code: string): Promise<boolean> => {
+    try {
+      const finished = await ctx.remote.openaiAccountLogin.completeLogin(handle, code)
+      if (finished.ok) subscriptionUsage.refresh()
+      return finished.ok
+    } catch (_error) { return false } // The dialog reports an unsuccessful exchange inline.
+  }
+  const openAiStatus = async (): Promise<OpenAiStatus> => {
+    try {
+      const status = await ctx.remote.openaiAccountLogin.status()
+      return status.ok ? status.value : { signedIn: false }
+    } catch (_error) { return { signedIn: false } } // An unreadable status reports no session.
+  }
+  const signOutOpenAi = async (): Promise<void> => {
+    try { await ctx.remote.openaiAccountLogin.signOut() } catch (_error) {
+      // A refused sign-out leaves the stored session in place; the dialog
+      // re-reads the status, so the reader sees the session that remains.
+      return
+    }
+    subscriptionUsage.refresh()
+  }
+  const externalStatus = createSnapshotStore<OpenAiStatus>({ signedIn: false })
+  const externalDialogOpen = createSnapshotStore({ open: false })
+  const reloadExternalStatus = async (): Promise<void> => {
+    externalStatus.set(await openAiStatus())
+  }
   const face = (): ProductInjected => ({
-    hooks: { product: model.state, preferences, navigation: navigationEntries },
+    hooks: { product: model.state, preferences, navigation: navigationEntries, externalStatus },
     refreshStamina: () => { stamina.refresh() },
+    beginOpenAiSignIn: openAiSignIn,
+    completeOpenAiSignIn,
+    openAiStatus,
+    signOutOpenAi,
+    refreshSubscriptionUsage: () => { subscriptionUsage.refresh() },
+    openOpenAiDialog: () => {
+      externalDialogOpen.set({ open: true })
+      void reloadExternalStatus()
+    },
+    closeOpenAiDialog: () => { externalDialogOpen.set({ open: false }) },
     start: () => {
       try {
         navigation.reserve()
@@ -444,6 +493,27 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('shell.overlay', function* () {
+    yield ctx.slots.register(
+      {
+        name: 'shell.overlay', id: 'verboo.openai-signin', order: 130, locale: 'verboo',
+        inject: () => {
+          const product = face()
+          const current = externalDialogOpen.getSnapshot()
+          return {
+            ...product,
+            hooks: { ...product.hooks, externalDialogOpen },
+            openAiSignIn: {
+              begin: product.beginOpenAiSignIn,
+              complete: product.completeOpenAiSignIn,
+              signOut: product.signOutOpenAi,
+              close: product.closeOpenAiDialog,
+            },
+            visible: current.open,
+          }
+        },
+      },
+      OpenAiSignInDialog,
+    )
     yield ctx.slots.register({ name: 'shell.overlay', id: 'verboo.quit-hold', order: 120, locale: 'verboo' }, DesktopQuitHold)
     yield ctx.slots.register(
       {
