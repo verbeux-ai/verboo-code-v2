@@ -16,7 +16,6 @@ import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import {
   ACTIVE_LIMIT_HEADER,
   CREDIT_BALANCE_HEADER,
-  HAS_CREDITS_HEADER,
   REACHED_TYPE_HEADER,
   UNLIMITED_HEADER,
 } from './limits.ts'
@@ -63,10 +62,21 @@ const usageSchema = z.object({
   active_until: z.string().optional(),
   activeUntil: z.string().optional(),
   rate_limit: windowSchema.optional(),
-  rate_limit_reached_type: z.string().optional(),
   credits: creditsSchema.optional(),
   additional_rate_limits: z.array(additionalSchema).optional(),
   ...windowFields,
+}).loose()
+
+/** Claim namespace an [OI] access token carries its account facts under. */
+const AUTH_CLAIM = 'https://api.openai.com/auth'
+
+/**
+ * The claim an access token must carry for this route to address an account.
+ * Only the identifier is read: the rest of the token is the account plugin's
+ * business, and no other claim is needed to call the backend.
+ */
+const claimsSchema = z.object({
+  [AUTH_CLAIM]: z.object({ chatgpt_account_id: z.string().optional() }).loose().optional(),
 }).loose()
 
 /** One parsed window's facts, with the spelling that carried each field. */
@@ -110,6 +120,18 @@ function windowFacts(entry: z.infer<typeof windowSchema> | undefined): WindowFac
     ...resetAfterSeconds === undefined ? {} : { resetAfterSeconds },
     ...reachedType === undefined ? {} : { reachedType },
   }
+}
+
+/**
+ * Merge one document's own window fields with its nested `rate_limit` entry.
+ * The nested entry is the documented spelling, so it wins per field; the
+ * top-level spelling is what a compatible deployment that flattens the
+ * document returns.
+ * @param outer - the parsed usage document.
+ * @returns the facts either spelling disclosed.
+ */
+function mergedFacts(outer: z.infer<typeof usageSchema>): WindowFacts {
+  return { ...windowFacts(outer), ...windowFacts(outer.rate_limit) }
 }
 
 /** Read one header case-insensitively from an already-collected record. */
@@ -161,7 +183,7 @@ export function usageOf(input: {
   const parsed = usageSchema.safeParse(input.body)
   if (!parsed.success) return undefined
   const document = parsed.data
-  const primary = windowFacts({ ...document, ...document.rate_limit })
+  const primary = mergedFacts(document)
   const headerReachedType = headerOf(input.headers, REACHED_TYPE_HEADER)
   const reachedType = headerReachedType ?? primary.reachedType
   if (primary.usedPercent === undefined) return undefined
@@ -191,11 +213,38 @@ export function usageOf(input: {
   }
 }
 
+/**
+ * Read the ChatGPT account identifier an access token carries.
+ *
+ * The backend requires it beside the bearer token, and the token itself is the
+ * authoritative source: the same claim is what the model transport reads, so a
+ * locally stored identifier that disagrees with the token cannot address a
+ * different account.
+ * @param accessToken - one [OI] access token, normally a JWT.
+ * @returns the account identifier, or `undefined` when the token carries none.
+ */
+export function accountIdFromToken(accessToken: string): string | undefined {
+  const payload = accessToken.split('.')[1]
+  if (payload === undefined) return undefined
+  let claims: unknown
+  try {
+    claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+  } catch {
+    // An opaque or malformed token carries no readable claim; the read then
+    // relies on the identifier the account service reports.
+    return undefined
+  }
+  const parsed = claimsSchema.safeParse(claims)
+  if (!parsed.success) return undefined
+  const accountId = parsed.data[AUTH_CLAIM]?.['chatgpt_account_id']
+  return typeof accountId === 'string' && accountId.length > 0 ? accountId : undefined
+}
+
 /** Everything one usage read needs from the caller. */
 export interface UsageReadRequest {
   /** Currently valid access token; the caller resolves it before this call. */
   readonly accessToken: string
-  /** ChatGPT account identifier the backend expects in `chatgpt-account-id`. */
+  /** ChatGPT account identifier the backend expects in `chatgpt-account-id`; derived from the token when omitted. */
   readonly accountId?: string
   /** Deadline in milliseconds of this one read. */
   readonly timeoutMs: number
@@ -206,38 +255,43 @@ export interface UsageReadRequest {
 /**
  * Read the subscription usage from the backend.
  *
- * Every failure — no response, a non-success status, a body this build cannot
- * read, a deadline, or a caller cancellation — yields `undefined`. The reading
- * is display data, so a failed read must not surface as a request failure and
- * must never be replaced by a zeroed reading.
+ * Every failure — no response, a body this build cannot read, a deadline, or a
+ * caller cancellation — yields `undefined`. The reading is display data, so a
+ * failed read must not surface as a request failure and must never be replaced
+ * by a zeroed reading.
+ *
+ * A refusal still contributes what it discloses: its headers, and a body that
+ * happens to parse. The backend answers an exhausted account with the limit it
+ * enforced, which is the state a client most needs to show.
  * @param request - the resolved credential and read bounds.
  * @returns the reading, or `undefined` when no usable reading was obtained.
  */
 export async function readUsage(request: UsageReadRequest): Promise<SubscriptionUsage | undefined> {
   const timeout = AbortSignal.timeout(request.timeoutMs)
   const signal = request.signal === undefined ? timeout : AbortSignal.any([request.signal, timeout])
+  const accountId = request.accountId ?? accountIdFromToken(request.accessToken)
   const headers: Record<string, string> = {
     ...attributionHeaders(),
     accept: 'application/json',
     authorization: `Bearer ${request.accessToken}`,
-    ...request.accountId === undefined ? {} : { 'chatgpt-account-id': request.accountId },
+    ...accountId === undefined ? {} : { 'chatgpt-account-id': accountId },
   }
   let response: Response
-  let body: unknown
   try {
     response = await fetch(`${BASE_URL}${USAGE_PATH}`, { method: 'GET', headers, signal })
-    if (!response.ok) {
-      // The headers still describe the governing limit on a refusal, which is
-      // the state a client most needs to show.
-      const observed = Object.fromEntries(response.headers)
-      return usageOf({ headers: observed, body: {}, asOf: new Date().toISOString() })
-    }
-    body = await response.json()
   } catch (error) {
-    // Transport failure, deadline, or caller cancellation: all of them mean
-    // this read produced no facts, which is exactly what `undefined` reports.
+    // Transport failure, deadline, or caller cancellation: this read produced
+    // no facts, which is exactly what `undefined` reports.
     void error
     return undefined
+  }
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    // A refusal body is frequently plain text; its headers still describe the
+    // governing limit, so an unreadable body is not a failed read by itself.
+    body = {}
   }
   return usageOf({ headers: Object.fromEntries(response.headers), body, asOf: new Date().toISOString() })
 }

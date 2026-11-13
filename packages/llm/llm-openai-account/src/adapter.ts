@@ -15,7 +15,6 @@
  * @module @deepseek-ai/dsh-llm-openai-account/adapter
  */
 
-import type { AuthContext, Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -31,8 +30,8 @@ import type {
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
+import { ACCOUNT_QUOTA_EXCEEDED_CODE, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import { CATALOG_PROVIDER } from './config.ts'
-import { ACCOUNT_QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import { classifyLimit } from './limits.ts'
 
 /** Display name this route reports to selectors and status surfaces. */
@@ -52,17 +51,21 @@ export const CREDITS_MESSAGE = 'The ChatGPT credits for this account are deplete
  * requires one, and answering "nothing stored" keeps the account plugin the
  * single owner of the session.
  */
-const NO_CREDENTIALS: CredentialStore = {
-  read: (): Promise<Credential | undefined> => Promise.resolve(undefined),
-  list: (): Promise<readonly CredentialInfo[]> => Promise.resolve([]),
-  modify: (): Promise<Credential | undefined> => Promise.resolve(undefined),
+const NO_CREDENTIALS = {
+  /* v8 ignore start -- pi-ai reads the store only for a request with no explicit key, and this route always sends one. */
+  read: (): Promise<undefined> => Promise.resolve(undefined),
+  list: (): Promise<readonly never[]> => Promise.resolve([]),
+  modify: (): Promise<undefined> => Promise.resolve(undefined),
   delete: (): Promise<void> => Promise.resolve(),
+  /* v8 ignore stop */
 }
 
 /** Ambient lookups a pi-ai provider performs while resolving its own auth. */
-const NO_AMBIENT_AUTH: AuthContext = {
-  env: (): Promise<string | undefined> => Promise.resolve(undefined),
+const NO_AMBIENT_AUTH = {
+  /* v8 ignore start -- the api-key method this route resolves with reads no ambient source, so no provider asks the context. */
+  env: (): Promise<undefined> => Promise.resolve(undefined),
   fileExists: (): Promise<boolean> => Promise.resolve(false),
+  /* v8 ignore stop */
 }
 
 /** Construction inputs the plugin owns. */
@@ -89,20 +92,53 @@ export interface OpenAiAccountAdapterOptions {
 }
 
 /**
- * Rewrite a terminal failure the subscription refused into its quota code.
+ * Rewrite a refusal into the harness code that says what the caller can do.
+ *
+ * Only the two terminal classes replace the provider text, because their
+ * remedy differs from the provider's own wording and neither names a token:
+ * the plan's window resets, or the account's credits are replenished. A
+ * refusal that stays transient keeps the provider's message.
  * @param failure - the failure the pi-ai adapter produced.
- * @returns the same failure under `QUOTA` or `ACCOUNT_QUOTA`, or the failure unchanged.
+ * @returns the same failure under `QUOTA`, `ACCOUNT_QUOTA`, or `RATE_LIMIT`,
+ *   or the failure unchanged.
  */
 export function quotaFailure(failure: LlmFailure): LlmFailure {
   const code = classifyLimit({
     ...failure.status === undefined ? {} : { status: failure.status },
     message: failure.message,
   })
-  if (code === undefined) return failure
-  return {
-    ...failure,
-    code,
-    message: code === ACCOUNT_QUOTA_EXCEEDED_CODE ? CREDITS_MESSAGE : USAGE_LIMIT_MESSAGE,
+  if (code === undefined || code === failure.code) return failure
+  const message = code === ACCOUNT_QUOTA_EXCEEDED_CODE
+    ? CREDITS_MESSAGE
+    : code === QUOTA_EXCEEDED_CODE ? USAGE_LIMIT_MESSAGE : failure.message
+  return { ...failure, code, message }
+}
+
+/**
+ * Translate one pi-ai chunk stream, mapping a subscription refusal to its
+ * quota code.
+ *
+ * Both delivery styles the transport uses are handled: a terminal `error`
+ * finish chunk and a thrown `LlmError`. A failure that names no limit passes
+ * through untouched, so a transient refusal keeps its own text and its
+ * retryable code.
+ * @param chunks - the inner adapter's chunks for one call.
+ * @returns the same chunks with terminal failures classified.
+ */
+export async function* translatedChunks(chunks: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+  try {
+    for await (const chunk of chunks) {
+      if (chunk.type !== 'finish' || chunk.reason.kind !== 'error') {
+        yield chunk
+        continue
+      }
+      yield { ...chunk, reason: { kind: 'error', failure: quotaFailure(chunk.reason.failure) } }
+    }
+  } catch (error) {
+    if (!(error instanceof LlmError)) throw error
+    const failure = quotaFailure(error.failure)
+    if (failure === error.failure) throw error
+    throw new LlmError(failure.message, failure.code, { ...failure, cause: error })
   }
 }
 
@@ -149,7 +185,7 @@ export class OpenAiAccountAdapter extends LlmAdapter {
     return undefined
   }
 
-  override imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef) {
+  override imageRequestTarget(_provider: string, model: string, image: ImageAttachmentRef) {
     return this.inner.imageRequestTarget(CATALOG_PROVIDER, model, image)
   }
 
@@ -157,7 +193,14 @@ export class OpenAiAccountAdapter extends LlmAdapter {
     return Promise.resolve().then(async () => {
       // The catalog is the installed one, and a signed-out account can serve
       // none of it: an empty list is how this route reports unavailable.
-      const token = await this.options.accessToken()
+      let token: string | undefined
+      try {
+        token = await this.options.accessToken()
+      } catch {
+        // A rejected refresh means no model can be served right now; the
+        // account plugin reports that failure to the human itself.
+        return []
+      }
       if (token === undefined || token.length === 0) return []
       const profile = this.options.profiles().get(CATALOG_PROVIDER)
       const installed = profile?.piProvider
@@ -187,30 +230,12 @@ export class OpenAiAccountAdapter extends LlmAdapter {
       const prepared = await this.inner.prepareCall(CATALOG_PROVIDER, model, signal)
       return {
         model: { ...prepared.model, provider, id: model },
-        stream: options => this.translated(prepared.stream({ ...options, provider: CATALOG_PROVIDER, model })),
+        stream: options => translatedChunks(prepared.stream({ ...options, provider: CATALOG_PROVIDER, model })),
       }
     })
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.translated(this.inner.stream({ ...options, provider: CATALOG_PROVIDER }))
-  }
-
-  /** Translate one inner stream, mapping a subscription refusal to its quota code. */
-  private async * translated(chunks: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-    try {
-      for await (const chunk of chunks) {
-        if (chunk.type !== 'finish' || chunk.reason.kind !== 'error') {
-          yield chunk
-          continue
-        }
-        yield { ...chunk, reason: { kind: 'error', failure: quotaFailure(chunk.reason.failure) } }
-      }
-    } catch (error) {
-      if (!(error instanceof LlmError)) throw error
-      const failure = quotaFailure(error.failure)
-      if (failure === error.failure) throw error
-      throw new LlmError(failure.message, failure.code, { ...failure, cause: error })
-    }
+    return translatedChunks(this.inner.stream({ ...options, provider: CATALOG_PROVIDER }))
   }
 }

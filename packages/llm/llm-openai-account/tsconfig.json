@@ -24,7 +24,10 @@
       "path": "../../typert/protocol"
     },
     {
-      "path": "../../util/launch-environment"
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../util/timeout"
     }
   ]
 }
