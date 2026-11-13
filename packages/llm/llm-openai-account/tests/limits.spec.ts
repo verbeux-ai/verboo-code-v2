@@ -145,3 +145,54 @@ describe('limit classification, plain-text evidence', () => {
     expect(classifyLimit({ message: 'refused: workspace_member_usage_limit_reached' })).toBe(QUOTA_EXCEEDED_CODE)
   })
 })
+
+describe('the live usage document', () => {
+  /**
+   * The response shape the endpoint actually returned when read with a real
+   * account: one window nested under `rate_limit`, a second long window beside
+   * it, a decimal-string balance, and no `x-codex` headers at all.
+   */
+  const LIVE = {
+    user_id: 'user-x',
+    account_id: 'acct-x',
+    email: 'x@example.com',
+    plan_type: 'team',
+    rate_limit: {
+      allowed: true,
+      limit_reached: false,
+      primary_window: { used_percent: 88, limit_window_seconds: 18000, reset_after_seconds: 8962, reset_at: 1794586228 },
+      secondary_window: { used_percent: 98, limit_window_seconds: 604800, reset_after_seconds: 369610, reset_at: 1794946876 },
+    },
+    code_review_rate_limit: null,
+    additional_rate_limits: null,
+    credits: { has_credits: false, unlimited: false, overage_limit_reached: false, balance: '0' },
+    spend_control: { reached: false, individual_limit: null },
+    rate_limit_reached_type: null,
+  }
+
+  it('reads the nested window, the second window, and the string balance', () => {
+    const usage = usageOf({ body: LIVE, asOf: '2026-11-13T10:40:00.000Z' })
+    expect(usage).toBeDefined()
+    expect(usage!.usedPercent).toBe(88)
+    expect(usage!.windowSeconds).toBe(18000)
+    expect(usage!.resetAfterSeconds).toBe(8962)
+    // A decimal string is a balance the provider stated, not an absence.
+    expect(usage!.credits).toBe(0)
+    expect(usage!.planType).toBe('team')
+    // The long window is a real meter and must be visible beside the short one.
+    expect(usage!.additionalLimits).toHaveLength(1)
+    expect(usage!.additionalLimits![0]).toMatchObject({ id: 'secondary', usedPercent: 98, windowSeconds: 604800 })
+  })
+
+  it('classifies the live document without headers, because it sends none', () => {
+    // The endpoint returned no `x-codex` header at all; detection must not
+    // depend on one for a document that states the reason in the body.
+    expect(unlimitedOf(undefined)).toBe(false)
+    expect(usageOf({ body: LIVE, asOf: '2026-11-13T10:40:00.000Z' })!.unlimited).toBe(false)
+  })
+
+  it('reports unlimited only from the document’s own claim', () => {
+    const unlimited = { ...LIVE, credits: { has_credits: true, unlimited: true, balance: '0' } }
+    expect(usageOf({ body: unlimited, asOf: '2026-11-13T10:40:00.000Z' })!.unlimited).toBe(true)
+  })
+})

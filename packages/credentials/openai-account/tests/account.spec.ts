@@ -45,6 +45,8 @@ function memoryStore(): { getSecret(): Promise<number[] | null>; setSecret(secre
   }
 }
 
+/** Distinct home per fixture, so no two runs share a store. */
+let counter = 0
 const contexts: Context[] = []
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
@@ -58,8 +60,9 @@ async function harness(handler: (url: string, init: RequestInit) => Response): P
   contexts.push(ctx)
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     handler(String(input), init ?? {})))
-  const vault = new GrantVault('https://auth.openai.com/oauth/token', '/tmp/openai-account-test', memoryStore())
-  await vault.prepare()
+  // Not prepared here: the service must create the key on its first write, as a
+  // fresh installation does.
+  const vault = new GrantVault('https://auth.openai.com/oauth/token', `/tmp/openai-account-test-${String(counter++)}`, memoryStore())
   const service = new OpenAiAccount(ctx, {}, vault)
   await ctx.plugin({ apply: () => undefined })
   return service
@@ -224,5 +227,15 @@ describe('sign out', () => {
     await service.signOut()
     await expect(service.status()).resolves.toEqual({ signedIn: false })
     await expect(service.accessToken(new AbortController().signal)).resolves.toBeUndefined()
+  })
+})
+
+describe('first sign-in on a fresh installation', () => {
+  it('creates the vault key instead of failing the login', async () => {
+    // A vault the service has never written to holds no key, and sealing reads
+    // one; the first login must create it rather than report an unusable store.
+    const service = await harness(() => new Response(JSON.stringify(tokenResponse()), { status: 200 }))
+    await expect(service.complete('code', 'verifier', 'http://127.0.0.1/cb', new AbortController().signal))
+      .resolves.toMatchObject({ signedIn: true, planType: 'team' })
   })
 })
