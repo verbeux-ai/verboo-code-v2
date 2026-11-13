@@ -79,8 +79,10 @@ describe('reasoning levels from the router', () => {
     expect(parse({ effort_levels: ['turbo'] }).reasoningEfforts).toBeUndefined()
   })
 
-  it('keeps the plain capability flag for a non-reasoning model', () => {
-    expect(parse(undefined).reasoning).toBe(false)
-    expect(parse(true).reasoning).toBe(true)
+  it('declares no levels for a model the router flags without naming them', () => {
+    // The adapter derives the capability itself; what the profile must not do is
+    // claim a level set the router never listed.
+    expect(parse(undefined).reasoningEfforts).toBeUndefined()
+    expect(parse(true).reasoningEfforts).toBeUndefined()
   })
 })
