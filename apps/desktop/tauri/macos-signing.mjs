@@ -1,6 +1,7 @@
 /** Sign the packaged Node runtime and require Apple's distribution checks before publication. */
 import { execFile } from 'node:child_process'
 import { createHash, createPrivateKey } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { open, readdir } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { promisify } from 'node:util'
@@ -103,6 +104,7 @@ async function verifyCode(path, expected, run, deep = false) {
 export async function signRuntime(root, environment, run = apple) {
   const expected = releaseIdentity(environment)
   if (!environment.CSC_KEYCHAIN) throw new Error('macOS release: the temporary signing keychain is required')
+  if (existsSync(join(root, 'application/packages'))) throw new Error('macOS release: discard workspace package archives before Apple signing')
   const files = await nativeFiles(root)
   if (!files.includes(join(root, 'node'))) throw new Error('macOS release: the native Node runtime is missing')
   for (const path of files) {

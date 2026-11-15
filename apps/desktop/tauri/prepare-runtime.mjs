@@ -56,6 +56,15 @@ export async function selectRuntimeTarget(application, { platform = process.plat
 }
 
 /**
+ * Remove workspace package archives after the locked dependency graph has been installed.
+ * @param application - Materialized private application; installed modules remain intact.
+ * @returns After discarding build inputs that can contain additional unsigned native binaries.
+ */
+export async function discardRuntimeBuildInputs(application) {
+  await rm(join(application, 'packages'), { recursive: true, force: true })
+}
+
+/**
  * Publish a checked runtime without modifying the development home or an earlier valid runtime.
  * @param options - Repository, desktop, output and pnpm paths owned by the launcher.
  * @returns The published runtime directory.
@@ -68,6 +77,7 @@ export async function prepareRuntime({ repository, desktop, output, packageManag
   await mkdir(staging, { recursive: true })
   try {
     const application = await packRuntime({ repository, staging, packageManager })
+    await discardRuntimeBuildInputs(application)
     await selectRuntimeTarget(application)
     const platform = process.platform
     if (!['darwin', 'linux', 'win32'].includes(platform)) throw new Error('unsupported Node runtime platform')

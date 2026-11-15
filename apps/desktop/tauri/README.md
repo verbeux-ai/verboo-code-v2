@@ -28,7 +28,7 @@ The development home is `apps/desktop/.desktop-build/tauri/home`; `DSH_HOME` ove
 
 ## Native distribution
 
-`pnpm run build:desktop` builds a Tauri application for the current host platform. It packs the workspace dependency and peer closure, preserves reviewed patches and build-script permissions, verifies the official standalone Node archive against its SHA-256, and runs real-profile smoke tests before invoking the Tauri bundler. The runtime contains no development home or model credentials. Outputs live under `apps/desktop/.desktop-build/tauri/target/release/bundle`.
+`pnpm run build:desktop` builds a Tauri application for the current host platform. It packs the workspace dependency and peer closure, preserves reviewed patches and build-script permissions, verifies the official standalone Node archive against its SHA-256, and runs real-profile smoke tests before invoking the Tauri bundler. Workspace package archives are discarded after the locked installation; only the installed dependency tree ships, so notarization never encounters unsigned copies inside build tarballs. The runtime contains no development home or model credentials. Outputs live under `apps/desktop/.desktop-build/tauri/target/release/bundle`.
 
 Linux desktop uses the official glibc Node runtime. Staging keeps the glibc system and FFI addons and host PTY prebuild before AppImage scans ELF dependencies, preserving the static Landlock launcher. Unused musl and foreign PTY binaries are excluded only from staging; source packages remain intact.
 

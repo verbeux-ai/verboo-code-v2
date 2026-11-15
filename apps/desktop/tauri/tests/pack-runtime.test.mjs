@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { packRuntime } from '../pack-runtime.mjs'
-import { selectRuntimeTarget } from '../prepare-runtime.mjs'
+import { discardRuntimeBuildInputs, selectRuntimeTarget } from '../prepare-runtime.mjs'
 
 const run = promisify(execFile)
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
@@ -125,5 +125,11 @@ test('builds from an empty registry cache and freezes the resulting runtime', { 
   assert.match(lock, /sha512-/)
   await rm(join(application, 'node_modules'), { recursive: true, force: true })
   await run(process.execPath, [manager, ...configuration, 'install', '--prod', '--frozen-lockfile', '--offline'], { cwd: application, env: process.env })
+  assert.equal(await readFile(join(application, 'pnpm-lock.yaml'), 'utf8'), lock)
+  assert.ok((await readdir(join(application, 'packages'))).some(name => name.endsWith('.tgz')))
+  await discardRuntimeBuildInputs(application)
+  await assert.rejects(access(join(application, 'packages')), { code: 'ENOENT' })
+  const loaded = await run(process.execPath, ['-e', 'process.stdout.write(require(process.argv[1]))', join(application, 'node_modules/fixture-runtime-dependency')])
+  assert.equal(loaded.stdout, 'locked-runtime-fixture')
   assert.equal(await readFile(join(application, 'pnpm-lock.yaml'), 'utf8'), lock)
 })

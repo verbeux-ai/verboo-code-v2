@@ -28,7 +28,7 @@ pnpm run start:desktop
 
 ## 原生分发
 
-`pnpm run build:desktop` 为当前主机平台构建 Tauri 应用。它打包工作区依赖与 peer 闭包，保留经过审核的补丁和构建脚本权限，使用 SHA-256 验证官方独立 Node 压缩包，并在调用 Tauri 打包器前运行真实配置冒烟测试。运行时不包含开发目录或模型凭据。产物位于 `apps/desktop/.desktop-build/tauri/target/release/bundle`。
+`pnpm run build:desktop` 为当前主机平台构建 Tauri 应用。它打包工作区依赖与 peer 闭包，保留经过审核的补丁和构建脚本权限，使用 SHA-256 验证官方独立 Node 压缩包，并在调用 Tauri 打包器前运行真实配置冒烟测试。锁定依赖安装完成后会丢弃工作区包归档，只分发已安装的依赖树，避免公证扫描到构建 tarball 中未签名的副本。运行时不包含开发目录或模型凭据。产物位于 `apps/desktop/.desktop-build/tauri/target/release/bundle`。
 
 Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖前，暂存目录会保留 glibc 系统和 FFI 插件、主机 PTY 预构建文件以及静态 Landlock launcher。未使用的 musl 和其他平台 PTY 二进制文件仅从暂存目录中移除，源代码包保持完整。
 

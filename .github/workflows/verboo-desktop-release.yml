@@ -177,7 +177,6 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -193,13 +192,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
+      - name: Verify the complete installer set without publishing
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_only
+        env:
+          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ inputs.omit_macos_arm64 || false }}
+        run: node apps/desktop/tauri/verify-release.mjs release-assets
       - name: Verify the selected installer set and attach it to the release
+        if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
         run: node apps/desktop/tauri/publish-release.mjs release-assets
       - name: Publish the update feed the installed app reads
+        if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
         env:
           GH_TOKEN: ${{ github.token }}
           VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
