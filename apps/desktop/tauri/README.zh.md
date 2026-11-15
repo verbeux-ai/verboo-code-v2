@@ -50,7 +50,27 @@ Tauri 更新器随应用一起发布：Host 开始提供产品页面后，它每
 
 macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式也嵌入相同的显示名称。打包时会先校验 `CFBundleName`、`CFBundleDisplayName` 和 `CFBundleExecutable`，再检查签名，并通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
 
-每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。macOS alpha 使用 ad-hoc 签名，未经 Apple 公证。
+每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。
+
+### Apple 分发签名
+
+两个 macOS 发布任务都要求提供 [Developer ID Application 证书](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)和具有 Developer 权限的 [App Store Connect 团队 API 密钥](https://v2.tauri.app/distribute/sign/macos/#notarization)。发布前需配置以下仓库 Actions secrets：
+
+| Secret | 值 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | 包含证书、私钥和 Apple 中间证书的 `.p12` 文件，经 Base64 编码。 |
+| `APPLE_CERTIFICATE_PASSWORD` | 保护该 `.p12` 文件的密码。 |
+| `APPLE_SIGNING_IDENTITY` | 证书的完整通用名称，格式为 `Developer ID Application: Name (TEAMID)`。 |
+| `APPLE_TEAM_ID` | 证书所属的十字符 Apple Developer Team ID。 |
+| `APPLE_API_KEY` | App Store Connect 团队 API Key ID。 |
+| `APPLE_API_ISSUER` | App Store Connect 团队 API Issuer ID。 |
+| `APPLE_API_PRIVATE_KEY` | 下载的 `.p8` 文件的完整 PEM 内容。 |
+
+若任一 secret 缺失或格式错误，凭据预检会在安装依赖前停止 macOS 任务。`macos-release.mjs` 将证书和 API 密钥写入私有临时目录，并在打包与验证结束前持有临时钥匙串。正常成功或失败都会恢复原有钥匙串搜索列表并删除这些文件；强制终止时由托管 runner 的销毁负责清理。密码和私钥不会进入生成的应用配置或构建产物。
+
+发布流程先为所有内嵌 Mach-O 文件签名，包括 Node、原生插件和辅助程序，并启用安全时间戳和强化运行时，再由 Tauri 为外层应用签名和公证。Node 的授权保留 JIT、可执行内存和第三方原生库加载能力。打包要求证书和 Team ID 与预期一致，验证附加的应用公证票据和 Gatekeeper 接受结果，再为最终 DMG 签名、公证并附加票据。更新器归档会被解压，接受相同检查，并通过其打包的 Node Host 运行测试。票据缺失、公证被拒、超时、签名失败或运行时失败都会阻止产物发布。本地开发保留 ad-hoc 签名。
+
+若要完整演练 CI，可使用 `verify_only: true` 手动触发发布工作流。该模式保留验证后的安装包产物，但不公开 release 或移动更新源。
 
 ## 验证
 

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareRuntime } from './prepare-runtime.mjs'
+import { signRuntime } from './macos-signing.mjs'
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repository = resolve(desktop, '../..')
@@ -50,7 +51,12 @@ writeFileSync(manifest, JSON.stringify({
 }, null, 2) + '\n')
 const env = { ...process.env, VERBOO_TAURI_RUNTIME_CONFIG: manifest }
 if (mode === 'build') {
-  await prepareRuntime({ repository, desktop, output, packageManager })
+  const runtime = await prepareRuntime({ repository, desktop, output, packageManager })
+  if (process.env.VERBOO_REQUIRE_APPLE_SIGNING === 'true') {
+    if (process.platform !== 'darwin') throw new Error('Apple release signing requires macOS')
+    const count = await signRuntime(runtime, process.env)
+    console.log(`Verboo Code: signed and verified ${count} embedded native binaries`)
+  }
   const releaseEnvironment = { ...process.env }
   delete releaseEnvironment.VERBOO_TAURI_RUNTIME_CONFIG
   await pnpm(['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'build', ...args.filter(arg => arg !== '--skip-build')], repository, releaseEnvironment)

@@ -50,7 +50,27 @@ The [release workflow](../../../.github/workflows/verboo-desktop-release.yml) ru
 
 macOS uses `Verboo Code` for the executable and application display name; development embeds the same display name. Packaging verifies `CFBundleName`, `CFBundleDisplayName` and `CFBundleExecutable` before checking the signature, then uses native `hdiutil create` and `verify` to produce the DMG without mounting a writable image for Finder customization. Temporary files belong to that build and are removed after completion or failure. AppImage packaging disables the bundler's symbol stripping with `NO_STRIP`.
 
-Every platform records the exact source SHA, installer size and SHA-256. Publication checks the complete set, resolves lightweight or annotated tags to that SHA, and confirms GitHub’s uploaded digests. An existing release is reused; matching files are skipped, missing files can be resumed, and differing published bytes are never overwritten. Manual builds publish a draft only after verification; release-triggered builds attach to the existing release. Downloads remain in GitHub Releases and checksums are included in `SHA256SUMS`. The macOS alpha is ad-hoc signed and is not notarized by Apple.
+Every platform records the exact source SHA, installer size and SHA-256. Publication checks the complete set, resolves lightweight or annotated tags to that SHA, and confirms GitHub’s uploaded digests. An existing release is reused; matching files are skipped, missing files can be resumed, and differing published bytes are never overwritten. Manual builds publish a draft only after verification; release-triggered builds attach to the existing release. Downloads remain in GitHub Releases and checksums are included in `SHA256SUMS`.
+
+### Apple distribution signing
+
+Both macOS release jobs require a [Developer ID Application certificate](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/) and an [App Store Connect team API key](https://v2.tauri.app/distribute/sign/macos/#notarization) with Developer access. Configure these repository Actions secrets before releasing:
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Base64-encoded `.p12` containing the certificate, private key and Apple intermediate certificate. |
+| `APPLE_CERTIFICATE_PASSWORD` | Password protecting that `.p12`. |
+| `APPLE_SIGNING_IDENTITY` | Full `Developer ID Application: Name (TEAMID)` certificate common name. |
+| `APPLE_TEAM_ID` | The certificate's ten-character Apple Developer Team ID. |
+| `APPLE_API_KEY` | App Store Connect team API Key ID. |
+| `APPLE_API_ISSUER` | App Store Connect team API Issuer ID. |
+| `APPLE_API_PRIVATE_KEY` | Complete downloaded `.p8` PEM contents. |
+
+The credential preflight stops a macOS job before dependency installation if a secret is missing or malformed. `macos-release.mjs` materializes the certificate and API key in a private temporary directory and owns a temporary keychain until packaging and verification finish. Normal success and failure restore the previous keychain search list and remove these files; hosted runner disposal handles forced termination. Passwords and private keys never enter generated app configuration or build artifacts.
+
+The release signs every embedded Mach-O file, including Node, native addons and helpers, with a secure timestamp and hardened runtime before Tauri signs and notarizes the enclosing application. Node's entitlements retain JIT, executable memory and third-party native library loading. Packaging requires the expected certificate and Team ID, validates the stapled app ticket and Gatekeeper acceptance, then signs, notarizes and staples the final DMG. The updater archive is extracted, verified with the same checks and exercised through its packaged Node Host. Missing tickets, rejected notarization, timeouts and signature or runtime failures stop artifact publication. Local development keeps ad-hoc signing.
+
+For a complete CI rehearsal, dispatch the release workflow with `verify_only: true`. It retains the verified installer artifacts without publishing a release or moving the update feed.
 
 ## Validation
 

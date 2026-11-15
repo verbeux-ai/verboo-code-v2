@@ -5,6 +5,11 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      verify_only:
+        description: Build and verify installers without publishing a release or updating the feed.
+        type: boolean
+        required: false
+        default: false
       omit_macos_arm64:
         description: Skip Apple Silicon when its hosted runner is unavailable; ARM users will not receive this release.
         type: boolean
@@ -49,6 +54,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
+      - name: Require Apple distribution signing and notarization credentials
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: node apps/desktop/tauri/macos-release.mjs --check
       - uses: pnpm/action-setup@v4
       - uses: dtolnay/rust-toolchain@1.97.0
         with:
@@ -77,7 +93,7 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs apps/desktop/tauri/tests/macos-signing.test.mjs
       - name: Test update window
         run: pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
       - name: Prepare native test resources
@@ -85,15 +101,22 @@ jobs:
       - name: Test native process ownership
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Package the desktop runtime and installer
+        if: runner.os != 'macOS'
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
         run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Create and verify the macOS disk image without mounting it
+      - name: Sign, notarize and verify the macOS installer and updater
         if: runner.os == 'macOS'
         env:
-          RELEASE_TARGET: ${{ matrix.target }}
-        run: node apps/desktop/tauri/package-macos.mjs
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: node apps/desktop/tauri/macos-release.mjs --target ${{ matrix.target }}
       - name: Package and verify RPM prerelease metadata
         if: runner.os == 'Linux'
         env:
@@ -154,6 +177,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
     runs-on: ubuntu-24.04
     permissions:
       contents: write

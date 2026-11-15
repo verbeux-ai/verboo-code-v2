@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { createDiskImage } from './create-dmg.mjs'
+import { notarizeDiskImage, verifyApplication } from './macos-signing.mjs'
 
 if (process.platform !== 'darwin') throw new Error('macOS installer requires a macOS builder')
 const run = promisify(execFile)
@@ -19,8 +20,9 @@ const identity = JSON.parse(stdout)
 if (['CFBundleName', 'CFBundleDisplayName', 'CFBundleExecutable'].some(key => identity[key] !== configuration.productName)) {
   throw new Error('macOS application identity does not match the product name')
 }
-await run('codesign', ['--verify', '--deep', '--strict', app], { timeout: 300_000 })
+await verifyApplication(app, process.env)
 const suffix = target.startsWith('aarch64') ? 'aarch64' : 'x64'
 const destination = join(bundle, 'dmg', `${configuration.productName}_${configuration.version}_${suffix}.dmg`)
 await createDiskImage({ application: app, destination, name: configuration.productName })
+await notarizeDiskImage(destination, process.env)
 console.log(`Verboo Code: verified macOS installer ${destination}`)
