@@ -97,7 +97,7 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
     disconnect: vi.fn(async () => true),
     reopenConnection: vi.fn(),
     dismiss: vi.fn(),
-  } as unknown as ComponentProps<typeof ConnectionsPage>
+  } as ComponentProps<typeof ConnectionsPage>
   return { props, state }
 }
 

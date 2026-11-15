@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { installMcpTools } from '../src/mcp-tools.ts'
 
 const contexts: Context[] = []
@@ -72,7 +71,7 @@ async function exec(ctx: Context, name: string, args: Record<string, unknown>): 
     token: 'token-1' as never,
     name,
     arguments: args,
-    agent: { session: { append: () => undefined } } as unknown as Agent,
+    agent: { session: { append: () => undefined } },
     signal: new AbortController().signal,
     deferContext: () => undefined,
   } as never)

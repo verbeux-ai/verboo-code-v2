@@ -75,7 +75,8 @@ describe('fixed stop routing', () => {
     const b = await bench()
     const workspace = document.createElement('div')
     workspace.dataset.verbooPanes = ''
-    vi.spyOn(workspace, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
+    const rects = [new DOMRect()]
+    vi.spyOn(workspace, 'getClientRects').mockReturnValue(Object.assign(rects, { item: (index: number) => rects[index] ?? null }))
     const pane = document.createElement('section')
     pane.dataset.paneFocused = 'true'
     pane.append(b.root)

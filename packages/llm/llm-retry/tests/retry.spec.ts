@@ -12,7 +12,7 @@ import type {
   RetryPolicyConfig,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
@@ -179,8 +179,8 @@ afterEach(async () => {
 })
 
 describe('retry projection', () => {
-  it('keeps the same state when a recorded retry is applied again', async () => {
-    type Definition = { key: string; apply(state: object, event: SessionEvent): object }
+  it('replays counts by failure code without counting duplicate retry events', async () => {
+    type Definition = { key: string; stateVersion: number; apply(state: object, event: SessionEvent): object }
     const definitions: Definition[] = []
     const { ctx } = await harness(new ScriptedAdapter([]), undefined, (inner) => {
       const projections = inner.sessionProjections
@@ -191,13 +191,23 @@ describe('retry projection', () => {
       }
     })
     const definition = definitions.find(spec => spec.key === 'llmRetry')!
-    const event: SessionEvent = {
+    const event: SessionEvent<'llm/retry'> = {
       type: 'llm/retry',
-      data: { provider: 'mock', policyKey: 'policy', retry: 1, retryId: 'retry-1' },
-    } as never
+      seq: SessionSeq(0), time: 0,
+      data: { provider: 'mock', policyKey: 'policy', retry: 1, retryId: retry.RetryId('retry-1'),
+        turn: 1, step: 1, mode: 'normal', maxRetries: 3, delayMs: 0, failure: { code: 'SERVER', message: 'fixture' } },
+    }
     const state = definition.apply({}, event)
 
     expect(definition.apply(state, event)).toBe(state)
+    const malformed: SessionEvent<'llm/retry'> = { ...event, seq: SessionSeq(1),
+      data: { ...event.data, retry: 2, failure: { ...event.data.failure, code: 'MALFORMED_RESPONSE' } } }
+    const resumed = definition.apply(structuredClone(state), malformed)
+    expect(definition.stateVersion).toBe(2)
+    expect(resumed).toEqual({ '["mock","policy"]': {
+      retry: 2, retryId: 'retry-1', retriesByCode: { SERVER: 1, MALFORMED_RESPONSE: 1 },
+    } })
+    expect(resumed).toEqual(definition.apply(definition.apply({}, event), malformed))
     await ctx.fiber.dispose()
   })
 })

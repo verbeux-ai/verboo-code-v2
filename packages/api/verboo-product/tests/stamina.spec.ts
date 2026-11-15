@@ -50,7 +50,7 @@ describe('public enrolled-plan stamina', () => {
   it('preserves server routing slugs for matching a selected model to its group ID', async () => {
     const f = fixture()
     const group = { id: reading.groupId, name: 'Max', slug: 'max' }
-    f.fetch.mockImplementation(async url => Response.json({ data: String(url).includes('/me/subscriptions') ? [{
+    f.fetch.mockImplementation(async url => Response.json({ data: (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).includes('/me/subscriptions') ? [{
       id: reading.groupId, groupId: group.id, group, status: 'active', cancelAtPeriodEnd: false,
       management: { changePlan: false }, billing: null,
     }] : [{ ...group, description: '', priceCents: 100, currency: 'BRL', billingInterval: 'month' }] }))

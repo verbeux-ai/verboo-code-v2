@@ -369,7 +369,7 @@ describe('every in-flight operation is fenced by the account generation', () => 
 describe('attempt phase and catalog bookkeeping', () => {
   it('treats an unknown attempt phase as the earliest, so a known later phase wins', () => {
     const { model } = fixture()
-    const unknown = 'not-a-phase' as unknown as 'initializing'
+    const unknown = 'not-a-phase' as 'initializing'
     model.adopt({
       ...view('a'),
       attempt: { id: attemptId('attempt-1'), phase: 'succeeded' },
@@ -479,7 +479,7 @@ describe('remaining connect and disconnect branches', () => {
   })
 
   it('reads an attempt phase absent from the table as the earliest', () => {
-    const unknownPhase = 'ghost-phase' as unknown as 'initializing'
+    const unknownPhase = 'ghost-phase' as 'initializing'
     const { model } = fixture()
     model.adopt({ ...view('a'), attempt: { id: attemptId('attempt-9'), phase: unknownPhase } })
     model.adopt({ ...view('a'), attempt: { id: attemptId('attempt-9'), phase: 'succeeded' } })

@@ -202,7 +202,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     const results = await Promise.allSettled([browser?.close(), scaffold?.close(), platform?.close()])
     if (directory) await rm(directory, { recursive: true, force: true })
     const failures = results.filter(result => result.status === 'rejected')
-    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Stamina fixture cleanup failed')
+    if (failures.length) throw new AggregateError(failures.map((result): unknown => result.reason), 'Stamina fixture cleanup failed')
   })
 
   it('keeps stamina off plan, connection and preference pages across themes and viewport sizes', async () => {

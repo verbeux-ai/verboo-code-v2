@@ -53,17 +53,17 @@ function fixture(initial: Partial<ProductSnapshot> = {}) {
     ...initial,
   }
   const retryAccount = vi.fn()
-  const props = {
-    useProduct: (selector: (state: ProductSnapshot) => unknown) => selector(snapshot),
+  const props: Partial<ComponentProps<typeof Onboarding>> = {
+    useProduct: <T,>(selector: (state: ProductSnapshot) => T) => selector(snapshot),
     t: (key: string) => (en as Readonly<Record<string, string>>)[key] ?? key,
     retryAccount,
     start: vi.fn(),
     reopen: vi.fn(),
     cancel: vi.fn(),
     signOut: vi.fn(async () => true),
-  } as unknown as ComponentProps<typeof Onboarding>
+  }
   return {
-    props,
+    props: props as ComponentProps<typeof Onboarding>,
     setSnapshot: (next: Partial<ProductSnapshot>) => {
       snapshot = { ...snapshot, ...next }
     },

@@ -99,15 +99,16 @@ function cancellableDelay(delayMs: number, signal: AbortSignal): Promise<boolean
 interface RetryStateEntry {
   retry: number
   retryId: RetryId
+  retriesByCode: Record<string, number>
 }
 
 type LlmRetryState = Record<string, RetryStateEntry>
 
-// The cast bridges the branded retry id, which Zod cannot express directly.
 const llmRetryStateSchema: zod.ZodType<LlmRetryState> = zod.record(zod.string(), zod.object({
   retry: zod.number().int().nonnegative(),
-  retryId: zod.string(),
-})) as unknown as zod.ZodType<LlmRetryState>
+  retryId: zod.string().transform(RetryId),
+  retriesByCode: zod.record(zod.string(), zod.number().int().nonnegative()),
+}))
 
 /**
  * Install provider-routed normal or unbounded request recovery.
@@ -122,7 +123,7 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
   validateConfig(config)
   const projectionReady = ctx.sessionProjections.register({
     key: 'llmRetry',
-    stateVersion: 1,
+    stateVersion: 2,
     stateSchema: llmRetryStateSchema,
     init: () => ({}),
     apply: (state, event) => {
@@ -131,7 +132,9 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
       const key = retryStateKey(event.data.provider, event.data.policyKey)
       const entry = state[key]
       if (entry?.retry === event.data.retry && entry.retryId === event.data.retryId) return state
-      return { ...state, [key]: { retry: event.data.retry, retryId: event.data.retryId } }
+      const code = event.data.failure.code
+      const retriesByCode = { ...entry?.retriesByCode, [code]: (entry?.retriesByCode[code] ?? 0) + 1 }
+      return { ...state, [key]: { retry: event.data.retry, retryId: event.data.retryId, retriesByCode } }
     },
   })
   const random = internals.random ?? Math.random
@@ -222,9 +225,7 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
     if (policy.mode === 'normal') {
       const codeLimit = policy.maxRetriesByCode[failure.code]
       if (codeLimit !== undefined) {
-        const codeRetries = agent.session.snapshotEvents().filter(event => event.type === 'llm/retry'
-          && event.data.turn === turn && event.data.step === step && event.data.provider === provider
-          && event.data.policyKey === policyKey && event.data.failure.code === failure.code).length
+        const codeRetries = previous?.retriesByCode[failure.code] ?? 0
         if (codeRetries >= codeLimit) return next()
       }
     }

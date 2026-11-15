@@ -65,7 +65,7 @@ export function StaminaDebugToggle(props: StaminaDebugProps) {
 export function StaminaDebugReading({ group, reading, failed, locale, t, refresh }: DebugLabels & SelectedStamina & {
   failed: boolean
   locale: string
-  refresh(): void
+  refresh: () => void
 }) {
   const time = new Intl.DateTimeFormat(locale, { timeStyle: 'medium' })
   return (

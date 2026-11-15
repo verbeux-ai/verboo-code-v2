@@ -36,7 +36,7 @@ function asProps<T>(partial: Partial<Record<keyof T, unknown>>): T {
   // Test-only binder: each case supplies only the members it exercises, with the
   // values it needs for that case; the framework delivers the rest at the real
   // slot site.
-  return partial as unknown as T
+  return partial as T
 }
 
 function planHook(plans: readonly typeof plan[]): Parameters<typeof PlanCards>[0]['usePlans'] {
@@ -47,7 +47,7 @@ function planHook(plans: readonly typeof plan[]): Parameters<typeof PlanCards>[0
 function reviewProps(review: { plan: string; callId?: typeof plan.callId }, openReview: Mock, store: ReturnType<ReturnType<typeof createPlanReviewStore>['create']>) {
   return { review, requestKey: 'question:1', t, openReview, actions: store.actions,
     useStore: (select: (state: ReturnType<typeof store.getSnapshot>) => unknown) => select(store.getSnapshot()),
-  } as unknown as Parameters<typeof PlanReviewOpen>[0]
+  } as Parameters<typeof PlanReviewOpen>[0]
 }
 /** A bound `useSidebarMounted` reading one on-screen Session value. */
 function seatHook(read: () => SessionId | undefined) {

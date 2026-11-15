@@ -67,13 +67,13 @@ async function render(
     url: 'http://tauri.localhost/',
     beforeParse(window) {
       // The Rust side assigns the copy before the document script runs.
-      ;(window as unknown as Record<string, unknown>)[variable] = payload
+      ;(window as typeof window & Record<string, unknown>)[variable] = payload
       const invoke = vi.fn(async () => undefined)
-      ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke }
-      ;(window as unknown as Record<string, { invoke: typeof invoke }>).__bridge = { invoke }
+      ;(window as typeof window & Record<string, unknown>).__TAURI_INTERNALS__ = { invoke }
+      ;(window as typeof window & Record<string, { invoke: typeof invoke }>).__bridge = { invoke }
     },
   })
-  const window = dom.window as unknown as {
+  const window = dom.window as typeof dom.window & {
     document: Document
     eval: (script: string) => void
     __bridge: { invoke: ReturnType<typeof vi.fn> }

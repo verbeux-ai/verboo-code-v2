@@ -95,19 +95,19 @@ async function open(file: string, variable: string, payload: unknown): Promise<L
   const page = await browser.newPage({ viewport: { width: 468, height: 308 } })
   const calls: string[] = []
   await page.addInitScript(({ variable, payload }) => {
-    ;(window as unknown as Record<string, unknown>)[variable] = payload
-    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+    ;(window as typeof window & Record<string, unknown>)[variable] = payload
+    ;(window as typeof window & Record<string, unknown>).__TAURI_INTERNALS__ = {
       invoke: (command: string) => {
-        ;(window as unknown as { __calls: string[] }).__calls.push(command)
+        ;(window as typeof window & { __calls: string[] }).__calls.push(command)
         return Promise.resolve()
       },
     }
-    ;(window as unknown as { __calls: string[] }).__calls = []
+    ;(window as typeof window & { __calls: string[] }).__calls = []
   }, { variable, payload })
   await page.goto(`${ui.origin}/${file}`, { waitUntil: 'load' })
   // Mirror the bridge's own record into the test process.
   const read = async () => {
-    const recorded = await page.evaluate(() => (window as unknown as { __calls: string[] }).__calls)
+    const recorded = await page.evaluate(() => (window as typeof window & { __calls: string[] }).__calls)
     calls.splice(0, calls.length, ...recorded)
     return calls
   }
@@ -173,9 +173,9 @@ describe('the update offer window in a browser', () => {
     page.on('pageerror', (error) => { problems.push(String(error)) })
     page.on('requestfailed', (request) => { problems.push(`failed ${request.url()}`) })
     await page.addInitScript((payload) => {
-      ;(window as unknown as Record<string, unknown>).__VERBOO_UPDATE__ = payload
-      ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: () => Promise.resolve() }
-    }, COPY.en as unknown as string)
+      ;(window as typeof window & Record<string, unknown>).__VERBOO_UPDATE__ = payload
+      ;(window as typeof window & Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: () => Promise.resolve() }
+    }, COPY.en)
     await page.goto(`${ui.origin}/update.html`, { waitUntil: 'networkidle' })
     expect(problems).toEqual([])
     await page.close()
@@ -211,7 +211,7 @@ describe('the running window in a browser', () => {
     const entry = await open('update.html', '__VERBOO_UPDATE__', copy)
 
     await entry.page.evaluate((value) => {
-      ;(window as unknown as { __enterProgress: (input: unknown) => void }).__enterProgress(value)
+      ;(window as typeof window & { __enterProgress: (input: unknown) => void }).__enterProgress(value)
     }, copy.running)
     await shown(entry, 'progress', true)
     await text(entry, 'title').toBe(copy.running.title)
@@ -222,7 +222,7 @@ describe('the running window in a browser', () => {
     // Walk the bar the way the updater reports chunks.
     for (const ratio of [0.1, 0.35, 0.7, 1]) {
       await entry.page.evaluate((value) => {
-        ;(window as unknown as { __setProgress: (ratio: number) => void }).__setProgress(value)
+        ;(window as typeof window & { __setProgress: (ratio: number) => void }).__setProgress(value)
       }, ratio)
     }
     await text(entry, 'percent').toBe('100%')
@@ -231,7 +231,7 @@ describe('the running window in a browser', () => {
     await entry.page.screenshot({ path: join(ARTIFACTS, 'progress-complete.png'), animations: 'disabled' })
 
     await entry.page.evaluate((message) => {
-      ;(window as unknown as { __fail: (value: string) => void }).__fail(message)
+      ;(window as typeof window & { __fail: (value: string) => void }).__fail(message)
     }, copy.failed)
     await text(entry, 'status').toBe(copy.failed)
     await shown(entry, 'later', true)
@@ -247,10 +247,10 @@ describe('the running window in a browser', () => {
     const copy = COPY.en!
     const entry = await open('update.html', '__VERBOO_UPDATE__', copy)
     await entry.page.evaluate((value) => {
-      ;(window as unknown as { __enterProgress: (input: unknown) => void }).__enterProgress(value)
+      ;(window as typeof window & { __enterProgress: (input: unknown) => void }).__enterProgress(value)
     }, copy.running)
     await entry.page.evaluate(() => {
-      ;(window as unknown as { __setIndeterminate: () => void }).__setIndeterminate()
+      ;(window as typeof window & { __setIndeterminate: () => void }).__setIndeterminate()
     })
     await text(entry, 'percent').toBe('')
     await expect.poll(() => role(entry, 'fill').getAttribute('data-indeterminate')).toBe('true')
@@ -294,8 +294,8 @@ describe('both windows under both themes and a narrow viewport', () => {
     it(`renders ${name} in ${theme} without overflow`, async () => {
       const page = await browser.newPage({ viewport: { width, height }, colorScheme: theme })
       await page.addInitScript(({ variable, payload }) => {
-        ;(window as unknown as Record<string, unknown>)[variable] = payload
-        ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: () => Promise.resolve() }
+        ;(window as typeof window & Record<string, unknown>)[variable] = payload
+        ;(window as typeof window & Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: () => Promise.resolve() }
       }, { variable, payload: name === 'offer' ? COPY.pt! : COPY.pt!.applied })
       await page.goto(`${ui.origin}/${file}`, { waitUntil: 'load' })
 

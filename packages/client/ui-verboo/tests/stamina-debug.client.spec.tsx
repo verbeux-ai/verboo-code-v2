@@ -19,7 +19,12 @@ function fixture(): ComponentProps<typeof StaminaDebugReading> {
     t: (key, values) => {
       const template = labels[key]
       if (template === undefined) throw new Error(`Missing test translation: ${key}`)
-      return template.replace(/\{(\w+)\}/g, (_match: string, name: string) => String(values?.[name] ?? ''))
+      return template.replace(/\{(\w+)\}/g, (_match: string, name: string) => {
+        const value = values?.[name]
+        if (value === undefined || value === null) return ''
+        if (typeof value !== 'string' && typeof value !== 'number') throw new Error('Test translation requires text or numbers')
+        return String(value)
+      })
     },
   }
 }
