@@ -2228,6 +2228,7 @@ describe('ChatView', () => {
       act(() => { h.setChat({ turnTimings: new Map([[1, { startTime: 1_000 }]]) }) })
       const title = view.container.querySelector('[data-chat-flow-kind="turn-process"]')!
       expect(title).not.toBeNull()
+      expect(title.hasAttribute('data-chat-flow-empty')).toBe(true)
       expect(view.getByText(opening.text).closest('[data-submission-echo]')).toBe(echo)
       expect(echo.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(title.compareDocumentPosition(steeringEcho) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -3689,7 +3690,20 @@ describe('ChatView', () => {
     expect(new Map([...tails].map(tail => [
       tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
     ]))).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
-    expect(view.container.querySelectorAll('[data-chat-flow-kind="user"]')).toHaveLength(2)
+    const users = view.container.querySelectorAll<HTMLElement>('[data-chat-flow-kind="user"]')
+    expect(users).toHaveLength(2)
+    expect(users[0]?.getAttribute('data-actions-reveal')).toBe('hover')
+    expect(users[1]?.hasAttribute('data-actions-reveal')).toBe(false)
+  })
+
+  it.each([
+    { label: 'output', nodes: [assistant(2, 'answer')], visible: true },
+    { label: 'input', nodes: [user(1, 'question')], visible: false },
+  ])('shows the running divider only after $label rows', ({ nodes, visible }) => {
+    const h = makeHarness({ nodes }, { running: true })
+    const view = render(<h.ChatView {...h.props} />)
+    const status = view.container.querySelector<HTMLElement>('[data-chat-running]')!
+    expect(status.hasAttribute('data-chat-divider-visible')).toBe(visible)
   })
 
   it('the run-time label is withheld when the turn start is outside the window', () => {
@@ -4807,8 +4821,11 @@ describe('ChatView', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     const rows = [...view.container.querySelectorAll('[data-chat-steering-batch="start"]')]
-      .map(element => element.closest<HTMLElement>('[data-chat-node-key]')?.dataset.chatNodeKey)
-    expect(rows).toEqual(['fixture:steering:3'])
+      .map(element => element.closest<HTMLElement>('[data-chat-node-key]'))
+    expect(rows.map(row => row?.dataset.chatNodeKey)).toEqual(['fixture:steering:3'])
+    expect(rows[0]?.hasAttribute('data-chat-steering-batch-start')).toBe(true)
+    expect(view.container.querySelector('[data-chat-node-key="fixture:steering:4"]')
+      ?.hasAttribute('data-chat-steering-batch-start')).toBe(false)
   })
 })
 

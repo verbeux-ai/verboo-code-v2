@@ -1,5 +1,5 @@
 /** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
-import { memo, type ReactElement } from 'react'
+import { memo, useEffect, useMemo, type ReactElement } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ChatFlowSlotProps } from '../contract/slots.ts'
@@ -9,6 +9,7 @@ import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.ts
 import { chatRenderKey } from './render-entry.ts'
 import { RunningStatus } from './RunningStatus.tsx'
 import { RunningWhaleTail } from './RunningWhaleTail.tsx'
+import { FlowRowVirtualizer } from './flow-row-virtualizer.ts'
 
 /** A local submission echo, or a Host-pending steering item without a local submission. */
 type PendingInput = ChatFlowSlotProps['pendingInputs'][number]
@@ -30,6 +31,8 @@ export const ChatFlow = memo(function ChatFlow({
   useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction,
   cwd, openFile, inspectCall, forkAt, loadImage,
 }: ChatFlowSlotProps) {
+  const rowVirtualizer = useMemo(() => new FlowRowVirtualizer(), [])
+  useEffect(() => () => { rowVirtualizer.dispose() }, [rowVirtualizer])
   const nodeStore = useChat(snapshot => snapshot.nodes)
   const running = useSession(snapshot => snapshot.running)
   const disconnected = useConnectionState(state => state === 'disconnected' || state === 'connecting')
@@ -45,23 +48,40 @@ export const ChatFlow = memo(function ChatFlow({
     return (location?.kind === 'turn' || location?.kind === 'step') && location.turn.status === 'open'
   })
   const holding = !running && latestTurnOpen
-  const seatProps = {
+  const seatProps = useMemo(() => ({
     nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
     useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
-    cwd, openFile, inspectCall, forkAt, loadImage,
-  }
-  const rows = entries.map((entry) => {
+    cwd, openFile, inspectCall, forkAt, loadImage, rowVirtualizer,
+  }), [nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
+    useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
+    cwd, openFile, inspectCall, forkAt, loadImage, rowVirtualizer])
+  const latestUserAuthoredKey = useMemo(() => {
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const entry = entries[index]
+      if (entry?.kind !== 'node') continue
+      const kind = nodeStore.get(entry.key)?.kind
+      if (kind === 'user' || kind === 'steering') return entry.key
+    }
+    return null
+  }, [entries, nodeStore])
+  const deferredRowCount = Math.max(0, entries.length - 100)
+  const rows = useMemo(() => entries.map((entry, index) => {
+    const deferOffscreenLayout = index < deferredRowCount
     switch (entry.kind) {
       case 'node':
         return <ChatNodeSeat {...seatProps} key={chatRenderKey(entry)} nodeKey={entry.key}
+          deferOffscreenLayout={deferOffscreenLayout}
+          revealActions={(nodeStore.get(entry.key)?.kind === 'user' || nodeStore.get(entry.key)?.kind === 'steering')
+            && entry.key !== latestUserAuthoredKey}
           {...entry.groupPart === undefined ? {} : { groupPart: entry.groupPart }} />
       case 'group':
         return <ChatGroupSeat {...seatProps} key={chatRenderKey(entry)} groupKey={entry.key}
+          deferOffscreenLayout={deferOffscreenLayout}
           useChatGroup={useChatGroup} useGroupHeaderAction={useGroupHeaderAction} />
       default:
         return assertNever(entry)
     }
-  })
+  }), [deferredRowCount, entries, latestUserAuthoredKey, nodeStore, seatProps, useChatGroup, useGroupHeaderAction])
   // Transcript echoes open the running Turn and precede the status; steering
   // and Inbox echoes follow it, so the status stays on the running Turn's tail.
   // The first transcript echo opens the next Turn, whose first claim takes the
@@ -83,19 +103,22 @@ export const ChatFlow = memo(function ChatFlow({
   }
   const tail = entries.at(-1)
   const node = tail?.kind === 'node' ? nodeStore.get(tail.key) : undefined
-  // An empty opening control follows the echoes that lead its Turn.
-  // All rows share this keyed list so inserting the control keeps the echoes mounted.
-  if (node?.kind === 'turn-process' && node.location.kind === 'turn'
-    && node.location.turn.status === 'open' && node.location.turn.turn !== lastInputTurn) {
-    rows.splice(rows.length - 1, 0, ...leadingRows.splice(0))
-  }
+  const dividerRevision = useMemo(() => ({ entries, nodeStore, pendingInputs }), [entries, nodeStore, pendingInputs])
+  // An empty opening control follows the echoes that lead its Turn. Keep the
+  // memoized keyed rows immutable while inserting the echoes before that control.
+  const hasOpeningControl = node?.kind === 'turn-process' && node.location.kind === 'turn'
+    && node.location.turn.status === 'open' && node.location.turn.turn !== lastInputTurn
+  const flowRows = hasOpeningControl && leadingRows.length > 0
+    ? [...rows.slice(0, -1), ...leadingRows, ...rows.slice(-1)]
+    : rows
+  const trailingLeadingRows = hasOpeningControl ? [] : leadingRows
   // Rows enter before the keyed status and echoes after it, so React never moves its DOM node. The
   // running bit and the Turn's end arrive separately: after the bit clears, an open latest Turn keeps
   // the status slot (hidden) until its actions row takes the slot in the same commit.
   return [
-    ...rows, ...leadingRows, ...openingRows,
+    ...flowRows, ...trailingLeadingRows, ...openingRows,
     ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
-      holding={holding} indicator={renderSlot('conversation.chat.running.indicator', {}, {
+      holding={holding} dividerRevision={dividerRevision} indicator={renderSlot('conversation.chat.running.indicator', {}, {
         fallback: <RunningWhaleTail />,
       })} t={t} />] : [],
     ...pendingRows,

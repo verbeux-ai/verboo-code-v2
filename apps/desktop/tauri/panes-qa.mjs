@@ -2,6 +2,35 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 
+const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+
+function rounded(value) {
+  return Math.round(value * 1000) / 1000
+}
+
+async function browserMetrics(cdp) {
+  const response = await cdp.send('Performance.getMetrics')
+  const values = Object.fromEntries(response.metrics.map(metric => [metric.name, metric.value]))
+  const read = name => {
+    const value = values[name]
+    if (typeof value !== 'number') throw new Error(`Missing Chromium metric ${name}`)
+    return value
+  }
+  return {
+    domNodes: read('Nodes'),
+    eventListeners: read('JSEventListeners'),
+    heapMb: rounded(read('JSHeapUsedSize') / 1_048_576),
+    taskMs: rounded(read('TaskDuration') * 1000),
+    scriptMs: rounded(read('ScriptDuration') * 1000),
+    layoutMs: rounded(read('LayoutDuration') * 1000),
+    recalcStyleMs: rounded(read('RecalcStyleDuration') * 1000),
+  }
+}
+
+function metricDelta(before, after) {
+  return Object.fromEntries(Object.keys(after).map(name => [name, rounded(after[name] - before[name])]))
+}
+
 /** Focused browser acceptance without unrelated navigation or native quit gestures. */
 export async function verifyComposerActivation(page, state, dir) {
   const panes = page.locator('[data-pane-id]')
@@ -16,11 +45,11 @@ export async function verifyComposerActivation(page, state, dir) {
     await pane.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor()
   }
   await materialize(panes.first())
-  await editor(panes.first()).press('Meta+d')
+  await editor(panes.first()).press(`${primaryModifier}+d`)
   await page.locator('[data-pane-focused]').getByRole('button', { name: 'Nova conversa', exact: true }).click()
   await materialize(panes.last())
   await verifyPaneActivation(page, panes.first(), panes.last(), dir)
-  await editor(panes.first()).press('Meta+Shift+d')
+  await editor(panes.first()).press(`${primaryModifier}+Shift+d`)
   const third = page.locator('[data-pane-focused]')
   await third.getByRole('button', { name: 'Nova conversa', exact: true }).click()
   await materialize(third)
@@ -58,7 +87,7 @@ export async function verifyHeaderHover(page, state, dir) {
   await panes.first().getByText('Tarefa de teste concluída.', { exact: true }).first().waitFor()
   state.agentFixture = null
   await panes.first().getByRole('button', { name: /Tarefas em segundo plano/ }).waitFor()
-  await editor(panes.first()).press('Meta+d')
+  await editor(panes.first()).press(`${primaryModifier}+d`)
   await page.locator('[data-pane-focused]').getByRole('button', { name: 'Nova conversa', exact: true }).click()
   const otherEditor = editor(panes.last())
   await otherEditor.fill('Conversa independente')
@@ -180,7 +209,7 @@ export async function verifyPanes(page, context, state, dir) {
   assert.ok((await firstCard.boundingBox()).height > 76, 'Keyboard focus in composer controls keeps the composer expanded')
   await page.screenshot({ path: join(dir, 'composer-idle-editing.png'), animations: 'disabled' })
   await composer(panes.first()).fill('Rascunho independente A')
-  await composer(panes.first()).press('Meta+d')
+  await composer(panes.first()).press(`${primaryModifier}+d`)
   await checkCount(2)
   assert.equal(await focused().getByRole('textbox', { name: 'Buscar conversa', exact: true }).evaluate(element => element === document.activeElement), true)
   assert.equal(await focused().getByText('Aberta', { exact: true }).count(), 1)
@@ -193,7 +222,7 @@ export async function verifyPanes(page, context, state, dir) {
   const secondId = await focused().getAttribute('data-pane-id')
   assert.notEqual(firstId, secondId)
   assert.equal(await page.getByRole('menu').count(), 0, 'Inline conversation choices must not block global shortcuts')
-  await composer(panes.first()).press('Meta+Shift+d')
+  await composer(panes.first()).press(`${primaryModifier}+Shift+d`)
   await checkCount(3)
   await closePane(focused())
   await checkCount(2)
@@ -215,7 +244,7 @@ export async function verifyPanes(page, context, state, dir) {
     while (state.finishModel === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20))
     assert.notEqual(state.finishModel, null)
     state.finishModel()
-    await focused().getByText(`Mensagem ${i}`, { exact: true }).waitFor()
+    await focused().getByText(`Mensagem ${i}`, { exact: true }).last().waitFor()
     await focused().locator('[data-composer-card][data-composer-running]').waitFor({ state: 'hidden' })
   }
   await composer(focused()).fill('Rascunho temporário')
@@ -229,7 +258,7 @@ export async function verifyPanes(page, context, state, dir) {
   }
   await composer(focused()).press('ArrowDown')
   assert.equal((await composer(focused()).innerText()).trim(), 'Rascunho temporário', 'Down restores the original draft')
-  await composer(focused()).press('Meta+a')
+  await composer(focused()).press(`${primaryModifier}+a`)
   await composer(focused()).press('Backspace')
   await page.waitForFunction(() => document.querySelector('[data-pane-focused] [contenteditable=true]')?.textContent?.trim() === '')
   assert.equal(await focused().locator('[data-model-id="max/qwen3.6-27b"]').count(), 1)
@@ -237,12 +266,12 @@ export async function verifyPanes(page, context, state, dir) {
   await verifyPaneActivation(page, panes.first(), page.locator(`[data-pane-id="${secondId}"]`), dir)
   await composer(focused()).fill('Rascunho independente B')
   assert.equal(await composer(panes.first()).innerText(), 'Rascunho independente A')
-  await composer(focused()).press('Meta+Alt+ArrowLeft')
+  await composer(focused()).press(`${primaryModifier}+Alt+ArrowLeft`)
   assert.equal(await focused().getAttribute('data-pane-id'), firstId)
   assert.equal(await composer(focused()).evaluate((el) => document.activeElement === el), true)
-  await composer(focused()).press('Meta+Alt+ArrowRight')
+  await composer(focused()).press(`${primaryModifier}+Alt+ArrowRight`)
   assert.equal(await focused().getAttribute('data-pane-id'), secondId)
-  await composer(focused()).press('Meta+Shift+d')
+  await composer(focused()).press(`${primaryModifier}+Shift+d`)
   await checkCount(3)
   await focused().getByRole('button', { name: 'Nova conversa', exact: true }).click()
   await composer(focused()).waitFor()
@@ -295,7 +324,7 @@ export async function verifyPanes(page, context, state, dir) {
   await checkCount(4)
   assert.equal(await splitRight(focused()).isDisabled(), true)
   assert.equal(await splitDown(focused()).isDisabled(), true)
-  await composer(focused()).press('Meta+d')
+  await composer(focused()).press(`${primaryModifier}+d`)
   await checkCount(4)
   const before = await page
     .locator('[data-pane-id]')
@@ -405,6 +434,118 @@ export async function verifyPanes(page, context, state, dir) {
   assert.equal(await stop(right).isVisible(), true, 'Stopping one pane stopped the other conversation')
   finishRight()
   await stop(right).waitFor({ state: 'hidden' })
+
+  // Compare one and two sustained Client streams while all four product panes remain mounted.
+  // The fixture cadence is fixed so the measurements can be compared after UI changes.
+  const cdp = await context.newCDPSession(page)
+  const streamControls = new Map()
+  const measurementTokens = ['QA_MULTI_CHAT_SINGLE_A', 'QA_MULTI_CHAT_PAIR_A', 'QA_MULTI_CHAT_PAIR_B']
+  state.agentFixture = (input, chunk, finish) => {
+    const lastUser = input.messages.findLast(message => message.role === 'user')
+    const latestUserText = JSON.stringify(lastUser?.content)
+    const token = measurementTokens.find(value => latestUserText.includes(value))
+    if (token === undefined) return false
+    const first = `${token}_FIRST`
+    const done = `${token}_DONE`
+    const requestedAt = performance.now()
+    let emitted = 0
+    let ended = false
+    let timer
+    let streamStartedAt
+    const start = () => {
+      streamStartedAt = performance.now()
+      timer = setInterval(() => {
+        chunk({ content: emitted === 0 ? `${first} ` : `piece-${String(emitted)} ` })
+        emitted += 1
+        if (emitted === 80) complete()
+      }, 8)
+    }
+    const complete = () => {
+      if (ended) return
+      ended = true
+      if (timer !== undefined) clearInterval(timer)
+      try {
+        finish(done)
+      } finally {
+        streamControls.delete(token)
+        if (state.finishModel === complete) state.finishModel = null
+      }
+    }
+    streamControls.set(token, { start, complete, requestedAt, get streamStartedAt() { return streamStartedAt } })
+    state.finishModel = complete
+    return true
+  }
+  const startMeasuredStream = async (pane, token) => {
+    const started = performance.now()
+    await composer(pane).fill(token)
+    await composer(pane).press('Enter')
+    const deadline = Date.now() + 20000
+    while (!streamControls.has(token) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+    assert.ok(streamControls.has(token), `Stream ${token} did not reach the controlled model`)
+    return { started, first: `${token}_FIRST`, done: `${token}_DONE`, requestedAt: streamControls.get(token).requestedAt }
+  }
+  const measureStreams = async (scenario, panelTokens) => {
+    const measured = []
+    for (const [pane, token] of panelTokens) {
+      const request = await startMeasuredStream(pane, token)
+      measured.push({ ...request, control: streamControls.get(token) })
+    }
+    assert.ok(measured.every(item => item.control !== undefined), 'Every controlled stream must reach the barrier')
+    await cdp.send('HeapProfiler.collectGarbage')
+    const metricsBefore = await browserMetrics(cdp)
+    const streamStart = performance.now()
+    for (const item of measured) item.control.start()
+    const firstChunkMs = {}
+    const firstChunkAfterReleaseMs = {}
+    for (let index = 0; index < measured.length; index++) {
+      const item = measured[index]
+      const [pane] = panelTokens[index]
+      await pane.getByText(item.first, { exact: false }).waitFor()
+      firstChunkMs[panelTokens[index][1]] = rounded(performance.now() - item.started)
+      firstChunkAfterReleaseMs[panelTokens[index][1]] = rounded(performance.now() - item.control.streamStartedAt)
+    }
+    for (let index = 0; index < measured.length; index++) {
+      const item = measured[index]
+      const [pane] = panelTokens[index]
+      await pane.getByText(item.done, { exact: false }).waitFor({ timeout: 20000 })
+    }
+    const totalMs = performance.now() - streamStart
+    const metricsAfter = await browserMetrics(cdp)
+    await cdp.send('HeapProfiler.collectGarbage')
+    const retained = await browserMetrics(cdp)
+    console.log('MULTI_CHAT_PERF_RESULT ' + JSON.stringify({
+      scenario,
+      panes: await panes.count(),
+      streams: panelTokens.length,
+      chunksPerStream: 80,
+      chunkIntervalMs: 8,
+      clickToFirstChunkMs: firstChunkMs,
+      streamStartToFirstChunkMs: firstChunkAfterReleaseMs,
+      clickToModelRequestMs: Object.fromEntries(measured.map(item => [item.done.replace('_DONE', ''), rounded(item.requestedAt - item.started)])),
+      totalMs: rounded(totalMs),
+      workDuringStreams: metricDelta(metricsBefore, metricsAfter),
+      retainedAfterGc: retained,
+    }))
+  }
+  try {
+    await cdp.send('Performance.enable')
+    await measureStreams('four-open-panes-one-stream', [[left, measurementTokens[0]]])
+    await measureStreams('four-open-panes-two-simultaneous-streams', [
+      [left, measurementTokens[1]],
+      [right, measurementTokens[2]],
+    ])
+  } finally {
+    state.agentFixture = null
+    state.finishModel = null
+    let cleanupError
+    for (const control of streamControls.values()) {
+      try { control.complete() }
+      catch (error) { cleanupError ??= error }
+    }
+    await cdp.detach()
+    if (cleanupError !== undefined) throw cleanupError
+  }
+
   await composer(left).fill('Rascunho independente A')
   await composer(right).fill('Rascunho independente B')
   const divider = page.getByRole('separator').first()
@@ -445,7 +586,7 @@ export async function verifyPanes(page, context, state, dir) {
     const payload = response.request().postData() ?? ''
     return response.ok() && payload.includes('paneLayout') && [...payload.matchAll(/sessionId/g)].length === 3
   })
-  await composer(focused()).press('Meta+w')
+  await composer(focused()).press(`${primaryModifier}+w`)
   await checkCount(3)
   await closedLayoutSaved
   // The same DOM keyboard path used by Tauri resolves Windows primary to Control.
@@ -497,11 +638,11 @@ async function verifyPaneActivation(page, first, second, dir) {
   }
   const draft = await editor(first).innerText()
   await editor(first).focus()
-  await editor(first).press('Meta+a')
+  await editor(first).press(`${primaryModifier}+a`)
   await editor(first).press('Backspace')
   assert.equal((await editor(first).innerText()).trim(), '', 'Clear the retained draft before measuring compact selection')
   await editor(second).focus()
-  await editor(second).press('Meta+Alt+ArrowLeft')
+  await editor(second).press(`${primaryModifier}+Alt+ArrowLeft`)
   await compact(first)
   await compact(second)
   assert.equal(await editor(first).evaluate(element => element === document.activeElement), true)

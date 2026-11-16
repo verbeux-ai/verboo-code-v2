@@ -212,7 +212,7 @@ describe('Conversation registries', () => {
     expect(openTurn.getSnapshot()).toBe(8)
   })
 
-  it('publishes frame-paced updates after three animation frames and lets immediate updates preempt them', async () => {
+  it('publishes frame-paced updates after four animation frames and lets immediate updates preempt them', async () => {
     let nextFrame = 0
     const frames = new Map<number, FrameRequestCallback>()
     const requestFrame = vi.fn((callback: FrameRequestCallback) => {
@@ -298,6 +298,13 @@ describe('Conversation registries', () => {
     if (third === undefined) throw new Error('third animation frame was not scheduled')
     frames.delete(3)
     third(32)
+    expect(requestFrame).toHaveBeenCalledTimes(4)
+    expect(listener).not.toHaveBeenCalled()
+
+    const fourth = frames.get(4)
+    if (fourth === undefined) throw new Error('fourth animation frame was not scheduled')
+    frames.delete(4)
+    fourth(48)
     expect(listener).toHaveBeenCalledOnce()
 
     append({
@@ -327,7 +334,7 @@ describe('Conversation registries', () => {
         surfaceOp: 'append',
       },
     })
-    expect(cancelFrame).toHaveBeenCalledWith(4)
+    expect(cancelFrame).toHaveBeenCalledWith(5)
     expect(frames).toHaveLength(0)
     expect(listener).toHaveBeenCalledTimes(2)
 

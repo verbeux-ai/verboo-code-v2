@@ -85,7 +85,8 @@ function useStableLiveProcessTitle(desired: LiveProcessTitle, active: boolean): 
 const GroupMembers = memo(function GroupMembers({ members, ...props }: SeatProps & {
   readonly members: readonly NodeReference[]
 }) {
-  return members.map(member => <ChatNodeSeat {...props} key={chatRenderKey(member)} nodeKey={member.key}
+  return members.map(member => <ChatNodeSeat {...props} deferOffscreenLayout={false}
+    key={chatRenderKey(member)} nodeKey={member.key}
     {...member.groupPart === undefined ? {} : { groupPart: member.groupPart }} />)
 })
 
@@ -189,6 +190,7 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   return (
     <div ref={rootRef} className={css.root} data-chat-group-key={groupKey}
       data-chat-flow-key={groupKey} data-chat-anchor-key={`group:${groupKey}`} data-chat-turn={turn}
+      data-chat-history-row={props.deferOffscreenLayout || undefined}
       data-chat-paging-anchor={grouped && !open || undefined}
       data-step-process data-group-expanded-mode={!grouped || undefined}>
       <div ref={headerRef}>

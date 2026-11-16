@@ -628,7 +628,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(page)
         await page.locator('[data-composer-input][contenteditable="true"]').last().fill(input)
         await nextPaint(page)
-        if (scenario.name === 'visible-steps') {
+        if (scenario.name === 'visible-steps' || scenario.name === 'large-input') {
           const offset = 20
           await thoughts.last().getByRole('button').first().evaluate((button, offset) => {
             const host = button.closest<HTMLElement>('[data-conversation-scroll]')!

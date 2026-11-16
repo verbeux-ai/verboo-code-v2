@@ -240,6 +240,28 @@ describe('web e2e: long Chat interaction contract', () => {
       () => page.locator('[data-chat-turn="1"][data-chat-flow-kind="user"]').count(),
       { timeout: 5_000 },
     ).toBe(1)
+    const firstAssistant = page.locator('[data-chat-turn="1"][data-chat-flow-kind="assistant-step"]')
+    await expect.poll(() => firstAssistant.count(), { timeout: 5_000 }).toBe(1)
+    await firstAssistant.evaluate((row) => {
+      for (let parent = row.parentElement; parent !== null; parent = parent.parentElement) {
+        const overflowY = getComputedStyle(parent).overflowY
+        if ((overflowY === 'auto' || overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+          parent.scrollTop = parent.scrollHeight
+          return
+        }
+      }
+    })
+    await nextPaint(page)
+    await expect.poll(() => firstAssistant.getAttribute('data-chat-content-virtualized'), { timeout: 5_000 })
+      .toBe('true')
+    await firstLoaded.evaluate((button) => { button.blur() })
+    expect(await firstAssistant.locator('[data-chat-virtualized-text]').textContent())
+      .toContain(FIXTURE.markers.assistant(1))
+    await firstAssistant.evaluate((row) => { row.scrollIntoView({ block: 'center' }) })
+    await expect.poll(() => firstAssistant.getAttribute('data-chat-content-virtualized'), { timeout: 5_000 })
+      .toBeNull()
+    await expect.poll(() => firstAssistant.textContent(), { timeout: 5_000 })
+      .toContain(FIXTURE.markers.assistant(1))
 
     // Desktop-only affordance: a narrow Chat container hides the rail outright.
     await page.setViewportSize({ width: 800, height: 900 })

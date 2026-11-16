@@ -1442,6 +1442,31 @@ describe('TrajectoryTable', () => {
     expect(screen.getByRole('row', { name: /Collapsed turn summary/ })).toBeTruthy()
   })
 
+  it('preserves system and request-only rows while summarizing turn content once', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [
+          { index: 1, kind: 'system', text: 'Tools Updated', timeSeconds: 0 },
+          { index: 2, kind: 'message', text: '', requestOnly: true, timeSeconds: 0 },
+          { index: 3, kind: 'user', text: 'Keep this user prompt', timeSeconds: 0 },
+          { index: 4, kind: 'message', text: 'Assistant answer', timeSeconds: 0 },
+          { index: 5, kind: 'tool', text: 'bash · {}', timeSeconds: 0 },
+        ],
+      }],
+    }]
+    const view = render(
+      <TrajectoryTable turns={turns} {...FOLD_PROPS} collapsedTurns={new Set([1])} />,
+    )
+
+    expect(view.container.querySelector('[data-kind="system"]')?.textContent).toContain('Tools Updated')
+    expect(view.container.querySelectorAll('[data-request-only="true"]')).toHaveLength(1)
+    expect(view.container.querySelector('[data-record-index="3"]')?.textContent).toContain('Keep this user prompt')
+    expect(view.container.querySelector('[data-collapsed-summary="turn"]')?.textContent).toContain('1 tool call')
+    expect(view.container.querySelectorAll('[data-record-index="4"], [data-record-index="5"]')).toHaveLength(0)
+  })
+
   const CALL_TURNS: readonly TrajectoryTurnModel[] = [{
     turn: 1,
     groups: [{

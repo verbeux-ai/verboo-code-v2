@@ -219,6 +219,7 @@ export interface ChatFlowInjected {
 /** Stable sources and capabilities bound to one rendered Chat Node. */
 export interface ChatNodeHookContext {
   readonly turnData: ConversationLocationDataStore<ConversationTurnDataMap> | undefined
+  /** Advances when this row is hidden as a Turn-process member; rows outside that path use a shared zero snapshot. */
   readonly disclosureReset: ObservableSnapshot<number>
   readonly useGroupAction: UseGroupAction
 }
@@ -258,6 +259,8 @@ export interface ChatNodeOwnerProps {
   loadImage: MessageImageLoader
   /** Turn-process state when this Node belongs to a projected Turn. */
   turnProcess?: TurnProcessOwnerProps | undefined
+  /** Optional content-suspension hint; existing renderers may ignore it and stay mounted. */
+  virtualization?: { readonly suspended: boolean } | undefined
 }
 
 /** One attachment in the original user-message display order. */

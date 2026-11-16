@@ -228,6 +228,7 @@ export function ChatView({
       <div className={css.root} data-chat-following-tail={scroll.followingTail ? '' : undefined}>
         <div ref={scroll.listRef} className={css.scroll}>
           <div ref={scroll.columnRef} className={css.column} data-chat-flow=""
+            data-chat-history-complete={!hasMore ? '' : undefined}
             data-chat-motion={deferCompletedTurns && scroll.initialized
               && (running || motionTail || pendingInputs.length > 0) ? '' : undefined}>
             {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}

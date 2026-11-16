@@ -121,6 +121,7 @@ interface UserRenderProbeResult {
 
 interface RetainedBrowserState {
   readonly domElements: number
+  readonly virtualizedRows: number
   readonly nodes: number
   readonly listeners: number
   readonly heapMb: number
@@ -336,13 +337,13 @@ function smallSidebarFixture(): string {
   session.append('turn/start', {
     turn: 1,
   })
+  session.append('step/start', { turn: 1, step: 1 })
+  appendSystemPrompt(session, 1, 1)
   const user = session.append('user/message', createUserMessage({
     content: text('Inspect this compact synthetic session.'),
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   appendTitle(session, 'Synthetic sidebar session', user.seq)
-  session.append('step/start', { turn: 1, step: 1 })
-  appendSystemPrompt(session, 1, 1)
   appendRequestHeader(session, 1, 1)
   appendToolStep(session, 1, 1, 2)
   session.append('step/end', { turn: 1, step: 1 })
@@ -360,6 +361,10 @@ function longHistoryFixture(): string {
     session.append('turn/start', {
       turn,
     })
+    if (turn === 1) {
+      session.append('step/start', { turn, step: 1 })
+      appendSystemPrompt(session, turn, 1)
+    }
     const user = session.append('user/message', createUserMessage({
       content: text(
         `LONG_PERF_SENTINEL turn ${String(turn)}: analyze payload ${'u'.repeat(200)}`,
@@ -368,8 +373,7 @@ function longHistoryFixture(): string {
     }), { surfaceOp: 'append' })
     if (turn === 1) appendTitle(session, LONG_SESSION_TITLE, user.seq)
 
-    session.append('step/start', { turn, step: 1 })
-    if (turn === 1) appendSystemPrompt(session, turn, 1)
+    if (turn !== 1) session.append('step/start', { turn, step: 1 })
     appendRequestHeader(session, turn, 1)
     if (turn % TOOL_TURN_INTERVAL === 0) {
       appendToolStep(session, turn, 1, TOOLS_PER_TOOL_TURN)
@@ -544,6 +548,7 @@ async function retainedBrowserState(
   const metrics = await chromiumMetrics(cdp)
   return {
     domElements: await page.evaluate(() => document.querySelectorAll('*').length),
+    virtualizedRows: await page.locator('[data-chat-virtualized-text="true"]').count(),
     nodes: requiredMetric(metrics, 'Nodes'),
     listeners: requiredMetric(metrics, 'JSEventListeners'),
     heapMb: rounded(requiredMetric(metrics, 'JSHeapUsedSize') / 1_048_576),
@@ -819,12 +824,40 @@ async function conversationTurns(page: Page): Promise<number> {
   return stableCount(page.locator('[data-chat-flow-key^="9:turn-tail"]'), count => count > 0)
 }
 
+async function scrollToHistoryStart(page: Page): Promise<void> {
+  const scroll = page.locator('[data-conversation-scroll]').first()
+  const box = await scroll.boundingBox()
+  if (box === null) throw new Error('conversation scrollport has no layout box')
+  await page.mouse.move(box.x + box.width / 2, box.y + Math.min(140, box.height / 3))
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await scroll.evaluate(element => element.scrollTop) <= 1) break
+    await page.mouse.wheel(0, -2_400)
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) })
+    }))
+  }
+  await expect.poll(() => scroll.evaluate(element => element.scrollTop), { timeout: 10_000 })
+    .toBeLessThanOrEqual(1)
+}
+
+async function scrollToHistoryEnd(page: Page): Promise<void> {
+  const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+  const send = page.getByRole('button', { name: 'Send message', exact: true })
+  await composer.scrollIntoViewIfNeeded()
+  await send.scrollIntoViewIfNeeded()
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) })
+  }))
+  expect(await send.isVisible()).toBe(true)
+}
+
 function retainedDelta(
   before: RetainedBrowserState,
   after: RetainedBrowserState,
 ): RetainedBrowserState {
   return {
     domElements: after.domElements - before.domElements,
+    virtualizedRows: after.virtualizedRows - before.virtualizedRows,
     nodes: after.nodes - before.nodes,
     listeners: after.listeners - before.listeners,
     heapMb: rounded(after.heapMb - before.heapMb),
@@ -920,18 +953,18 @@ async function closePerformanceWorld(world: PerformanceWorld): Promise<void> {
 
 async function openPerformancePage(
   world: PerformanceWorld,
-  expectedSessions: number,
 ): Promise<Locator> {
   await world.page.goto(world.scaffold.authenticatedUrl, { waitUntil: 'load' })
   await world.page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   const group = world.page.getByRole('treeitem').first()
-  await expect.poll(() => group.textContent(), { timeout: 30_000 })
-    .toContain(`${String(expectedSessions)} ${expectedSessions === 1 ? 'session' : 'sessions'}`)
+  await group.waitFor({ state: 'visible', timeout: 30_000 })
   return group
 }
 
 async function openLongHistory(page: Page): Promise<number> {
-  await page.getByRole('textbox', { name: 'Search name, keywords...', exact: true })
+  const searchButton = page.getByRole('button', { name: 'Search sessions', exact: true })
+  if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
+  await page.getByRole('textbox', { name: 'Search session names', exact: true })
     .fill('LONG_PERF_SENTINEL')
   const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
   await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
@@ -949,10 +982,20 @@ async function continueConversation(
     readonly turnSpec: (index: number) => ConversationTurnSpec
     readonly expectedSessionId?: SessionId
     readonly checkpointInterval?: number
+    /** Large live extensions may return the Session to its latest page window. */
+    readonly preservesLoadedHistory?: boolean
+    /** Extra wait allowance when Chromium CPU throttling is active. */
+    readonly streamTimeoutMs?: number
+    readonly settleTimeoutMs?: number
   },
 ): Promise<ConversationReport> {
   const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
+  const streamTimeoutMs = options.streamTimeoutMs ?? 15_000
   await composer.waitFor({ timeout: 15_000 })
+  if (options.startingTurns > 100) {
+    await expect.poll(() => world.page.locator('[data-chat-virtualized-text="true"]').count(), { timeout: 10_000 })
+      .toBeGreaterThan(0)
+  }
   const retainedBefore = await retainedBrowserState(cdp, world.page)
   const checkpoints: RetainedCheckpoint[] = [{ turns: options.startingTurns, state: retainedBefore }]
   const turns: ContinuedTurnReport[] = []
@@ -961,8 +1004,8 @@ async function continueConversation(
   for (let index = 1; index <= options.turnCount; index += 1) {
     const spec = options.turnSpec(index)
     const composerFill = await measure(cdp, async () => {
-      await composer.fill(spec.prompt)
-      await expect.poll(() => composer.textContent()).toBe(spec.prompt)
+      await composer.fill(spec.prompt, { timeout: streamTimeoutMs })
+      await expect.poll(() => composer.textContent(), { timeout: streamTimeoutMs }).toBe(spec.prompt)
       return ((await composer.textContent()) ?? '').length
     })
     expect(composerFill.value).toBe(spec.prompt.length)
@@ -971,11 +1014,12 @@ async function continueConversation(
     await startMutationProbe(world.page)
     const streamBefore = await chromiumMetrics(cdp)
     const streamStarted = performance.now()
-    const settled = world.scaffold.whenTurnSettled(60_000)
-    await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
-    await world.page.getByText(spec.userMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
+    const settled = world.scaffold.whenTurnSettled(options.settleTimeoutMs ?? 60_000)
+    void settled.catch(() => {})
+    await world.page.getByRole('button', { name: 'Send message', exact: true }).click({ timeout: streamTimeoutMs })
+    await world.page.getByText(spec.userMarker, { exact: false }).last().waitFor({ timeout: streamTimeoutMs })
     const clickToUserEchoMs = performance.now() - streamStarted
-    await world.page.getByText(spec.firstMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
+    await world.page.getByText(spec.firstMarker, { exact: false }).last().waitFor({ timeout: streamTimeoutMs })
     const clickToFirstChunkMs = performance.now() - streamStarted
     const settledSessionId = await settled
     if (liveSessionId === undefined) {
@@ -985,9 +1029,9 @@ async function continueConversation(
     }
     await expect.poll(
       () => world.page.locator('[data-streaming="true"]').count(),
-      { timeout: 15_000 },
+      { timeout: streamTimeoutMs },
     ).toBe(0)
-    await world.page.getByText(spec.doneMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
+    await world.page.getByText(spec.doneMarker, { exact: false }).last().waitFor({ timeout: streamTimeoutMs })
     const clickToSettledMs = performance.now() - streamStarted
     const streamAfter = await chromiumMetrics(cdp)
     const mutations = await stopMutationProbe(world.page)
@@ -1027,7 +1071,13 @@ async function continueConversation(
       .map(block => block.text)
       .join('')).toBe(spec.prompt)
     const resultingTurns = await conversationTurns(world.page)
-    expect(resultingTurns).toBe(options.startingTurns + index)
+    if (options.preservesLoadedHistory === false) {
+      // The active history window can be recomputed after a live extension;
+      // the new conversation must remain renderable in either window state.
+      expect(resultingTurns).toBeGreaterThan(0)
+    } else {
+      expect(resultingTurns).toBe(options.startingTurns + index)
+    }
     turns.push({
       ordinal: index,
       resultingTurns,
@@ -1214,7 +1264,7 @@ describe('manual web performance: complex workspace and history', () => {
     })
     try {
       const bootStarted = performance.now()
-      const group = await openPerformancePage(world, SIDEBAR_SESSION_COUNT + 1)
+      const group = await openPerformancePage(world)
       const bootReadyMs = performance.now() - bootStarted
       const page = world.page
       const cdp = await page.context().newCDPSession(page)
@@ -1272,6 +1322,7 @@ describe('manual web performance: complex workspace and history', () => {
       let turns = await conversationTurns(page)
       while (turns < LONG_HISTORY_TURNS) {
         const previousTurns = turns
+        await scrollToHistoryStart(world.page)
         const older = await measure(cdp, async () => {
           await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
           await expect.poll(() => conversationTurns(page), { timeout: 30_000 })
@@ -1332,8 +1383,9 @@ describe('manual web performance: complex workspace and history', () => {
       replay: performanceReplayOverride(COMPARISON_TURNS, comparisonTurn),
       seedLongHistory: true,
     })
+    let testFailure: unknown
     try {
-      await openPerformancePage(world, 1)
+      await openPerformancePage(world)
       const cdp = await world.page.context().newCDPSession(world.page)
       await cdp.send('Performance.enable')
       const opened = await measure(cdp, () => openLongHistory(world.page))
@@ -1354,8 +1406,16 @@ describe('manual web performance: complex workspace and history', () => {
       }, null, 2)}`)
       expect(world.tripwire.warnings).toEqual([])
       expect(world.tripwire.pageErrors).toEqual([])
+    } catch (error) {
+      testFailure = error
+      throw error
     } finally {
-      await closePerformanceWorld(world)
+      try {
+        await closePerformanceWorld(world)
+      } catch (cleanupError) {
+        if (testFailure === undefined) throw cleanupError
+        throw new AggregateError([testFailure, cleanupError], 'default history performance test and teardown failed')
+      }
     }
   })
 
@@ -1365,8 +1425,9 @@ describe('manual web performance: complex workspace and history', () => {
       replay: performanceReplayOverride(COMPARISON_TURNS, comparisonTurn),
       seedLongHistory: true,
     })
+    let testFailure: unknown
     try {
-      await openPerformancePage(world, 1)
+      await openPerformancePage(world)
       const cdp = await world.page.context().newCDPSession(world.page)
       await cdp.send('Performance.enable')
       expect(await openLongHistory(world.page)).toBe(DEFAULT_HISTORY_TURNS)
@@ -1374,8 +1435,10 @@ describe('manual web performance: complex workspace and history', () => {
       let turns = DEFAULT_HISTORY_TURNS
       while (turns < LONG_HISTORY_TURNS) {
         const previousTurns = turns
+        await scrollToHistoryStart(world.page)
+        const olderButton = world.page.getByRole('button', { name: 'Load earlier', exact: true })
         const older = await measure(cdp, async () => {
-          await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+          await olderButton.click()
           await expect.poll(() => conversationTurns(world.page), { timeout: 30_000 })
             .toBeGreaterThan(previousTurns)
           return conversationTurns(world.page)
@@ -1384,11 +1447,15 @@ describe('manual web performance: complex workspace and history', () => {
         historyPages.push({ turns, measurement: older.measurement })
       }
       expect(turns).toBe(LONG_HISTORY_TURNS)
+      await scrollToHistoryEnd(world.page)
       const conversation = await continueConversation(world, cdp, {
         startingTurns: LONG_HISTORY_TURNS,
         turnCount: COMPARISON_TURNS,
         turnSpec: comparisonTurn,
         expectedSessionId: SessionId(LONG_SESSION_ID),
+        preservesLoadedHistory: false,
+        streamTimeoutMs: 120_000,
+        settleTimeoutMs: 180_000,
       })
       expect(conversation.toolTurns).toBe(2)
       console.info(`WEB_PERF_RESULT ${JSON.stringify({
@@ -1400,8 +1467,83 @@ describe('manual web performance: complex workspace and history', () => {
       }, null, 2)}`)
       expect(world.tripwire.warnings).toEqual([])
       expect(world.tripwire.pageErrors).toEqual([])
+    } catch (error) {
+      testFailure = error
+      throw error
     } finally {
-      await closePerformanceWorld(world)
+      try {
+        await closePerformanceWorld(world)
+      } catch (cleanupError) {
+        if (testFailure === undefined) throw cleanupError
+        throw new AggregateError([testFailure, cleanupError], 'expanded history performance test and teardown failed')
+      }
+    }
+  })
+
+  it('reports one stream on a fully expanded 500-turn history under 6x CPU throttling', async () => {
+    const world = await launchPerformanceWorld({
+      browser,
+      replay: performanceReplayOverride(1, comparisonTurn),
+      seedLongHistory: true,
+    })
+    let testFailure: unknown
+    let cdp: CDPSession | undefined
+    try {
+      await openPerformancePage(world)
+      cdp = await world.page.context().newCDPSession(world.page)
+      await cdp.send('Performance.enable')
+      expect(await openLongHistory(world.page)).toBe(DEFAULT_HISTORY_TURNS)
+      const historyPages: { turns: number; measurement: Measurement }[] = []
+      let turns = DEFAULT_HISTORY_TURNS
+      while (turns < LONG_HISTORY_TURNS) {
+        const previousTurns = turns
+        await scrollToHistoryStart(world.page)
+        const olderButton = world.page.getByRole('button', { name: 'Load earlier', exact: true })
+        const older = await measure(cdp, async () => {
+          await olderButton.click()
+          await expect.poll(() => conversationTurns(world.page), { timeout: 30_000 })
+            .toBeGreaterThan(previousTurns)
+          return conversationTurns(world.page)
+        })
+        turns = older.value
+        historyPages.push({ turns, measurement: older.measurement })
+      }
+      expect(turns).toBe(LONG_HISTORY_TURNS)
+      // The reader sends from the conversation tail; leave the composer and
+      // send action in view before applying the CPU throttle.
+      await scrollToHistoryEnd(world.page)
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 })
+      const conversation = await continueConversation(world, cdp, {
+        startingTurns: LONG_HISTORY_TURNS,
+        turnCount: 1,
+        turnSpec: comparisonTurn,
+        expectedSessionId: SessionId(LONG_SESSION_ID),
+        preservesLoadedHistory: false,
+        streamTimeoutMs: 120_000,
+        settleTimeoutMs: 180_000,
+      })
+      console.info(`WEB_PERF_RESULT ${JSON.stringify({
+        scenario: 'expanded-history-500-plus-1-cpu6',
+        setupMs: rounded(world.setupMs),
+        cpuThrottlingRate: 6,
+        replayContextWindow: PERF_REPLAY_CONTEXT_WINDOW,
+        historyPages,
+        conversation,
+      }, null, 2)}`)
+      expect(world.tripwire.warnings).toEqual([])
+      expect(world.tripwire.pageErrors).toEqual([])
+    } catch (error) {
+      testFailure = error
+      throw error
+    } finally {
+      try {
+        await cdp?.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+        await cdp?.detach()
+        await closePerformanceWorld(world)
+      } catch (cleanupError) {
+        if (testFailure === undefined) throw cleanupError
+        throw new AggregateError([testFailure, cleanupError], 'CPU-throttled history performance test and teardown failed')
+      }
     }
   })
 

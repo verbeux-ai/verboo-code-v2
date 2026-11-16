@@ -15,10 +15,15 @@ export interface AssistantNodeInjected extends PresentationInjected {
 type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<AssistantNodeInjected>
   & PropsRenderSlots<'conversation.chat.assistant.mark' | 'conversation.chat.reasoning.body' | 'conversation.chat.message.images'>
 
+function virtualJsonText(value: unknown): string {
+  const serialized: unknown = JSON.stringify(value)
+  return typeof serialized === 'string' ? serialized : ''
+}
+
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
   node, groupPart, useDisclosure, useGroupAction, useTurnData, turnProcess, openFile, loadImage, fileMentions,
-  usePresentation, renderSlot, t, sessionId, useContextMenu, resolveFilePath,
+  usePresentation, renderSlot, t, sessionId, useContextMenu, resolveFilePath, virtualization,
 }: AssistantNodeViewProps) {
   const { getTriggerProps } = useContextMenu()
   const getFileTriggerProps = useCallback((path: string) => getTriggerProps(() => ({
@@ -54,27 +59,47 @@ export const AssistantNodeView = memo(function AssistantNodeView({
   const closing = owner !== undefined
     || (tail === undefined && data.status === 'settled'
       && (turnProcess === undefined || turnProcess.spec.answerStep === data.step))
+  const virtualText = useMemo(() => {
+    if (virtualization?.suspended !== true) return ''
+    return data.blocks.flatMap((block) => {
+      if (groupPart === 'reasoning' && block.kind !== 'reasoning') return []
+      if (groupPart === 'response' && block.kind === 'reasoning') return []
+      switch (block.kind) {
+        case 'text': return [block.text]
+        case 'reasoning': return reasoningHidden ? [] : [block.text]
+        case 'image': return block.attachment.name === undefined ? [] : [block.attachment.name]
+        case 'tool-call': return []
+        case 'other': return [typeof block.block === 'string' ? block.block : virtualJsonText(block.block)]
+        default: return []
+      }
+    }).filter(text => text !== '').join('\n')
+      + (data.status === 'interrupted' ? `\n${t('message.stopped')}` : '')
+  }, [data.blocks, data.status, groupPart, reasoningHidden, t, virtualization?.suspended])
   return (
     <div className={css.message}>
       <div className={css.mark} data-chat-assistant-mark>
         {groupPart !== 'reasoning' && renderSlot('conversation.chat.assistant.mark', { closing })}
       </div>
-      <div className={css.content}><AssistantMarkdown
-        blocks={data.blocks}
-        groupPart={groupPart}
-        useDisclosure={useDisclosure}
-        streaming={data.status === 'running'}
-        textInteractionSource={data.status === 'settled' && data.finalNode?.messageId !== undefined}
-        interrupted={data.status === 'interrupted'}
-        loadImage={loadImage}
-        reasoningHidden={reasoningHidden}
-        useGroupAction={useGroupAction}
-        usePresentation={usePresentation}
-        renderSlot={renderSlot}
-        revealProcess={revealProcess}
-        mentions={mentions}
-        t={t}
-      /></div>
+      <div className={css.content}>
+        {virtualization?.suspended === true
+          ? <div className={css.virtualText} data-chat-virtualized-text="true">{virtualText}</div>
+          : <AssistantMarkdown
+            blocks={data.blocks}
+            groupPart={groupPart}
+            useDisclosure={useDisclosure}
+            streaming={data.status === 'running'}
+            textInteractionSource={data.status === 'settled' && data.finalNode?.messageId !== undefined}
+            interrupted={data.status === 'interrupted'}
+            loadImage={loadImage}
+            reasoningHidden={reasoningHidden}
+            useGroupAction={useGroupAction}
+            usePresentation={usePresentation}
+            renderSlot={renderSlot}
+            revealProcess={revealProcess}
+            mentions={mentions}
+            t={t}
+          />}
+      </div>
     </div>
   )
 })
