@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { apple, notarizeDiskImage, releaseIdentity, signRuntime, validateAppleCredentials, verifyApplication } from '../macos-signing.mjs'
+import { apple, notarizeDiskImage, releaseIdentity, signRuntime, validateAppleCredentials, verifyApplication, waitForNotarization } from '../macos-signing.mjs'
 
 const desktop = fileURLToPath(new URL('../..', import.meta.url))
 const run = promisify(execFile)
@@ -20,6 +20,7 @@ const credentials = {
   CSC_KEYCHAIN: '/private/fixture.keychain-db', APPLE_API_KEY_PATH: '/private/fixture.p8',
 }
 const details = `Authority=${credentials.APPLE_SIGNING_IDENTITY}\nTeamIdentifier=${credentials.APPLE_TEAM_ID}\nTimestamp=Nov 15, 2026\nCodeDirectory v=20500 size=123 flags=0x10000(runtime) hashes=3+0 location=embedded\n`
+const submissionId = '11111111-2222-4333-8444-555555555555'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'verboo-apple-signing-'))
@@ -32,12 +33,13 @@ async function native(path, magic = 'cffaedfe') {
   await writeFile(path, Buffer.concat([Buffer.from(magic, 'hex'), Buffer.alloc(60)]))
 }
 
-function appleFixture({ status = 'Accepted', signature = details, fail } = {}) {
+function appleFixture({ status = 'Accepted', signature = details, fail, uploadResponse } = {}) {
   const calls = []
   return { calls, run: async (command, args, options) => {
     calls.push({ command, args, options })
     if (fail?.(command, args)) throw new Error('Apple tool failed')
-    if (args.includes('submit')) return { stdout: JSON.stringify({ status, id: 'fixture-submission' }), stderr: '' }
+    if (args.includes('submit') && uploadResponse !== undefined) return { stdout: uploadResponse, stderr: '' }
+    if (args.includes('submit') || args.includes('info')) return { stdout: JSON.stringify({ status, id: submissionId }), stderr: '' }
     return { stdout: '', stderr: args.includes('--display') ? signature : '' }
   } }
 }
@@ -133,19 +135,103 @@ test('accepts a DMG only after notarization, stapling and its primary-signature 
   const f = appleFixture()
   await notarizeDiskImage('/private/fixture.dmg', credentials, f.run)
   const submission = f.calls.find(call => call.args.includes('submit'))
-  assert.ok(submission.args.includes('--wait') && submission.args.includes('20m'))
-  assert.equal(submission.options.timeout, 25 * 60_000)
+  assert.ok(submission.args.includes('--no-wait') && !submission.args.includes('--wait'))
+  assert.equal(submission.options.timeout, 5 * 60_000)
+  assert.equal(f.calls.filter(call => call.args.includes('submit')).length, 1)
+  assert.ok(f.calls.some(call => call.args.includes('info') && call.args.includes(submissionId)))
   assert.ok(f.calls.some(call => call.args.join(' ').includes('stapler staple')))
   assert.ok(f.calls.some(call => call.args.join(' ').includes('stapler validate')))
   assert.ok(f.calls.at(-1).args.includes('context:primary-signature'))
 })
 
-test('a rejected or timed-out Apple submission cannot staple or publish a DMG', async () => {
-  for (const configuration of [{ status: 'Invalid' }, { status: 'In Progress' }, { fail: (_command, args) => args.includes('submit') }]) {
+test('a failed upload or rejected Apple submission cannot staple or publish a DMG', async () => {
+  for (const configuration of [{ status: 'Invalid' }, { status: 'Rejected' }, { fail: (_command, args) => args.includes('submit') }]) {
     const f = appleFixture(configuration)
     await assert.rejects(notarizeDiskImage('/private/fixture.dmg', credentials, f.run))
     assert.ok(!f.calls.some(call => call.args.includes('stapler')))
     assert.ok(!f.calls.some(call => call.command.endsWith('spctl')))
+  }
+})
+
+test('an unconfirmed upload cannot start polling or stapling and does not expose its raw response', async () => {
+  for (const uploadResponse of ['fixture-private-output', 'null', '{"status":"Accepted"}', '{"id":"fixture-private-output"}']) {
+    const f = appleFixture({ uploadResponse })
+    await assert.rejects(notarizeDiskImage('/private/fixture.dmg', credentials, f.run), error => {
+      assert.ok(!error.message.includes('fixture-private-output'))
+      return true
+    })
+    assert.equal(f.calls.filter(call => call.args.includes('submit')).length, 1)
+    assert.ok(!f.calls.some(call => call.args.includes('info') || call.args.includes('stapler')))
+  }
+})
+
+test('recovers a status connection failure using the same uploaded submission without another write', async () => {
+  let clock = 0
+  const pauses = []
+  const calls = []
+  const responses = ['In Progress', Object.assign(new Error('transport'), { retryable: true }), 'Accepted']
+  await waitForNotarization(submissionId, credentials, async (_command, args) => {
+    calls.push(args)
+    const response = responses.shift()
+    if (response instanceof Error) throw response
+    return { stdout: JSON.stringify({ id: submissionId, status: response }), stderr: '' }
+  }, { now: () => clock, pause: async milliseconds => { pauses.push(milliseconds); clock += milliseconds }, report: () => {} })
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every(args => args[1] === 'info' && args[2] === submissionId))
+  assert.deepEqual(pauses, [10_000, 1000])
+})
+
+test('bounds transient status reads to three attempts within 35 seconds and never retries authentication', async () => {
+  for (const retryable of [true, false]) {
+    let clock = 0
+    let calls = 0
+    await assert.rejects(waitForNotarization(submissionId, credentials, async (_command, _args, options) => {
+      calls++
+      clock += options.timeout
+      throw Object.assign(new Error('fixture-private-output'), { retryable })
+    }, { now: () => clock, pause: async milliseconds => { clock += milliseconds }, report: () => {} }), error => {
+      assert.match(error.message, /status query failed/)
+      assert.ok(error.message.includes(submissionId) && !error.message.includes('fixture-private-output'))
+      return true
+    })
+    assert.equal(calls, retryable ? 3 : 1)
+    assert.ok(clock <= 35_000)
+  }
+})
+
+test('pending, malformed, rejected and mismatched submissions cannot be mistaken for acceptance', async () => {
+  for (const response of [JSON.stringify({ id: submissionId, status: 'In Progress' }), JSON.stringify({ id: submissionId, status: 'Invalid' }), JSON.stringify({ id: submissionId, status: 'Rejected' }), JSON.stringify({ id: 'another-submission', status: 'Accepted' }), 'fixture-private-output', 'null']) {
+    let clock = 0
+    let calls = 0
+    await assert.rejects(waitForNotarization(submissionId, credentials, async () => {
+      calls++
+      return { stdout: response, stderr: '' }
+    }, { now: () => clock, pause: async () => { clock += 20 * 60_000 }, report: () => {} }), error => {
+      assert.ok(!error.message.includes('fixture-private-output'))
+      return true
+    })
+    assert.equal(calls, 1)
+  }
+})
+
+test('honors a provider retry delay and stops when that delay exceeds the status-read budget', async () => {
+  for (const retryAfterMs of [5000, 60_000]) {
+    let clock = 0
+    let calls = 0
+    const pauses = []
+    const operation = waitForNotarization(submissionId, credentials, async () => {
+      if (++calls === 1) throw Object.assign(new Error('rate limited'), { retryable: true, retryAfterMs })
+      return { stdout: JSON.stringify({ id: submissionId, status: 'Accepted' }), stderr: '' }
+    }, { now: () => clock, pause: async milliseconds => { pauses.push(milliseconds); clock += milliseconds }, report: () => {} })
+    if (retryAfterMs < 35_000) {
+      await operation
+      assert.deepEqual(pauses, [retryAfterMs])
+      assert.equal(calls, 2)
+    } else {
+      await assert.rejects(operation, /status query failed/)
+      assert.deepEqual(pauses, [])
+      assert.equal(calls, 1)
+    }
   }
 })
 
@@ -156,4 +242,15 @@ test('command failures do not expose private arguments or captured tool output',
     assert.ok(!error.message.includes(secret))
     return true
   })
+})
+
+test('classifies known transport failures without retaining private tool diagnostics', async () => {
+  for (const [diagnostic, retryable] of [['NSURLErrorDomain Code=-1005 The network connection was lost.', true], ['HTTP status code: 503', true], ['HTTP status code: 401', false], ['HTTP status code: 429\nRetry-After: 7', true]]) {
+    await assert.rejects(apple(process.execPath, ['-e', 'console.error(process.argv[1]); process.exit(1)', `fixture-private-output\n${diagnostic}`]), error => {
+      assert.equal(error.retryable, retryable)
+      if (diagnostic.includes('Retry-After')) assert.equal(error.retryAfterMs, 7000)
+      assert.ok(!error.message.includes(diagnostic) && !JSON.stringify(error).includes('fixture-private-output'))
+      return true
+    })
+  }
 })

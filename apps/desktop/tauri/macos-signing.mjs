@@ -11,6 +11,7 @@ import { assertMacOSSignatureDetails, assertMacOSRuntimeSignatureDetails } from 
 const execute = promisify(execFile)
 const entitlements = join(dirname(fileURLToPath(import.meta.url)), 'runtime-entitlements.plist')
 const machOMagics = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])
+const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
 
 /**
  * Execute a bounded Apple tool without exposing private arguments on failure.
@@ -30,7 +31,15 @@ export async function apple(command, args, options = {}) {
     const { stdout, stderr } = await operation
     return { stdout, stderr }
   } catch (error) {
-    throw new Error(`macOS release: ${command} ${args[0] ?? ''} failed (${error.killed ? 'timeout or interruption' : error.code ?? 'execution error'})`)
+    const output = `${error.stdout ?? ''}\n${error.stderr ?? ''}`
+    const terminalHTTP = /HTTP[^\n]{0,60}\b(?:400|401|403|404|409|422)\b/i.test(output)
+    const retryable = !terminalHTTP && !executionOptions.signal?.aborted && (error.killed
+      || ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENETUNREACH'].includes(error.code)
+      || /NSURLErrorDomain[^\n]*Code=-(?:1001|1003|1004|1005|1006|1009)\b|network connection was lost|connection (?:reset|timed out)|request timed out|HTTP[^\n]{0,60}\b(?:408|429|5\d\d)\b/i.test(output))
+    const retryAfter = /\bRetry-After:\s*([^\r\n]+)/i.exec(output)?.[1].trim()
+    const delay = retryAfter && (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now())
+    const retryAfterMs = Number.isFinite(delay) && delay >= 0 ? delay : undefined
+    throw Object.assign(new Error(`macOS release: ${command} ${args[0] ?? ''} failed (${error.killed ? 'timeout or interruption' : error.code ?? 'execution error'})`), { retryable, retryAfterMs })
   }
 }
 
@@ -136,6 +145,52 @@ export async function verifyApplication(application, environment, run = apple) {
 }
 
 /**
+ * Poll one uploaded submission for at most 20 minutes; never resubmit an installer.
+ * Each status read allows ten seconds and at most three transient transport attempts
+ * within 35 seconds, honoring Retry-After when the tool supplies it. Authentication,
+ * invalid responses and rejection stop immediately.
+ * @param id - The UUID returned after a successful upload.
+ * @param environment - Materialized App Store Connect credentials.
+ * @param run - Bounded Apple command executor.
+ * @param timing - Monotonic clock, bounded pause and public status reporter.
+ * @returns Only after this exact submission is Accepted.
+ */
+export async function waitForNotarization(id, environment, run = apple, {
+  now = () => performance.now(), pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), report = message => console.log(message),
+} = {}) {
+  if (!uuid.test(id ?? '')) throw new Error('macOS release: Apple did not return a valid submission ID')
+  const deadline = now() + 20 * 60_000
+  let failures = 0
+  let readDeadline
+  let previous
+  while (now() < deadline) {
+    if (failures === 0) readDeadline = Math.min(deadline, now() + 35_000)
+    if (now() >= readDeadline) throw new Error(`macOS release: Apple status query failed for submission ${id}`)
+    let result
+    try {
+      result = await run('/usr/bin/xcrun', ['notarytool', 'info', id, '--key', environment.APPLE_API_KEY_PATH,
+        '--key-id', environment.APPLE_API_KEY, '--issuer', environment.APPLE_API_ISSUER, '--output-format', 'json'], { timeout: Math.max(1, Math.floor(Math.min(10_000, readDeadline - now()))) })
+    } catch (error) {
+      const delay = Math.max((failures + 1) * 1000, error.retryAfterMs ?? 0)
+      if (!error.retryable || ++failures === 3 || now() + delay >= readDeadline) throw new Error(`macOS release: Apple status query failed for submission ${id}`)
+      report(`Verboo Code: retrying the Apple status query for ${id} (${failures + 1}/3)`)
+      await pause(delay)
+      continue
+    }
+    failures = 0
+    let submission
+    try { submission = JSON.parse(result.stdout) } catch { throw new Error(`macOS release: invalid Apple status response for submission ${id}`) }
+    if (!submission || submission.id !== id || !['In Progress', 'Accepted', 'Invalid', 'Rejected'].includes(submission.status)) throw new Error(`macOS release: unexpected Apple status response for submission ${id}`)
+    if (submission.status !== previous) report(`Verboo Code: Apple notarization ${id}: ${submission.status}`)
+    previous = submission.status
+    if (submission.status === 'Accepted') return
+    if (submission.status !== 'In Progress') throw new Error(`macOS release: Apple did not accept the disk image (${submission.status}; submission ${id})`)
+    await pause(Math.max(0, Math.min(10_000, deadline - now())))
+  }
+  throw new Error(`macOS release: Apple notarization exceeded 20 minutes; submission ${id}`)
+}
+
+/**
  * Sign and notarize the final DMG; rejection, timeout, missing tickets or Gatekeeper failure stop publication.
  * @param image - Final disk image containing the stapled application.
  * @param environment - Signing keychain and materialized App Store Connect credentials.
@@ -151,9 +206,12 @@ export async function notarizeDiskImage(image, environment, run = apple) {
   assertMacOSSignatureDetails(details.stdout + details.stderr, expected)
   const result = await run('/usr/bin/xcrun', ['notarytool', 'submit', image, '--key', environment.APPLE_API_KEY_PATH,
     '--key-id', environment.APPLE_API_KEY, '--issuer', environment.APPLE_API_ISSUER,
-    '--wait', '--timeout', '20m', '--output-format', 'json'], { timeout: 25 * 60_000 })
-  const submission = JSON.parse(result.stdout)
-  if (submission.status !== 'Accepted') throw new Error(`macOS release: Apple did not accept the disk image (${submission.status ?? 'unknown status'}; submission ${submission.id ?? 'unknown'})`)
+    '--no-wait', '--output-format', 'json'], { timeout: 5 * 60_000 })
+  let submission
+  try { submission = JSON.parse(result.stdout) } catch { throw new Error('macOS release: invalid Apple upload response') }
+  if (!submission || typeof submission.id !== 'string' || !uuid.test(submission.id)) throw new Error('macOS release: Apple did not return a valid submission ID')
+  console.log(`Verboo Code: disk image uploaded to Apple; submission ${submission.id}`)
+  await waitForNotarization(submission.id, environment, run)
   await run('/usr/bin/xcrun', ['stapler', 'staple', image], { stream: true })
   await run('/usr/bin/xcrun', ['stapler', 'validate', image], { stream: true })
   await run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image])

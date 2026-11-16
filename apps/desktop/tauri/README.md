@@ -72,6 +72,8 @@ The release signs every embedded Mach-O file, including Node, native addons and 
 
 The disposable hosted Intel runner routes Apple ticket requests over HTTPS using TCP because GitHub confirmed [intermittent HTTP/3 failures](https://github.com/actions/runner-images/issues/14924). Stapling and validation retain their normal failure behavior and print the tool's diagnostics.
 
+DMG notarization uploads once and records the submission ID before polling that exact request for up to 20 minutes. Ten-second status reads retry known transport failures up to three times within 35 seconds, honoring any exposed `Retry-After`; authentication failures and invalid responses stop immediately. A failed status read never triggers another upload.
+
 Disk-image creation streams progress and allows 30 minutes to copy and compress the complete runtime filesystem on hosted Intel machines. The enclosing installer process has a 60-minute budget for image creation, notarization and assessment; timeouts still block publication.
 
 For a complete CI rehearsal, dispatch the release workflow with `verify_only: true`. It retains the verified installer artifacts without publishing a release or moving the update feed.
