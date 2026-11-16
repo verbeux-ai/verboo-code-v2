@@ -311,6 +311,7 @@ let browser
 let page
 let refreshedAccountFrame = false
 const errors = []
+const resourceFailures = []
 const contrastReadings = {}
 function contrastRatio(foreground, background) {
   const luminance = color => {
@@ -396,6 +397,9 @@ try {
   await context.route('**/favicon.ico', (route) =>
     route.fulfill({ status: 204, body: '' }),
   )
+  if (process.env.VERBOO_QA_PANES === '1') await context.route('**/open-in-app/icon/**', route =>
+    route.fulfill({ status: 204, body: '' }),
+  )
   await context.route('https://connect.composio.dev/link/verboo-qa', route => route.fulfill({
     status: 200, contentType: 'text/html', body: '<title>Authorization QA</title><p>Connection authorized</p>',
   }))
@@ -409,6 +413,9 @@ try {
     const detail = (error.stack ?? error.message).replace(/https?:\S+/g, '[url]')
     errors.push(detail)
   })
+  page.on('response', response => {
+    if (response.status() >= 400) resourceFailures.push(`${response.status()} ${response.url()}`)
+  })
   page.on('console', (message) => {
     if (['error', 'warning', 'warn'].includes(message.type()))
       errors.push(
@@ -420,6 +427,7 @@ try {
   })
   await page.goto(new URL(ready).origin)
   errors.length = 0
+  resourceFailures.length = 0
   await page.goto(ready)
   await page
     .locator('[data-verboo-onboarding]')
@@ -808,6 +816,7 @@ try {
       errors.map((v) => v.slice(0, 1000)),
     )
     console.log('API routes:', requests)
+    console.log('HTTP resource failures:', resourceFailures)
   }
   console.error((error.stack ?? error.message).replace(/https?:\S+/g, '[url]'))
   process.exitCode = 1

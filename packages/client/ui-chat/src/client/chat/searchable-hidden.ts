@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useLayoutEffect, useRef, type RefObject } from 'react'
 
 /**
  * Optional visibility operation; its caller owns cancellation and eventually commits the attribute.
@@ -13,7 +13,7 @@ export type HiddenTransition = (element: HTMLElement, hidden: boolean, commit: (
  * @param hidden - whether the subtree is currently hidden.
  * @param reveal - callback for browser find's beforematch reveal.
  * @param transition - optional caller-owned visibility operation; otherwise apply synchronously.
- * @returns ref for the stable subtree root.
+ * @returns ref for the stable subtree root; a `beforematch` listener exists only while the subtree is hidden.
  */
 export function useSearchableHidden(
   hidden: boolean,
@@ -21,6 +21,7 @@ export function useSearchableHidden(
   transition?: HiddenTransition,
 ): RefObject<HTMLDivElement> {
   const ref = useRef<HTMLDivElement>(null)
+  // Native find only targets until-found content; visible rows need no listener.
   useLayoutEffect(() => {
     const element = ref.current
     if (element === null) return
@@ -35,11 +36,11 @@ export function useSearchableHidden(
     if (transition === undefined) commit()
     else transition(element, hidden, commit)
   }, [hidden, reveal, transition])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current
-    if (element === null) return
+    if (element === null || !hidden) return
     element.addEventListener('beforematch', reveal)
     return () => { element.removeEventListener('beforematch', reveal) }
-  }, [reveal])
+  }, [hidden, reveal])
   return ref
 }

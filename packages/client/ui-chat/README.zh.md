@@ -161,7 +161,9 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点，并且�
 
 切换工作步骤展示档位时，当前折叠结束后清空底部预留空间，并按所选档位调整滚动范围。原本跟随底部的读者保持在新的底部；其他读者不会被强制拉回底部。
 
-折叠协调状态由各自的 viewport 持有，折叠批次、底部空间和空闲回调不会广播到其他 Chat 视图。ChatView 通过本次渲染的 `hookContext`，向 `conversation.chat.flow` 交接一次动画能力。Flow 绑定组内容与组头的行为 hook，负责节点分发，为本地回显提供 Factory renderer，并共享既有 Chat store 与 Session 节点来源。图片入口 Factory 拥有可替换的图片 Slot。布局节点和行内思考接收绑定后的 hook，不接收动画控制器，也不改变内容的父级。通用的可搜索隐藏在绘制前生效，并负责焦点保护及 beforematch；pending 输入对账仍留在 ChatView。
+折叠协调状态由各自的 viewport 持有，折叠批次、底部空间和空闲回调不会广播到其他 Chat 视图。ChatView 通过本次渲染的 `hookContext`，向 `conversation.chat.flow` 交接一次动画能力。Flow 绑定组内容与组头的行为 hook，负责节点分发，为本地回显提供 Factory renderer，并共享既有 Chat store 与 Session 节点来源。图片入口 Factory 拥有可替换的图片 Slot。布局节点和行内思考接收绑定后的 hook，不接收动画控制器，也不改变内容的父级。通用的可搜索隐藏在绘制前生效，仅在行处于隐藏状态时监听 beforematch，并负责焦点保护；pending 输入对账仍留在 ChatView。只有属于 Turn 流程的行才保留独立的 disclosure-reset 来源；其他行共享不可变的零值快照。隐藏流程成员时只递增该行的版本，因此行内思考 disclosure 会随该 Turn 收起而重置。
+
+在较长且已完成的历史中，处于视口外、已结算且不属于 Turn 流程组的 Assistant 行会保留带语义锚点的外层席位，默认 Assistant renderer 则把完整 Markdown 暂时替换为可搜索的纯文本快照。这样可以减少保留的 DOM，同时让浏览器原生查找、滚动恢复和 Turn 导航继续使用相同的行标识。包含焦点、悬停、文本选区或展开 disclosure 的行仍完整渲染；忽略可选虚拟化提示的自定义 Chat Node renderer 也会继续挂载。
 
 | 外层跟随 | 已展开小组跟随 | 回到底部按钮 | 新增内容 |
 |---|---|---|---|

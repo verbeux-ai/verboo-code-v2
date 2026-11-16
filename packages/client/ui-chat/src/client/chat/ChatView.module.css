@@ -71,13 +71,12 @@
 }
 
 /* The flow slot's display:contents anchor preserves layout but not selector ancestry.
-   `hidden="until-found"` retains a searchable zero-height box; hidden and empty
-   Seats do not contribute spacing. The older-history control precedes the anchor;
-   an ancestor :has() here also invalidates the history on unrelated descendant edits. */
-:is(.column, :global([data-slot="conversation.chat.flow"])) > :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty)))
-  ~ :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))),
+   Hidden rows remain searchable and dynamically stop contributing the next gap.
+   Row markers avoid relational child queries in every transcript sibling. */
+:is(.column, :global([data-slot="conversation.chat.flow"])) > :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, [data-chat-flow-empty]))
+  ~ :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, [data-chat-flow-empty])),
 .column > .older + :global([data-slot="conversation.chat.flow"])
-  > :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))) {
+  > :not([hidden]):not(.textInteraction):not(.flowItem:is(:empty, [data-chat-flow-empty])) {
   margin-top: var(--dsh-chat-flow-gap, 4px);
 }
 
@@ -88,7 +87,7 @@
 }
 
 :is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-group-part="response"]:not([hidden]):not(:empty)
-  + :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running):not(:has(> [data-slot="conversation.chat.node"] > [data-chat-steering-batch])) {
+  + :not([hidden]):not(.flowItem:is(:empty, [data-chat-flow-empty])):not(.running):not([data-chat-steering-batch-start]) {
   --dsh-chat-flow-gap: 12px;
 }
 
@@ -96,6 +95,13 @@
    measurement/mount unit for a virtualizer without changing the column gap. */
 .flowItem {
   min-width: 0;
+}
+
+/* Preserve the live viewport's exact geometry while allowing Blink to skip
+   offscreen layout for older rows after the history is complete. */
+.column[data-chat-history-complete] :is(.flowItem, [data-chat-group-key])[data-chat-history-row] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 /* Bottom room: sized by the viewport owner while rows above the reader close,
@@ -133,8 +139,8 @@
    running Turn's control renders empty until the Turn closes; an echo after it
    is still an opening input of that Turn, so it keeps the input gap. */
 .flowItem[data-chat-flow-kind="turn-process"],
-:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"]:not(:empty, :has(> [data-slot="conversation.chat.node"]:empty)) + :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running):not(:has(> [data-slot="conversation.chat.node"] > [data-chat-steering-batch])),
-:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"] + :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running):not([data-submission-echo], [data-pending-steering]):not(:has(> [data-slot="conversation.chat.node"] > [data-chat-steering-batch])) {
+:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"]:not(:empty, [data-chat-flow-empty]) + :not([hidden]):not(.flowItem:is(:empty, [data-chat-flow-empty])):not(.running):not([data-chat-steering-batch-start]),
+:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"] + :not([hidden]):not(.flowItem:is(:empty, [data-chat-flow-empty])):not(.running):not([data-submission-echo], [data-pending-steering]):not([data-chat-steering-batch-start]) {
   --dsh-chat-flow-gap: 16px;
 }
 
@@ -147,7 +153,7 @@
    echo sits directly below the running status, so admission swaps the two
    without moving any bubble. Neighbour gap rules exclude the batch start so
    this slot always applies. */
-:is(.column, :global([data-slot="conversation.chat.flow"])) > .flowItem:has(> [data-slot="conversation.chat.node"] > [data-chat-steering-batch="start"]) {
+:is(.column, :global([data-slot="conversation.chat.flow"])) > .flowItem[data-chat-steering-batch-start] {
   --dsh-chat-flow-gap: calc(44px + var(--dsh-content-font-delta, 0px));
 }
 
@@ -193,8 +199,9 @@
 
 /* Empty Seats, including retained empty slot anchors, preserve Turn lookup
    without contributing height or the sibling gap. */
-.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty)) {
+.flowItem:is(:empty, [data-chat-flow-empty]) {
   height: 0;
+  margin-top: 0;
 }
 
 .callRow {
@@ -229,13 +236,8 @@
   opacity: 0;
 }
 
-/* The last visible row before the status must contain output, not an input.
-   Hidden and empty seats do not separate a user message from the status, and
-   the steering/Inbox echoes after the status are outside the count. */
-:is(.column, :global([data-slot="conversation.chat.flow"])) > :nth-last-child(2 of :not([hidden]):not([data-pending-steering]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty)))):is(
-  .flowItem:not([data-chat-flow-kind="user"]):not([data-chat-flow-kind="steering"]):not([data-chat-flow-kind="turn-trigger"]),
-  [data-chat-group-key]
-) ~ .running > .runningDivider {
+/* RunningStatus marks this after inspecting only its immediate visible rows. */
+.running[data-chat-divider-visible] > .runningDivider {
   opacity: 1;
 }
 

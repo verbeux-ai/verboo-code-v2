@@ -27,6 +27,8 @@ import { ConversationGroupRegistry } from './group-registry.ts'
 import { ConversationInteractionRegistry } from './interaction-registry.ts'
 import { UserTextRegistry } from './user-text-registry.ts'
 
+const STREAM_PUBLICATION_FRAMES = 4
+
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
@@ -143,19 +145,22 @@ class BoundConversation implements ConversationBinding {
     if (publication === 'none') return
     if (publication === 'animation-frame' && typeof requestAnimationFrame === 'function') {
       if (this.frame !== undefined) return
-      // Cross three paint opportunities before publishing high-frequency stream updates.
-      this.frame = requestAnimationFrame(() => {
-        this.frame = requestAnimationFrame(() => {
-          this.frame = requestAnimationFrame(() => {
-            this.frame = undefined
-            this.flush()
-          })
-        })
-      })
+      this.scheduleFramePublication(STREAM_PUBLICATION_FRAMES)
       return
     }
     this.cancelFrame()
     this.flush()
+  }
+
+  private scheduleFramePublication(framesRemaining: number): void {
+    this.frame = requestAnimationFrame(() => {
+      if (framesRemaining > 1) {
+        this.scheduleFramePublication(framesRemaining - 1)
+        return
+      }
+      this.frame = undefined
+      this.flush()
+    })
   }
 
   private cancelFrame(): void {

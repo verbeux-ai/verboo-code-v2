@@ -642,21 +642,23 @@ function collapseTurnRecords(
   requestGroups: ReadonlySet<string>,
   t: TrajectoryTranslate,
 ): TableRecord[] {
-  const recordsByTurn = new Map<number, TableRecord[]>()
+  const contentRecordsByTurn = new Map<number, TableRecord[]>()
   for (const record of records) {
-    if (record.turn === null) continue
-    const turnRecords = recordsByTurn.get(record.turn) ?? []
-    turnRecords.push(record)
-    recordsByTurn.set(record.turn, turnRecords)
+    if (
+      record.turn === null
+      || record.cell.requestOnly === true
+      || record.cell.kind === 'system'
+    ) continue
+    const contentRecords = contentRecordsByTurn.get(record.turn) ?? []
+    contentRecords.push(record)
+    contentRecordsByTurn.set(record.turn, contentRecords)
   }
   return records.flatMap((record) => {
     if (record.turn === null || !collapsedTurns.has(record.turn)) return [record]
-    const turnRecords = recordsByTurn.get(record.turn) ?? [record]
     if (record.cell.requestOnly === true || record.cell.kind === 'system') return [record]
-    const contentRecords = turnRecords.filter(candidate =>
-      candidate.cell.requestOnly !== true && candidate.cell.kind !== 'system')
-    if (contentRecords.length <= 1) return [record]
-    if (record.cell.index !== contentRecords[0]?.cell.index) return []
+    const turnContentRecords = contentRecordsByTurn.get(record.turn)
+    if (turnContentRecords === undefined || turnContentRecords.length <= 1) return [record]
+    if (record.cell.index !== turnContentRecords[0]?.cell.index) return []
     return [
       { ...record, turnEnd: false },
       {
@@ -664,7 +666,7 @@ function collapseTurnRecords(
         groupStart: false,
         turnStart: false,
         turnEnd: true,
-        collapsedSummary: summarizeTurn(contentRecords.slice(1), requestGroups, t),
+        collapsedSummary: summarizeTurn(turnContentRecords.slice(1), requestGroups, t),
         collapsedSummaryKind: 'turn',
       },
     ]

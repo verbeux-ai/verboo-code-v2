@@ -23,3 +23,8 @@
   flex: 1;
   min-width: 0;
 }
+
+.virtualText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
