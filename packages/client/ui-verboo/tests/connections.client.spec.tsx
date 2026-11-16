@@ -97,6 +97,10 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
     disconnect: vi.fn(async () => true),
     reopenConnection: vi.fn(),
     dismiss: vi.fn(),
+    // The external subscription section reads the stored session and opens its
+    // own dialog; these fixtures start signed out.
+    useExternalStatus: (selector: (snapshot: { signedIn: boolean }) => unknown) => selector({ signedIn: false }),
+    openOpenAiDialog: vi.fn(),
   } as ComponentProps<typeof ConnectionsPage>
   return { props, state }
 }

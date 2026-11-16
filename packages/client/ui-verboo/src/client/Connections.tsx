@@ -460,7 +460,8 @@ function SettingRows({
  * @param props - product snapshot hook, commands, and the locale seat.
  * @returns the page, its confirmation dialogs, and its transient failure toast.
  */
-export function ConnectionsPage(props: PageProps) {
+export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDialog'>) {
+  const externalStatus = props.useExternalStatus(state => state)
   const state = props.useProduct(s => s)
   const [query, setQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(40)
@@ -825,6 +826,31 @@ export function ConnectionsPage(props: PageProps) {
           </div>
         </section>
       )}
+
+      {/* The [OI] subscription belongs with the connected accounts, because that
+          is what it is; the catalog below lists services, not accounts. */}
+      <section className={css.connectedSection} data-verboo-external-account>
+        <div className={css.sectionHead}>
+          <h2>{t('openAiExternalTitle')}</h2>
+          <span className={css.sectionMeta}>{t('openAiSubscriptionMeta')}</span>
+        </div>
+        <div className={css.connectedRow}>
+          <Glyph name="wand-sparkles" size={18} />
+          <div className={css.connectionIdentity}>
+            <span>{externalStatus.signedIn && externalStatus.planType !== undefined
+              ? t('openAiPlanNamed').replace('{plan}', externalStatus.planType)
+              : t('openAiPlan')}</span>
+            <span className={css.connectionService}>{t('openAiSubscriptionDescription')}</span>
+            <StatusPill
+              tone={externalStatus.signedIn ? 'success' : 'muted'}
+              text={externalStatus.signedIn ? t('openAiConnected') : t('openAiDisconnected')}
+            />
+          </div>
+          <button className={css.textButton} onClick={props.openOpenAiDialog}>
+            {t(externalStatus.signedIn ? 'openAiManage' : 'openAiConnect')}
+          </button>
+        </div>
+      </section>
 
       <section className={css.mcpSection} ref={mcpRef}>
         <div className={css.sectionHead}>
