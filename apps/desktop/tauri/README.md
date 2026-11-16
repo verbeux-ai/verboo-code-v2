@@ -70,6 +70,8 @@ The credential preflight stops a macOS job before dependency installation if a s
 
 The release signs every embedded Mach-O file, including Node, native addons and helpers, with a secure timestamp and hardened runtime before Tauri signs and notarizes the enclosing application. Node's entitlements retain JIT, executable memory and third-party native library loading. Packaging requires the expected certificate and Team ID, validates the stapled app ticket and Gatekeeper acceptance, then signs, notarizes and staples the final DMG. The updater archive is extracted, verified with the same checks and exercised through its packaged Node Host. Missing tickets, rejected notarization, timeouts and signature or runtime failures stop artifact publication. Local development keeps ad-hoc signing.
 
+The disposable hosted Intel runner routes Apple ticket requests over HTTPS using TCP because GitHub confirmed [intermittent HTTP/3 failures](https://github.com/actions/runner-images/issues/14924). Stapling and validation retain their normal failure behavior and print the tool's diagnostics.
+
 For a complete CI rehearsal, dispatch the release workflow with `verify_only: true`. It retains the verified installer artifacts without publishing a release or moving the update feed.
 
 ## Validation
