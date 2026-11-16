@@ -35,7 +35,7 @@ if (args.length === 1 && args[0] === '--check') {
       await apple(process.execPath, [manager, 'run', 'build:desktop', '--skip-build', '--verbose', '--target', target, '--bundles', 'app', '--config', config], {
         cwd: repository, env: signedEnvironment, timeout: 90 * 60_000, maxBuffer: 32 << 20, stream: true,
       })
-      await apple(process.execPath, [join(desktop, 'tauri/package-macos.mjs')], { cwd: repository, env: signedEnvironment, timeout: 30 * 60_000, stream: true })
+      await apple(process.execPath, [join(desktop, 'tauri/package-macos.mjs')], { cwd: repository, env: signedEnvironment, timeout: 60 * 60_000, stream: true })
       // Validate and exercise the exact archive the updater will install, including its stapled app.
       const bundles = join(desktop, '.desktop-build/tauri/target', target, 'release/bundle/macos')
       const archives = (await readdir(bundles)).filter(name => name.endsWith('.app.tar.gz'))

@@ -9,6 +9,8 @@ const run = promisify(execFile)
 
 /**
  * Stage the signed application and Applications link, then atomically publish a verified image.
+ * Creation streams progress and allows 30 minutes for the complete runtime filesystem;
+ * checksum verification has a separate five-minute limit.
  * @param options - Built application, new image path, volume name and optional cancellation signal.
  * @returns The verified image path; existing files are never replaced.
  */
@@ -27,11 +29,17 @@ export async function createDiskImage({ application, destination, name, signal }
   try {
     const contents = join(staging, 'contents')
     await mkdir(contents)
+    console.log('Verboo Code: staging the signed application for the disk image')
     await cp(application, join(contents, basename(application)), { recursive: true, mode: constants.COPYFILE_FICLONE, verbatimSymlinks: true })
     await symlink('/Applications', join(contents, 'Applications'))
     const image = join(staging, 'installer.dmg')
     signal?.throwIfAborted()
-    await run('hdiutil', ['create', '-srcfolder', contents, '-volname', name, '-format', 'UDZO', '-fs', 'HFS+', '-nospotlight', image], { timeout: 900_000, maxBuffer: 1 << 20, signal })
+    console.log('Verboo Code: creating the disk image (30-minute limit)')
+    const creation = run('hdiutil', ['create', '-srcfolder', contents, '-volname', name, '-format', 'UDZO', '-fs', 'HFS+', '-nospotlight', '-puppetstrings', image], { timeout: 30 * 60_000, maxBuffer: 1 << 20, signal })
+    creation.child.stdout.pipe(process.stdout)
+    creation.child.stderr.pipe(process.stderr)
+    await creation
+    console.log('Verboo Code: verifying the disk image checksum')
     await run('hdiutil', ['verify', image], { timeout: 300_000, maxBuffer: 1 << 20, signal })
     const file = await lstat(image)
     if (!file.isFile() || file.size === 0) throw new Error('macOS disk image is empty')
