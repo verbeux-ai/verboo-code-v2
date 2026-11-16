@@ -141,7 +141,7 @@ export async function verifyApplication(application, environment, run = apple) {
   if (!files.includes(join(runtime, 'node'))) throw new Error('macOS release: the installed Node runtime is missing')
   for (const path of files) await verifyCode(path, expected, run)
   await run('/usr/bin/xcrun', ['stapler', 'validate', application], { stream: true })
-  await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', application])
+  await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', application], { stream: true })
 }
 
 /**
@@ -214,5 +214,5 @@ export async function notarizeDiskImage(image, environment, run = apple) {
   await waitForNotarization(submission.id, environment, run)
   await run('/usr/bin/xcrun', ['stapler', 'staple', image], { stream: true })
   await run('/usr/bin/xcrun', ['stapler', 'validate', image], { stream: true })
-  await run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image])
+  await run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image], { stream: true })
 }
