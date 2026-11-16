@@ -16,6 +16,7 @@
 
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { readFile, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
@@ -146,7 +147,7 @@ export class OpenAiAccount extends Service<never> {
     super(ctx, SERVICE_KEY)
     this.deployment = deploymentOf(config)
     this.http = new AccountHttp(this.deployment.requestTimeoutMs)
-    const home = launchEnvironmentOf(ctx).get('DSH_HOME')?.value ?? join(process.cwd(), '.verboo-code')
+    const home = launchEnvironmentOf(ctx).get('DSH_HOME')?.value ?? join(homedir(), '.verboo-code')
     this.grantFile = join(home, 'openai-account.grant.json')
     this.vault = vault ?? new GrantVault(this.deployment.tokenUrl, home)
     // A Host without the OS credential store is a supported deployment: the

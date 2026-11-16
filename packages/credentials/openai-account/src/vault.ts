@@ -53,7 +53,9 @@ export class GrantVault {
         new AsyncEntry(
           KEYRING_SERVICE,
           createHash('sha256').update(`${this.issuer}\n${this.home}`).digest('hex'),
-          { linux: { store: 'secret-service' } },
+          // Linux reaches the keyring through Secret Service; macOS and
+          // Windows use their own stores without a hint.
+          process.platform === 'linux' ? { linux: { store: 'secret-service' } } : undefined,
         ),
     ))
   }
