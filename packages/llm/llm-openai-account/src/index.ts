@@ -161,6 +161,7 @@ export class OpenAiAccountRoute extends TypertRemoteService {
    */
   private async probe(model: string): Promise<'supported' | 'unsupported' | 'limit' | 'unknown'> {
     let failure: string | undefined
+    let code: string | undefined
     try {
       for await (const chunk of this.ctx.llm.stream({
         provider: PROVIDER,
@@ -169,13 +170,19 @@ export class OpenAiAccountRoute extends TypertRemoteService {
         maxTokens: 1,
         signal: AbortSignal.timeout(this.probeTimeoutMs),
       })) {
-        if (chunk.type === 'finish' && chunk.reason?.kind === 'error') failure = chunk.reason.failure?.message
+        if (chunk.type === 'finish' && chunk.reason?.kind === 'error') {
+          failure = chunk.reason.failure?.message
+          code = chunk.reason.failure?.code
+        }
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
+      code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
     }
     if (failure === undefined) return 'supported'
-    if (isUnsupportedModel(failure)) return 'unsupported'
+    // This route translates the provider's refusal before the probe sees it, so
+    // the message no longer carries the provider's wording. The code does.
+    if (code === 'UNSUPPORTED_MODEL' || isUnsupportedModel(failure)) return 'unsupported'
     // A limit is the one failure that must stop the sweep rather than continue
     // through models that would each be refused the same way.
     if (classifyLimit({ message: failure }) !== undefined) return 'limit'

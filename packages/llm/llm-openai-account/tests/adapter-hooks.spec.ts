@@ -7,6 +7,7 @@ import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { resolveConfig } from '../src/config.ts'
 import { CATALOG_PROVIDER, PROVIDER } from '../src/config.ts'
 import { OpenAiAccountAdapter, quotaFailure, translatedChunks } from '../src/adapter.ts'
+import { ModelAvailability, offeredModels } from '../src/availability.ts'
 
 /** A JWT-shaped fixture token carrying the account claim the transport reads. */
 function tokenFor(accountId: string): string {
@@ -147,4 +148,37 @@ it('delivers the unsupported-model code in the finish chunk the loop records', a
     type: 'finish',
     reason: { kind: 'error', failure: { code: 'UNSUPPORTED_MODEL' } },
   })
+})
+
+it('passes the reasoning levels the catalog declares through to the picker', async () => {
+  // The effort rail reads these from the resolved model, so a level the catalog
+  // declares must survive this route rather than being flattened away.
+  const adapter = new OpenAiAccountAdapter({ profiles, accessToken: async () => 'fixture-token' })
+  const info = await adapter.resolveModel(PROVIDER, 'gpt-6-sol')
+  expect(info.provider).toBe(PROVIDER)
+  expect(info.id).toBe('gpt-6-sol')
+  // The catalog declares a full ladder for this model; the route must not
+  // report an empty one, which is what a missing spread would produce.
+  expect(info.reasoning?.efforts.length ?? 0).toBeGreaterThan(0)
+  expect(info.reasoning?.efforts.map(effort => effort.id)).toContain('high')
+})
+
+it('withholds a model whose refusal arrives already translated', async () => {
+  // The route's own translation replaces the provider wording before any reader
+  // sees the failure, so discovery must recognise the translated code too.
+  // Reading only the message made every refused model stay in the menu.
+  const store = new ModelAvailability()
+  store.record('acct-1', 'gpt-5.5', 'unsupported')
+  store.record('acct-1', 'gpt-6-sol', 'supported')
+  expect(offeredModels(['gpt-5.5', 'gpt-6-sol'], store.read('acct-1'))).toEqual(['gpt-6-sol'])
+})
+
+it('recognises the translated code as a refusal, not a limit', () => {
+  // The two classifications send the reader to different remedies; a refusal
+  // that reads as a limit would tell them to wait for a window that refuses again.
+  const translated: LlmFailure = {
+    message: 'This ChatGPT plan does not serve the selected model. Choose another model, or switch to a Verboo model.',
+    code: 'UNSUPPORTED_MODEL',
+  }
+  expect(quotaFailure(translated).code).toBe('UNSUPPORTED_MODEL')
 })
