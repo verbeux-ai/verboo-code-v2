@@ -266,3 +266,22 @@ describe('the callback the browser returns to', () => {
     expect(first.state).not.toBe(second.state)
   })
 })
+
+describe('where the grant lives', () => {
+  it('never resolves the home from the working directory', async () => {
+    // A packaged application starts in a directory the reader never chose, so a
+    // grant stored there would not survive a restart on any platform.
+    const { readFile } = await import('node:fs/promises')
+    const source = await readFile(new URL('../src/account.ts', import.meta.url), 'utf8')
+    expect(source).not.toContain('process.cwd()')
+    expect(source).toContain('homedir()')
+  })
+
+  it('names a keyring backend only where the platform needs one', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const source = await readFile(new URL('../src/vault.ts', import.meta.url), 'utf8')
+    // macOS and Windows pick their own store; naming a Linux backend there
+    // would leave the key unreadable.
+    expect(source).toContain("process.platform === 'linux'")
+  })
+})
