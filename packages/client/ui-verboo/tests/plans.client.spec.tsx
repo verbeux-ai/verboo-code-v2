@@ -34,6 +34,10 @@ function fixture(locale = 'pt') {
     useProduct: selector => selector(state),
     usePreferences: selector => selector({ locale, theme: 'system', languages: [] }),
     billing: vi.fn(), loadPlans: vi.fn(),
+    // The external-subscription section reads a product store and opens its
+    // dialog; these fixtures start signed out with the dialog closed.
+    useExternalStatus: selector => selector({ signedIn: false }),
+    openOpenAiDialog: vi.fn(),
     t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match: string, name: string) => {
       const value = values?.[name]
       return typeof value === 'string' || typeof value === 'number' ? String(value) : ''

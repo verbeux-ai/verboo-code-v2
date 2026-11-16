@@ -1,0 +1,125 @@
+/* The reading belongs to an external subscription, so it stays neutral: purple
+   is the Verboo plan's accent and using it here would make the two read alike. */
+.host {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .pill:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  /* A full-round radius must pair with `corner-shape: round`, or the corner
+     renders as the platform default instead of a circle. */
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.host[data-state='exhausted'] .dot {
+  background: var(--verboo-error);
+}
+
+.host[data-state='exhausted'] .pill {
+  color: var(--verboo-error);
+}
+
+.host[data-state='unlimited'] .dot {
+  /* An unlimited plan is neither a warning nor a full bar; a muted dot keeps
+     the pill from reading as an exhausted one. */
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.text {
+  white-space: nowrap;
+}
+
+.reset {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 41;
+  min-width: 220px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-menu-surface-fill);
+  /* A translucent menu fill only reads as a surface with the shared filter
+     behind it; without it the panel lets the composer show through. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.heading {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.rows dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rows dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stale {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .panel {
+    transition: opacity 120ms ease;
+  }
+}
+
+@media (pointer: coarse) {
+  /* A 20px pill is too small a target on touch; the wrapper carries the size. */
+  .pill {
+    min-height: 44px;
+  }
+}

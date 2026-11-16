@@ -28,13 +28,16 @@ describe('settings Remote', () => {
     expect(JSON.stringify(describe)).not.toContain('private')
     const model = describe.namespaces.find(row => row.ns === 'default-model')!
     const saved = await controller.mutate(model.ns, [{ op: 'set', path: ['model'], value: 'next' }], model.revision)
-    expect(saved.value).toEqual({ provider: 'test', model: 'next' })
+    // The namespace carries the composition plus its volatile remember switch,
+    // which the settings document reports alongside the saved selection.
+    expect(saved.value).toEqual({ provider: 'test', model: 'next', rememberSelection: true })
     expect(ctx.agentDefaultModel.currentSelection().model).toBe('next')
     await expect(controller.update(model.ns, { model: 'stale' }, model.revision)).rejects.toMatchObject({ code: 'settings/conflict' })
     await expect(controller.update('first', { count: 0 }, undefined)).rejects.toMatchObject({ code: 'settings/rejected' })
     await expect(controller.update('', {}, undefined)).rejects.toMatchObject({ code: 'gateway/bad-request' })
     await expect(controller.update('missing', {}, undefined)).rejects.toMatchObject({ code: 'settings/rejected' })
-    expect((await controller.replace('default-model', {}, undefined)).value).toEqual({ provider: 'test', model: 'original' })
+    expect((await controller.replace('default-model', {}, undefined)).value)
+      .toEqual({ provider: 'test', model: 'original', rememberSelection: true })
   })
 
   it('reports an absent Config form service', async () => {
