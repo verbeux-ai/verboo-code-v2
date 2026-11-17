@@ -9625,6 +9625,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
+    name: 'SubscriptionAdditionalLimit',
+    declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'SubscriptionLimitWindow',
+    declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionUsage',
+    declaration: 'export interface SubscriptionUsage {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly credits?: number;\n    readonly unlimited: boolean;\n    readonly planType?: string;\n    readonly activeUntil?: string;\n    readonly reachedType?: string;\n    readonly additionalLimits?: readonly SubscriptionAdditionalLimit[];\n    readonly asOf: string;\n}',
+  },
+  {
     name: 'SurfaceEvent',
     declaration: 'export type SurfaceEvent = SessionEvent<SurfaceEventType>;',
   },
