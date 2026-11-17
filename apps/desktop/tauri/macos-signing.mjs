@@ -103,6 +103,17 @@ async function verifyCode(path, expected, run, deep = false) {
   assertMacOSRuntimeSignatureDetails(details.stdout + details.stderr, expected)
 }
 
+/** Print Apple's detailed bundle and distribution-policy diagnostics without weakening the Gatekeeper check. */
+async function diagnoseGatekeeperRejection(application, run) {
+  console.log('Verboo Code: collecting detailed diagnostics for the rejected macOS application')
+  for (const [command, args] of [
+    ['/usr/bin/codesign', ['--verify', '--all-architectures', '--strict', '--deep', '--verbose=4', application]],
+    ['/usr/bin/syspolicy_check', ['distribution', application]],
+  ]) {
+    try { await run(command, args, { stream: true }) } catch { /* Keep the original Gatekeeper rejection even if diagnostics are unavailable. */ }
+  }
+}
+
 /**
  * Sign each embedded Mach-O before Tauri seals the application, preserving Node's JIT and native addons.
  * @param root - Private, materialized runtime directory.
@@ -141,7 +152,12 @@ export async function verifyApplication(application, environment, run = apple) {
   if (!files.includes(join(runtime, 'node'))) throw new Error('macOS release: the installed Node runtime is missing')
   for (const path of files) await verifyCode(path, expected, run)
   await run('/usr/bin/xcrun', ['stapler', 'validate', application], { stream: true })
-  await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', application])
+  try {
+    await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', application], { stream: true })
+  } catch (error) {
+    await diagnoseGatekeeperRejection(application, run)
+    throw error
+  }
 }
 
 /**
@@ -214,5 +230,5 @@ export async function notarizeDiskImage(image, environment, run = apple) {
   await waitForNotarization(submission.id, environment, run)
   await run('/usr/bin/xcrun', ['stapler', 'staple', image], { stream: true })
   await run('/usr/bin/xcrun', ['stapler', 'validate', image], { stream: true })
-  await run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image])
+  await run('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', image], { stream: true })
 }

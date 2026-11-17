@@ -124,10 +124,16 @@ test('requires runtime signatures, a stapled app ticket and Gatekeeper approval'
   const f = appleFixture()
   await verifyApplication(application, credentials, f.run)
   assert.ok(f.calls.some(call => call.args.join(' ').includes('stapler validate')))
-  assert.ok(f.calls.some(call => call.command.endsWith('spctl') && call.args.includes('execute')))
+  const gatekeeper = f.calls.find(call => call.command.endsWith('spctl') && call.args.includes('execute'))
+  assert.ok(gatekeeper)
+  assert.equal(gatekeeper.options.stream, true)
   for (const tool of ['xcrun', 'spctl']) {
     const failed = appleFixture({ fail: command => command.endsWith(tool) })
     await assert.rejects(verifyApplication(application, credentials, failed.run), /Apple tool failed/)
+    if (tool === 'spctl') {
+      assert.ok(failed.calls.some(call => call.command.endsWith('codesign') && call.args.includes('--verbose=4')))
+      assert.ok(failed.calls.some(call => call.command.endsWith('syspolicy_check') && call.args[0] === 'distribution'))
+    }
   }
 })
 
@@ -142,6 +148,7 @@ test('accepts a DMG only after notarization, stapling and its primary-signature 
   assert.ok(f.calls.some(call => call.args.join(' ').includes('stapler staple')))
   assert.ok(f.calls.some(call => call.args.join(' ').includes('stapler validate')))
   assert.ok(f.calls.at(-1).args.includes('context:primary-signature'))
+  assert.equal(f.calls.at(-1).options.stream, true)
 })
 
 test('a failed upload or rejected Apple submission cannot staple or publish a DMG', async () => {
