@@ -2741,9 +2741,12 @@ class FaceAnalyzer {
       .find(([subpath]) => subpath === module.subpath)?.[1]
     if (target === undefined) return undefined
     const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target)))
-    if (sourceFile === undefined) return undefined
+    // The client program may resolve a public Host declaration without loading
+    // its source file. In that case the checker that produced `symbol` already
+    // verified the requested name on the imported package subpath.
+    if (sourceFile === undefined) return requestedName
     const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile)
-    if (moduleSymbol === undefined) return undefined
+    if (moduleSymbol === undefined) return requestedName
     const exported = this.checker.getExportsOfModule(moduleSymbol)
       .find(candidate => candidate.name === requestedName && this.resolveSymbol(candidate) === symbol)
     return exported?.name
