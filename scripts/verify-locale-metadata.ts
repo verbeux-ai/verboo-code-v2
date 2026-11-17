@@ -6,6 +6,18 @@ import { PRODUCT_PACKAGE_POLICY } from './product-package-policy.ts'
 import { SHIPPED_LOCALE_IDS, localeTokens, hasInvisibleLocaleCharacters } from './shipped-locales.ts'
 import { collectConfigCatalog } from './gen-config-catalog.ts'
 
+/** Internal product wiring has no plugin metadata; user-facing UI strings live in the product UI layer. */
+const pluginMetadataExemptions = new Set([
+  'packages/api/verboo-mcp',
+  'packages/api/verboo-product',
+  'packages/bundle/verboo-app',
+  'packages/client/external-links',
+  'packages/client/ui-verboo',
+  'packages/credentials/openai-account',
+  'packages/extensions/verboo-connections',
+  'packages/llm/llm-openai-account',
+])
+
 /** Flatten metadata strings and reject values that cannot be translated. */
 function strings(value: unknown, key = ''): Record<string, string> {
   if (typeof value === 'string' && value.trim() !== '') return { [key]: value }
@@ -25,6 +37,7 @@ export function localeMetadataProblems(root: string): string[] {
   for (const entry of collectConfigCatalog(root)) {
     const dir = entry.dir.replaceAll('\\', '/')
     if (PRODUCT_PACKAGE_POLICY[dir]?.category === 'test') continue
+    if (pluginMetadataExemptions.has(dir)) continue
     if (entry.kind !== 'config' && entry.kind !== 'no-config') continue
     const directory = `${dir}/locale`
     directories.add(directory)
