@@ -26,6 +26,8 @@
 }
 
 .modal {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   position: relative;
   width: min(840px, 100%);
   max-height: 100%;
