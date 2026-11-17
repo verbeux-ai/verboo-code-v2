@@ -15,6 +15,10 @@
     "**/lib/**",
     "**/node_modules/**",
     "**/.sessions/**",
+    "packages/test-support/llm-replay/src/index.d.ts", // TypeScript build output used for contracts; validate through typecheck, not source-style rules.
+    "packages/test-support/loader-smoke/src/*.d.ts",
+    "packages/test-support/session-snapshot/src/*.d.ts",
+    "packages/llm/deepseek-llm-api-extensions/src/*.d.ts",
     ".claude/**", // Harness-local state belongs to other checkouts, not this checkout's sources.
     "**/.doc-typecheck-*/**",
     "**/.node-next-types-*/**",

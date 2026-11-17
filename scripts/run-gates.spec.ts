@@ -127,6 +127,17 @@ function resultFor(subject: Gate, status: GateResult['status'] = 'passed'): Gate
   }
 }
 
+function expectBuiltNodeCompatPlan(subject: readonly Gate[]): void {
+  expect(subject.find(item => item.id === 'build')?.args).toEqual([
+    '/private/pnpm.cjs', 'run', 'build:artifacts',
+  ])
+  expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
+  expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
+    needs: ['build'],
+    env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
+  })
+}
+
 function withPnpmEntrypoint<T>(action: () => T, entrypoint = '/private/pnpm.cjs'): T {
   const previous = process.env.npm_execpath
   process.env.npm_execpath = entrypoint
@@ -870,6 +881,19 @@ describe('Typert contract preparation', () => {
     })
   })
 
+  it('compares CI duplication with the fetched pull request base', () => {
+    const subject = withEnv('DSH_DUPLICATION_BASE_REF', 'origin/master', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-lint-contracts-ready')))
+
+    expect(subject.find(item => item.id === 'duplication')).toMatchObject({
+      displayCommand: 'pnpm exec jscpd --config .jscpd.json --baseline-from-ref origin/master --fail-on-new-clones=0 --exit-code=0 packages scripts',
+      args: [
+        '/private/pnpm.cjs', 'exec', 'jscpd', '--config', '.jscpd.json',
+        '--baseline-from-ref', 'origin/master', '--fail-on-new-clones=0', '--exit-code=0', 'packages', 'scripts',
+      ],
+    })
+  })
+
   it('keeps standalone doc sync responsible for preparation', () => {
     const docTypecheck = withPnpmEntrypoint(() =>
       gatesForMode('doc-sync').find(item => item.id === 'doc-typecheck'))
@@ -926,15 +950,8 @@ describe('Node compatibility graph', () => {
         withPnpmEntrypoint(() => gatesForMode('node-compat'))))
 
     expect(subject.filter(item => item.displayCommand === 'pnpm run build:artifacts')).toHaveLength(1)
-    expect(subject.find(item => item.id === 'build')?.args).toEqual([
-      '/private/pnpm.cjs', 'run', 'build:artifacts',
-    ])
+    expectBuiltNodeCompatPlan(subject)
     expect(subject.map(item => item.id)).not.toContain('build:web')
-    expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
-    expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
-      needs: ['build'],
-      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
-    })
   })
 
   it('prepares Node 26 compatibility smokes from built workspace packages', () => {
@@ -942,14 +959,7 @@ describe('Node compatibility graph', () => {
       withEnv('DSH_NODE_COMPAT_SKIP_TYPECHECK', '1', () =>
         withPnpmEntrypoint(() => gatesForMode('node-compat'))))
 
-    expect(subject.find(item => item.id === 'build')?.args).toEqual([
-      '/private/pnpm.cjs', 'run', 'build:artifacts',
-    ])
-    expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
-    expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
-      needs: ['build'],
-      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
-    })
+    expectBuiltNodeCompatPlan(subject)
   })
 
   it.each(['passed', 'failed'] as const)('runs the Node 24.9 lazy-search smoke only after a passed build (%s)', async (buildStatus) => {

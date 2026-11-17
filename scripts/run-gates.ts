@@ -317,7 +317,7 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'ci-lint-contracts-ready':
       return [
         lintGate(),
-        pnpmScript('duplication', 'duplication'),
+        duplicationGate(),
       ]
     case 'ci-coverage':
       return [ciArtifactBuildGate(), ...coverageGates()]
@@ -380,6 +380,16 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'i18n':
       return i18nGates(true)
   }
+}
+
+/** Compare CI duplication with the pull request base while retaining full local scans. */
+function duplicationGate(): Gate {
+  const baseRef = process.env.DSH_DUPLICATION_BASE_REF
+  if (baseRef === undefined || baseRef.length === 0) return pnpmScript('duplication', 'duplication')
+  return pnpmExec('duplication', [
+    'jscpd', '--config', '.jscpd.json', '--baseline-from-ref', baseRef,
+    '--fail-on-new-clones=0', '--exit-code=0', 'packages', 'scripts',
+  ])
 }
 
 function ciSharedStaticGates(): Gate[] {
