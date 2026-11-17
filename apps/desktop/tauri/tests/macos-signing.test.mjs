@@ -130,6 +130,10 @@ test('requires runtime signatures, a stapled app ticket and Gatekeeper approval'
   for (const tool of ['xcrun', 'spctl']) {
     const failed = appleFixture({ fail: command => command.endsWith(tool) })
     await assert.rejects(verifyApplication(application, credentials, failed.run), /Apple tool failed/)
+    if (tool === 'spctl') {
+      assert.ok(failed.calls.some(call => call.command.endsWith('codesign') && call.args.includes('--verbose=4')))
+      assert.ok(failed.calls.some(call => call.command.endsWith('syspolicy_check') && call.args[0] === 'distribution'))
+    }
   }
 })
 
