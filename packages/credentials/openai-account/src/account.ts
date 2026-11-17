@@ -83,7 +83,7 @@ export function claimsOf(idToken: string): IdTokenClaims {
   if (segments.length < 2 || segments[1] === undefined) return {}
   let payload: unknown
   try {
-    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as unknown
+    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'))
   } catch {
     // A payload this build cannot decode carries no plan facts; the tokens are
     // still usable, so the login does not fail over display data.
@@ -126,7 +126,7 @@ export function pkcePair(): Pkce {
  * A stored grant is the only claim this service makes about being signed in; it
  * never asserts that the provider currently accepts the token.
  */
-export class OpenAiAccount extends Service<never> {
+export class OpenAiAccount extends Service {
   static inject = ['credentials']
   static Config = Config
   private readonly deployment: Deployment
