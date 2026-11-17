@@ -96,8 +96,9 @@ type ResultObserver = (result: GateResult) => void
 /** Worker cap of the documentation and hygiene aggregates, locally and in CI, whose leaves each build a full ts.Program. */
 const PROGRAM_MODE_CAP = 8
 
-/** CI pins this minor in .github/workflows/ci.yml; its compatibility leg owns the built CLI smoke. */
+/** CI pins this floor; the Node 24.9 and Node 26 compatibility legs use built workspace packages. */
 export const BUILD_BACKED_NODE_COMPAT_VERSION = '24.9'
+const BUILD_BACKED_NODE_COMPAT_VERSIONS = [BUILD_BACKED_NODE_COMPAT_VERSION, '26'] as const
 
 const root = resolve(import.meta.dirname, '..')
 if (import.meta.main) {
@@ -456,7 +457,7 @@ function nodeCompatGates(): Gate[] {
   const typecheck = flagEnabled('DSH_NODE_COMPAT_SKIP_TYPECHECK')
     ? []
     : [pnpmScript('typecheck', 'typecheck')]
-  if (!process.versions.node.startsWith(`${BUILD_BACKED_NODE_COMPAT_VERSION}.`)) {
+  if (!BUILD_BACKED_NODE_COMPAT_VERSIONS.some(version => process.versions.node.startsWith(`${version}.`))) {
     return [...typecheck, ...nodeCompatSmokeGates()]
   }
   return [
@@ -464,11 +465,11 @@ function nodeCompatGates(): Gate[] {
     pnpmScript('build', 'build:artifacts', {
       ...typecheck.length === 0 ? {} : { needs: ['typecheck'] },
     }),
-    ...nodeCompatSmokeGates({ cliSmoke: true }),
+    ...nodeCompatSmokeGates({ cliSmoke: true, builtPackages: true }),
   ]
 }
 
-function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
+function nodeCompatSmokeGates(options: { cliSmoke?: boolean; builtPackages?: boolean } = {}): Gate[] {
   const gates: Gate[] = [
     // Serial files keep CLI and PTC children from overlapping. Vitest's
     // environment worker override takes precedence over its CLI flags.
@@ -485,7 +486,11 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
       'packages/boot/app-boot/tests/profile-resolution-worker-bootstrap.spec.ts',
       '--no-file-parallelism',
       '--maxWorkers=1',
-    ], { label: 'source compatibility smokes', env: { VITEST_MAX_WORKERS: '1' } }),
+    ], {
+      label: 'source compatibility smokes',
+      env: { VITEST_MAX_WORKERS: '1' },
+      ...options.builtPackages ? { needs: ['build'] } : {},
+    }),
   ]
   if (options.cliSmoke) {
     gates.push(

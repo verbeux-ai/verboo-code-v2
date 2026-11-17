@@ -900,8 +900,8 @@ describe('Node compatibility graph', () => {
     expect(subject.find(item => item.id === 'source-compat-smokes')?.env).toEqual({ VITEST_MAX_WORKERS: '1' })
   })
 
-  it.each(['24.19.0', '26.0.0'])('keeps Node %s compatibility source-only', (version) => {
-    const subject = withNodeVersion(version, () =>
+  it('keeps Node 24.19 compatibility source-only', () => {
+    const subject = withNodeVersion('24.19.0', () =>
       withPnpmEntrypoint(() => gatesForMode('node-compat')))
 
     expect(subject.map(item => item.id)).not.toContain('build')
@@ -918,6 +918,22 @@ describe('Node compatibility graph', () => {
       '/private/pnpm.cjs', 'run', 'build:artifacts',
     ])
     expect(subject.map(item => item.id)).not.toContain('build:web')
+    expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
+    expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
+      needs: ['build'],
+      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
+    })
+  })
+
+  it('prepares Node 26 compatibility smokes from built workspace packages', () => {
+    const subject = withNodeVersion('26.0.0', () =>
+      withEnv('DSH_NODE_COMPAT_SKIP_TYPECHECK', '1', () =>
+        withPnpmEntrypoint(() => gatesForMode('node-compat'))))
+
+    expect(subject.find(item => item.id === 'build')?.args).toEqual([
+      '/private/pnpm.cjs', 'run', 'build:artifacts',
+    ])
+    expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
     expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
       needs: ['build'],
       env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
@@ -945,6 +961,20 @@ describe('Node compatibility graph', () => {
     expect(smokeStarted).toBe(buildStatus === 'passed')
     expect(results.find(item => item.gate.id === 'cli-lazy-search-startup-smoke')?.status)
       .toBe(buildStatus === 'passed' ? 'passed' : 'skipped')
+  })
+
+  it('runs the Node 26 lazy-search smoke only after a passed build', async () => {
+    const subject = withNodeVersion('26.0.0', () =>
+      withEnv('DSH_NODE_COMPAT_SKIP_TYPECHECK', '1', () =>
+        withPnpmEntrypoint(() => gatesForMode('node-compat'))))
+    let buildCompleted = false
+    const results = await runGates(subject, 2, async (item) => {
+      if (item.id === 'build') buildCompleted = true
+      if (item.id === 'cli-lazy-search-startup-smoke') expect(buildCompleted).toBe(true)
+      return resultFor(item)
+    })
+
+    expect(results.find(item => item.gate.id === 'cli-lazy-search-startup-smoke')?.status).toBe('passed')
   })
 })
 
