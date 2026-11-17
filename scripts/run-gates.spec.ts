@@ -537,6 +537,18 @@ describe('gate graph validation', () => {
     }
   })
 
+  it('builds workspace artifacts before standalone coverage consumers', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('ci-coverage'))
+    const byId = new Map(subject.map(gate => [gate.id, gate]))
+
+    expect(byId.get('build')).toMatchObject({
+      displayCommand: 'pnpm run build:artifacts',
+      env: { DSH_BUILD_CLIENT_PROFILE: 'official' },
+    })
+    expect(byId.get('coverage')?.needs).toEqual(['build', 'native-system'])
+    expect(byId.get('coverage-exempt-heavy')?.needs).toEqual(['build', 'native-system'])
+  })
+
   it('runs the Windows built-bin smoke after other observational gates settle', () => {
     const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
     const builtBin = observational.find(gate => gate.id === 'built-bin-smoke')
@@ -1005,6 +1017,7 @@ describe('Node 24 lane ownership', () => {
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
+    expect(subject.find(item => item.id === 'node-compat')?.needs).toEqual(['build'])
     // The consumers lane emits artifacts only: the aggregate test and script
     // type checks belong to the master lanes, not to every pull request.
     expect(subject.find(item => item.id === 'build')).toMatchObject({
@@ -1014,6 +1027,7 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'node-compat')?.env).toEqual({
       DSH_BUILD_CLIENT_PROFILE: 'official',
     })
+    expect(subject.find(item => item.id === 'web-snapshot')?.after).toContain('node-compat')
     for (const id of [
       'snapshot',
       'expected-output',
@@ -1044,6 +1058,7 @@ describe('Node 24 lane ownership', () => {
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
       after: [
+        'node-compat',
         'publint',
         'snapshot',
         'expected-output',

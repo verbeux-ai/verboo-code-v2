@@ -320,7 +320,7 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('duplication', 'duplication'),
       ]
     case 'ci-coverage':
-      return coverageGates()
+      return [ciArtifactBuildGate(), ...coverageGates()]
     case 'ci-unit':
       return ciUnitGates()
     case 'ci-bench':
@@ -545,6 +545,7 @@ function ciConsumerGates(): Gate[] {
   // `apps/web/dist/` trees. Let every build-artifact reader settle before that
   // writer starts; `after` preserves the web diagnostic even if a reader fails.
   const buildArtifactReaders = [
+    'node-compat',
     'publint',
     'snapshot',
     'expected-output',
@@ -556,6 +557,7 @@ function ciConsumerGates(): Gate[] {
     ciArtifactBuildGate(),
     pnpmScript('node-compat', 'check:node-compat', {
       label: 'Node compatibility',
+      needs: builtTree,
       env: { [CLIENT_BUILD_PROFILE_SELECTOR]: 'official' },
     }),
     pnpmScript('publint', 'publint', { needs: builtTree }),
@@ -735,7 +737,7 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
   return [
     pnpmScript('native-system', 'build:native-system'),
     ...electron,
-    { ...instrumented, needs: ['native-system', ...electron.map(gate => gate.id)] },
+    { ...instrumented, needs: ['build', 'native-system', ...electron.map(gate => gate.id)] },
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
@@ -743,7 +745,7 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
       ...workers.exempt,
     ], {
       label: 'test:coverage-exempt-heavy',
-      needs: ['native-system'],
+      needs: ['build', 'native-system'],
     }),
   ]
 }
