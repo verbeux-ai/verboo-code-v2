@@ -12,7 +12,7 @@ kind: "package-reference"
 
 使用 Verboo Code 的引导、项目导航、连接和订阅页面。中性配色、少量 Verboo 点缀、官方图标与 Lucide 图标替换均由此包管理。
 
-ChatGPT 用量读数使用 Client Remote 装配重新导出的订阅路由类型；此包不另行声明订阅命名空间。
+ChatGPT 登录和用量功能需要注入 `remote.openaiAccountLogin` 与 `remote.llmOpenaiAccount` 服务。登录成功后，界面会收到返回的账户状态。用量读数使用 Client Remote 装配重新导出的订阅路由类型；此包不另行声明订阅命名空间。
 
 <a id="table-of-contents"></a>
 ## 目录

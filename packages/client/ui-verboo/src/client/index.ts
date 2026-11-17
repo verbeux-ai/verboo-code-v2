@@ -70,6 +70,8 @@ export const inject = [
   'shortcuts',
   'remote',
   'remote.account',
+  'remote.openaiAccountLogin',
+  'remote.llmOpenaiAccount',
   'remote.session',
   'remote.verboo',
   'remote.verbooMcp',
@@ -298,6 +300,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     try {
       const finished = await ctx.remote.openaiAccountLogin.awaitLogin(handle)
       if (!finished.ok) return false
+      externalStatus.set(finished.value)
       subscriptionUsage.refresh()
       // Which models this account serves is the provider's answer, not the
       // catalog's. The sweep spends one small request per model, so it runs in
