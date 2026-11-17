@@ -1,0 +1,103 @@
+name: Publish verified Verboo desktop artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Desktop build run containing the completed installer artifacts.
+        type: string
+        required: true
+      source_sha:
+        description: Exact source commit recorded by every selected installer manifest.
+        type: string
+        required: true
+      omit_macos_arm64:
+        description: Explicitly omit Apple Silicon from this version.
+        type: boolean
+        default: false
+      omit_macos_intel:
+        description: Explicitly omit macOS Intel from this version.
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: verboo-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ inputs.omit_macos_arm64 }}
+      VERBOO_RELEASE_OMIT_MACOS_INTEL: ${{ inputs.omit_macos_intel }}
+      VERBOO_UPDATE_FEED_PATH: ${{ github.workspace }}/verified-feed/latest.json
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+      - name: Validate the requested source and build run
+        env:
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
+          BUILD_RUN: ${{ inputs.build_run_id }}
+        run: |
+          node --input-type=module -e "if (!/^[a-f0-9]{40}$/.test(process.env.RELEASE_SOURCE) || !/^[1-9][0-9]*$/.test(process.env.BUILD_RUN)) throw Error('An exact source SHA and build run ID are required')"
+      - uses: actions/checkout@v4
+        with:
+          path: release-tools
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require published source history and matching product versions
+        working-directory: product
+        env:
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync } from 'node:fs'
+          execFileSync('git', ['merge-base', '--is-ancestor', process.env.RELEASE_SOURCE, 'origin/master'])
+          const version = name => JSON.parse(readFileSync(name, 'utf8')).version
+          if (version('apps/desktop/src-tauri/tauri.conf.json') !== version('../release-tools/apps/desktop/src-tauri/tauri.conf.json')) throw Error('Release tools and built product versions differ')
+          JS
+      - name: Require successful selected builds from the trusted release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
+          BUILD_RUN: ${{ inputs.build_run_id }}
+        run: node release-tools/apps/desktop/tauri/verify-build-run.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify all selected bytes and publish their exact source
+        working-directory: product
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          execFileSync(process.execPath, ['../release-tools/apps/desktop/tauri/publish-release.mjs', '../release-assets'], { stdio: 'inherit', env: { ...process.env, GITHUB_SHA: process.env.RELEASE_SOURCE } })
+          JS
+      - name: Publish the installed application update feed
+        working-directory: product
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          execFileSync(process.execPath, ['../release-tools/apps/desktop/tauri/publish-feed.mjs', process.env.VERBOO_UPDATE_FEED_PATH], { stdio: 'inherit', env: { ...process.env, GITHUB_SHA: process.env.RELEASE_SOURCE } })
+          JS

@@ -52,6 +52,8 @@ macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式
 
 每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。
 
+经操作者批准，不包含一个或两个 macOS 目标的发布使用 [Publish verified Verboo desktop artifacts](../../../.github/workflows/verboo-desktop-publish-existing.yml)。提供已完成的桌面构建运行、精确源提交 SHA 和显式省略标志；两个标志均默认为 false。工作流要求所选任务来自可信桌面发布工作流且已成功，并在发布前检查产品版本一致性、安装包哈希及更新器元数据。省略的平台不会出现在此版本的更新 feed 中。
+
 ### Apple 分发签名
 
 两个 macOS 发布任务都要求提供 [Developer ID Application 证书](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)和具有 Developer 权限的 [App Store Connect 团队 API 密钥](https://v2.tauri.app/distribute/sign/macos/#notarization)。发布前需配置以下仓库 Actions secrets：
@@ -70,7 +72,7 @@ macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式
 
 发布流程先为所有内嵌 Mach-O 文件签名，包括 Node、原生插件和辅助程序，并启用安全时间戳和强化运行时，再由 Tauri 为外层应用签名和公证。Node 的授权保留 JIT、可执行内存和第三方原生库加载能力。打包要求证书和 Team ID 与预期一致，验证附加的应用公证票据和 Gatekeeper 接受结果，再为最终 DMG 签名、公证并附加票据。更新器归档会被解压，接受相同检查，并通过其打包的 Node Host 运行测试。票据缺失、公证被拒、超时、签名失败或运行时失败都会阻止产物发布。本地开发保留 ad-hoc 签名。
 
-由于 GitHub 已确认 [HTTP/3 间歇性故障](https://github.com/actions/runner-images/issues/14924)，一次性托管 Intel runner 通过使用 TCP 的 HTTPS 发送 Apple 票据请求。附加和验证票据仍保留正常的失败行为，并输出工具的诊断信息。
+由于 GitHub 已确认 [HTTP/3 间歇性故障](https://github.com/actions/runner-images/issues/14924)，一次性托管 Intel runner 通过使用 TCP 的 HTTPS 发送 Apple 票据请求。附加、验证票据与 Gatekeeper 评估均保留正常的失败行为，并输出工具的诊断信息。应用被拒绝时，若工具可用，还会输出 `codesign --verify --verbose=4` 与 `syspolicy_check distribution` 的诊断；这些诊断不能将被拒绝的评估改为通过。
 
 DMG 公证只上传一次，记录提交 ID 后，针对该请求轮询最多 20 分钟。每次状态读取限时 10 秒，遇到已知传输故障时，在 35 秒内最多尝试三次，并遵守工具返回的 `Retry-After`；认证失败或响应无效时立即停止。状态读取失败不会触发再次上传。
 

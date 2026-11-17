@@ -52,6 +52,8 @@ macOS uses `Verboo Code` for the executable and application display name; develo
 
 Every platform records the exact source SHA, installer size and SHA-256. Publication checks the complete set, resolves lightweight or annotated tags to that SHA, and confirms GitHub’s uploaded digests. An existing release is reused; matching files are skipped, missing files can be resumed, and differing published bytes are never overwritten. Manual builds publish a draft only after verification; release-triggered builds attach to the existing release. Downloads remain in GitHub Releases and checksums are included in `SHA256SUMS`.
 
+Operator-approved publication without one or both macOS targets uses [Publish verified Verboo desktop artifacts](../../../.github/workflows/verboo-desktop-publish-existing.yml). Supply the completed desktop build run, its exact source SHA and explicit omission flags; both flags default to false. The workflow requires successful selected jobs from the trusted desktop release workflow, matching product versions, installer hashes and updater metadata before publishing. Omitted platforms have no entry in this version’s update feed.
+
 ### Apple distribution signing
 
 Both macOS release jobs require a [Developer ID Application certificate](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/) and an [App Store Connect team API key](https://v2.tauri.app/distribute/sign/macos/#notarization) with Developer access. Configure these repository Actions secrets before releasing:

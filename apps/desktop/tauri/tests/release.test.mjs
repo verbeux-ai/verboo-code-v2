@@ -36,11 +36,12 @@ const platforms = {
   },
 }
 
-async function fixture(t, { includeAppleSilicon = true, omitAppleSilicon = false } = {}) {
+async function fixture(t, { includeAppleSilicon = true, omitAppleSilicon = false, includeIntel = true, omitIntel = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'verboo-release-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   for (const [label, platform] of Object.entries(platforms)) {
     if (!includeAppleSilicon && label === 'macOS-Apple-Silicon') continue
+    if (!includeIntel && label === 'macOS-Intel') continue
     const { target, extensions, updaters: updaterSpecs } = platform
     const installers = []
     for (const extension of extensions) {
@@ -67,7 +68,7 @@ async function fixture(t, { includeAppleSilicon = true, omitAppleSilicon = false
     await writeFile(join(directory, `manifest-${label}.json`), JSON.stringify({ version: 1, source, productVersion: configuration.version, label, target, installers, updaters }))
   }
   const feed = join(directory, '..', `feed-${randomUUID()}.json`)
-  return { directory, feed, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: feed, VERBOO_RELEASE_OMIT_MACOS_ARM64: omitAppleSilicon ? 'true' : 'false' } }) }
+  return { directory, feed, verify: () => run(process.execPath, [join(desktop, 'tauri/verify-release.mjs'), directory], { env: { ...process.env, GITHUB_SHA: source, VERBOO_UPDATE_FEED_PATH: feed, VERBOO_RELEASE_OMIT_MACOS_ARM64: omitAppleSilicon ? 'true' : 'false', VERBOO_RELEASE_OMIT_MACOS_INTEL: omitIntel ? 'true' : 'false' } }) }
 }
 
 test('publishes checksums only for the complete exact-source installer set', async t => {
@@ -121,3 +122,28 @@ for (const failure of ['missing platform', 'tampered installer', 'wrong source',
     await assert.rejects(readFile(join(f.directory, 'SHA256SUMS')), { code: 'ENOENT' })
   })
 }
+
+
+test('publishes only Windows and Linux when both macOS targets are explicitly omitted', async t => {
+  const f = await fixture(t, { includeAppleSilicon: false, omitAppleSilicon: true, includeIntel: false, omitIntel: true })
+  assert.equal(JSON.parse((await f.verify()).stdout).installers, 4)
+  const feed = JSON.parse(await readFile(f.feed, 'utf8'))
+  assert.deepEqual(Object.keys(feed.platforms).sort(), [
+    'linux-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb', 'linux-x86_64-rpm',
+    'windows-x86_64', 'windows-x86_64-nsis',
+  ])
+  const notes = await readFile(join(f.directory, 'RELEASE.md'), 'utf8')
+  assert.match(notes, /não inclui Apple Silicon e macOS Intel/)
+  assert.doesNotMatch(notes, /notarizados pela Apple/)
+})
+
+test('still requires Intel unless its omission is explicit', async t => {
+  const f = await fixture(t, { includeIntel: false })
+  await assert.rejects(f.verify())
+})
+
+test('rejects corrupted Linux bytes even when both macOS targets are omitted', async t => {
+  const f = await fixture(t, { includeAppleSilicon: false, omitAppleSilicon: true, includeIntel: false, omitIntel: true })
+  await writeFile(join(f.directory, `Verboo-Code-v2-${configuration.version}-Linux-x64.AppImage`), 'corrupted')
+  await assert.rejects(f.verify())
+})

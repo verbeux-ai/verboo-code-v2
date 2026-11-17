@@ -161,7 +161,9 @@ async function main() {
   await writeFile(join(process.env.RUNNER_TEMP, 'verboo-release-result.json'), JSON.stringify(result, null, 2) + '\n')
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `release_url=${result.url}\nrelease_tag=${result.tag}\n`)
   if (process.env.GITHUB_STEP_SUMMARY) {
-    const platforms = process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64 === 'true'
+    const platforms = process.env.VERBOO_RELEASE_OMIT_MACOS_INTEL === 'true' && process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64 === 'true'
+      ? 'Linux x64 and Windows x64; macOS omitted from this version'
+      : process.env.VERBOO_RELEASE_OMIT_MACOS_ARM64 === 'true'
       ? 'macOS Intel, Linux x64 and Windows x64; Apple Silicon omitted from this version'
       : 'macOS Apple Silicon, macOS Intel, Linux x64 and Windows x64'
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `[Verboo Code ${configuration.version}](${result.url}) — ${platforms}.\n`)
