@@ -14,6 +14,7 @@ export class AccountRequestError extends Error {
       | 'request_timeout'
       | 'request_cancelled'
       | 'contract_error'
+      | 'quote_rejected'
       | 'authentication_invalid'
       | 'authorization_denied'
       | 'unknown',
@@ -51,7 +52,7 @@ export function operation(): Operation {
  */
 export function observe(
   context: Operation,
-  stage: 'login' | 'catalog',
+  stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return',
   outcome: 'started' | 'succeeded' | 'failed',
   error?: AccountRequestError,
 ): void {
@@ -162,6 +163,11 @@ export class VerbooHttp {
       }
       if (!response.ok) {
         const status = response.status
+        // This server marker is emitted only before a financial write is started.
+        if ([409, 422].includes(status) && response.headers.get('x-verboo-quote-rejected') === 'true') {
+          await response.body?.cancel()
+          throw new AccountRequestError('quote_rejected', status)
+        }
         let rejectedGrant = false
         if (
           status === 400 &&

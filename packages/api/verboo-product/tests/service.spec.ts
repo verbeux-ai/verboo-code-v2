@@ -315,3 +315,10 @@ describe('failure classification', () => {
     ])
   })
 })
+
+it('keeps commercial reads available when the operational fallback logger fails', async () => {
+  const f = fixture(Response.json({ data: { asOf: new Date().toISOString(), trials: [], paidGroupIds: [] } }))
+  const logger = vi.spyOn(console, 'error').mockImplementation(() => { throw new Error('fixture collector unavailable') })
+  try { expect(await f.product.getTrialStatus(f.signal)).toMatchObject({ ok: true, data: { trials: [] } }) }
+  finally { logger.mockRestore() }
+})

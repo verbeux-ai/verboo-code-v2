@@ -995,6 +995,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-chat ActivityPill id \'activity\'',
       'client-ui-chat UsagePill id \'usage\'',
+      'client-ui-verboo TrialDock id \'verboo.trial-notice\'',
       'client-ui-verboo OmittedDiagnostic',
       'client-ui-verboo ExecutionStatus id \'verboo.execution\'',
       'client-ui-verboo StaminaDebug id \'verboo.stamina-debug\'',
@@ -4105,6 +4106,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-general HostReleasePrompt id \'host-release-change\'',
       'client-ui-settings-session-log UploadToast id \'session-log-upload-toast\'',
       'client-ui-shortcuts ShortcutReference id \'shortcuts\'',
+      'client-ui-verboo TrialModal id \'verboo.trial\'',
       'client-ui-verboo DesktopQuitHold id \'verboo.quit-hold\'',
       'client-ui-verboo Onboarding id \'verboo.onboarding\'',
       'client-ui-verboo Feedback id \'verboo.feedback\'',

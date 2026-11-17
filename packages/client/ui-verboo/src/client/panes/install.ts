@@ -10,8 +10,9 @@ import type { PaneAxis } from './layout.ts'
 
 /** Install one product-owned layout controller and its view registrations.
  * @param ctx - product Client context.
- * @param config - pane size constraints. */
-export function installPanes(ctx: Context, config: Config): void {
+ * @param config - pane size constraints.
+ * @returns the owned pane state, for product-level composition. */
+export function installPanes(ctx: Context, config: Config): PaneController['state'] {
   const form = ctx.configForms.get<Pick<Config, 'paneLayout' | 'minimalist'>>('ui-verboo')
   const saveError = createSnapshotStore(false)
   let pending: string | null = null
@@ -251,4 +252,5 @@ export function installPanes(ctx: Context, config: Config): void {
       if (!g.repeat) command.run()
     })
   }, 'Verboo: pane keyboard navigation')
+  return controller.state
 }

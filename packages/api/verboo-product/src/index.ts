@@ -11,6 +11,8 @@ import {
   observe,
 } from '@deepseek-ai/dsh-verboo-account'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
+import { TrialCommerce, trialStatus, paymentURL } from './trial.ts'
+import type { TrialStatus, TrialOffer, TrialPayment, TrialId, TrialOfferId, TrialAttemptId } from './types.ts'
 import type {
   ConnectionId,
   PlanId,
@@ -134,16 +136,26 @@ export class VerbooProduct extends TypertRemoteService {
   static inject = ['deepseekAccount']
   private readonly deployment
   private readonly http
+  private readonly trialCommerce
   constructor(ctx: Context, config: Config) {
     super(ctx, 'verbooProduct', { namespace: 'verboo' })
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
+    this.trialCommerce = new TrialCommerce(
+      (path, method, body, correlationId) => this.request(path, method, body, undefined, correlationId),
+      async () => {
+        const session = await this.ctx.deepseekAccount.getPlatformSession()
+        if (session?.sessionId === undefined) throw new AccountRequestError('authentication_invalid')
+        return session.sessionId
+      },
+    )
   }
   private async request(
     path: string,
     method = 'GET',
     body?: unknown,
     signal?: AbortSignal,
+    correlationId?: string,
   ): Promise<unknown> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
     if (session?.sessionId === undefined)
@@ -156,9 +168,14 @@ export class VerbooProduct extends TypertRemoteService {
     if ((await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId)
       throw new AccountRequestError('request_cancelled')
     const identity = operation()
-    const catalogRead =
-      path === '/api/me/subscriptions' || path.startsWith('/api/marketplace')
-    if (catalogRead) observe(identity, 'catalog', 'started')
+    if (correlationId) { identity.journeyId = correlationId; identity.operationId = correlationId }
+    const stage = productRequestStage(path, method)
+    const record = (outcome: 'started' | 'succeeded' | 'failed', error?: AccountRequestError) => {
+      if (stage === null) return
+      try { observe(identity, stage, outcome, error) }
+      catch { /* Operational collection cannot stop a commercial request. */ }
+    }
+    record('started')
     try {
       const value = await this.http.request(
         this.deployment.apiOrigin + path,
@@ -180,7 +197,7 @@ export class VerbooProduct extends TypertRemoteService {
         session.sessionId
       )
         throw new AccountRequestError('request_cancelled')
-      if (catalogRead) observe(identity, 'catalog', 'succeeded')
+      record('succeeded')
       return value
     } catch (error) {
       // The HTTP client above converts every transport, status, parse, and
@@ -191,7 +208,7 @@ export class VerbooProduct extends TypertRemoteService {
         error instanceof AccountRequestError
           ? error
           : new AccountRequestError('contract_error')
-      if (catalogRead) observe(identity, 'catalog', 'failed', safe)
+      record('failed', safe)
       if (safe.code === 'authentication_invalid')
         await this.ctx.deepseekAccount.rejectToken(token)
       throw safe
@@ -205,15 +222,17 @@ export class VerbooProduct extends TypertRemoteService {
         return {
           ok: false,
           code:
-            error.code === 'authentication_invalid'
-              ? 'signed_out'
-              : error.code === 'request_cancelled'
-                ? 'account_changed'
-                : error.status === 404
-                  ? 'not_found'
-                  : error.status === 503
-                    ? 'unavailable'
-                    : 'request_failed',
+            error.code === 'quote_rejected'
+              ? 'quote_changed'
+              : error.code === 'authentication_invalid'
+                ? 'signed_out'
+                : error.code === 'request_cancelled'
+                  ? 'account_changed'
+                  : error.status === 404
+                    ? 'not_found'
+                    : error.status === 503
+                      ? 'unavailable'
+                      : 'request_failed',
         }
       return { ok: false, code: 'contract_error' }
     }
@@ -380,6 +399,89 @@ export class VerbooProduct extends TypertRemoteService {
     })
   }
   /**
+   * Read server-decided trial attention; an unavailable API never means expired.
+   * @param signal - cancellation for the owning visible-window read.
+   * @returns persisted attention, remaining tokens and paid group access.
+   */
+  @Remote
+  getTrialStatus(signal: AbortSignal): Promise<Result<TrialStatus>> {
+    return this.result(async () => trialStatus.parse(await this.request('/api/me/trial-status', 'GET', undefined, signal)).data)
+  }
+  /**
+   * Quote one eligible plan without authorizing payment.
+   * @param trialId - the server's current trial notice identifier.
+   * @param planId - an eligible USD catalog plan.
+   * @param method - requested method; absent selects card.
+   * @returns display-only offer data; signed authorizations remain on the Host.
+   */
+  @Remote
+  trialOffer(trialId: TrialId, planId: PlanId, method?: 'card' | 'pix'): Promise<Result<TrialOffer>> {
+    return this.result(async () => {
+      const plans = await this.getPlans()
+      if (!plans.ok) throw new AccountRequestError('contract_error')
+      const selected = plans.data.catalog.find(plan => plan.id === id.parse(planId))
+      if (!selected || selected.currency.toUpperCase() !== 'USD') throw new AccountRequestError('contract_error')
+      return this.trialCommerce.offer(trialId, selected, z.enum(['card', 'pix']).parse(method ?? 'card'))
+    })
+  }
+  /**
+   * Authorize only the displayed quote, using an account-bound stable request identity.
+   * @param offerId - opaque Host quote identifier.
+   * @param method - the payment method displayed in the offer.
+   * @param requestId - original purchase identity retained for recovery.
+   * @returns confirmation or a pending provider step, never browser-derived success.
+   */
+  @Remote
+  confirmTrialOffer(offerId: TrialOfferId, method: 'card' | 'pix', requestId: TrialAttemptId): Promise<Result<TrialPayment>> {
+    return this.result(() => this.trialCommerce.confirm(
+      z.uuid().parse(offerId) as TrialOfferId, z.enum(['card', 'pix']).parse(method), requestId,
+    ))
+  }
+  /**
+   * Check the original purchase attempt; browser returns never prove completion.
+   * @param attemptId - original local purchase attempt identifier.
+   * @returns its persisted server status.
+   */
+  @Remote
+  trialPaymentStatus(attemptId: TrialAttemptId): Promise<Result<{ status: string }>> {
+    return this.result(async () => z.object({ data: z.object({ status: z.string() }) })
+      .parse(await this.request('/api/me/purchase-attempts/' + z.uuid().parse(attemptId))).data)
+  }
+  /**
+   * Reopen only the authenticated user's original provider checkout, without another purchase.
+   * @param attemptId - original local purchase attempt identifier.
+   * @param trialId - subscription notice for legacy invoice recovery; absent uses checkout recovery only.
+   * @returns the existing handoff or persisted completion of that same attempt.
+   */
+  @Remote
+  resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>> {
+    return this.result(async () => {
+      const attempt = z.uuid().parse(attemptId) as TrialAttemptId
+      const original = z.object({ data: z.object({ status: z.string() }) })
+        .parse(await this.request('/api/me/purchase-attempts/' + attempt)).data
+      if (original.status === 'succeeded') return { status: 'completed', attemptId: attempt, url: null }
+      try {
+        const response = z.object({ data: z.object({ mode: z.literal('stripe'), attemptId: z.uuid(), url: z.string() }) })
+          .parse(await this.request('/api/me/purchase-attempts/' + attempt + '/resume')).data
+        if (response.attemptId !== attempt) throw new AccountRequestError('contract_error')
+        return { status: 'requires_action', attemptId: attempt, url: paymentURL(response.url) }
+      } catch (error) {
+        if (!(error instanceof AccountRequestError) || error.status !== 409 || !trialId || trialId.startsWith('tokens:'))
+          throw error
+        const subscription = z.uuid().parse(trialId)
+        const pending = z.object({ data: z.object({
+          state: z.string(), attemptId: z.uuid().optional(), hostedInvoiceUrl: z.string().optional(),
+        }) })
+          .parse(await this.request('/api/me/subscriptions/' + subscription + '/trial-conversion?billingInterval=month')).data
+        if (pending.attemptId !== attempt || !['requires_action', 'pix_pending'].includes(pending.state)) throw error
+        const url = pending.hostedInvoiceUrl
+          ? paymentURL(pending.hostedInvoiceUrl)
+          : new URL('/pt/settings/billing?subscription=' + subscription + '&action=convert', this.deployment.apiOrigin).href
+        return { status: 'requires_action', attemptId: attempt, url }
+      }
+    })
+  }
+  /**
  * Read only this authenticated user's connections.
  * @returns credential-free states and configured toolkits.
  */
@@ -478,6 +580,16 @@ export class VerbooProduct extends TypertRemoteService {
       return url.href
     })
   }
+}
+/** Fixed commercial stages; no URL, query, card or quote content enters observations. */
+function productRequestStage(path: string, method: string): Parameters<typeof observe>[1] | null {
+  if (path === '/api/me/subscriptions' || path === '/api/me/trial-status' || path.startsWith('/api/marketplace')) return 'catalog'
+  if (path.includes('/trial-conversion')) return 'trial_conversion'
+  if (path.includes('/free-tokens/activation') || path.includes('/free-tokens/activate')) return 'trial_activation'
+  if (path.includes('/change-plan')) return 'plan_change'
+  if (path.includes('/purchase-attempts/')) return 'payment_return'
+  if (method === 'POST' && (path.endsWith('/checkout') || path.endsWith('/checkout/quotes'))) return 'checkout_request'
+  return null
 }
 function connectionIdSchema(value: string): string {
   return connectionId.parse(value)

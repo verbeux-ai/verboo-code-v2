@@ -4,6 +4,12 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 export type ConnectionId = Branded<'VerbooConnectionId'>
 /** Opaque identifier of a Verboo plan. */
 export type PlanId = Branded<'VerbooPlanId'>
+/** Opaque server trial notice identity, including token-grant notices. */
+export type TrialId = Branded<'VerbooTrialId'>
+/** Opaque identity of one Host-owned display offer. */
+export type TrialOfferId = Branded<'VerbooTrialOfferId'>
+/** Opaque purchase operation or attempt identity retained for recovery. */
+export type TrialAttemptId = Branded<'VerbooTrialAttemptId'>
 /** Public recurring plan available for acquisition. */
 export interface Plan {
   id: PlanId
@@ -79,8 +85,46 @@ export type ProductError =
   | 'unavailable'
   | 'not_found'
   | 'request_failed'
+  | 'quote_changed'
   | 'contract_error'
 /** A product API response whose failure never exposes credentials. */
 export type Result<T> =
   | { ok: true; data: T }
   | { ok: false; code: ProductError }
+
+/** Server-decided trial attention, scoped to the group whose access is ending. */
+export interface TrialNotice {
+  id: TrialId
+  groupId: PlanId
+  source: 'free_tokens' | 'trial' | 'stripe_trial'
+  state: 'ending' | 'ended'
+  endsAt?: string | undefined
+  tokensRemaining?: number | undefined
+  tokenLimit?: number | undefined
+}
+/** A timestamped authoritative snapshot; errors are never an ended trial. */
+export interface TrialStatus { asOf: string; trials: TrialNotice[]; paidGroupIds?: PlanId[] }
+/** Display-only commercial offer. Signed provider quotes remain on the Host. */
+export interface TrialOffer {
+  attemptId?: TrialAttemptId
+  pending?: TrialPayment
+  paymentMethod: 'card' | 'pix'
+  pixAvailable: boolean
+  pixMandateAmountMinor?: number
+  id: TrialOfferId
+  planId: PlanId
+  name: string
+  amountMinor: number
+  renewalAmountMinor: number
+  currency: string
+  interval: 'month' | 'year'
+  expiresAt: string
+  card: { brand: string; last4: string } | null
+  methods: ('card' | 'pix')[]
+}
+/** A provider return is a navigation instruction, never proof of payment. */
+export interface TrialPayment {
+  status: 'pending' | 'requires_action' | 'completed' | 'setup_required' | 'reconfirm'
+  attemptId: TrialAttemptId | null
+  url: string | null
+}

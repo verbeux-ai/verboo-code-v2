@@ -29,6 +29,8 @@ export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
+import { TrialModel } from './trial-model.ts'
+import { TrialDock, TrialModal, type TrialInjected } from './Trial.tsx'
 import { createStaminaResource } from './stamina-resource.ts'
 import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
@@ -49,6 +51,8 @@ import { PlanPage } from './Plans.tsx'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
 import { installPanes } from './panes/install.ts'
+import { leaves } from './panes/layout.ts'
+import { selectStaminaForModel } from './stamina-selection.ts'
 import type { ConversationAppearanceInjected } from './ConversationAppearance.tsx'
 
 /** Product replacement for optional diagnostic readouts. */
@@ -93,7 +97,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     () => ctx.theme.overrideIcons('verboo-code', icons),
     'Verboo: icon family',
   )
-  installPanes(ctx, config)
+  const panes = installPanes(ctx, config)
   const navigationEntries = createSnapshotStore<
     readonly { id: MainPanelId; label: string }[]
   >([])
@@ -211,6 +215,61 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     config.handoffTimeoutMs,
   )
   ctx.effect(() => () =>{  model.dispose() }, 'Verboo: presenter lifetime')
+  let trialStorage: Storage | undefined
+  try { trialStorage = globalThis.localStorage } catch { /* Reading remains available when storage is blocked. */ }
+  const trial = new TrialModel({
+    status: async (signal) => { const r = await ctx.remote.verboo.getTrialStatus(signal); return r.ok ? r.value : { ok: false, code: 'request_failed' } },
+    offer: async (id, plan, method) => { const r = await ctx.remote.verboo.trialOffer(id, plan, method); return r.ok ? r.value : { ok: false, code: 'request_failed' } },
+    confirm: async (id, method, request) => { const r = await ctx.remote.verboo.confirmTrialOffer(id, method, request); return r.ok ? r.value : { ok: false, code: 'request_failed' } },
+    resume: async (id, trialId) => { const r = await ctx.remote.verboo.resumeTrialPayment(id, trialId); return r.ok ? r.value : { ok: false, code: 'request_failed' } },
+    payment: async (id) => { const r = await ctx.remote.verboo.trialPaymentStatus(id); return r.ok ? r.value : { ok: false, code: 'request_failed' } },
+    open, refreshPlans: () => { void model.loadPlans() },
+  }, model.state, trialStorage)
+  ctx.effect(() => {
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      trial.adopt()
+      if (document.visibilityState !== 'visible' || !navigator.onLine) { trial.pause(); return }
+      void trial.refresh()
+    }
+    const tick = () => {
+      if (stopped) return
+      refresh()
+      timer = setTimeout(tick, config.refreshIntervalMs)
+    }
+    const stop = model.state.subscribe(refresh)
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('online', refresh)
+    window.addEventListener('offline', refresh)
+    window.addEventListener('focus', refresh)
+    tick()
+    return () => {
+      stopped = true; clearTimeout(timer); stop(); trial.dispose()
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('online', refresh); window.removeEventListener('offline', refresh); window.removeEventListener('focus', refresh)
+    }
+  }, 'Verboo: trial attention')
+  ctx.effect(() => {
+    let selectedSession: SessionId | null = null
+    let stopModel: (() => void) | undefined
+    const sync = () => {
+      const layout = panes.getSnapshot().layout
+      const session = leaves(layout.root).find(pane => pane.id === layout.focused)?.sessionId ?? null
+      if (session !== selectedSession) {
+        stopModel?.()
+        selectedSession = session
+        stopModel = session === null ? undefined : ctx.modelDirectories.directoryFor(session).store.subscribe(sync)
+      }
+      const selected = session === null ? null : ctx.modelDirectories.directoryFor(session).store.getSnapshot().current
+      const group = selectStaminaForModel(model.state.getSnapshot().plans, selected, undefined).group
+      trial.selectGroup(group?.id ?? null)
+    }
+    const stopPanes = panes.subscribe(sync)
+    const stopAccount = model.state.subscribe(sync)
+    sync()
+    return () => { stopPanes(); stopAccount(); stopModel?.() }
+  }, 'Verboo: focused trial group')
   const stamina = createStaminaResource(
     signal => ctx.remote.verboo.getStamina(signal),
     model.state,
@@ -403,6 +462,44 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
   })
   const noStaminaModel = createSnapshotStore<StaminaModelState>({ current: null })
+  const trialFace = (): ProductInjected & TrialInjected => {
+    const product = face()
+    return { ...product, hooks: { ...product.hooks, trial: trial.state },
+      selectTrialGroup: (group) => { trial.selectGroup(group) },
+      showTrial: () => { trial.show() }, closeTrial: () => { trial.close() },
+      quoteTrial: (id, method) => { void trial.quote(id, method) },
+      confirmTrial: (method) => {
+        try {
+          navigation.reserve()
+          void trial.confirm(method).finally(() => { navigation.release() })
+        } catch { model.reportNavigationFailure(true) }
+      },
+      refreshTrial: () => { void trial.refresh() },
+      reopenTrial: () => {
+        try {
+          navigation.reserve()
+          void trial.reopen().finally(() => { navigation.release() })
+        } catch { model.reportNavigationFailure(true) }
+      },
+    }
+  }
+  const trialDockFace = (sessionId?: SessionId) => {
+    const product = trialFace()
+    const staminaModel = sessionId === undefined ? noStaminaModel : ctx.modelDirectories.directoryFor(sessionId).store
+    return { ...product, hooks: { ...product.hooks, staminaModel } }
+  }
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register(
+      { name: 'shell.overlay', id: 'verboo.trial', order: 105, locale: 'verboo', inject: trialFace },
+      TrialModal,
+    ),
+  )
+  ctx.slots.inject('conversation.composer.dock', () =>
+    ctx.slots.register(
+      { name: 'conversation.composer.dock', id: 'verboo.trial-notice', order: -20, locale: 'verboo', inject: trialDockFace },
+      TrialDock,
+    ),
+  )
   const staminaFace = (sessionId?: SessionId) => {
     const product = face()
     const staminaModel = sessionId === undefined ? noStaminaModel : ctx.modelDirectories.directoryFor(sessionId).store

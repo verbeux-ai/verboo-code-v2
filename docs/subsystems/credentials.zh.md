@@ -424,6 +424,46 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>
 
 /**
+ * Read server-decided trial attention; an unavailable API never means expired.
+ * @param signal - cancellation for the owning visible-window read.
+ * @returns persisted attention, remaining tokens and paid group access.
+ */
+@Remote getTrialStatus(signal: AbortSignal): Promise<Result<TrialStatus>>
+
+/**
+ * Quote one eligible plan without authorizing payment.
+ * @param trialId - the server's current trial notice identifier.
+ * @param planId - an eligible USD catalog plan.
+ * @param method - requested method; absent selects card.
+ * @returns display-only offer data; signed authorizations remain on the Host.
+ */
+@Remote trialOffer(trialId: TrialId, planId: PlanId, method?: 'card' | 'pix'): Promise<Result<TrialOffer>>
+
+/**
+ * Authorize only the displayed quote, using an account-bound stable request identity.
+ * @param offerId - opaque Host quote identifier.
+ * @param method - the payment method displayed in the offer.
+ * @param requestId - original purchase identity retained for recovery.
+ * @returns confirmation or a pending provider step, never browser-derived success.
+ */
+@Remote confirmTrialOffer(offerId: TrialOfferId, method: 'card' | 'pix', requestId: TrialAttemptId): Promise<Result<TrialPayment>>
+
+/**
+ * Check the original purchase attempt; browser returns never prove completion.
+ * @param attemptId - original local purchase attempt identifier.
+ * @returns its persisted server status.
+ */
+@Remote trialPaymentStatus(attemptId: TrialAttemptId): Promise<Result<{ status: string }>>
+
+/**
+ * Reopen only the authenticated user's original provider checkout, without another purchase.
+ * @param attemptId - original local purchase attempt identifier.
+ * @param trialId - subscription notice for legacy invoice recovery; absent uses checkout recovery only.
+ * @returns the existing handoff or persisted completion of that same attempt.
+ */
+@Remote resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>>
+
+/**
  * Read only this authenticated user's connections.
  * @returns credential-free states and configured toolkits.
  */

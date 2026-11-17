@@ -31,6 +31,8 @@ Stamina reads return the primary percentage and next-request TPS only for server
 
 Connections requests opt into the complete provider catalog with `catalog=all` and accept up to 10,000 toolkit records, including authorization method and server configuration requirements. A record may carry a brand mark as an absolute `logo` URL, which the Connections page shows beside the service name; a blank, null, or absent value means the page keeps its own placeholder, and the catalog read fails on any other value. Older APIs may omit this metadata. Agent listing returns only owned accounts and public services (`public_<slug>`), keeping the full discovery catalog out of model input. The backend revalidates public services as requiring no credentials before tool search or execution.
 
+Trial commerce reads server-decided attention and exposes display-only offers to the Client. Signed conversion and checkout authorizations remain in the Host's bounded, expiring quote cache. Every request captures its owning account, and confirmation rechecks that identity before submitting the exact offer. A quote, card setup, plan transfer and payment confirmation remain distinct operations. The server’s `X-Verboo-Quote-Rejected` marker releases a rejected authorization for a fresh quote only when no charge started; an unconfirmed write retains its original recovery identity. New Pix checkouts use a separately signed BRL quote; pending purchases resume their original attempt. Payment URLs are restricted to the supported Stripe destinations. Commercial endpoints remain owner-only in shared sessions; this data is not exposed to the model or its context cache.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

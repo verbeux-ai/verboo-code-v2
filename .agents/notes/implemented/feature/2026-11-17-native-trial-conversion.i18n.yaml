@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-17-native-trial-conversion.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-17-native-trial-conversion.md
+/agent-note-native-trial-attention-and-explicit-subscription-conversion:
+  en: 0f97fa3c57a32bce
+  zh: 80ce6ba458a448a3
+/agent-note-native-trial-attention-and-explicit-subscription-conversion/problem:
+  en: 2b0bdb44895c84c2
+  zh: 6f169e6bb71a0286
+/agent-note-native-trial-attention-and-explicit-subscription-conversion/decision:
+  en: 63cd3358fdd43416
+  zh: 11cf8e305ca5c20b
+/agent-note-native-trial-attention-and-explicit-subscription-conversion/alternatives-considered:
+  en: e76a6117f74770fb
+  zh: d15850b758dea689
+/agent-note-native-trial-attention-and-explicit-subscription-conversion/consequences:
+  en: b1171b57a1943db6
+  zh: 42df6253cd4d5031

@@ -4373,6 +4373,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'public percentages and next-request ceilings; older APIs without stamina return an empty list.',
       },
       {
+        signature: '@Remote getTrialStatus(signal: AbortSignal): Promise<Result<TrialStatus>>',
+        description: 'Read server-decided trial attention; an unavailable API never means expired.',
+        parameters: [{ name: 'signal', description: 'cancellation for the owning visible-window read.' }],
+        returns: 'persisted attention, remaining tokens and paid group access.',
+      },
+      {
+        signature: '@Remote trialOffer(trialId: TrialId, planId: PlanId, method?: \'card\' | \'pix\'): Promise<Result<TrialOffer>>',
+        description: 'Quote one eligible plan without authorizing payment.',
+        parameters: [{ name: 'trialId', description: 'the server\'s current trial notice identifier.' }, { name: 'planId', description: 'an eligible USD catalog plan.' }, { name: 'method', description: 'requested method; absent selects card.' }],
+        returns: 'display-only offer data; signed authorizations remain on the Host.',
+      },
+      {
+        signature: '@Remote confirmTrialOffer(offerId: TrialOfferId, method: \'card\' | \'pix\', requestId: TrialAttemptId): Promise<Result<TrialPayment>>',
+        description: 'Authorize only the displayed quote, using an account-bound stable request identity.',
+        parameters: [{ name: 'offerId', description: 'opaque Host quote identifier.' }, { name: 'method', description: 'the payment method displayed in the offer.' }, { name: 'requestId', description: 'original purchase identity retained for recovery.' }],
+        returns: 'confirmation or a pending provider step, never browser-derived success.',
+      },
+      {
+        signature: '@Remote trialPaymentStatus(attemptId: TrialAttemptId): Promise<Result<{ status: string }>>',
+        description: 'Check the original purchase attempt; browser returns never prove completion.',
+        parameters: [{ name: 'attemptId', description: 'original local purchase attempt identifier.' }],
+        returns: 'its persisted server status.',
+      },
+      {
+        signature: '@Remote resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>>',
+        description: 'Reopen only the authenticated user\'s original provider checkout, without another purchase.',
+        parameters: [{ name: 'attemptId', description: 'original local purchase attempt identifier.' }, { name: 'trialId', description: 'subscription notice for legacy invoice recovery; absent uses checkout recovery only.' }],
+        returns: 'the existing handoff or persisted completion of that same attempt.',
+      },
+      {
         signature: '@Remote getConnections(): Promise<Result<Connections>>',
         description: 'Read only this authenticated user\'s connections.',
         parameters: [],
@@ -7883,7 +7913,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProductError',
-    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'contract_error\';',
+    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'quote_changed\' | \'contract_error\';',
   },
   {
     name: 'ProductEvent',
@@ -9968,6 +9998,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TranslationSpec',
     declaration: 'export type TranslationSpec = AnonymousTranslationSpec | PaidTranslationSpec;',
+  },
+  {
+    name: 'TrialAttemptId',
+    declaration: 'export type TrialAttemptId = Branded<\'VerbooTrialAttemptId\'>;',
+  },
+  {
+    name: 'TrialId',
+    declaration: 'export type TrialId = Branded<\'VerbooTrialId\'>;',
+  },
+  {
+    name: 'TrialNotice',
+    declaration: 'export interface TrialNotice {\n    id: TrialId;\n    groupId: PlanId;\n    source: \'free_tokens\' | \'trial\' | \'stripe_trial\';\n    state: \'ending\' | \'ended\';\n    endsAt?: string | undefined;\n    tokensRemaining?: number | undefined;\n    tokenLimit?: number | undefined;\n}',
+  },
+  {
+    name: 'TrialOffer',
+    declaration: 'export interface TrialOffer {\n    attemptId?: TrialAttemptId;\n    pending?: TrialPayment;\n    paymentMethod: \'card\' | \'pix\';\n    pixAvailable: boolean;\n    pixMandateAmountMinor?: number;\n    id: TrialOfferId;\n    planId: PlanId;\n    name: string;\n    amountMinor: number;\n    renewalAmountMinor: number;\n    currency: string;\n    interval: \'month\' | \'year\';\n    expiresAt: string;\n    card: {\n        brand: string;\n        last4: string;\n    } | null;\n    methods: (\'card\' | \'pix\')[];\n}',
+  },
+  {
+    name: 'TrialOfferId',
+    declaration: 'export type TrialOfferId = Branded<\'VerbooTrialOfferId\'>;',
+  },
+  {
+    name: 'TrialPayment',
+    declaration: 'export interface TrialPayment {\n    status: \'pending\' | \'requires_action\' | \'completed\' | \'setup_required\' | \'reconfirm\';\n    attemptId: TrialAttemptId | null;\n    url: string | null;\n}',
+  },
+  {
+    name: 'TrialStatus',
+    declaration: 'export interface TrialStatus {\n    asOf: string;\n    trials: TrialNotice[];\n    paidGroupIds?: PlanId[];\n}',
   },
   {
     name: 'TurnBoundaryProjection',

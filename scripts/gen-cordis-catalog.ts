@@ -1002,6 +1002,12 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   ConnectionId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Connections: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   StaminaStatus: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  TrialId: 'Trial identities are documented in packages/api/verboo-product/src/types.ts',
+  TrialOfferId: 'Trial identities are documented in packages/api/verboo-product/src/types.ts',
+  TrialAttemptId: 'Trial identities are documented in packages/api/verboo-product/src/types.ts',
+  TrialStatus: 'Trial attention is documented in packages/api/verboo-product/README.md and src/types.ts',
+  TrialOffer: 'Trial authorization is documented in packages/api/verboo-product/README.md and src/types.ts',
+  TrialPayment: 'Payment recovery is documented in packages/api/verboo-product/README.md and src/types.ts',
 
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
