@@ -1,4 +1,5 @@
 ---
+kind: package-reference
 description: "[OI] ChatGPT 账户登录、加密授权存储，以及登录时已携带的订阅方案信息。"
 ---
 
@@ -17,7 +18,7 @@ description: "[OI] ChatGPT 账户登录、加密授权存储，以及登录时�
 - [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
-- [开发说明](#dev-note)
+- [开发备注](#dev-note)
 
 <a id="why-this-package-exists"></a>
 
@@ -50,7 +51,7 @@ description: "[OI] ChatGPT 账户登录、加密授权存储，以及登录时�
 
 <a id="dev-note"></a>
 
-## 开发说明
+## 开发备注
 
 授权保险库与 Verboo 账户一致：认证加密、密钥存于凭据库、issuer 绑定，磁盘上无明文。
 
@@ -65,6 +66,8 @@ None, as this package produces no model-visible text; it stores a credential and
 
 None. 本包不为任何请求添加前缀，也不更改消息内容，因此不影响路由发送的可缓存前缀。
 
+
+<a id="known-limitations-and-deferred-work"></a>
 
 ## 已知限制与后续工作
 

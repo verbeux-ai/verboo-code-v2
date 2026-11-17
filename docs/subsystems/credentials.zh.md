@@ -574,6 +574,42 @@ Local grant removal has completed.
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="openai-account-events"></a>
+
+### `openai-account/*` events
+
+<a id="openai-accountsign-in-required--emit"></a>
+
+#### `openai-account/sign-in-required` — emit
+
+A provider call needs the user to sign in again; emitted once per cleared session.
+
+```ts cordis-catalog
+/**
+ * A provider call needs the user to sign in again; emitted once per cleared session.
+ * @mode emit
+ */
+'openai-account/sign-in-required'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
+
+<a id="openai-accountsigned-out--emit"></a>
+
+#### `openai-account/signed-out` — emit
+
+The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+
+```ts cordis-catalog
+/**
+ * The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+ * @mode emit
+ */
+'openai-account/signed-out'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getProfile、getBalance、getUnnotifiedBonuses、ackBonusNotified、startSignIn、cancelSignIn、signOut、watch，以及仅限 Host 的 resolveToken、refreshRejectedToken、rejectToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。

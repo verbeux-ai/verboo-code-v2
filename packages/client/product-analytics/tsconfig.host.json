@@ -9,7 +9,8 @@
     "src/index.ts",
     "src/events.ts",
     "src/environment.ts",
-    "src/environment-query.ts"
+    "src/environment-query.ts",
+    "src/model-failure.ts"
   ],
   "references": [
     {

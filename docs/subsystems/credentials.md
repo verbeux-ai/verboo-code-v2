@@ -574,6 +574,42 @@ Local grant removal has completed.
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="openai-account-events"></a>
+
+### `openai-account/*` events
+
+<a id="openai-accountsign-in-required--emit"></a>
+
+#### `openai-account/sign-in-required` — emit
+
+A provider call needs the user to sign in again; emitted once per cleared session.
+
+```ts cordis-catalog
+/**
+ * A provider call needs the user to sign in again; emitted once per cleared session.
+ * @mode emit
+ */
+'openai-account/sign-in-required'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
+
+<a id="openai-accountsigned-out--emit"></a>
+
+#### `openai-account/signed-out` — emit
+
+The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+
+```ts cordis-catalog
+/**
+ * The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+ * @mode emit
+ */
+'openai-account/signed-out'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
 <!-- END GENERATED cordis-surface -->
 
 The account Service Definition exposes getState, getProfile, getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken, refreshRejectedToken, rejectToken, and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).

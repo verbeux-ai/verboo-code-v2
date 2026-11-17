@@ -27,6 +27,11 @@ export const inject = ['llm', 'deepseekAccount']
 
 // Preserve the account route of saved sessions while changing its provider and display identity.
 const PROVIDER = 'deepseek-account'
+/** DeepSeek reasoning replay must remain present on assistant tool-call history. */
+export const VERBOO_ACCOUNT_COMPAT = {
+  thinkingFormat: 'deepseek',
+  requiresReasoningContentOnAssistantMessages: true,
+} as const
 const number = z.number().positive().optional()
 const listing = z.object({
   data: z
@@ -216,7 +221,7 @@ class VerbooAdapter extends PiAiAdapter {
             baseURL: deployment.routerBaseURL,
             apiKeyEnv: 'VERBOO_ACCESS_TOKEN',
             models,
-            compat: { thinkingFormat: 'deepseek' },
+            compat: VERBOO_ACCOUNT_COMPAT,
             retryPolicy: {
               mode: 'normal',
               maxRetries: normalRetry.maxRetries,

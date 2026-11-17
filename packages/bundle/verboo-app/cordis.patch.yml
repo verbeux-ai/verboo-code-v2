@@ -73,3 +73,9 @@
       name: '@deepseek-ai/dsh-api-verboo-mcp'
     - id: ui-verboo
       name: '@deepseek-ai/dsh-client-ui-verboo'
+
+- id: product-analytics
+  config:
+    enabled: true
+    appVersion: !!js process.env.DSH_CLIENT_VERSION
+    observabilityEndpoint: !!js process.env.VERBOO_OBSERVABILITY_ENDPOINT || 'https://code.verboo.ai/api/observability/events'
