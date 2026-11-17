@@ -66,6 +66,16 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** Private reference tool run from the repository; it publishes no files. */
 const pluginMarketGeneratorDirectory = 'apps/plugin-market-generator'
+/** Private product packages consumed by the Verboo bundle; none are published independently. */
+const privateVerbooProductPackageDirectories = new Set([
+  'packages/api/verboo-mcp',
+  'packages/api/verboo-product',
+  'packages/bundle/verboo-app',
+  'packages/client/ui-verboo',
+  'packages/credentials/openai-account',
+  'packages/credentials/verboo-account',
+  'packages/extensions/verboo-connections',
+])
 /**
  * Ordinary directories whose packages this repository publishes: one release member each. The reference plugin
  * market generator is a private repository tool, not a published application.
@@ -216,6 +226,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The physical-key protocol is a public entry usable without the browser service.
   '@deepseek-ai/dsh-client-shortcuts': ['lib/protocol.js'],
+  // Verboo's private product UI carries its third-party license inventory.
+  '@deepseek-ai/dsh-client-ui-verboo': ['LICENSES.md'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
   '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice': ['runtime/assets.json'],
@@ -458,6 +470,7 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
   if (dir === 'packages/ssh/ssh-helper-runtime') return false
+  if (privateVerbooProductPackageDirectories.has(dir)) return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 

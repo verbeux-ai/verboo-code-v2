@@ -117,6 +117,29 @@ describe('workspace manifest discovery', () => {
   })
 })
 
+describe('private Verboo product packages', () => {
+  it.each([
+    'packages/api/verboo-mcp',
+    'packages/api/verboo-product',
+    'packages/bundle/verboo-app',
+    'packages/client/ui-verboo',
+    'packages/credentials/openai-account',
+    'packages/credentials/verboo-account',
+    'packages/extensions/verboo-connections',
+  ])('keeps %s private and outside npm release-member rules', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(manifest.private).toBe(true)
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  })
+
+  it('still rejects a private package in the public release set', () => {
+    const dir = 'packages/core/tools'
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: true } }))
+      .toContainEqual(expect.stringContaining('release member must not set "private": true'))
+  })
+})
+
 describe('experimental workspace constraints', () => {
   it('requires the experimental package-name prefix', () => {
     expect(checkExperimentalManifest({

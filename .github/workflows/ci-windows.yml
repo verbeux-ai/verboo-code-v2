@@ -234,6 +234,11 @@ jobs:
           } else {
             pnpm install --frozen-lockfile
           }
+      - name: Build workspace artifacts for native tests
+        shell: pwsh
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build:artifacts
       - name: Run Windows-specific native tests
         shell: pwsh
         run: >-
