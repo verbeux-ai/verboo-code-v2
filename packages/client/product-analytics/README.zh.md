@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-桌面端默认通过现有 OTel 产品导出器上报指定交互，不提供用户操作入口。普通 Web 客户端不会提交这些事件，缺失的登录身份字段会省略。
+桌面端默认通过现有 OTel 产品导出器上报指定交互，不提供用户操作入口。终止的模型请求失败也会发送到第一方可观测性端点，用于 PostHog 和 Prometheus 统计。普通 Web 客户端不会提交这些事件，缺失的登录身份字段会省略。
 
 ## 目录
 
@@ -25,7 +25,9 @@ kind: "package-reference"
 
 渲染端和 Electron 通过现有认证流订阅 Host 策略变化及重连后的值；Electron 在原生启动上报前还会读取初始策略。欢迎窗口通过 IPC 获取当前策略。Host 在接收事件及读取环境和身份后都检查当前 volatile 配置。`DSH_PRODUCT_ANALYTICS_OTLP_URL` 可覆盖导出目的地，用于隔离的接收端。[导出器](../../host/product-telemetry-otel/README.zh.md)负责批量发送、重试和退出时的交付。
 
-每条产品事件携带可用的 `device_id`、`user_id` 和 `app_version`，以及下表中的静态字段。身份复用现有登录记录，不创建设备标识；每条事件通过 `deepseekAccount.getDeviceIdentity()` 读取身份。静态环境采集独立于身份读取。不发送单独的环境事件；排除 API key、账户令牌、提示词、模型回复、主机名和机器 UUID。
+通过 OTel 产品导出器发送的事件携带可用的 `device_id`、`user_id` 和 `app_version`，以及下表中的静态字段。身份复用现有登录记录，不创建设备标识；每条事件通过 `deepseekAccount.getDeviceIdentity()` 读取身份。静态环境采集独立于身份读取。不发送单独的环境事件；排除 API key、账户令牌、提示词、模型回复、主机名和机器 UUID。
+
+终止的模型失败使用可选设置 `observabilityEndpoint`。Verboo 桌面端 bundle 将其指向 `https://code.verboo.ai/api/observability/events`；每次失败仅发送一次，默认期限为两秒。事件包含受限的错误类别/代码、可用时的 HTTP 状态、是否可重试，以及经过校验的 provider、model 和应用版本标识。事件不包含用户、设备、会话、提示词、回答、工具名称或工具参数。端点会在 Prometheus 统计失败，并将详细信息转发到现有 PostHog 项目。采集端失败或不可用不会影响模型轮次。
 
 | 字段 | 含义与来源 |
 |---|---|
@@ -70,17 +72,17 @@ Electron 将构建内联的 `DSH_CLIENT_VERSION` 传给 Host；埋点与导出�
 <a id="model-experience"></a>
 ## 模型体验
 
-无；埋点不增加模型上下文或会话事件。
+无，因为埋点不增加模型上下文或会话事件。
 
 #### KV 缓存影响
 
-无；采集不修改模型请求。
+终止的模型失败可能触发一次独立的尽力而为事件；它不会增加模型 provider 调用或 token，也不改变请求内容。
 
 ## 已知限制与后续工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-交付采用尽力而为的方式。
+交付采用尽力而为的方式。只有在埋点启用且一次请求终止失败时才发送模型失败事件；埋点关闭或采集端不可用会导致错误计数出现缺口。
 
 - 环境仅采样一次：启动期间的资源争用可能导致超时，并缓存到本次运行结束。`missing_fields` 表示采样失败，不表示硬件缺失；后续事件不重试。部署可提高查询期限；重新挂载或重启会再次采样。
 - 主机安全策略可能阻止或终止固定的 PowerShell 查询，使受管理的 Windows 机器产生 `query-failed`。

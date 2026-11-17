@@ -127,6 +127,17 @@ function resultFor(subject: Gate, status: GateResult['status'] = 'passed'): Gate
   }
 }
 
+function expectBuiltNodeCompatPlan(subject: readonly Gate[]): void {
+  expect(subject.find(item => item.id === 'build')?.args).toEqual([
+    '/private/pnpm.cjs', 'run', 'build:artifacts',
+  ])
+  expect(subject.find(item => item.id === 'source-compat-smokes')?.needs).toEqual(['build'])
+  expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
+    needs: ['build'],
+    env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
+  })
+}
+
 function withPnpmEntrypoint<T>(action: () => T, entrypoint = '/private/pnpm.cjs'): T {
   const previous = process.env.npm_execpath
   process.env.npm_execpath = entrypoint
@@ -537,6 +548,18 @@ describe('gate graph validation', () => {
     }
   })
 
+  it('builds workspace artifacts before standalone coverage consumers', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('ci-coverage'))
+    const byId = new Map(subject.map(gate => [gate.id, gate]))
+
+    expect(byId.get('build')).toMatchObject({
+      displayCommand: 'pnpm run build:artifacts',
+      env: { DSH_BUILD_CLIENT_PROFILE: 'official' },
+    })
+    expect(byId.get('coverage')?.needs).toEqual(['build', 'native-system'])
+    expect(byId.get('coverage-exempt-heavy')?.needs).toEqual(['build', 'native-system'])
+  })
+
   it('runs the Windows built-bin smoke after other observational gates settle', () => {
     const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
     const builtBin = observational.find(gate => gate.id === 'built-bin-smoke')
@@ -858,6 +881,19 @@ describe('Typert contract preparation', () => {
     })
   })
 
+  it('compares CI duplication with the fetched pull request base', () => {
+    const subject = withEnv('DSH_DUPLICATION_BASE_REF', 'origin/master', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-lint-contracts-ready')))
+
+    expect(subject.find(item => item.id === 'duplication')).toMatchObject({
+      displayCommand: 'pnpm exec jscpd --config .jscpd.json --baseline-from-ref origin/master --fail-on-new-clones=0 --exit-code=0 packages scripts',
+      args: [
+        '/private/pnpm.cjs', 'exec', 'jscpd', '--config', '.jscpd.json',
+        '--baseline-from-ref', 'origin/master', '--fail-on-new-clones=0', '--exit-code=0', 'packages', 'scripts',
+      ],
+    })
+  })
+
   it('keeps standalone doc sync responsible for preparation', () => {
     const docTypecheck = withPnpmEntrypoint(() =>
       gatesForMode('doc-sync').find(item => item.id === 'doc-typecheck'))
@@ -900,8 +936,8 @@ describe('Node compatibility graph', () => {
     expect(subject.find(item => item.id === 'source-compat-smokes')?.env).toEqual({ VITEST_MAX_WORKERS: '1' })
   })
 
-  it.each(['24.19.0', '26.0.0'])('keeps Node %s compatibility source-only', (version) => {
-    const subject = withNodeVersion(version, () =>
+  it('keeps Node 24.19 compatibility source-only', () => {
+    const subject = withNodeVersion('24.19.0', () =>
       withPnpmEntrypoint(() => gatesForMode('node-compat')))
 
     expect(subject.map(item => item.id)).not.toContain('build')
@@ -914,14 +950,16 @@ describe('Node compatibility graph', () => {
         withPnpmEntrypoint(() => gatesForMode('node-compat'))))
 
     expect(subject.filter(item => item.displayCommand === 'pnpm run build:artifacts')).toHaveLength(1)
-    expect(subject.find(item => item.id === 'build')?.args).toEqual([
-      '/private/pnpm.cjs', 'run', 'build:artifacts',
-    ])
+    expectBuiltNodeCompatPlan(subject)
     expect(subject.map(item => item.id)).not.toContain('build:web')
-    expect(subject.find(item => item.id === 'cli-lazy-search-startup-smoke')).toMatchObject({
-      needs: ['build'],
-      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
-    })
+  })
+
+  it('prepares Node 26 compatibility smokes from built workspace packages', () => {
+    const subject = withNodeVersion('26.0.0', () =>
+      withEnv('DSH_NODE_COMPAT_SKIP_TYPECHECK', '1', () =>
+        withPnpmEntrypoint(() => gatesForMode('node-compat'))))
+
+    expectBuiltNodeCompatPlan(subject)
   })
 
   it.each(['passed', 'failed'] as const)('runs the Node 24.9 lazy-search smoke only after a passed build (%s)', async (buildStatus) => {
@@ -945,6 +983,20 @@ describe('Node compatibility graph', () => {
     expect(smokeStarted).toBe(buildStatus === 'passed')
     expect(results.find(item => item.gate.id === 'cli-lazy-search-startup-smoke')?.status)
       .toBe(buildStatus === 'passed' ? 'passed' : 'skipped')
+  })
+
+  it('runs the Node 26 lazy-search smoke only after a passed build', async () => {
+    const subject = withNodeVersion('26.0.0', () =>
+      withEnv('DSH_NODE_COMPAT_SKIP_TYPECHECK', '1', () =>
+        withPnpmEntrypoint(() => gatesForMode('node-compat'))))
+    let buildCompleted = false
+    const results = await runGates(subject, 2, async (item) => {
+      if (item.id === 'build') buildCompleted = true
+      if (item.id === 'cli-lazy-search-startup-smoke') expect(buildCompleted).toBe(true)
+      return resultFor(item)
+    })
+
+    expect(results.find(item => item.gate.id === 'cli-lazy-search-startup-smoke')?.status).toBe('passed')
   })
 })
 
@@ -975,6 +1027,7 @@ describe('Node 24 lane ownership', () => {
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
+    expect(subject.find(item => item.id === 'node-compat')?.needs).toEqual(['build'])
     // The consumers lane emits artifacts only: the aggregate test and script
     // type checks belong to the master lanes, not to every pull request.
     expect(subject.find(item => item.id === 'build')).toMatchObject({
@@ -984,6 +1037,7 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'node-compat')?.env).toEqual({
       DSH_BUILD_CLIENT_PROFILE: 'official',
     })
+    expect(subject.find(item => item.id === 'web-snapshot')?.after).toContain('node-compat')
     for (const id of [
       'snapshot',
       'expected-output',
@@ -1014,6 +1068,7 @@ describe('Node 24 lane ownership', () => {
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
       after: [
+        'node-compat',
         'publint',
         'snapshot',
         'expected-output',

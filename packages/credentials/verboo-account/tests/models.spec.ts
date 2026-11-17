@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
-import { parseModels } from '../src/models.ts'
+import { parseModels, VERBOO_ACCOUNT_COMPAT } from '../src/models.ts'
 import type { Deployment } from '../src/config.ts'
 
 /** Conservative defaults a legacy listing without capability metadata receives. */
@@ -79,6 +79,23 @@ describe('reasoning levels from the router', () => {
     // claim a level set the router never listed.
     expect(parse(undefined).reasoningEfforts).toBeUndefined()
     expect(parse(true).reasoningEfforts).toBeUndefined()
+  })
+})
+
+it('keeps DeepSeek reasoning content on replayed assistant tool-call messages', () => {
+  const model = parse({ effort_levels: ['high'] })
+  const resolved = LlmPiAi.resolveProfiles({
+    'deepseek-account': {
+      api: 'openai-completions',
+      baseURL: 'https://account.example.invalid/v1',
+      models: [model],
+      compat: VERBOO_ACCOUNT_COMPAT,
+    },
+  }).get('deepseek-account')?.piProvider?.getModels()[0]
+
+  expect(resolved?.compat).toMatchObject({
+    thinkingFormat: 'deepseek',
+    requiresReasoningContentOnAssistantMessages: true,
   })
 })
 

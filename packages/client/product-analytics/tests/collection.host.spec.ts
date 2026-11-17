@@ -21,7 +21,7 @@ beforeEach(() => { vi.resetAllMocks(); vi.mocked(collectEnvironment).mockResolve
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
-async function setup(enabled: boolean) {
+async function setup(enabled: boolean, observabilityEndpoint?: string) {
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   const getDeviceIdentity = vi.fn().mockResolvedValue({ deviceId: 'login-device', userId: 'user-1', osVersion: 'fixture-os', ignored: 'private-field' })
@@ -29,7 +29,10 @@ async function setup(enabled: boolean) {
   ctx.provide('deepseekAccount', { getDeviceIdentity } as never)
   ctx.provide('webServer', {} as never)
   ctx.provide('productTelemetry', { emit } as never)
-  const fiber = await ctx.plugin(Analytics, { enabled, appVersion: 'test-version' })
+  const fiber = await ctx.plugin(Analytics, {
+    enabled, appVersion: 'test-version',
+    ...observabilityEndpoint === undefined ? {} : { observabilityEndpoint },
+  })
   return { ctx, fiber, getDeviceIdentity, emit }
 }
 
@@ -126,6 +129,56 @@ it.each([true, false])('collects live manual and automatic compaction only when 
   if (enabled) await vi.waitFor(() => { expect(b.emit).toHaveBeenCalledTimes(2) })
   expect(b.emit.mock.calls.map(([event]) => event.attributes?.trigger_type)).toEqual(enabled ? ['manual', 'auto'] : [])
   expect(b.getDeviceIdentity).toHaveBeenCalledTimes(enabled ? 2 : 0)
+})
+
+it('reports only sanitized terminal model failures to the configured Verboo endpoint', async () => {
+  const b = await setup(true, 'https://code.example.invalid/api/observability/events')
+  const fetchSpy = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) =>
+    new Response(null, { status: 202 }))
+  vi.stubGlobal('fetch', fetchSpy)
+  const session = Session.create(SessionId('private-session-id'))
+  b.ctx.emit('session/event', session, {
+    type: 'request/header', seq: SessionSeq(0), time: 1,
+    data: { header: { config: { provider: 'deepseek-account', model: 'pro/deepseek-v4.1-flash' } }, reason: 'initial' },
+  } as never)
+  b.ctx.emit('session/event', session, {
+    type: 'assistant/attempt', seq: SessionSeq(1), time: 123,
+    data: { turn: 1, step: 1, stream: [
+      { type: 'tool-call-chunks', time0: 1, index: 0, dt: [0], id: 'private-tool-id', name: 'private-tool-name', args: ['{"private":"tool args"}'] },
+      { type: 'chunk', time: 123, chunk: { type: 'finish', reason: { kind: 'error', failure: {
+        code: 'INVALID_REQUEST', status: 400, message: 'private upstream response body',
+      } } } },
+    ] },
+  } as never)
+  await vi.waitFor(() => { expect(fetchSpy).toHaveBeenCalledOnce() })
+  const bodyValue = fetchSpy.mock.calls[0]?.[1]?.body
+  if (typeof bodyValue !== 'string') throw new Error('expected a JSON request body')
+  const body = bodyValue
+  expect(JSON.parse(body)).toEqual({
+    schemaVersion: 1,
+    events: [{
+      kind: 'desktop_model_error', route: '/desktop', source: 'desktop', operation: 'stream_completion',
+      errorClass: 'invalid_request', errorCode: 'INVALID_REQUEST', retryable: false,
+      timestamp: 123, provider: 'deepseek-account', model: 'pro/deepseek-v4.1-flash',
+      appVersion: 'test-version', httpStatus: 400,
+    }],
+  })
+  for (const privateValue of ['private-session-id', 'private-tool-id', 'private-tool-name', 'tool args', 'private upstream response body']) {
+    expect(body).not.toContain(privateValue)
+  }
+})
+
+it('does not inspect or submit model failures when product analytics is disabled', async () => {
+  const fetchSpy = vi.fn()
+  vi.stubGlobal('fetch', fetchSpy)
+  const b = await setup(false, 'https://code.example.invalid/api/observability/events')
+  const session = Session.create(SessionId('disabled-model-error'))
+  b.ctx.emit('session/event', session, {
+    type: 'assistant/attempt', seq: SessionSeq(0), time: 1,
+    data: { turn: 1, step: 1, stream: [{ type: 'chunk', time: 1,
+      chunk: { type: 'finish', reason: { kind: 'error', failure: { code: 'INVALID_REQUEST', message: 'private' } } } }] },
+  } as never)
+  expect(fetchSpy).not.toHaveBeenCalled()
 })
 
 it('omits an unavailable account and isolates exporter submission failure', async () => {

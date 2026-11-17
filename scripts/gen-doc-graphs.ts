@@ -108,6 +108,11 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'llmOpenaiAccount', pkg: 'llm-openai-account', title: 'OpenAI account model and usage routes', mode: 'service',
+    consumers: ['client-ui-verboo'],
+    note: 'Discovers account-available models and reads subscription usage for the signed-in OpenAI account.',
+  },
+  {
     key: 'verbooMcp', pkg: 'api-verboo-mcp', title: 'Verboo account MCP servers', mode: 'service',
     consumers: ['client-ui-verboo', 'verboo-connections'],
     note: 'Stores account-owned server definitions and reconciles their credential-backed MCP registrations.',

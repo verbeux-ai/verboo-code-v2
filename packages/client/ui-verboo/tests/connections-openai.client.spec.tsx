@@ -17,16 +17,16 @@ function page(signedIn: boolean, dictionary: Readonly<Record<string, string>> = 
   const openOpenAiDialog = vi.fn()
   // The page reads one product snapshot; an empty catalog keeps this fixture
   // about the subscription section rather than about the catalog.
-  const state = {
+  const state: ProductSnapshot = {
     view: null, profile: null, profilePreviouslyVerified: false, initialized: true,
     accountFailed: false, actionFailed: null, starting: false, plans: null,
-    connections: { toolkits: [], accounts: [] },
+    connections: { available: true, toolkits: [], accounts: [] },
     plansFailed: false, connectionsFailed: false, loadingPlans: false, loadingConnections: false,
     busy: null, handoff: null, handoffUntil: 0, connectedTarget: null, feedback: null,
     modelFailed: false, initializingModel: false, browserBlocked: false, navigationFailed: false,
     authorizationIds: [], mcpServers: [], loadingMcp: false, mcpFailed: false,
     mcpProbe: null, probingMcp: false, mcpError: null,
-  } as unknown as ProductSnapshot
+  }
   const props = {
     useProduct: (selector: (snapshot: ProductSnapshot) => unknown) => selector(state),
     usePreferences: (selector: (snapshot: unknown) => unknown) =>
@@ -37,7 +37,7 @@ function page(signedIn: boolean, dictionary: Readonly<Record<string, string>> = 
       const copy = dictionary[key] ?? key
       if (values === undefined) return copy
       return copy.replace(/\{(\w+)\}/g, (match, name: string) =>
-        typeof values[name] === 'string' ? String(values[name]) : match)
+        typeof values[name] === 'string' ? values[name] : match)
     },
     loadConnections: vi.fn(), loadMcpServers: vi.fn(), saveMcpServer: vi.fn(async () => true),
     deleteMcpServer: vi.fn(async () => true), setMcpEnabled: vi.fn(async () => true),

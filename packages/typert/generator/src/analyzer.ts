@@ -140,7 +140,8 @@ export interface PackageRegistration {
 interface ExportRecord {
   readonly model: ExportModel
   readonly symbol: ts.Symbol
-  readonly declaration: ts.Declaration
+  /** A symbol exposed by the other compiler face may have no local declaration. */
+  readonly declaration: ts.Declaration | undefined
   readonly sourceFile: ts.SourceFile
 }
 
@@ -760,7 +761,7 @@ class FaceAnalyzer {
     const seenBusinessSymbols = new Set<SymbolId>()
     for (const record of records) {
       const declaration = record.declaration
-      if (!isTypeDeclaration(declaration)) continue
+      if (declaration === undefined || !isTypeDeclaration(declaration)) continue
       if (this.registrationForFile(declaration.getSourceFile().fileName) === undefined) continue
       const symbol = this.resolveSymbol(record.symbol)
       const symbolId = this.symbolId(symbol)
@@ -824,7 +825,7 @@ class FaceAnalyzer {
       if (moduleSymbol === undefined) continue
       for (const exported of this.checker.getExportsOfModule(moduleSymbol)) {
         const symbol = this.resolveSymbol(exported)
-        const declaration = preferredDeclaration(symbol) as ts.Declaration
+        const declaration = preferredDeclaration(symbol)
         const aliases = exported === symbol || exported.name === symbol.name
           ? [exported.name]
           : [exported.name, symbol.name]
@@ -1064,27 +1065,29 @@ class FaceAnalyzer {
     const result: ServiceModel[] = []
     const seen = new Set<SymbolId>()
     for (const record of records) {
-      const tag = typertServiceTag(record.declaration)
+      const declaration = record.declaration
+      if (declaration === undefined) continue
+      const tag = typertServiceTag(declaration)
       if (tag === undefined) continue
       const words = (ts.getTextOfJSDocComment(tag.comment) ?? '').trim().split(/\s+/)
       if (words.length !== 2 || !isRemoteSegment(words[1] ?? '')) {
         this.fail(tag, '@typert service requires exactly one nonempty Cordis service key without "/"')
       }
-      if (!ts.isClassDeclaration(record.declaration)) {
-        this.fail(record.declaration, '@typert service requires an exported class')
+      if (!ts.isClassDeclaration(declaration)) {
+        this.fail(declaration, '@typert service requires an exported class')
       }
       const symbol = this.resolveSymbol(record.symbol)
       const symbolId = this.symbolId(symbol)
       if (seen.has(symbolId)) continue
       seen.add(symbolId)
-      const model = this.ensureDeclaration(symbol, record.declaration)
+      const model = this.ensureDeclaration(symbol, declaration)
       result.push({
-        ...documentationOf(record.declaration),
+        ...documentationOf(declaration),
         key: words[1] as string,
         symbol: symbolId,
         export: record.model,
         members: model.members.filter(exposableMember).map(member => member.id),
-        location: this.location(record.declaration),
+        location: this.location(declaration),
       })
     }
     return result
@@ -2740,8 +2743,13 @@ class FaceAnalyzer {
     const target = packageExportTargets(registration.manifest)
       .find(([subpath]) => subpath === module.subpath)?.[1]
     if (target === undefined) return undefined
-    const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target))) as ts.SourceFile
-    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile) as ts.Symbol
+    const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target)))
+    // The client program may resolve a public Host declaration without loading
+    // its source file. In that case the checker that produced `symbol` already
+    // verified the requested name on the imported package subpath.
+    if (sourceFile === undefined) return requestedName
+    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile)
+    if (moduleSymbol === undefined) return requestedName
     const exported = this.checker.getExportsOfModule(moduleSymbol)
       .find(candidate => candidate.name === requestedName && this.resolveSymbol(candidate) === symbol)
     return exported?.name

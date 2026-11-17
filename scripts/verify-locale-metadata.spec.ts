@@ -79,6 +79,24 @@ it('rejects loadable plugins without any locale directory', () => {
   expect(localeMetadataProblems(root).join('\n')).toContain('new-plugin/locale')
 })
 
+it.each([
+  'api/verboo-mcp',
+  'api/verboo-product',
+  'bundle/verboo-app',
+  'client/external-links',
+  'client/ui-verboo',
+  'credentials/openai-account',
+  'extensions/verboo-connections',
+  'llm/llm-openai-account',
+])('does not require plugin metadata for the internal product package %s', (name) => {
+  const root = fixture()
+  const directory = join(root, `packages/${name}`)
+  mkdirSync(join(directory, 'src'), { recursive: true })
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: `@deepseek-ai/dsh-${name.replaceAll('/', '-')}` }))
+  writeFileSync(join(directory, 'src/index.ts'), 'export function apply() {}')
+  expect(localeMetadataProblems(root)).toEqual([])
+})
+
 it('checks nested subpath locale resources and package-relative detail files', () => {
   const root = fixture()
   const directory = join(root, 'packages/demo/plugin/locale/tools')

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Desktop reports selected interactions through the existing OTel product exporter by default, without a user-facing control. Ordinary Web clients never submit these events, and missing login identity is omitted.
+Desktop reports selected interactions through the existing OTel product exporter by default, without a user-facing control. Terminal model request failures also go to the first-party observability endpoint for PostHog and Prometheus tracking. Ordinary Web clients never submit these events, and missing login identity is omitted.
 
 ## Table of Contents
 
@@ -25,7 +25,9 @@ Desktop mounts Analytics and its required Telemetry exporter. The `product-analy
 
 The renderer and Electron subscribe to the Host policy through the existing authenticated stream, including reconnection. Electron also reads the initial policy before native launch reporting. Welcome obtains the current policy over IPC. The Host checks its current volatile configuration again at event intake and after environment and identity lookup. `DSH_PRODUCT_ANALYTICS_OTLP_URL` overrides the export destination for isolated collectors. The [exporter](../../host/product-telemetry-otel/README.md) owns batching, retry, and shutdown delivery.
 
-Every product event carries available `device_id`, `user_id`, and `app_version` plus the static fields below. Identity reuses the existing login record without creating an identifier and is read for each event through `deepseekAccount.getDeviceIdentity()`. Static environment collection is independent of identity lookup. No separate environment event is emitted; API keys, account tokens, prompts, responses, hostnames, and machine UUIDs are excluded.
+Events sent through the OTel product exporter carry available `device_id`, `user_id`, and `app_version` plus the static fields below. Identity reuses the existing login record without creating an identifier and is read for each event through `deepseekAccount.getDeviceIdentity()`. Static environment collection is independent of identity lookup. No separate environment event is emitted; API keys, account tokens, prompts, responses, hostnames, and machine UUIDs are excluded.
+
+Terminal model failures use the optional `observabilityEndpoint` setting. The Verboo desktop bundle points it at `https://code.verboo.ai/api/observability/events`; each failure is sent once with a two-second default deadline. Events contain a bounded error class/code, HTTP status when available, retryability, and sanitized provider, model, and app-version identifiers. They never include user, device, session, prompt, response, tool name, or tool arguments. The endpoint counts failures in Prometheus and forwards details to the existing PostHog project. A failed or unavailable collector does not affect a model turn.
 
 | Field | Meaning and source |
 |---|---|
@@ -74,13 +76,13 @@ None, as analytics adds no model context or Session events.
 
 #### KV Cache effect
 
-None; collection does not modify model requests.
+A terminal model failure may trigger one separate best-effort event; it adds no model-provider call or tokens and leaves request content unchanged.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-Delivery is best effort.
+Delivery is best effort. Model failure events are emitted only for terminal failed attempts while analytics is enabled; a disabled or unreachable collector can leave gaps in the error counts.
 
 - Environment sampling is one-shot: startup contention can cause a cached timeout for the whole run. `missing_fields` describes sampling failure, not hardware absence; a later event does not retry. Deployments can increase the query deadline; remount or restart samples again.
 - Host security policies can block or terminate the fixed PowerShell queries, producing `query-failed` on managed Windows machines.

@@ -18,7 +18,7 @@ kind: "package-reference"
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
-- [开发说明](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -91,6 +91,6 @@ None, as this route adds no model-visible text of its own and the shared pi-ai t
 - 本包只提供英文 README；中文对应版本随后续常规翻译补上。
 
 <a id="dev-note"></a>
-### 开发说明
+### 开发备注
 
 协议实现、转录投影、重放状态和流词汇都留在 `dsh-llm-pi-ai`；本包只增加分类和凭据桥接，因此可以用 fetch 替身驱动共享运行时来无网络测试。

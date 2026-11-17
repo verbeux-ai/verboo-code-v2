@@ -1,4 +1,5 @@
 ---
+kind: package-reference
 description: "[OI] ChatGPT account login, encrypted grant storage, and the subscription plan facts a sign-in already carries."
 ---
 

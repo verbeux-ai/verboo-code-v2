@@ -9,7 +9,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, ToolCallId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -527,7 +527,6 @@ describe('PiAiAdapter provider routing', () => {
 describe('provider profile lifecycle', () => {
   it('keeps adapter helpers off the package root', () => {
     for (const helper of [
-      'resolveProfiles',
       'toPiContext',
       'toPiReplayState',
       'toPiAssistant',
@@ -767,6 +766,53 @@ describe('provider profile lifecycle', () => {
     await prompt('off')
     expect(server.requests[1]).toMatchObject({ thinking: { type: 'disabled' } })
     expect(server.requests[1]).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('replays an empty reasoning_content on prior assistant tool calls when the route requires it', async () => {
+    vi.stubEnv('PI_TEST_KEY', 'test-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          compat: { thinkingFormat: 'deepseek', requiresReasoningContentOnAssistantMessages: true },
+          models: [{ id: 'acme-think', reasoningEfforts: { off: null, high: 'high' } }],
+        },
+      },
+    })
+    const callId = ToolCallId('previous-call')
+    await assemble(ctx, {
+      provider: 'acme-gateway',
+      model: 'acme-think',
+      reasoningEffort: ReasoningEffortId('high'),
+      tools: [{ name: 'lookup', description: 'Lookup a value.', parameters: { type: 'object' } }],
+      messages: [
+        createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Look up the value.' }] }),
+        createAssistantMessage({
+          source: { provider: 'acme-gateway', model: 'acme-think' },
+          content: [{ type: 'tool-call', id: callId, name: 'lookup', arguments: '{}' }],
+        }),
+        createToolResultMessage({ callId, content: [{ type: 'text', text: 'found' }], isError: false }),
+      ],
+    })
+
+    const request = server.requests[0] as {
+      thinking?: unknown
+      messages?: { role?: unknown; reasoning_content?: unknown; tool_calls?: unknown }[]
+    } | undefined
+    expect(request?.thinking).toEqual({ type: 'enabled' })
+    const priorToolMessage = request?.messages?.find(message =>
+      message.role === 'assistant' && Array.isArray(message.tool_calls),
+    )
+    expect(priorToolMessage).toMatchObject({
+      role: 'assistant',
+      reasoning_content: '',
+      tool_calls: [expect.objectContaining({ id: 'previous-call' })],
+    })
   })
 
   it('keeps the system role on a declared route whose gateway rejects the developer one', async () => {

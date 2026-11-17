@@ -75,7 +75,10 @@ test('publishes checksums only for the complete exact-source installer set', asy
   const result = await f.verify()
   assert.equal(JSON.parse(result.stdout).installers, 6)
   assert.equal((await readFile(join(f.directory, 'SHA256SUMS'), 'utf8')).trim().split('\n').length, 6)
-  assert.match(await readFile(join(f.directory, 'RELEASE.md'), 'utf8'), new RegExp(source))
+  const releaseNotes = await readFile(join(f.directory, 'RELEASE.md'), 'utf8')
+  assert.match(releaseNotes, new RegExp(source))
+  assert.match(releaseNotes, /Corrigidas requisições DeepSeek que retornavam 400/)
+  assert.match(releaseNotes, /sem coletar prompts ou respostas/)
   const feed = JSON.parse(await readFile(f.feed, 'utf8'))
   assert.deepEqual(Object.keys(feed.platforms).sort(), [
     'darwin-aarch64', 'darwin-aarch64-app', 'darwin-x86_64', 'darwin-x86_64-app',
