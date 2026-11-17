@@ -19,6 +19,8 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls the Conversation service and input-dock slot.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Optional product observation; the goal surface also works without commandUi.
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the renderer-owned slots service.
@@ -127,27 +129,44 @@ export function apply(ctx: ClientContext): void {
         }),
         subscribeReset: listener => ctx.on('connection/reset', listener),
       })
+      const observeAction = async (action: () => Promise<GoalActionResult>): Promise<GoalActionResult> => {
+        let finish: ((outcome: 'completed' | 'failed') => void) | undefined
+        try {
+          if (sessions.subagentAddress(sessionId) === undefined) finish = ctx.get('commandUi')?.beginFeatureObservation('goal')
+        } catch (_error) { /* Observation must not block the goal control. */ }
+        const observe = (outcome: 'completed' | 'failed'): void => {
+          try { finish?.(outcome) } catch (_error) { /* Observation must not block the goal control. */ }
+        }
+        try {
+          const result = await action()
+          observe(result.ok ? 'completed' : 'failed')
+          return result
+        } catch (error) {
+          observe('failed')
+          throw error
+        }
+      }
       return {
         hooks: { goalActivation },
         onEdit: async (objective) => {
           const ref = refOf(sessionId)
           if (ref === undefined) return noCurrentGoal
-          return await ctx.remote.goals.edit(sessionId, ref, { objective })
+          return await observeAction(() => ctx.remote.goals.edit(sessionId, ref, { objective }))
         },
         onPause: async () => {
           const ref = refOf(sessionId)
           if (ref === undefined) return noCurrentGoal
-          return await ctx.remote.goals.pause(sessionId, ref)
+          return await observeAction(() => ctx.remote.goals.pause(sessionId, ref))
         },
         onResume: async () => {
           const ref = refOf(sessionId)
           if (ref === undefined) return noCurrentGoal
-          return await ctx.remote.goals.resume(sessionId, ref)
+          return await observeAction(() => ctx.remote.goals.resume(sessionId, ref))
         },
         onClear: async () => {
           const ref = refOf(sessionId)
           if (ref === undefined) return noCurrentGoal
-          return await ctx.remote.goals.clear(sessionId, ref)
+          return await observeAction(() => ctx.remote.goals.clear(sessionId, ref))
         },
       }
     },

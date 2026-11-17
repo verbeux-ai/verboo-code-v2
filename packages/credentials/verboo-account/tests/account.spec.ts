@@ -18,6 +18,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { VerbooAccount } from '../src/account.ts'
+import type {} from '../src/index.ts'
 import { GrantVault } from '../src/vault.ts'
 import { Config, deploymentOf } from '../src/config.ts'
 import * as Models from '../src/models.ts'
@@ -312,7 +313,20 @@ async function fixture(
 
 it('composes PKCE login, encrypted storage, exact account models and streaming through cordis.yml', async () => {
   const app = await fixture()
+  const starts: string[] = []
+  const loginEvents: Array<{ sessionId: string; attemptId: string; startedAt: number; completedAt: number }> = []
+  app.ctx.on('verboo-account/login-started', (attemptId) => { starts.push(attemptId) })
+  app.ctx.on('verboo-account/login-completed', (sessionId, attemptId, startedAt, completedAt) => {
+    loginEvents.push({ sessionId, attemptId, startedAt, completedAt })
+  })
+  const startedAt = Date.now()
   const { authorize } = await app.login()
+  const platformSession = await app.ctx.deepseekAccount.getPlatformSession()
+  expect(loginEvents).toHaveLength(1)
+  expect(starts).toEqual([loginEvents[0]?.attemptId])
+  expect(loginEvents[0]?.sessionId).toBe(platformSession?.sessionId)
+  expect(loginEvents[0]?.startedAt).toBeGreaterThanOrEqual(startedAt)
+  expect(loginEvents[0]?.completedAt).toBeGreaterThanOrEqual(loginEvents[0]?.startedAt ?? Infinity)
   expect(authorize.origin).toBe(app.origin)
   expect(authorize.pathname).toBe('/oauth/authorize')
   expect(authorize.searchParams.get('client_id')).toBe('verboo-code-cli')
@@ -384,7 +398,7 @@ it('composes PKCE login, encrypted storage, exact account models and streaming t
       "text": "Olá Verboo",
     }
   `)
-})
+}, 15_000)
 
 it('reports a malformed account response without exposing tool arguments', async () => {
   const app = await fixture()

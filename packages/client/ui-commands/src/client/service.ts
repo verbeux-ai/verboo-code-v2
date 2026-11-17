@@ -65,6 +65,9 @@ function submittedCommandName(line: string): string {
   return (separator === -1 ? trimmed : trimmed.slice(0, separator)).slice(1)
 }
 
+/** Begin observing a fixed product command without exposing its arguments or session. */
+export type BeginFeatureCommandObservation = (feature: 'plan' | 'goal') => ((outcome: 'completed' | 'failed') => void) | undefined
+
 /** Live mutable state in one holder (service methods run behind the caller-ctx tracker). */
 interface LiveState {
   readonly contributions: Map<string, CommandContribution>
@@ -77,6 +80,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   static inject = ['inputTriggers', 'sessions', 'remote', 'remote.commands']
 
   private readonly directory: CommandDirectory
+  private featureCommandObserver: { token: symbol; begin: BeginFeatureCommandObservation } | undefined
   private readonly live: LiveState = {
     contributions: new Map(),
     decorations: new Map(),
@@ -84,6 +88,30 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   }
   /** `command`-namespace translator (composer refusal notices). */
   private readonly t: TranslateNS<'command'>
+
+  /**
+   * Install an optional observer for locally submitted plan and goal commands.
+   * @param begin - capture permission before the command executes.
+   * @returns cleanup for this registration without disturbing a replacement.
+   */
+  observeFeatureCommands(begin: BeginFeatureCommandObservation): () => void {
+    const token = Symbol('feature-command-observer')
+    this.featureCommandObserver = { token, begin }
+    return () => { if (this.featureCommandObserver?.token === token) this.featureCommandObserver = undefined }
+  }
+
+  /**
+   * Begin an optional observation for a local plan or goal control.
+   * @param feature - fixed category, with no command text or session data.
+   * @returns a contained callback that records the settled outcome.
+   */
+  beginFeatureObservation(feature: 'plan' | 'goal'): (outcome: 'completed' | 'failed') => void {
+    let finish: ReturnType<BeginFeatureCommandObservation>
+    try { finish = this.featureCommandObserver?.begin(feature) } catch (_error) { /* Observation cannot block actions. */ }
+    return (outcome) => {
+      try { finish?.(outcome) } catch (_error) { /* Observation cannot block actions. */ }
+    }
+  }
 
   /**
    * @param ctx - owning root context (plugin fiber; the service registers
@@ -420,10 +448,18 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     line: string,
     attachments: readonly SubmitAttachment[] = [],
   ): Promise<SubmitOutcome> {
-    const result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments)
+    const name = submittedCommandName(line)
+    const observe = (name === 'plan' || name === 'goal') && this.sessions().subagentAddress(session.sessionId) === undefined
+      ? this.beginFeatureObservation(name) : () => {}
+    let result: Awaited<ReturnType<typeof this.ctx.remote.commands.execute>>
+    try { result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments) } catch (error) {
+      observe('failed')
+      throw error
+    }
+    observe(result.ok && result.value !== undefined && result.value.result.kind !== 'error' ? 'completed' : 'failed')
     if (!result.ok) throw new Error(`command.execute failed: ${result.error.code}: ${result.error.message}`)
     if (result.value === undefined) return { kind: 'error', text: `unknown or malformed command: ${line}` }
-    this.notifyExecuted(session.sessionId, submittedCommandName(line), result.value.result)
+    this.notifyExecuted(session.sessionId, name, result.value.result)
     // A submission consumes its attachments only after handler success; an
     // error outcome keeps the draft and attachments in the composer.
     if (attachments.length > 0 && result.value.result.kind === 'error') {

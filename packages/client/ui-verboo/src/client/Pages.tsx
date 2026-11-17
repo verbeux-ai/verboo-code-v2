@@ -7,8 +7,9 @@ import { StaminaDebugToggle, type StaminaDebugProps } from './StaminaDebug.tsx'
 import { ConversationAppearance, type ConversationAppearanceProps } from './ConversationAppearance.tsx'
 import { paneShortcutKeys } from './panes/shortcut-labels.ts'
 import css from './Product.module.css'
+import { AnalyticsPreferences, type AnalyticsPrivacyProps } from './AnalyticsPrivacy.tsx'
 /** Preferences are an ordinary page. Destructive session changes use one accessible confirmation. */
-export function PreferencesPage(props: PageProps & StaminaDebugProps & ConversationAppearanceProps) {
+export function PreferencesPage(props: PageProps & StaminaDebugProps & ConversationAppearanceProps & AnalyticsPrivacyProps) {
   const state = props.useProduct(s => s)
   const preference = props.usePreferences(s => s)
   const [signOut, setSignOut] = useState(false)
@@ -102,6 +103,7 @@ export function PreferencesPage(props: PageProps & StaminaDebugProps & Conversat
           <Glyph name="arrow-up-right" size={16} />
         </button>
       </section>
+      <AnalyticsPreferences {...props} />
       <Modal
         open={signOut && state.view?.status === 'credential-stored'}
         onClose={() =>{  setSignOut(false) }}

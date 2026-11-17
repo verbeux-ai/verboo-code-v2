@@ -19,7 +19,7 @@ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/cli
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WeakMapWithValues } from '@deepseek-ai/dsh-util-values'
 import { ModelCatalogDirectory } from './catalog.ts'
-import { ModelDirectory } from './directory.ts'
+import { ModelDirectory, type BeginModelSwitchObservation } from './directory.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -39,6 +39,18 @@ export class ModelDirectoryResolver extends Service {
 
   private readonly live: LiveState = { directories: new WeakMapWithValues() }
   private readonly catalog: ModelCatalogDirectory
+  private switchObserver: { token: symbol; begin: BeginModelSwitchObservation } | undefined
+
+  /**
+   * Install a product-owned switch observer; its cleanup cannot remove a replacement.
+   * @param begin - capture local permission before the switch starts, without receiving model or session data.
+   * @returns cleanup for this observer registration.
+   */
+  observeModelSwitch(begin: BeginModelSwitchObservation): () => void {
+    const token = Symbol('model-switch-observer')
+    this.switchObserver = { token, begin }
+    return () => { if (this.switchObserver?.token === token) this.switchObserver = undefined }
+  }
 
   /**
    * @param ctx - owning root context (the service registers itself as `models`).
@@ -81,6 +93,7 @@ export class ModelDirectoryResolver extends Service {
       binding.session.projections.faceOf('modelSelection'),
       () => binding.session.getSnapshot().blank,
       (name, attributes) => this.ctx.get('productAnalytics')?.track(name, attributes),
+      () => this.switchObserver?.begin(),
     )
     live.directories.set(binding, directory)
     actx.effect(() => () => {

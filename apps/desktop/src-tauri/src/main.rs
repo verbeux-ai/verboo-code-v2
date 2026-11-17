@@ -313,7 +313,8 @@ fn main() {
                 .or(config.home.clone())
                 .unwrap_or(app.path().app_data_dir()?.join("home"));
             let (process, events) =
-                HostProcess::start(&config, &home).map_err(std::io::Error::other)?;
+                HostProcess::start(&config, &home, &app.package_info().version.to_string())
+                    .map_err(std::io::Error::other)?;
             *setup_state
                 .process
                 .lock()

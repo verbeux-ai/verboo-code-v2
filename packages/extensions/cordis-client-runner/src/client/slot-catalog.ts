@@ -4108,6 +4108,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-session-log UploadToast id \'session-log-upload-toast\'',
       'client-ui-shortcuts ShortcutReference id \'shortcuts\'',
       'client-ui-verboo TrialModal id \'verboo.trial\'',
+      'client-ui-verboo AnalyticsPrompt id \'verboo.analytics-choice\'',
       'client-ui-verboo OpenAiSignInDialog id \'verboo.openai-signin\'',
       'client-ui-verboo DesktopQuitHold id \'verboo.quit-hold\'',
       'client-ui-verboo Onboarding id \'verboo.onboarding\'',

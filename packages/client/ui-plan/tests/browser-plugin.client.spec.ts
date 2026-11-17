@@ -201,6 +201,44 @@ describe('ui-plan browser apply', () => {
     expect(b.removeType).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.input.plan')).toHaveLength(0)
   })
+
+  it('observes the plan control with only the category and result', async () => {
+    const b = await bench()
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.ctx.provide('commandUi', { beginFeatureObservation: begin } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const entry = b.slots.entries('conversation.input.plan')[0]!
+      const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+      await expect(injected.exitPlanMode()).resolves.toBeNull()
+      expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
+      expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+      begin.mockClear(); finish.mockClear()
+      b.execute.mockResolvedValueOnce({ ok: true, value: undefined } as never)
+      await injected.exitPlanMode()
+      expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
+      expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+      begin.mockClear(); finish.mockClear()
+      b.subagentAddress.mockReturnValueOnce({ parentSessionId: SID, childSessionId: SID, mode: 'continuable' })
+      await injected.exitPlanMode()
+      expect(begin).not.toHaveBeenCalled()
+      expect(finish).not.toHaveBeenCalled()
+    } finally { await fiber.dispose() }
+  })
+
+  it('does not block the plan control when observation fails', async () => {
+    const b = await bench()
+    b.ctx.provide('commandUi', { beginFeatureObservation: () => { throw new Error('observer failure') } } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const entry = b.slots.entries('conversation.input.plan')[0]!
+      const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+      await expect(injected.exitPlanMode()).resolves.toBeNull()
+    } finally { await fiber.dispose() }
+  })
   it('binds both entry points to the same Session resource and removes the sidebar seats', async () => {
     const b = await bench()
     const fiber = b.ctx.plugin({ inject: [...inject], apply })

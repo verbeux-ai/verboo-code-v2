@@ -58,6 +58,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   otel: 'otel.md',
   productTelemetry: 'product-telemetry.md',
   productAnalytics: 'product-telemetry.md',
+  verbooAnalytics: 'product-telemetry.md',
   connection: 'web-server.md',
   pluginManager: 'boot.md',
   actionCards: 'boot.md',
@@ -105,6 +106,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   webServer: 'web-server.md',
   webApp: 'web-server.md',
   llm: 'llm-streaming.md',
+  llmOpenaiAccount: 'llm-streaming.md',
   lsp: 'lsp.md',
   messageFeedback: 'feedback.md',
   sessionFeedback: 'feedback.md',
@@ -182,6 +184,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  openaiAccount: 'optional account session interface — packages/credentials/openai-account/README.md owns the API',
   contextMenus: 'client-side interface-typed menu registry — packages/client/ui-context-menu/README.md owns the API',
   externalLinks: 'client-side external destination policy — packages/client/external-links/README.md owns the API',
   fileActions: 'client-side interface-typed file actions — packages/client/ui-file-actions/README.md owns the API',
@@ -251,6 +254,8 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'authorization': 'credentials.md',
   'credentials': 'credentials.md',
   'deepseek-account': 'credentials.md',
+  'verboo-account': 'credentials.md',
+  'openai-account': 'credentials.md',
   'domain': 'storage.md',
   'forge': 'forge.md',
   'fs': 'filesystem.md',
@@ -874,6 +879,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AccountClientMetadata: 'credentials.md',
   AccountBonusBatch: 'credentials.md',
   AccountBonusOrderId: 'credentials.md',
+  AccountSessionId: 'credentials.md',
   AccountUserId: 'credentials.md',
   PlatformSession: 'credentials.md',
   SignInAttemptId: 'credentials.md',
@@ -996,6 +1002,12 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  ProductAnalyticsStatus: 'Product analytics status is owned by packages/host/verboo-analytics/README.md and src/types.ts',
+  ProductConsentResult: 'Product consent results are owned by packages/host/verboo-analytics/README.md and src/types.ts',
+  ProductAnalyticsSubject: 'Product analytics identities are owned by packages/host/verboo-analytics/README.md and src/types.ts',
+  ProductFeature: 'Product feature categories are owned by packages/host/verboo-analytics/README.md and src/types.ts',
+  SweepResult: 'Model discovery results are owned by packages/llm/llm-openai-account/README.md and src/types.ts',
+  SubscriptionUsage: 'Subscription usage is owned by packages/llm/llm-openai-account/README.md and src/types.ts',
   Result: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   PlanId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Plans: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',

@@ -25,6 +25,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
 import { en, pt, zh } from './locales.ts'
 import { Config } from '../config.ts'
+import type {} from '@deepseek-ai/dsh-host-verboo-analytics/remote'
+import type { ProductAnalyticsStatus } from '@deepseek-ai/dsh-host-verboo-analytics/types'
+import { captureFeatureConsent, type FeatureConsent } from './feature-consent.ts'
+import { AnalyticsPrompt, type AnalyticsPrivacyInjected } from './AnalyticsPrivacy.tsx'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { DesktopQuitHold } from './QuitHold.tsx'
@@ -37,6 +41,7 @@ import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
@@ -62,6 +67,7 @@ export const inject = [
   'slots',
   'configForms',
   'modelDirectories',
+  'commandUi',
   'layout',
   'uiWorkspace',
   'workspaces',
@@ -75,6 +81,7 @@ export const inject = [
   'remote.session',
   'remote.verboo',
   'remote.verbooMcp',
+  'remote.verbooAnalytics',
   'resources',
   'remoteAccess',
   'contextMenus',
@@ -142,6 +149,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const navigation = new ExternalNavigation(() => ctx.get('externalLinks'))
   const open = (url: string) => navigation.open(url)
   ctx.effect(() => () =>{  navigation.release() }, 'Verboo: browser reservations')
+  // Fixed categories only: never send a provider label, server name, or URL.
+  const captureProductConsent = (): FeatureConsent | undefined => captureFeatureConsent(analyticsPrivacy.getSnapshot())
+  const observeFeature = (feature: 'mcp' | 'checkout' | 'model_switch' | 'plan' | 'goal', outcome: 'completed' | 'failed', consent: FeatureConsent | undefined): void => {
+    if (!consent) return
+    void ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision).catch(() => {})
+  }
   const model = new ProductModel(
     {
       profile: async () => {
@@ -177,8 +190,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       connect: async (slug, label) => {
-        const r = await ctx.remote.verboo.connect(slug, label)
-        return r.ok ? r.value : { ok: false, code: 'request_failed' }
+        const initiatingOwner = model.state.getSnapshot().profile?.id
+        const initiatingConsent = captureProductConsent()
+        const initiatingRevision = analyticsRevision
+        try {
+          const r = await ctx.remote.verboo.connect(slug, label)
+          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
+          return r.ok ? r.value : { ok: false, code: 'request_failed' }
+        } catch (error) {
+          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', 'failed', initiatingConsent)
+          throw error
+        }
       },
       disconnect: async (id) => {
         const r = await ctx.remote.verboo.disconnect(id)
@@ -189,8 +211,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       saveMcpServer: async (input) => {
-        const r = await ctx.remote.verbooMcp.save(input)
-        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+        const initiatingOwner = model.state.getSnapshot().profile?.id
+        const initiatingConsent = captureProductConsent()
+        const initiatingRevision = analyticsRevision
+        try {
+          const r = await ctx.remote.verbooMcp.save(input)
+          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
+          return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+        } catch (error) {
+          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', 'failed', initiatingConsent)
+          throw error
+        }
       },
       deleteMcpServer: async (name) => {
         const r = await ctx.remote.verbooMcp.removeServer(name)
@@ -205,8 +236,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
-        const r = await ctx.remote.verboo.billingURL(id, purchase)
-        return r.ok ? r.value : { ok: false, code: 'request_failed' }
+        const initiatingOwner = model.state.getSnapshot().profile?.id
+        const initiatingConsent = captureProductConsent()
+        const initiatingRevision = analyticsRevision
+        try {
+          const r = await ctx.remote.verboo.billingURL(id, purchase)
+          if (purchase && initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('checkout', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
+          return r.ok ? r.value : { ok: false, code: 'request_failed' }
+        } catch (error) {
+          if (purchase && initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('checkout', 'failed', initiatingConsent)
+          throw error
+        }
       },
       open,
       initializeModel: async () => {
@@ -329,6 +369,72 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     subscriptionUsage.refresh()
   }
   const externalStatus = createSnapshotStore<OpenAiStatus>({ signedIn: false })
+  const analyticsPrivacy = createSnapshotStore<ProductAnalyticsStatus | null>(null)
+  let analyticsOwner: string | undefined
+  let analyticsRevision = 0
+  let analyticsReading = false
+  let analyticsDisposed = false
+  ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    return (outcome) => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature('model_switch', outcome, consent)
+      }
+    }
+  }), 'Verboo: model switch analytics')
+  ctx.effect(() => ctx.commandUi.observeFeatureCommands((feature) => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    return (outcome) => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(feature, outcome, consent)
+      }
+    }
+  }), 'Verboo: command feature analytics')
+  const refreshAnalytics = async (): Promise<void> => {
+    const snapshot = model.state.getSnapshot()
+    const owner = snapshot.profile?.id ?? undefined
+    if (owner !== analyticsOwner) {
+      analyticsOwner = owner
+      analyticsRevision++
+      analyticsPrivacy.set(null)
+    }
+    if (owner === undefined || analyticsReading || analyticsDisposed) return
+    const revision = analyticsRevision
+    analyticsReading = true
+    try {
+      const result = await ctx.remote.verbooAnalytics.status()
+      if (revision === analyticsRevision && !analyticsDisposed) analyticsPrivacy.set(result.ok ? result.value : null)
+    } catch (_error) {
+      if (revision === analyticsRevision && !analyticsDisposed) analyticsPrivacy.set(null)
+    } finally { analyticsReading = false }
+  }
+  const analyticsActions: AnalyticsPrivacyInjected = {
+    hooks: { analyticsPrivacy },
+    async chooseProductAnalytics(decision) {
+      const revision = analyticsRevision
+      try {
+        const reply = await ctx.remote.verbooAnalytics.choose(decision)
+        if (revision !== analyticsRevision || analyticsDisposed) return false
+        if (!reply.ok) return false
+        const result = reply.value
+        if (result.ok) analyticsPrivacy.set(result.status)
+        else await refreshAnalytics()
+        return result.ok
+      } catch (_error) { return false } // The card reports failure without granting collection.
+    },
+  }
+  ctx.effect(() => {
+    const unsubscribe = model.state.subscribe(() => { void refreshAnalytics() })
+    const timer = setInterval(() => { void refreshAnalytics() }, 15000)
+    void refreshAnalytics()
+    return () => { analyticsDisposed = true; analyticsRevision++; clearInterval(timer); unsubscribe() }
+  }, 'Verboo: analytics preference')
   const externalDialogOpen = createSnapshotStore({ open: false })
   const reloadExternalStatus = async (): Promise<void> => {
     externalStatus.set(await openAiStatus())
@@ -519,8 +625,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   const debugFace = (sessionId?: SessionId) => {
     const product = staminaFace(sessionId)
-    return { ...product, ...debugActions, ...appearanceActions,
-      hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks } }
+    return { ...product, ...debugActions, ...appearanceActions, ...analyticsActions,
+      hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks, ...analyticsActions.hooks } }
   }
   // The pill reads the external subscription's own record; a Verboo route
   // leaves it absent, so the dock never shows a borrowed number.
@@ -603,6 +709,13 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('shell.overlay', function* () {
+    yield ctx.slots.register({
+      name: 'shell.overlay', id: 'verboo.analytics-choice', order: 90, locale: 'verboo',
+      inject: () => {
+        const product = face()
+        return { ...product, ...analyticsActions, hooks: { ...product.hooks, ...analyticsActions.hooks } }
+      },
+    }, AnalyticsPrompt)
     yield ctx.slots.register(
       {
         name: 'shell.overlay', id: 'verboo.openai-signin', order: 130, locale: 'verboo',

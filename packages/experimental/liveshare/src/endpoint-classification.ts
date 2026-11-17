@@ -110,6 +110,9 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'verboo/connect': 'owner-only',
   'verboo/disconnect': 'owner-only',
   'verboo/billingURL': 'owner-only',
+  'verbooAnalytics/status': 'owner-only',
+  'verbooAnalytics/choose': 'owner-only',
+  'verbooAnalytics/feature': 'owner-only',
   'account/watchExpiry': 'owner-only', // owner account and sign-in; the served page never reads it
   'job/follow': 'owner-only', // owner background jobs'
   'job/kill': 'owner-only', // owner background jobs

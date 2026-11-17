@@ -4,6 +4,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.plan seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Optional product observation; the plan surface also works without commandUi.
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the `plan` SessionProjectionMap merge for useProjection.
@@ -137,7 +139,19 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): PlanChipInjected => ({
       // Failure strings stay English (error-surface policy: not localized).
       exitPlanMode: async () => {
-        const result = await ctx.remote.commands.execute(sessionId, '/plan off', [])
+        let finish: ((outcome: 'completed' | 'failed') => void) | undefined
+        try {
+          if (ctx.sessions.subagentAddress(sessionId) === undefined) finish = ctx.get('commandUi')?.beginFeatureObservation('plan')
+        } catch (_error) { /* Observation must not block the plan control. */ }
+        const observe = (outcome: 'completed' | 'failed'): void => {
+          try { finish?.(outcome) } catch (_error) { /* Observation must not block the plan control. */ }
+        }
+        let result: Awaited<ReturnType<typeof ctx.remote.commands.execute>>
+        try { result = await ctx.remote.commands.execute(sessionId, '/plan off', []) } catch (error) {
+          observe('failed')
+          throw error
+        }
+        observe(result.ok && result.value !== undefined && result.value.result.kind !== 'error' ? 'completed' : 'failed')
         if (!result.ok) return `${result.error.message} (${result.error.code})`
         if (result.value === undefined) return 'unknown command: /plan off'
         return null

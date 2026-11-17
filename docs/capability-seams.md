@@ -7,9 +7,13 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_host_verboo_analytics["host-verboo-analytics"]
+  svc_verbooAnalytics["ctx.verbooAnalytics<br/>Consented Verboo product analytics"]
+  pkg_client_ui_verboo["client-ui-verboo"]
+  pkg_llm_openai_account["llm-openai-account"]
+  svc_llmOpenaiAccount["ctx.llmOpenaiAccount<br/>OpenAI account model route"]
   pkg_api_verboo_mcp["api-verboo-mcp"]
   svc_verbooMcp["ctx.verbooMcp<br/>Verboo account MCP servers"]
-  pkg_client_ui_verboo["client-ui-verboo"]
   pkg_verboo_connections["verboo-connections"]
   pkg_api_verboo_product["api-verboo-product"]
   svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
@@ -399,12 +403,14 @@ flowchart LR
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_product_telemetry_otel --> svc_productTelemetry
+  pkg_host_verboo_analytics --> svc_verbooAnalytics
   pkg_host_webserver --> svc_webServer
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
+  pkg_llm_openai_account --> svc_llmOpenaiAccount
   pkg_llm_pi_ai --> svc_llm
   pkg_llm_replay --> svc_llm
   pkg_lsp --> svc_lsp
@@ -543,6 +549,7 @@ flowchart LR
   svc_jobs --> pkg_tool_terminal
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_llmOpenaiAccount --> pkg_client_ui_verboo
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
@@ -635,6 +642,7 @@ flowchart LR
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
+  svc_verbooAnalytics --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_verboo_connections
   svc_verbooProduct --> pkg_client_ui_verboo
@@ -661,6 +669,8 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.verbooAnalytics` | `service` | [`host-verboo-analytics`](../packages/host/verboo-analytics) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Owns product consent, metadata-only observations, and a durable receipt-checked delivery queue. |
+| `ctx.llmOpenaiAccount` | `service` | [`llm-openai-account`](../packages/llm/llm-openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Discovers available subscription models and reads usage for the authenticated account. |
 | `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Stores account-owned server definitions and reconciles their credential-backed MCP registrations. |
 | `ctx.verbooProduct` | `service` | [`api-verboo-product`](../packages/api/verboo-product) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
