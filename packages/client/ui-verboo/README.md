@@ -12,6 +12,8 @@ English | [中文](README.zh.md)
 
 Use the Verboo Code onboarding, project navigation, connections and subscription pages. Neutral surfaces, a small Verboo accent, the official icon and Lucide replacements are owned here.
 
+ChatGPT usage readings use the subscription route’s types re-exported by the Client Remote assembly; this package declares no separate subscription namespace.
+
 <a id="table-of-contents"></a>
 ## Table of Contents
 

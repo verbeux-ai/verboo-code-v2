@@ -92,6 +92,13 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'account/signOut': 'owner-only', // owner account and sign-in; the served page never reads it
   'account/startSignIn': 'owner-only', // owner account and sign-in; the served page never reads it
   'account/watch': 'owner-only', // owner account and sign-in; the served page never reads it
+  'openaiAccountLogin/awaitLogin': 'owner-only',
+  'openaiAccountLogin/beginLogin': 'owner-only',
+  'openaiAccountLogin/completeLogin': 'owner-only',
+  'openaiAccountLogin/signOut': 'owner-only',
+  'openaiAccountLogin/status': 'owner-only',
+  'llmOpenaiAccount/discoverModels': 'owner-only',
+  'llmOpenaiAccount/usage': 'owner-only',
   'verboo/getPlans': 'owner-only',
   'verboo/getStamina': 'owner-only',
   'verboo/getConnections': 'owner-only',

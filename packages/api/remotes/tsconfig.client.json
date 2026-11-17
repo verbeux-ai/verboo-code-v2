@@ -130,6 +130,12 @@
     },
     {
       "path": "../verboo-mcp"
+    },
+    {
+      "path": "../../credentials/openai-account"
+    },
+    {
+      "path": "../../llm/llm-openai-account"
     }
   ]
 }

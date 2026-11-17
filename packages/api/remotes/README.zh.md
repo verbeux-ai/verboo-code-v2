@@ -13,6 +13,8 @@ kind: "package-reference"
 
 为本应用选定的 Host Remote 能力提供双侧 BFF。Host 入口拥有转发事件名单并向 API Gateway 注册应用事件 source；Client 入口以运行时值形式导入生成的 `/remote` 产物，通过 `ctx.remote.$mount()` 挂载每项贡献，并重新导出对应的声明合并。Client 业务包依赖该外观，而不依赖 Gateway 实现或单独的 Remote 运行时入口。
 
+Client 选择通过 `openaiAccountLogin` 和 `llmOpenaiAccount` 提供 ChatGPT 账号登录、状态、退出登录、订阅用量与模型发现。
+
 ## 目录
 
 - [使用本包](#use-this-package)

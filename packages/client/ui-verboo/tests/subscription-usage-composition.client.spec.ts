@@ -5,30 +5,17 @@
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import type { ClientRemote, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SubscriptionUsage } from '../src/client/subscription-usage-resource.ts'
 
 const read = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 describe('subscription usage composition', () => {
-  it('reads the namespace the route actually serves', () => {
-    // The route's generated face names one namespace; the Client's declaration
-    // must name the same one, or the read resolves against nothing.
-    const generated = read('../../../llm/llm-openai-account/lib/typert.remote-client.d.ts')
-    const client = read('../src/client/subscription-usage-resource.ts')
-    const served = /'llmOpenaiAccount': (TypertRemoteNamespace\$[0-9a-f]+)/.exec(generated)
-    expect(served).not.toBeNull()
-    expect(client).toContain(`interface ${served![1]}`)
-    expect(client).toContain("'llmOpenaiAccount':")
-  })
-
-  it('names the method the route exposes', () => {
-    const generated = read('../../../llm/llm-openai-account/lib/typert.remote-client.d.ts')
-    const client = read('../src/client/subscription-usage-resource.ts')
-    // `getSubscriptionUsage` was a name no Host ever served.
-    expect(generated).toContain('usage: (signal?: AbortSignal)')
-    expect(client).toContain('usage: (signal?: AbortSignal)')
-    expect(client).not.toContain('getSubscriptionUsage')
+  it('uses the generated subscription reading without a second namespace declaration', () => {
+    expectTypeOf<Awaited<ReturnType<ClientRemote['llmOpenaiAccount']['usage']>>>()
+      .toEqualTypeOf<RemoteResult<SubscriptionUsage | undefined>>()
   })
 
   it('addresses that namespace at the call site', () => {

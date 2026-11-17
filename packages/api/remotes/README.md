@@ -13,6 +13,8 @@ Desktop analytics follows the [product collection policy](../../client/product-a
 
 Two-sided BFF for Host Remote capabilities selected by this application. The Host entry owns the forwarded-event selection and registers its application event source with API Gateway; the Client entry imports generated `/remote` artifacts as runtime values, mounts each contribution through `ctx.remote.$mount()`, and re-exports their declaration merges. Client business packages depend on this facade rather than the Gateway implementation or individual Remote runtime entries.
 
+The Client selection includes ChatGPT account login, status, sign-out, subscription usage, and model discovery through `openaiAccountLogin` and `llmOpenaiAccount`.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

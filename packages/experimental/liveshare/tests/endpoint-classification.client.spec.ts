@@ -13,6 +13,14 @@ import { VIEWER_ENDPOINT_CLASSES, assertSameViewerActions } from '../src/endpoin
 const CLASSIFIED = Object.keys(VIEWER_ENDPOINT_CLASSES)
 
 describe('viewer endpoint classification', () => {
+  it.each([
+    'openaiAccountLogin/awaitLogin', 'openaiAccountLogin/beginLogin', 'openaiAccountLogin/completeLogin',
+    'openaiAccountLogin/signOut', 'openaiAccountLogin/status',
+    'llmOpenaiAccount/discoverModels', 'llmOpenaiAccount/usage',
+  ] as const)('keeps %s exclusive to the owner', (endpoint) => {
+    expect(COMPLETE_VIEWER_ENDPOINT_CLASSES[endpoint]).toBe('owner-only')
+  })
+
   it('exports the compiled classification without changing its keys', () => {
     expect(Object.keys(COMPLETE_VIEWER_ENDPOINT_CLASSES)).toEqual(CLASSIFIED)
   })

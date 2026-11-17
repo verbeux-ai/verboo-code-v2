@@ -94,8 +94,15 @@ jobs:
         run: pnpm run build:check
       - name: Test desktop lifecycle
         run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs apps/desktop/tauri/tests/macos-signing.test.mjs
-      - name: Test update window
-        run: pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
+      - name: Test update window and ChatGPT connection
+        run: >-
+          pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
+          packages/api/remotes/tests/openai.client.spec.ts
+          packages/client/ui-verboo/tests/subscription-usage-composition.client.spec.ts
+          packages/client/ui-verboo/tests/subscription-usage.client.spec.tsx
+          packages/experimental/liveshare/tests/endpoint-classification.client.spec.ts
+      - name: Test compiled application Remote assembly
+        run: pnpm exec vitest run --config vitest.e2e.config.ts packages/api/remotes/tests/built-lib.e2e.ts
       - name: Prepare native test resources
         run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
       - name: Test native process ownership

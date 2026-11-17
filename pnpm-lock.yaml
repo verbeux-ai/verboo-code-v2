@@ -1570,6 +1570,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-openai-account':
+        specifier: workspace:*
+        version: link:../../llm/llm-openai-account
       '@deepseek-ai/dsh-mcp-manager':
         specifier: workspace:*
         version: link:../../mcp/mcp-manager
@@ -1579,6 +1582,9 @@ importers:
       '@deepseek-ai/dsh-office-to-pdf':
         specifier: workspace:*
         version: link:../../document/office-to-pdf
+      '@deepseek-ai/dsh-openai-account':
+        specifier: workspace:*
+        version: link:../../credentials/openai-account
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets
@@ -1609,6 +1615,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
+      '@deepseek-ai/dsh-typert-registry':
+        specifier: workspace:*
+        version: link:../../typert/registry
       '@deepseek-ai/dsh-user-approval':
         specifier: workspace:*
         version: link:../../interaction/user-approval

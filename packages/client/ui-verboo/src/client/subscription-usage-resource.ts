@@ -10,30 +10,8 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProductSnapshot } from './model.ts'
 import type {} from './contracts.ts'
-
-/** One server reading of an external subscription's usage window. */
-export interface SubscriptionUsage {
-  /** Share of the current window already consumed, in percent. */
-  usedPercent: number
-  /** Length of the usage window in seconds; absent when the provider reports none. */
-  windowSeconds?: number
-  /** Seconds until the window resets; absent when unknown. */
-  resetAfterSeconds?: number
-  /** Remaining provider credits; absent when the provider reports none. */
-  credits?: number
-  /** Whether the provider reports the plan as unlimited; never inferred locally. */
-  unlimited: boolean
-  /** Provider plan label, for example `team`; absent when unknown. */
-  planType?: string
-  /** ISO instant the subscription stays active until; absent when unknown. */
-  activeUntil?: string
-  /** Provider reason for a reached limit, for example `workspace_member_usage_limit_reached`. */
-  reachedType?: string
-  /** Additional provider rate limits shown as extra rows in the panel. */
-  additionalLimits?: readonly { label: string; usedPercent: number }[]
-  /** ISO instant of this reading. */
-  asOf: string
-}
+import type { SubscriptionUsage } from '@deepseek-ai/dsh-api-remotes/client'
+export type { SubscriptionUsage } from '@deepseek-ai/dsh-api-remotes/client'
 
 /**
  * Provider routing slug of the ChatGPT subscription route. The Client never
@@ -52,23 +30,6 @@ type UsageAccount = Pick<ProductSnapshot, 'view' | 'profile'>
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     'verboo/subscription-usage-unavailable': { reason: ProductError | 'offline' | 'unreported' }
-  }
-  /**
-   * The external-subscription usage read the route serves. The Host owns the
-   * same interface name, so this declaration merges with the generated face
-   * instead of restating a second namespace.
-   */
-  interface TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74 {
-    usage: (signal?: AbortSignal) => Promise<RemoteResult<SubscriptionUsage | undefined>>
-    discoverModels: () => Promise<RemoteResult<{
-      readonly supported: readonly string[]
-      readonly unsupported: readonly string[]
-      readonly skipped: readonly string[]
-      readonly stoppedAtLimit: boolean
-    }>>
-  }
-  interface TypertRemoteNamespaceMap {
-    'llmOpenaiAccount': TypertRemoteNamespace$6c6c6d4f70656e61694163636f756e74
   }
 }
 
