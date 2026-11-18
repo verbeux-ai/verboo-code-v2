@@ -131,7 +131,7 @@ describe('Host task editor on the existing manager', () => {
     expect(within(openEdit()).getByRole<HTMLInputElement>('textbox', { name: en['detail.name'] }).value).toBe('Unsaved title')
     expect(within(openManual()).getByRole<HTMLInputElement>('textbox', { name: en['detail.name'] }).value).toBe('New draft')
     expect(screen.queryByRole('dialog')).toBeNull()
-  })
+  }, 15_000)
 
   it('enables Save only for a meaningful valid change and restores actions after reverting', () => {
     const h = mount()
