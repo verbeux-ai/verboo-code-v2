@@ -5,15 +5,15 @@
     - heading "Seu próximo projeto não precisa esperar" [level=1]
     - paragraph: Escolha um plano para continuar criando.
     - text: 0 tokens restantes
-  - button "Pro USD 69,00 / mês" [pressed]:
+  - button "Pro USD 69,00 / mês Stamina 1 de 3" [pressed]:
     - strong: Pro
-    - text: USD 69,00 / mês
-  - button "Max USD 129,00 / mês":
+    - text: USD 69,00 / mês Stamina 1 de 3
+  - button "Max USD 129,00 / mês Stamina 2 de 3":
     - strong: Max
-    - text: USD 129,00 / mês
-  - button "Ultra USD 259,00 / mês":
+    - text: USD 129,00 / mês Stamina 2 de 3
+  - button "Ultra USD 259,00 / mês Stamina 3 de 3":
     - strong: Ultra
-    - text: USD 259,00 / mês
+    - text: USD 259,00 / mês Stamina 3 de 3
   - heading "Forma de pagamento" [level=2]
   - combobox "Forma de pagamento":
     - option "visa ···· 4242" [selected]
