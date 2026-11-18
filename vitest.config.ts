@@ -202,6 +202,9 @@ const testingAliases = {
   // same source paths already declared in tsconfig.base.json.
   '@deepseek-ai/dsh-http-proxy': fileURLToPath(new URL('./packages/util/http-proxy/src/index.ts', import.meta.url)),
   '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/brand': fileURLToPath(new URL('./packages/llm/llm/src/brand.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/types': fileURLToPath(new URL('./packages/llm/llm/src/types.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm': fileURLToPath(new URL('./packages/llm/llm/src/index.ts', import.meta.url)),
 }
 
 export default defineConfig({
