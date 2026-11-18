@@ -15,6 +15,8 @@ export interface ProductConsent {
   decidedAt: string
   expiresAt: string
   enabled: boolean
+  /** Signed order reference returned before a product action. */
+  referenceProof?: string | undefined
 }
 
 /** Safe preference and delivery state available to local product UI. */

@@ -4325,9 +4325,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'confirmed preference, or a fixed failure without credentials.',
       },
       {
-        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number): void',
+        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void',
         description: 'Observe one allowlisted feature without tool names, arguments or page data.',
-        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }],
+        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }, { name: 'consentProof', description: 'signed reference observed when the action began.' }],
       },
     ],
   },
@@ -7996,7 +7996,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProductConsent',
-    declaration: 'export interface ProductConsent {\n    subjectId: ProductAnalyticsSubject;\n    decision: ProductDecision;\n    revision: number;\n    policyVersion: 1;\n    decidedAt: string;\n    expiresAt: string;\n    enabled: boolean;\n}',
+    declaration: 'export interface ProductConsent {\n    subjectId: ProductAnalyticsSubject;\n    decision: ProductDecision;\n    revision: number;\n    policyVersion: 1;\n    decidedAt: string;\n    expiresAt: string;\n    enabled: boolean;\n    referenceProof?: string | undefined;\n}',
   },
   {
     name: 'ProductConsentResult',

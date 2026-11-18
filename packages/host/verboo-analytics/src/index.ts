@@ -47,7 +47,8 @@ declare module '@deepseek-ai/cordis' {
 
 const receiptSchema = z.object({ data: z.object({ status: z.literal('accepted'), receipt: z.object({ eventId: z.uuid(), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/) }) }) })
 const consentResponse = z.object({ data: consentSchema.extend({ serverTime: z.string().datetime({ offset: true }).optional(),
-  serverOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional() }) })
+  serverOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional(),
+  serverProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional() }) })
 
 interface Owner {
   identity: AnalyticsIdentity
@@ -62,7 +63,7 @@ interface TurnOwner {
   reference: OrderReference | undefined
 }
 
-interface OrderReference { order: bigint; serverTime: number }
+interface OrderReference { order: bigint; serverTime: number; proof: string }
 interface TurnCheckpoint { turn: number; reference: OrderReference | undefined }
 
 function positiveOrder(value: string | undefined): bigint | undefined {
@@ -253,11 +254,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
         response = consentResponse.parse(await this.request(owner, '/api/analytics/product-consent', 'PUT', JSON.stringify({ decision, revision: decision === 'denied' ? response.revision : revision, policyVersion: 1 }))).data
       }
     }
-    const { serverTime, serverOrder, ...next } = response
+    const { serverTime, serverOrder, serverProof, ...consent } = response
     // The server supplies this separately from the persisted consent. Missing
     // or invalid references disable login observation on older backends.
     const order = positiveOrder(serverOrder)
-    this.lastReference = serverTime === undefined || order === undefined ? undefined : { order, serverTime: Date.parse(serverTime) }
+    const reference = serverTime === undefined || order === undefined || serverProof === undefined ||
+      serverProof.split('.')[1] !== String(order) ? undefined : { order, serverTime: Date.parse(serverTime), proof: serverProof }
+    this.lastReference = reference
+    const next = { ...consent, ...(reference === undefined ? {} : { referenceProof: reference.proof }) }
     await this.store.update((state) => {
       const identity = state.contexts.find(item => item.owner === owner.identity.owner)
       if (identity === undefined || identity.pendingDecision !== decision || owner.generation !== this.generation) return
@@ -267,7 +271,17 @@ export default class VerbooAnalytics extends TypertRemoteService {
       if (next.decision !== 'granted') state.pending = state.pending.filter(item => item.owner !== identity.owner)
       else state.pending = state.pending.filter((item) => {
         if (item.owner !== identity.owner) return true
-        try { return eventSchema.parse(JSON.parse(item.json)).consentRevision === next.revision }
+        try {
+          const raw: unknown = JSON.parse(item.json)
+          if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) &&
+            (raw as { schemaVersion?: unknown }).schemaVersion === 1 && !('consentProof' in raw)) {
+            // Events from an older collector cannot prove prior consent.
+            if (identity.firstOpenEventId === item.eventId) identity.firstOpenEventId = null
+            state.lost++
+            return false
+          }
+          return eventSchema.parse(raw).consentRevision === next.revision
+        }
         catch (_error) { return true } // Invalid pending bytes remain visible and are never sent.
       })
     })
@@ -286,7 +300,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
     }
     if (!this.openedOwners.has(captured.identity.owner)) {
       this.openedOwners.add(captured.identity.owner)
-      this.background(this.opened(captured).then((opened) => {
+      this.background(this.opened(captured, reference).then((opened) => {
         if (!opened) this.openedOwners.delete(captured.identity.owner)
       }).catch((error) => { this.openedOwners.delete(captured.identity.owner); throw error }))
     }
@@ -309,7 +323,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       current.identity.consent === null || !this.consentPrecedesReference(current.identity, reference) ||
       Date.parse(current.identity.consent.decidedAt) >= startedAt ||
       Date.parse(current.identity.consent.expiresAt) <= completedAt) return
-    await this.enqueue('product_login_completed', {}, completedAt, responseOperationId(`login:${sessionId}`, 0), startedAt, current)
+    await this.enqueue('product_login_completed', {}, completedAt, responseOperationId(`login:${sessionId}`, 0), startedAt, current, reference.proof)
   }
 
   private async refresh(): Promise<void> {
@@ -405,13 +419,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
 
   private async enqueue(
     name: string, details: Record<string, string | number>, occurrence = Date.now(), eventId: string = randomUUID(),
-    startedAt = occurrence, captured?: Owner,
+    startedAt = occurrence, captured?: Owner, consentProof?: string,
   ): Promise<void> {
     const owner = captured ?? await this.owner()
     if (owner === undefined || !allowed(owner.identity)) return
     const consent = owner.identity.consent
-    if (consent === null || startedAt < Date.parse(consent.decidedAt)) return
-    const json = JSON.stringify({ schemaVersion: 1, eventId, name, consentRevision: consent.revision,
+    if (consent === null || startedAt < Date.parse(consent.decidedAt) || consentProof === undefined ||
+      !/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/.test(consentProof)) return
+    const json = JSON.stringify({ schemaVersion: 1, eventId, name, consentRevision: consent.revision, consentProof,
       occurredAt: new Date(occurrence).toISOString(), surface: this.config.surface,
       os: platform() === 'darwin' ? 'macos' : platform() === 'win32' ? 'windows' : platform() === 'linux' ? 'linux' : 'other',
       appVersion: this.config.appVersion, ...details })
@@ -444,7 +459,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
     const id = responseOperationId(session.id, facts.completedTurn)
     await this.enqueue('product_response_completed', {
       operationId: id, modality: facts.modality, outcome: 'completed', durationMs: facts.durationMs,
-    }, at, id, facts.startedAt, current)
+    }, at, id, facts.startedAt, current, capture.reference?.proof)
   }
 
   private async completedTool(
@@ -458,7 +473,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       !this.consentPrecedesReference(original.identity, capture.reference)) return
     const id = responseOperationId(`tool:${session.id}`, seq)
     await this.enqueue('product_feature_used', { feature: 'tool', outcome: failed ? 'failed' : 'completed' },
-      at, id, startedAt, current)
+      at, id, startedAt, current, capture.reference?.proof)
   }
 
   private consentPrecedesReference(identity: AnalyticsIdentity, reference: OrderReference | undefined): boolean {
@@ -468,15 +483,15 @@ export default class VerbooAnalytics extends TypertRemoteService {
     return decisionOrder !== undefined && decisionOrder < reference.order && Date.parse(consent.expiresAt) > reference.serverTime
   }
 
-  private async opened(owner: Owner): Promise<boolean> {
-    if (!(await this.current(owner)) || !allowed(owner.identity)) return false
+  private async opened(owner: Owner, reference: OrderReference | undefined): Promise<boolean> {
+    if (!(await this.current(owner)) || !allowed(owner.identity) || !this.consentPrecedesReference(owner.identity, reference)) return false
     const first = owner.identity.firstOpenEventId === null
     const id = owner.identity.firstOpenEventId ?? randomUUID()
     const now = Date.now()
     if (first) {
-      await this.enqueue('product_first_open_observed', {}, now, id, now, owner)
+      await this.enqueue('product_first_open_observed', {}, now, id, now, owner, reference?.proof)
     }
-    await this.enqueue('product_opened', {}, now, randomUUID(), now, owner)
+    await this.enqueue('product_opened', {}, now, randomUUID(), now, owner, reference?.proof)
     return await this.current(owner)
   }
 
@@ -486,14 +501,15 @@ export default class VerbooAnalytics extends TypertRemoteService {
    * @param outcome - fixed observation outcome.
    * @param subjectId - consent subject observed when the user initiated the action.
    * @param consentRevision - granted revision observed when the action began.
+   * @param consentProof - signed reference observed when the action began.
    */
   @Remote
-  feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number): void {
+  feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void {
     this.background((async () => {
       const owner = await this.owner()
       if (owner?.identity.consent?.subjectId !== subjectId || owner.identity.consent.revision !== consentRevision) return
       const at = Date.now()
-      await this.enqueue('product_feature_used', { feature, outcome }, at, randomUUID(), at, owner)
+      await this.enqueue('product_feature_used', { feature, outcome }, at, randomUUID(), at, owner, consentProof)
     })())
   }
 

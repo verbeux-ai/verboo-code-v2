@@ -47,11 +47,12 @@ async function fixture(initiallyGranted: boolean, includeServerTime = true) {
         await consentReady
       }
       const granted = req.headers.authorization === 'Bearer fixture-token' && preference.granted
+      const issued = String(++serverOrder)
       res.end(JSON.stringify({ data: { subjectId: (req.headers.authorization ? 'b' : 'a').repeat(64),
         decision: granted ? 'granted' : preference.denied && req.headers.authorization ? 'denied' : 'unknown',
         revision: granted ? 1 : preference.denied && req.headers.authorization ? 2 : 0, policyVersion: 1,
         decidedAt: preference.decidedAt, expiresAt: '2099-01-01T00:00:00Z', enabled: true, decisionOrder: granted ? preference.order : '0',
-        ...(includeServerTime ? { serverTime: new Date().toISOString(), serverOrder: String(++serverOrder) } : {}) } }))
+        ...(includeServerTime ? { serverTime: new Date().toISOString(), serverOrder: issued, serverProof: `v1.${issued}.${'a'.repeat(64)}` } : {}) } }))
     } else if (req.url === '/api/analytics/product-events') {
       const event = JSON.parse(body) as { name: string; eventId: string; occurredAt: string; consentRevision: number }
       events.push(event)

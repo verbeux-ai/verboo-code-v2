@@ -11,6 +11,7 @@ export const consentSchema = z.object({
   subjectId: z.string().regex(/^[a-f0-9]{64}$/).transform(value => brandString<ProductAnalyticsSubject>(value)),
   decision: z.enum(['unknown', 'granted', 'denied']), revision: z.number().int().nonnegative(), policyVersion: z.literal(1),
   decisionOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional(),
+  referenceProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional(),
   decidedAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }), enabled: z.boolean(),
 }).strict()
 
@@ -19,6 +20,7 @@ export const eventSchema = z.object({
   schemaVersion: z.literal(1), eventId: z.uuid(),
   name: z.enum(['product_response_completed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_feature_used']),
   consentRevision: z.number().int().positive(), occurredAt: z.string().datetime({ offset: true }),
+  consentProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/),
   surface: z.enum(['desktop', 'cli', 'dashboard']), os: z.enum(['macos', 'windows', 'linux', 'other']),
   appVersion: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/),
   operationId: z.uuid().optional(), modality: z.enum(['verboo_gateway', 'external']).optional(),

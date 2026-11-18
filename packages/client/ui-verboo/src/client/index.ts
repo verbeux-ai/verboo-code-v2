@@ -153,7 +153,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const captureProductConsent = (): FeatureConsent | undefined => captureFeatureConsent(analyticsPrivacy.getSnapshot())
   const observeFeature = (feature: 'mcp' | 'checkout' | 'model_switch' | 'plan' | 'goal', outcome: 'completed' | 'failed', consent: FeatureConsent | undefined): void => {
     if (!consent) return
-    void ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision).catch(() => {})
+    void ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision, consent.proof).catch(() => {})
   }
   const model = new ProductModel(
     {

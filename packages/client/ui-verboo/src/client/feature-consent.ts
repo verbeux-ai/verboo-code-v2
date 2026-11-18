@@ -4,6 +4,7 @@ import type { ProductAnalyticsStatus, ProductAnalyticsSubject } from '@deepseek-
 export interface FeatureConsent {
   subjectId: ProductAnalyticsSubject
   revision: number
+  proof: string
 }
 
 /**
@@ -16,7 +17,7 @@ export function captureFeatureConsent(status: ProductAnalyticsStatus | null, now
   const consent = status?.consent
   const expiresAt = Date.parse(consent?.expiresAt ?? '')
   const decidedAt = Date.parse(consent?.decidedAt ?? '')
-  if (!consent?.enabled || consent.decision !== 'granted' || !Number.isFinite(decidedAt) || decidedAt > now
+  if (!consent?.enabled || consent.decision !== 'granted' || !consent.referenceProof || !Number.isFinite(decidedAt) || decidedAt > now
     || !Number.isFinite(expiresAt) || expiresAt <= now) return undefined
-  return { subjectId: consent.subjectId, revision: consent.revision }
+  return { subjectId: consent.subjectId, revision: consent.revision, proof: consent.referenceProof }
 }

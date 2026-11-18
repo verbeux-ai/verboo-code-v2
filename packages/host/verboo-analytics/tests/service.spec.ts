@@ -1,5 +1,5 @@
 /** Real Loader, local credentials and HTTP collector: no product content crosses the wire. */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,6 +21,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import VerbooAnalytics from '../src/index.ts'
+import type { AnalyticsStorageStore } from '../src/storage.ts'
 
 class AnonymousAccount extends DeepSeekAccount {
   getState = vi.fn<DeepSeekAccount['getState']>()
@@ -38,6 +39,7 @@ class AnonymousAccount extends DeepSeekAccount {
   getDeviceIdentity = vi.fn<DeepSeekAccount['getDeviceIdentity']>()
 }
 const cleanup: Array<() => Promise<unknown>> = []
+const proof = (order: string) => `v1.${order}.${'a'.repeat(64)}`
 afterEach(async () => { while (cleanup.length) await cleanup.pop()!() })
 
 it('requires consent and sends only a completed root response through the real service', async () => {
@@ -45,7 +47,7 @@ it('requires consent and sends only a completed root response through the real s
   cleanup.push(() => rm(home, { recursive: true, force: true }))
   const events: Record<string, unknown>[] = []
   let rejectEvents = false
-  let includeServerOrder = true
+  let includeServerProof = true
   let serverNow = Date.now()
   let serverOrder = 9007199254740992n // Above Number.MAX_SAFE_INTEGER.
   let consent = { subjectId: 'a'.repeat(64), decision: 'unknown', revision: 0, policyVersion: 1,
@@ -56,8 +58,9 @@ it('requires consent and sends only a completed root response through the real s
     res.setHeader('content-type', 'application/json')
     if (req.url === '/api/analytics/product-consent') {
       if (req.method === 'PUT') consent = { ...consent, decision: JSON.parse(body).decision, revision: consent.revision + 1, decisionOrder: String(++serverOrder) }
-      res.end(JSON.stringify({ data: { ...consent, serverTime: new Date(serverNow).toISOString(),
-        ...(includeServerOrder ? { serverOrder: String(++serverOrder) } : {}) } }))
+      const issued = String(++serverOrder)
+      res.end(JSON.stringify({ data: { ...consent, serverTime: new Date(serverNow).toISOString(), serverOrder: issued,
+        ...(includeServerProof ? { serverProof: proof(issued) } : {}) } }))
       return
     }
     if (req.url === '/api/analytics/product-events') {
@@ -108,26 +111,28 @@ it('requires consent and sends only a completed root response through the real s
   await vi.waitFor(() => { expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(1) })
   expect(response[0]).toMatchObject({ surface: 'desktop', appVersion: 'fixture', modality: 'verboo_gateway', outcome: 'completed', consentRevision: 1 })
   expect(JSON.stringify(events)).not.toMatch(/SECRET|fixture-root/)
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>('b'.repeat(64)), consent.revision)
+  const oldProof = (await ctx.verbooAnalytics.status()).consent?.referenceProof ?? ''
+  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>('b'.repeat(64)), consent.revision, oldProof)
   await delay(1200)
   expect(events.some(event => event.name === 'product_feature_used' && event.feature === 'browser')).toBe(false)
   rejectEvents = true
   const oldRevision = consent.revision
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision)
+  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
   for (let attempt = 0; attempt < 100 && !events.some(event => event.name === 'product_feature_used' && event.feature === 'browser'); attempt++) await delay(50)
   const failed = events.find(event => event.name === 'product_feature_used' && event.feature === 'browser')
   expect(failed).toBeDefined()
   expect((await ctx.verbooAnalytics.choose('denied')).ok).toBe(true)
   rejectEvents = false
   expect((await ctx.verbooAnalytics.choose('granted')).ok).toBe(true)
+  const newProof = (await ctx.verbooAnalytics.status()).consent?.referenceProof ?? ''
   // An action begun under the old grant, or before any grant, cannot borrow
   // the new revision just because it finished after the user re-enabled it.
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision)
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), 0)
+  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
+  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), 0, newProof)
   await delay(1500)
   expect(events.filter(event => event.eventId === failed?.eventId)).toHaveLength(1)
   expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser')).toHaveLength(1)
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision)
+  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, newProof)
   for (let attempt = 0; attempt < 100 && events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser').length < 2; attempt++) await delay(50)
   expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser')).toHaveLength(2)
 
@@ -169,7 +174,7 @@ it('requires consent and sends only a completed root response through the real s
 
   // A compatible older server can still serve privacy settings, but it cannot
   // authorize a turn without a reference received before that turn started.
-  includeServerOrder = false
+  includeServerProof = false
   consent = { ...consent, decidedAt: '2020-01-01T00:00:00Z' }
   await ctx.verbooAnalytics.status()
   session.append('turn/start', { turn: 3 })
@@ -184,7 +189,7 @@ it('requires consent and sends only a completed root response through the real s
 
   // A later server synchronization before user/message cannot replace the
   // reference already frozen at turn/start.
-  includeServerOrder = true
+  includeServerProof = true
   consent = { ...consent, decision: 'unknown', revision: consent.revision + 1 }
   serverNow = Date.now()
   await ctx.verbooAnalytics.status()
@@ -203,6 +208,24 @@ it('requires consent and sends only a completed root response through the real s
     expect(events.filter(event => event.name === 'product_response_completed')).toHaveLength(beforeResponses)
     expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(beforeTools)
   } finally { nextClock.mockRestore() }
+
+  const store = (ctx.verbooAnalytics as unknown as { store: AnalyticsStorageStore }).store
+  const beforeLost = (await store.read()).lost
+  const legacyId = randomUUID()
+  await store.update((state) => {
+    const identity = state.contexts.find(item => item.owner === state.activeOwner)
+    if (!identity) throw new Error('fixture identity missing')
+    identity.firstOpenEventId = legacyId
+    state.pending.push({ eventId: legacyId, owner: identity.owner, attempts: 0, nextAttemptAt: 0,
+      json: JSON.stringify({ schemaVersion: 1, eventId: legacyId, name: 'product_first_open_observed',
+        consentRevision: consent.revision, occurredAt: new Date().toISOString(), surface: 'desktop', os: 'linux', appVersion: 'fixture' }) })
+  })
+  await ctx.verbooAnalytics.status()
+  const cleaned = await store.read()
+  expect(cleaned.pending.some(item => item.eventId === legacyId)).toBe(false)
+  expect(cleaned.contexts.find(item => item.owner === cleaned.activeOwner)?.firstOpenEventId).toBeNull()
+  expect(cleaned.lost).toBe(beforeLost + 1)
+  expect(events.some(event => event.eventId === legacyId)).toBe(false)
 }, 25_000)
 
 it('does not attribute delayed opening or login observations to a replacement account', async () => {
@@ -216,10 +239,11 @@ it('does not attribute delayed opening or login observations to a replacement ac
     res.setHeader('content-type', 'application/json')
     if (req.url === '/api/analytics/product-consent') {
       const authenticated = req.headers.authorization !== undefined
+      const issued = String(++serverOrder)
       res.end(JSON.stringify({ data: { subjectId: (req.headers.authorization === 'Bearer token-b' ? 'b' : 'a').repeat(64),
         decision: authenticated ? 'granted' : 'unknown', revision: authenticated ? 1 : 0,
         policyVersion: 1, decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true,
-        serverTime: new Date().toISOString(), decisionOrder: authenticated ? '1' : '0', serverOrder: String(++serverOrder) } }))
+        serverTime: new Date().toISOString(), decisionOrder: authenticated ? '1' : '0', serverOrder: issued, serverProof: proof(issued) } }))
       return
     }
     if (req.url === '/api/analytics/product-events') {
@@ -257,7 +281,7 @@ it('does not attribute delayed opening or login observations to a replacement ac
     opened: (...args: unknown[]) => Promise<boolean>
     enqueue: (...args: unknown[]) => Promise<void>
     completedLogin: (sessionId: string, startedAt: number, completedAt: number,
-      reference: { order: bigint; serverTime: number }) => Promise<void>
+      reference: { order: bigint; serverTime: number; proof: string }) => Promise<void>
   }
   const originalOpened = internal.opened.bind(internal)
   const originalEnqueue = internal.enqueue.bind(internal)
@@ -282,9 +306,9 @@ it('does not attribute delayed opening or login observations to a replacement ac
   await ctx.verbooAnalytics.status()
   // A restored or previously signed-in session must not invent a login event.
   expect(loginWaiting).toBe(false)
-  await internal.completedLogin('session-a', Date.parse('2019-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now() })
+  await internal.completedLogin('session-a', Date.parse('2019-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now(), proof: proof('100') })
   expect(loginWaiting).toBe(false) // The grant began in 2020, after OAuth started.
-  await internal.completedLogin('session-a', Date.parse('2020-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now() })
+  await internal.completedLogin('session-a', Date.parse('2020-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now(), proof: proof('100') })
   expect(loginWaiting).toBe(false) // Equal millisecond timestamps cannot prove prior consent.
   const startedA = Date.now()
   const attemptA = brandString<SignInAttemptId>('attempt-a')
@@ -323,7 +347,8 @@ it('deduplicates the first observed opening across simultaneous Hosts sharing cr
       if (++reads === 2) release()
       if (reads <= 2) await bothReading
       res.end(JSON.stringify({ data: { subjectId: 'a'.repeat(64), decision: 'granted', revision: 1,
-        policyVersion: 1, decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true } }))
+        policyVersion: 1, decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true,
+        decisionOrder: '1', serverOrder: '2', serverTime: new Date().toISOString(), serverProof: proof('2') } }))
       return
     }
     if (req.url === '/api/analytics/product-events') {
