@@ -3,23 +3,27 @@
   - banner:
     - text: Seu teste terminou
     - heading "Seu próximo projeto não precisa esperar" [level=1]
-    - paragraph: Continue criando com um plano que acompanha seu ritmo. Compare as opções e escolha seu próximo passo.
+    - paragraph: Escolha um plano para continuar criando.
     - text: 0 tokens restantes
-  - button "Pro Recomendado USD 69,00 / mês Daily coding projects" [pressed]:
+  - button "Pro USD 69,00 / mês" [pressed]:
     - strong: Pro
-    - text: Recomendado USD 69,00 / mês
-    - paragraph: Daily coding projects
-  - button "Max USD 129,00 / mês More parallel projects":
+    - text: USD 69,00 / mês
+  - button "Max USD 129,00 / mês":
     - strong: Max
     - text: USD 129,00 / mês
-    - paragraph: More parallel projects
-  - strong: Pro
-  - strong: USD 69,00
-  - paragraph: Renovação de USD 69,00 / mês.
-  - text: visa ···· 4242
+  - button "Ultra USD 259,00 / mês":
+    - strong: Ultra
+    - text: USD 259,00 / mês
+  - heading "Forma de pagamento" [level=2]
+  - combobox "Forma de pagamento":
+    - option "visa ···· 4242" [selected]
+    - option "Pagar com Pix"
   - paragraph: Sua assinatura e o período contratado começam assim que o pagamento for confirmado.
-  - button "Confirmar e pagar USD 69,00"
-  - button "Pagar com Pix"
+  - heading "Resumo do pedido" [level=2]
+  - text: Pro USD 69,00 / mês
+  - strong: Total mensal
+  - strong: USD 69,00
+  - button "Assinar plano"
   - contentinfo:
     - text: Você decide quando autorizar o pagamento.
     - button "Agora não"

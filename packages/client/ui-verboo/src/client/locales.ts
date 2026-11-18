@@ -3,6 +3,9 @@ export const en = {
   trialSetupPending: 'Finish saving your card in the browser, then return to review and confirm payment. Saving a card does not authorize a charge.',
   trialPaymentFailed: 'The original payment was declined, expired or canceled. Choose a new offer to try again.',
 
+  trialPaymentMethod: 'Payment method',
+  trialOrderSummary: 'Order summary',
+  trialTotalDue: 'Monthly total',
   trialUseCard: 'Use card',
   trialPixMandate: 'Pix Automático: bank authorization up to {price} per cycle, including IOF. The plan amount in BRL remains fixed for renewals.',
 
@@ -11,7 +14,9 @@ export const en = {
   trialTokens: '{count} tokens left',
   trialUpgrade: 'Upgrade to Pro',
   trialHeadline: 'Keep building what comes next',
-  trialDescription: 'Keep creating with a plan that fits your work. Compare your options and choose your next step.',
+  trialDescription: 'Choose a plan to keep creating.',
+  trialSubscribe: 'Subscribe to plan',
+  trialStaminaLevel: 'Stamina {level} of 3',
   trialRecommended: 'Recommended',
   trialCatalogUnavailable: 'Plans could not be loaded.',
   trialQuoting: 'Checking your current offer…',
@@ -423,6 +428,9 @@ export const pt: Record<Key, string> = {
   trialSetupPending: 'Conclua o cadastro do cartão no navegador e volte para revisar e confirmar o pagamento. Cadastrar o cartão não autoriza cobrança.',
   trialPaymentFailed: 'O pagamento original foi recusado, expirou ou foi cancelado. Consulte uma nova oferta para tentar novamente.',
 
+  trialPaymentMethod: 'Forma de pagamento',
+  trialOrderSummary: 'Resumo do pedido',
+  trialTotalDue: 'Total mensal',
   trialUseCard: 'Usar cartão',
   trialPixMandate: 'Pix Automático: autorização bancária de até {price} por período, incluindo IOF. O valor do plano em BRL fica fixo nas renovações.',
 
@@ -431,7 +439,9 @@ export const pt: Record<Key, string> = {
   trialTokens: '{count} tokens restantes',
   trialUpgrade: 'Fazer upgrade',
   trialHeadline: 'Seu próximo projeto não precisa esperar',
-  trialDescription: 'Continue criando com um plano que acompanha seu ritmo. Compare as opções e escolha seu próximo passo.',
+  trialDescription: 'Escolha um plano para continuar criando.',
+  trialSubscribe: 'Assinar plano',
+  trialStaminaLevel: 'Stamina {level} de 3',
   trialRecommended: 'Recomendado',
   trialCatalogUnavailable: 'Não foi possível carregar os planos.',
   trialQuoting: 'Consultando sua oferta atual…',
@@ -847,6 +857,9 @@ export const zh: Record<Key, string> = {
   trialSetupPending: '请在浏览器中完成银行卡设置，然后返回审核并确认付款。保存银行卡不代表授权扣款。',
   trialPaymentFailed: '原付款被拒绝、已过期或已取消。请获取新报价后重试。',
 
+  trialPaymentMethod: '付款方式',
+  trialOrderSummary: '订单摘要',
+  trialTotalDue: '每月总额',
   trialUseCard: '使用银行卡',
   trialPixMandate: 'Pix Automático：每周期银行授权上限为 {price}，包含 IOF。续费使用固定的 BRL 套餐价格。',
 
@@ -855,7 +868,9 @@ export const zh: Record<Key, string> = {
   trialTokens: '剩余 {count} 个令牌',
   trialUpgrade: '升级套餐',
   trialHeadline: '继续构建下一个项目',
-  trialDescription: '比较各项权益，选择适合您的套餐，继续创作。',
+  trialDescription: '选择套餐，继续创作。',
+  trialSubscribe: '订阅套餐',
+  trialStaminaLevel: '耐力 {level}/3',
   trialRecommended: '推荐',
   trialCatalogUnavailable: '无法加载套餐。',
   trialQuoting: '正在查询最新报价…',

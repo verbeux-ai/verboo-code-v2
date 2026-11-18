@@ -34,6 +34,8 @@ it('shows trial attention and an explicit quote, then resumes only the original 
       else if (req.url?.startsWith('/api/marketplace')) data = [
         { id: PLAN, slug: 'pro', name: 'Pro', description: 'Daily coding projects', currency: 'usd', priceCents: 6900, billingInterval: 'month' },
         { id: MAX, slug: 'max', name: 'Max', description: 'More parallel projects', currency: 'usd', priceCents: 12900, billingInterval: 'month' },
+        { id: '00000000-0000-4000-8000-000000000006', slug: 'ultra', name: 'Ultra', description: 'The most capacity', currency: 'usd', priceCents: 25900, billingInterval: 'month' },
+        { id: '00000000-0000-4000-8000-000000000007', slug: 'lite', name: 'Lite', description: 'Limited access', currency: 'usd', priceCents: 2000, billingInterval: 'month' },
       ]
       else if (req.url === '/api/me/stamina') data = []
       else if (req.url === '/api/me/trial-status') data = { asOf: new Date().toISOString(), paidGroupIds: completed ? [PLAN] : [], trials: completed ? [] : [{ id: 'tokens:' + PLAN, groupId: PLAN, source: 'free_tokens', state: ended ? 'ended' : 'ending', hasSavedCard: true, tokensRemaining: ended ? 0 : 200, tokenLimit: 1000 }] }
@@ -75,7 +77,13 @@ it('shows trial attention and an explicit quote, then resumes only the original 
       extraOverlayPath: [join(ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), overlay],
     })
     cleanup.push(() => scaffold.close())
-    await seedSession(scaffold, await readFile(await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl')), 'utf8'), 'trial-history')
+    const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+    const historySession = await seedSession(
+      scaffold,
+      await readFile(await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl')), 'utf8'),
+      'trial-history',
+    )
+    await workspace.attachSession(historySession)
     const browser = await chromium.launch(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {})
     cleanup.push(() => browser.close())
     const context = await browser.newContext({ viewport: { width: 1280, height: 960 }, locale: 'pt-BR' })
@@ -97,10 +105,14 @@ it('shows trial attention and an explicit quote, then resumes only the original 
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     const dialog = page.getByRole('dialog')
     await dialog.waitFor()
-    await dialog.getByText(/4242/).waitFor()
+    const paymentMethod = dialog.getByRole('combobox', { name: /^(Payment method|Forma de pagamento)$/ })
+    await paymentMethod.waitFor()
+    expect(await paymentMethod.textContent()).toContain('4242')
     expect(await dialog.textContent()).toContain('USD')
-    expect(await dialog.textContent()).toContain('Daily coding projects')
-    expect(await dialog.textContent()).toContain('More parallel projects')
+    expect(await dialog.textContent()).toContain('Pro')
+    expect(await dialog.textContent()).toContain('Max')
+    expect(await dialog.textContent()).toContain('Ultra')
+    expect(await dialog.textContent()).not.toContain('Lite')
     expect(writes).toBe(0)
     const mode = webSnapshotMode()
     const expected = join(ROOT, 'apps/web/tests/expected/verboo-trial')
@@ -118,10 +130,10 @@ it('shows trial attention and an explicit quote, then resumes only the original 
         await page.screenshot({ path: join(artifacts, `offer-${theme}-${width}.png`), animations: 'disabled' })
       }
     }
-    await dialog.getByRole('button', { name: /^(Pay with Pix|Pagar com Pix)$/ }).click()
+    await dialog.getByRole('combobox', { name: /^(Payment method|Forma de pagamento)$/ }).selectOption('pix')
     await dialog.getByText(/BRL/).first().waitFor()
     expect(writes).toBe(0)
-    await dialog.getByRole('button', { name: /^(Confirm and pay|Confirmar e pagar)/ }).click()
+    await dialog.getByRole('button', { name: /^(Subscribe to plan|Assinar plano)$/ }).click()
     await expect.poll(() => writes).toBe(1)
     await page.reload({ waitUntil: 'load' })
     await page.getByRole('dialog').waitFor()
