@@ -50,7 +50,7 @@
   width: 36px;
   height: 36px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-sm);
   color: var(--verboo-muted);
   background: transparent;
   cursor: pointer;
@@ -100,7 +100,7 @@
   width: 68px;
   height: 68px;
   border: 1px solid color-mix(in srgb, var(--verboo-accent) 35%, transparent);
-  border-radius: 20px;
+  border-radius: var(--dsw-radius-xl);
   background: linear-gradient(145deg, var(--verboo-accent-wash), transparent);
   transform: rotate(-12deg);
   z-index: -1;
@@ -140,7 +140,7 @@
   flex-direction: column;
   padding: 16px;
   border: 0.5px solid var(--verboo-border);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
   color: inherit;
   background: transparent;
   cursor: pointer;
@@ -235,7 +235,7 @@
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  border-radius: 9px;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
 }
 .primary {
@@ -282,7 +282,7 @@
 }
 .pending {
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--verboo-accent-wash);
 }
 .muted {
