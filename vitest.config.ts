@@ -17,7 +17,7 @@ const uncoveredLocationsReporter = fileURLToPath(new URL('./scripts/coverage-unc
 
 // Resolution facade shared by every plugin instance below: tsconfig.base.json
 // has no include, which vite-tsconfig-paths treats as match-all, so its paths
-// map applies to every test file. paths must win over package exports so built
+// map applies to every test file. Paths must win over package exports so built
 // lib/ never loads a second module-singleton copy.
 const pathsPlugin = (): ReturnType<typeof tsconfigPaths> => tsconfigPaths({ projects: ['./tsconfig.base.json'] })
 
@@ -194,7 +194,15 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
 const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
   '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
 }
-const testingAliases = { ...claudeCodeTestingAliases, ...generatedRemoteAliases }
+const testingAliases = {
+  ...claudeCodeTestingAliases,
+  ...generatedRemoteAliases,
+  // These packages publish generated `lib/` entries, but clean-checkout Vitest
+  // runs their source tests before those builds exist. Keep test imports on the
+  // same source paths already declared in tsconfig.base.json.
+  '@deepseek-ai/dsh-http-proxy': fileURLToPath(new URL('./packages/util/http-proxy/src/index.ts', import.meta.url)),
+  '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
+}
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
