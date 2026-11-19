@@ -155,6 +155,24 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     if (!consent) return
     void ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision, consent.proof).catch(() => {})
   }
+  const trackFeatureOperation = async <T>(
+    feature: 'mcp' | 'checkout', request: () => Promise<T>, completed: (value: T) => boolean, enabled = true,
+  ): Promise<T> => {
+    if (!enabled) return request()
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return request()
+    const sameOwner = () => owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision
+    try {
+      const value = await request()
+      if (sameOwner()) observeFeature(feature, completed(value) ? 'completed' : 'failed', consent)
+      return value
+    } catch (error) {
+      if (sameOwner()) observeFeature(feature, 'failed', consent)
+      throw error
+    }
+  }
   const model = new ProductModel(
     {
       profile: async () => {
@@ -190,17 +208,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       connect: async (slug, label) => {
-        const initiatingOwner = model.state.getSnapshot().profile?.id
-        const initiatingConsent = captureProductConsent()
-        const initiatingRevision = analyticsRevision
-        try {
-          const r = await ctx.remote.verboo.connect(slug, label)
-          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
-          return r.ok ? r.value : { ok: false, code: 'request_failed' }
-        } catch (error) {
-          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', 'failed', initiatingConsent)
-          throw error
-        }
+        const r = await trackFeatureOperation('mcp', () => ctx.remote.verboo.connect(slug, label), result => result.ok && result.value.ok)
+        return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       disconnect: async (id) => {
         const r = await ctx.remote.verboo.disconnect(id)
@@ -211,17 +220,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       saveMcpServer: async (input) => {
-        const initiatingOwner = model.state.getSnapshot().profile?.id
-        const initiatingConsent = captureProductConsent()
-        const initiatingRevision = analyticsRevision
-        try {
-          const r = await ctx.remote.verbooMcp.save(input)
-          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
-          return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
-        } catch (error) {
-          if (initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('mcp', 'failed', initiatingConsent)
-          throw error
-        }
+        const r = await trackFeatureOperation('mcp', () => ctx.remote.verbooMcp.save(input), result => result.ok && result.value.ok)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       deleteMcpServer: async (name) => {
         const r = await ctx.remote.verbooMcp.removeServer(name)
@@ -236,17 +236,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
-        const initiatingOwner = model.state.getSnapshot().profile?.id
-        const initiatingConsent = captureProductConsent()
-        const initiatingRevision = analyticsRevision
-        try {
-          const r = await ctx.remote.verboo.billingURL(id, purchase)
-          if (purchase && initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('checkout', r.ok && r.value.ok ? 'completed' : 'failed', initiatingConsent)
-          return r.ok ? r.value : { ok: false, code: 'request_failed' }
-        } catch (error) {
-          if (purchase && initiatingOwner && initiatingOwner === model.state.getSnapshot().profile?.id && initiatingRevision === analyticsRevision) observeFeature('checkout', 'failed', initiatingConsent)
-          throw error
-        }
+        const r = await trackFeatureOperation('checkout', () => ctx.remote.verboo.billingURL(id, purchase), result => result.ok && result.value.ok, Boolean(purchase))
+        return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       open,
       initializeModel: async () => {
@@ -374,28 +365,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   let analyticsRevision = 0
   let analyticsReading = false
   let analyticsDisposed = false
-  ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => {
+  const featureObserver = (feature: 'model_switch' | 'plan' | 'goal' | 'mcp' | 'checkout') => {
     const owner = model.state.getSnapshot().profile?.id
     const consent = captureProductConsent()
     const revision = analyticsRevision
     if (!owner || !consent) return undefined
-    return (outcome) => {
-      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
-        observeFeature('model_switch', outcome, consent)
-      }
-    }
-  }), 'Verboo: model switch analytics')
-  ctx.effect(() => ctx.commandUi.observeFeatureCommands((feature) => {
-    const owner = model.state.getSnapshot().profile?.id
-    const consent = captureProductConsent()
-    const revision = analyticsRevision
-    if (!owner || !consent) return undefined
-    return (outcome) => {
+    return (outcome: 'completed' | 'failed') => {
       if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
         observeFeature(feature, outcome, consent)
       }
     }
-  }), 'Verboo: command feature analytics')
+  }
+  ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => featureObserver('model_switch')), 'Verboo: model switch analytics')
+  ctx.effect(() => ctx.commandUi.observeFeatureCommands(featureObserver), 'Verboo: command feature analytics')
   const refreshAnalytics = async (): Promise<void> => {
     const snapshot = model.state.getSnapshot()
     const owner = snapshot.profile?.id ?? undefined

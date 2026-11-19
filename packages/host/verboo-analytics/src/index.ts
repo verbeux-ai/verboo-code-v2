@@ -448,13 +448,19 @@ export default class VerbooAnalytics extends TypertRemoteService {
     })
   }
 
-  private async completed(session: Session, facts: ProductResponseState, at: number, capture: TurnOwner): Promise<void> {
+  private async currentCaptureOwner(capture: TurnOwner): Promise<Owner | undefined> {
     const original = await capture.owner
     const current = await this.owner()
     if (original === undefined || current === undefined || !allowed(original.identity) ||
       original.identity.owner !== current.identity.owner ||
       original.sessionId !== current.sessionId || original.identity.consent?.revision !== current.identity.consent?.revision ||
-      !this.consentPrecedesReference(original.identity, capture.reference)) return
+      !this.consentPrecedesReference(original.identity, capture.reference)) return undefined
+    return current
+  }
+
+  private async completed(session: Session, facts: ProductResponseState, at: number, capture: TurnOwner): Promise<void> {
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
     if (facts.completedTurn === null) return
     const id = responseOperationId(session.id, facts.completedTurn)
     await this.enqueue('product_response_completed', {
@@ -465,12 +471,8 @@ export default class VerbooAnalytics extends TypertRemoteService {
   private async completedTool(
     session: Session, seq: number, at: number, startedAt: number, failed: boolean, capture: TurnOwner,
   ): Promise<void> {
-    const original = await capture.owner
-    const current = await this.owner()
-    if (original === undefined || current === undefined || !allowed(original.identity) ||
-      original.identity.owner !== current.identity.owner ||
-      original.sessionId !== current.sessionId || original.identity.consent?.revision !== current.identity.consent?.revision ||
-      !this.consentPrecedesReference(original.identity, capture.reference)) return
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
     const id = responseOperationId(`tool:${session.id}`, seq)
     await this.enqueue('product_feature_used', { feature: 'tool', outcome: failed ? 'failed' : 'completed' },
       at, id, startedAt, current, capture.reference?.proof)
