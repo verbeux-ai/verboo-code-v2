@@ -83,24 +83,25 @@ export function TrialDock(
   )
 }
 
-/** Pro is featured without hiding other plans or implying that viewing a quote authorizes payment. */
+/** Present the supported subscription plans without treating a quote as authorization. */
 export function TrialModal(props: TrialProps) {
   const state = props.useTrial(s => s)
   const offer = state.offer
   const product = props.useProduct(s => s)
   const locale = props.usePreferences(s => s.locale)
   const visible = state.open && product.profile !== null
+  const planOrder = ['pro', 'max', 'ultra']
+  const planKey = (plan: { slug?: string; name: string }) => (plan.slug ?? plan.name).toLowerCase()
   const plans =
     product.plans?.catalog.filter(
-      plan => plan.currency.toUpperCase() === 'USD',
+      plan => plan.currency.toUpperCase() === 'USD' && planOrder.includes(planKey(plan)),
     ) ?? []
   const recommended =
     plans.find(plan => plan.slug === 'pro') ??
     plans.find(plan => plan.name.toLowerCase() === 'pro') ??
     plans[0]
-  const sorted = [...plans].sort(
-    (a, b) =>
-      Number(b.id === recommended?.id) - Number(a.id === recommended?.id),
+  const sorted = [...plans].sort((a, b) =>
+    planOrder.indexOf(planKey(a)) - planOrder.indexOf(planKey(b)),
   )
   const money = (amount: number, currency: string) =>
     new Intl.NumberFormat(locale, {
@@ -141,8 +142,7 @@ export function TrialModal(props: TrialProps) {
       open={visible}
       onClose={props.closeTrial}
       title={props.t('trialHeadline')}
-      className={css.modal ?? ''}
-      backdropBlur={false}
+      className={css.modal as string}
     >
       <Button
         variant="ghost"
@@ -153,26 +153,20 @@ export function TrialModal(props: TrialProps) {
         <Glyph name="x" size={18} />
       </Button>
       <header className={css.header}>
-        <div className={css.art} aria-hidden="true">
-          <span />
-          <Glyph name="sparkles" size={34} />
-          <i />
-          <b />
+        <div className={css.headerCopy}>
+          <div className={css.eyebrow}>{props.t(ended ? 'trialEnded' : 'trialEnding')}</div>
+          <h1 id="verboo-trial-title">{props.t('trialHeadline')}</h1>
+          <p id="verboo-trial-description">{props.t('trialDescription')}</p>
+          {state.notices[0]?.tokensRemaining !== undefined && (
+            <span className={css.balance}>
+              {props.t('trialTokens', {
+                count: new Intl.NumberFormat(locale).format(
+                  state.notices[0].tokensRemaining,
+                ),
+              })}
+            </span>
+          )}
         </div>
-        <span className={css.eyebrow}>
-          {props.t(ended ? 'trialEnded' : 'trialEnding')}
-        </span>
-        <h1 id="verboo-trial-title">{props.t('trialHeadline')}</h1>
-        <p id="verboo-trial-description">{props.t('trialDescription')}</p>
-        {state.notices[0]?.tokensRemaining !== undefined && (
-          <span className={css.balance}>
-            {props.t('trialTokens', {
-              count: new Intl.NumberFormat(locale).format(
-                state.notices[0].tokensRemaining,
-              ),
-            })}
-          </span>
-        )}
       </header>
       <div className={css.plans} aria-label={props.t('plansTitle')}>
         {sorted.map(plan => (
@@ -188,10 +182,10 @@ export function TrialModal(props: TrialProps) {
             aria-pressed={plan.id === offer?.planId}
           >
             <div className={css.planHeading}>
-              <strong>{plan.name}</strong>
-              {plan.id === recommended?.id && (
-                <span>{props.t('trialRecommended')}</span>
-              )}
+              <div className={css.planName}>
+                <strong>{plan.name}</strong>
+              </div>
+              <span className={css.planIndicator} aria-hidden="true">{plan.id === offer?.planId && <Glyph name="check" size={12} />}</span>
             </div>
             <div className={css.price}>
               {money(plan.priceCents, plan.currency)}
@@ -200,7 +194,14 @@ export function TrialModal(props: TrialProps) {
                 {props.t(plan.interval === 'year' ? 'yearly' : 'monthly')}
               </small>
             </div>
-            <p>{plan.description}</p>
+            <span className={css.planStamina}>
+              <span>{props.t('trialStaminaLevel', { level: planOrder.indexOf(planKey(plan)) + 1 })}</span>
+              <span className={css.planLevels} aria-hidden="true">
+                {[0, 1, 2].map(level => (
+                  <span key={level} data-active={level <= planOrder.indexOf(planKey(plan)) || undefined} />
+                ))}
+              </span>
+            </span>
           </button>
         ))}
       </div>
@@ -216,89 +217,54 @@ export function TrialModal(props: TrialProps) {
         {state.quoting && <p role="status">{props.t('trialQuoting')}</p>}
         {offer && !pending && (
           <>
-            <div className={css.total}>
-              <strong>{offer.name}</strong>
-              <strong>{money(offer.amountMinor, offer.currency)}</strong>
-            </div>
-            <p>
-              {props.t('trialRenewal', {
-                price: money(offer.renewalAmountMinor, offer.currency),
-                interval: props.t(
-                  offer.interval === 'year' ? 'yearly' : 'monthly',
-                ),
-              })}
-            </p>
-            {offer.card && (
-              <div className={css.card}>
-                <Glyph name="credit-card" size={20} />
-                <span>
-                  {offer.card.brand} ···· {offer.card.last4}
-                </span>
+            <div className={css.paymentGrid}>
+              <div className={css.paymentMethod}>
+                <h2>{props.t('trialPaymentMethod')}</h2>
+                <select
+                  aria-label={props.t('trialPaymentMethod')}
+                  className={css.methodSelect}
+                  value={offer.paymentMethod}
+                  disabled={state.paying || state.stale || state.quoting}
+                  onChange={(event) => {
+                    const method = event.currentTarget.value
+                    if (method === 'card' || method === 'pix') props.quoteTrial(offer.planId, method)
+                  }}
+                >
+                  <option value="card">{offer.card ? `${offer.card.brand} ···· ${offer.card.last4}` : props.t('trialUseCard')}</option>
+                  {(offer.pixAvailable || offer.paymentMethod === 'pix') && <option value="pix">{props.t('trialPayPix')}</option>}
+                </select>
+                <p>{props.t('trialImmediate')}</p>
+                {!offer.pixAvailable && offer.paymentMethod !== 'pix' && <p>{props.t('trialPixUnavailable')}</p>}
+                {offer.paymentMethod === 'pix' && offer.pixMandateAmountMinor && (
+                  <p>{props.t('trialPixMandate', { price: money(offer.pixMandateAmountMinor, 'BRL') })}</p>
+                )}
               </div>
-            )}
-            <p>{props.t('trialImmediate')}</p>
+              <div className={css.summary}>
+                <h2>{props.t('trialOrderSummary')}</h2>
+                <div className={css.summaryRow}>
+                  <span>{offer.name}</span>
+                  <span>{money(offer.renewalAmountMinor, offer.currency)} {props.t(offer.interval === 'year' ? 'yearly' : 'monthly')}</span>
+                </div>
+                <div className={css.total}>
+                  <strong>{props.t('trialTotalDue')}</strong>
+                  <strong>{money(offer.amountMinor, offer.currency)}</strong>
+                </div>
+              </div>
+            </div>
             <div className={css.actions}>
               <Button
                 variant="primary"
                 className={css.primary}
-                disabled={
-                  state.paying ||
-                  state.error === 'unconfirmed' ||
-                  state.stale ||
-                  state.quoting ||
-                  Date.parse(offer.expiresAt) <= Date.now()
-                }
-                onClick={() => {
-                  props.confirmTrial(offer.paymentMethod)
-                }}
+                disabled={state.paying || state.error === 'unconfirmed' || state.stale || state.quoting || Date.parse(offer.expiresAt) <= Date.now()}
+                onClick={() => { props.confirmTrial(offer.paymentMethod) }}
               >
                 {state.paying
                   ? props.t('trialProcessing')
-                  : props.t(
-                    offer.paymentMethod === 'pix' || offer.card
-                      ? 'trialConfirmCard'
-                      : 'trialContinueCard',
-                    {
-                      price: money(offer.amountMinor, offer.currency),
-                    },
-                  )}
-                <Glyph name="arrow-right" size={16} />
+                  : props.t(offer.paymentMethod === 'pix' || offer.card ? 'trialSubscribe' : 'trialContinueCard', {
+                    price: money(offer.amountMinor, offer.currency),
+                  })}
               </Button>
-              {offer.paymentMethod === 'card' && offer.pixAvailable && (
-                <Button
-                  variant="outline"
-                  className={css.secondary}
-                  disabled={state.paying || state.stale || state.quoting}
-                  onClick={() => {
-                    props.quoteTrial(offer.planId, 'pix')
-                  }}
-                >
-                  {props.t('trialPayPix')}
-                </Button>
-              )}
-              {offer.paymentMethod === 'pix' && (
-                <Button
-                  variant="outline"
-                  className={css.secondary}
-                  disabled={state.paying || state.quoting}
-                  onClick={() => {
-                    props.quoteTrial(offer.planId, 'card')
-                  }}
-                >
-                  {props.t('trialUseCard')}
-                </Button>
-              )}
             </div>
-            {offer.paymentMethod === 'pix' && offer.pixMandateAmountMinor && (
-              <p>
-                {props.t('trialPixMandate', {
-                  price: money(offer.pixMandateAmountMinor, 'BRL'),
-                })}
-              </p>
-            )}
-            {!offer.pixAvailable && offer.paymentMethod !== 'pix' && (
-              <p className={css.muted}>{props.t('trialPixUnavailable')}</p>
-            )}
           </>
         )}
         {pending && (

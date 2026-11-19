@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Config as ConfigShape } from './config.ts'
+import type { Config } from './config.ts'
 import { OpenAiAccount } from './account.ts'
 import { OpenAiAccountLogin } from './remote.ts'
 
@@ -35,7 +35,7 @@ export const inject = ['credentials']
  * @param ctx - owning Cordis context.
  * @param config - deployment configuration.
  */
-export function apply(ctx: Context, config: ConfigShape = {}): void {
+export function apply(ctx: Context, config: Config = {}): void {
   ctx.plugin(OpenAiAccount, config)
   ctx.plugin(OpenAiAccountLogin)
 }

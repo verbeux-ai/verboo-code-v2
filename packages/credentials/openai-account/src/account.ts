@@ -83,7 +83,8 @@ export function claimsOf(idToken: string): IdTokenClaims {
   if (segments.length < 2 || segments[1] === undefined) return {}
   let payload: unknown
   try {
-    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as unknown
+    const parsed: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'))
+    payload = parsed
   } catch {
     // A payload this build cannot decode carries no plan facts; the tokens are
     // still usable, so the login does not fail over display data.

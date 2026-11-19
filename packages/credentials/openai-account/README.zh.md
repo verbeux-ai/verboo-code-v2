@@ -66,6 +66,8 @@ None, as this package produces no model-visible text; it stores a credential and
 None. 本包不为任何请求添加前缀，也不更改消息内容，因此不影响路由发送的可缓存前缀。
 
 
+<a id="known-limitations-and-deferred-work"></a>
+
 ## 已知限制与后续工作
 
 - 端点与客户端标识复刻 Codex 客户端，而非公开 API。提供方变更会在无通知下破坏登录，这正是该流程单独成包的原因。

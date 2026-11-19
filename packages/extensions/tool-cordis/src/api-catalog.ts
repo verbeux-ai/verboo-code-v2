@@ -2020,6 +2020,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'llmOpenaiAccount',
+    summary: 'The `openai-account` route and its usage reading.',
+    description: 'The `openai-account` route and its usage reading.\n\nThe adapter registers with this plugin\'s fiber, so disposal withdraws the route; the usage method never throws, because a reading is display data and a failed read must not fail the caller\'s request.',
+    methods: [
+      {
+        signature: '@Remote(\'discoverModels\') async discoverModels(): Promise<SweepResult>',
+        description: 'Discover which models this account may use, cheapest first.\n\nCalled after a sign-in. A second trigger while a sweep runs joins it rather than spending the account\'s quota twice.',
+        parameters: [],
+        returns: 'what the sweep concluded, or an empty result while signed out.',
+      },
+      {
+        signature: '@Remote(\'usage\') async usage(signal: AbortSignal): Promise<SubscriptionUsage | undefined>',
+        description: 'Read the subscription usage of the signed-in account.\n\nAbsent, signed-out, failed, or unreadable reads produce `undefined`; the method never throws, so a client renders nothing instead of a zeroed meter. The reading carries no token, request text, or account secret.',
+        parameters: [{ name: 'signal', description: 'caller cancellation; an aborted read yields no reading.' }],
+        returns: 'the usage reading, or `undefined` when none could be obtained.',
+      },
+    ],
+  },
+  {
     key: 'lsp',
     summary: 'The LSP capability seam (`ctx.lsp`).',
     description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
@@ -5286,6 +5305,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'One managed server\'s status transitioned.',
     description: 'One managed server\'s status transitioned. Emitted for every published change while the manager is live and either the entry is configured or registered, or a runtime record remains. Removed entries may emit cleanup failures; `watch` and `list()` report removals. Lifecycle operations do not wait for listeners. Synchronous throws and returned promise rejections are logged without skipping other listeners.',
     parameters: [{ name: 'name', description: 'the configured `servers` key or registered name.' }, { name: 'status', description: 'the status now current for that server.' }],
+  },
+  {
+    name: 'openai-account/sign-in-required',
+    mode: 'emit',
+    signature: '\'openai-account/sign-in-required\'(): void',
+    summary: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    description: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    parameters: [],
+  },
+  {
+    name: 'openai-account/signed-out',
+    mode: 'emit',
+    signature: '\'openai-account/signed-out\'(): void',
+    summary: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    description: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    parameters: [],
   },
   {
     name: 'permission-presets/catalog-changed',
@@ -9620,6 +9655,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
+    name: 'SubscriptionAdditionalLimit',
+    declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'SubscriptionLimitWindow',
+    declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionUsage',
+    declaration: 'export interface SubscriptionUsage {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly credits?: number;\n    readonly unlimited: boolean;\n    readonly planType?: string;\n    readonly activeUntil?: string;\n    readonly reachedType?: string;\n    readonly additionalLimits?: readonly SubscriptionAdditionalLimit[];\n    readonly asOf: string;\n}',
+  },
+  {
     name: 'SurfaceEvent',
     declaration: 'export type SurfaceEvent = SessionEvent<SurfaceEventType>;',
   },
@@ -9638,6 +9685,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SurfaceSnapshot',
     declaration: 'export interface SurfaceSnapshot {\n    readonly generation: number;\n    readonly tree: readonly SerializedNode[] | null;\n}',
+  },
+  {
+    name: 'SweepResult',
+    declaration: 'export interface SweepResult {\n    readonly supported: readonly string[];\n    readonly unsupported: readonly string[];\n    readonly skipped: readonly string[];\n    readonly stoppedAtLimit: boolean;\n}',
   },
   {
     name: 'SystemMessage',

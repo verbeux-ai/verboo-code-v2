@@ -288,6 +288,22 @@ describe('dsh family version coherence', () => {
   })
 })
 
+describe('private Verboo product packages', () => {
+  it.each([
+    'packages/api/verboo-mcp',
+    'packages/api/verboo-product',
+    'packages/bundle/verboo-app',
+    'packages/client/ui-verboo',
+    'packages/credentials/openai-account',
+    'packages/credentials/verboo-account',
+    'packages/extensions/verboo-connections',
+  ])('keeps %s private and outside the public npm release sequence', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(manifest.private).toBe(true)
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  })
+})
+
 describe('package payload constraints', () => {
   it.each([
     ['./art/icon.svg', ['art/icon.svg']],

@@ -66,6 +66,16 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** Private reference tool run from the repository; it publishes no files. */
 const pluginMarketGeneratorDirectory = 'apps/plugin-market-generator'
+/** Product-owned workspaces stay private and are not members of the public npm release sequence. */
+const privateProductPackageDirectories = new Set([
+  'packages/api/verboo-mcp',
+  'packages/api/verboo-product',
+  'packages/bundle/verboo-app',
+  'packages/client/ui-verboo',
+  'packages/credentials/openai-account',
+  'packages/credentials/verboo-account',
+  'packages/extensions/verboo-connections',
+])
 /**
  * Ordinary directories whose packages this repository publishes: one release member each. The reference plugin
  * market generator is a private repository tool, not a published application.
@@ -458,6 +468,7 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
   if (dir === 'packages/ssh/ssh-helper-runtime') return false
+  if (privateProductPackageDirectories.has(dir)) return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 
@@ -596,9 +607,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
       && !hasExportPair(manifest, './pipeline', './lib/types/pipeline.d.ts', './lib/pipeline.js')) {
       errors.push(`${label}: exports["./pipeline"] must expose lib/types/pipeline.d.ts and lib/pipeline.js`)
     }
-    const expectedFiles = expectedDshPackageFiles(manifest, detailDocumentFiles(join(root, dir)))
-    if (!sameStringList(manifest.files, expectedFiles)) {
-      errors.push(`${label}: package.json files must be ${JSON.stringify(expectedFiles)}`)
+    if (isReleaseMemberDirectory(dir)) {
+      const expectedFiles = expectedDshPackageFiles(manifest, detailDocumentFiles(join(root, dir)))
+      if (!sameStringList(manifest.files, expectedFiles)) {
+        errors.push(`${label}: package.json files must be ${JSON.stringify(expectedFiles)}`)
+      }
     }
   }
 

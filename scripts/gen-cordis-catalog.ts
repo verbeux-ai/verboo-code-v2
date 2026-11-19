@@ -95,6 +95,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   settingsController: 'settings.md',
   directoryPicker: 'workspace.md',
   deepseekLlmApiExtensions: 'llm-streaming.md',
+  llmOpenaiAccount: 'llm-streaming.md',
   dynamicCordisRunner: 'extensions.md',
   fileUploads: 'attachment.md',
   fileReferences: 'session-reference.md',
@@ -191,6 +192,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
   configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',
+  openaiAccount: 'optional account credential service consumed by the OpenAI subscription route — packages/credentials/openai-account/README.md owns its API',
   launcherSessionQueryPath: 'not a service: launcher-provided boot-context value (string | undefined) — packages/session-query/session-query-sqlite/README.md owns this launcher contract',
   dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
@@ -258,6 +260,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'schedule': 'schedule.md',
   'llm': 'llm-streaming.md',
   'llm-pi-ai': 'llm-streaming.md',
+  'openai-account': 'llm-streaming.md',
   'mcp-manager': 'mcp.md',
   'permission-presets': 'permission-presets.md',
   'session': 'session.md',
@@ -996,6 +999,8 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  SweepResult: 'OpenAI model discovery result is owned by packages/llm/llm-openai-account/README.md and src/types.ts',
+  SubscriptionUsage: 'OpenAI subscription usage is owned by packages/llm/llm-openai-account/README.md and src/types.ts',
   Result: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   PlanId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Plans: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',

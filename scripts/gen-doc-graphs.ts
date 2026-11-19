@@ -118,6 +118,11 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API.',
   },
   {
+    key: 'llmOpenaiAccount', pkg: 'llm-openai-account', title: 'ChatGPT subscription route', mode: 'service',
+    consumers: ['api-remotes', 'client-ui-verboo'],
+    note: 'Registers the ChatGPT-backed model adapter and serves usage and availability through typed Remote while credentials remain Host-owned.',
+  },
+  {
     key: 'actionCards',
     pkg: 'action-cards',
     title: 'Optional action cards',

@@ -127,6 +127,16 @@ it('excludes packages formally classified as test helpers', () => {
   expect(localeMetadataProblems(root)).toEqual([])
 })
 
+it('does not require shipped-language metadata from private product packages', () => {
+  const root = fixture()
+  const directory = join(root, 'packages/private-product')
+  mkdirSync(join(directory, 'locale'), { recursive: true })
+  writeFileSync(join(directory, 'package.json'), '{"name":"@deepseek-ai/dsh-private-product","private":true}')
+  writeFileSync(join(directory, 'locale/en.json'), JSON.stringify({ meta: { title: 'Private product' } }))
+  writeFileSync(join(directory, 'locale/pt.json'), '{ invalid json')
+  expect(localeMetadataProblems(root)).toEqual([])
+})
+
 it.each(['es', 'fr', 'de', 'ru', 'pt'])('rejects missing %s metadata', (language) => {
   const root = fixture()
   rmSync(join(root, `packages/demo/plugin/locale/${language}.json`))
