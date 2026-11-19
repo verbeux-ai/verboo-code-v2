@@ -20,13 +20,13 @@ function page(signedIn: boolean, dictionary: Readonly<Record<string, string>> = 
   const state = {
     view: null, profile: null, profilePreviouslyVerified: false, initialized: true,
     accountFailed: false, actionFailed: null, starting: false, plans: null,
-    connections: { toolkits: [], accounts: [] },
+    connections: { available: true, toolkits: [], accounts: [] },
     plansFailed: false, connectionsFailed: false, loadingPlans: false, loadingConnections: false,
     busy: null, handoff: null, handoffUntil: 0, connectedTarget: null, feedback: null,
     modelFailed: false, initializingModel: false, browserBlocked: false, navigationFailed: false,
     authorizationIds: [], mcpServers: [], loadingMcp: false, mcpFailed: false,
     mcpProbe: null, probingMcp: false, mcpError: null,
-  } as unknown as ProductSnapshot
+  } satisfies ProductSnapshot
   const props = {
     useProduct: (selector: (snapshot: ProductSnapshot) => unknown) => selector(state),
     usePreferences: (selector: (snapshot: unknown) => unknown) =>
