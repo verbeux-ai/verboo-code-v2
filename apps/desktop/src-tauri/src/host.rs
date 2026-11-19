@@ -273,11 +273,11 @@ mod tests {
             working_directory: repository,
             home: None,
         };
-        let (mut host, events) = HostProcess::start(&config, &home, "0.2.2-alpha.29").unwrap();
+        let (mut host, events) = HostProcess::start(&config, &home, "0.2.2-alpha.30").unwrap();
         let HostEvent::Ready { url } = events.recv_timeout(STARTUP_DEADLINE).unwrap() else {
             panic!("version probe did not become ready")
         };
-        assert_eq!(url, "0.2.2-alpha.29");
+        assert_eq!(url, "0.2.2-alpha.30");
         host.stop().unwrap();
         fs::remove_dir_all(home).unwrap();
     }
