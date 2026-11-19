@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "External link routing",
+    "description": "Route links safely to the in-app sidebar, a browser window, or the desktop handler."
+  }
+}

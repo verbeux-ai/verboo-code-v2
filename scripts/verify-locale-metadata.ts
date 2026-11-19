@@ -19,11 +19,23 @@ function strings(value: unknown, key = ''): Record<string, string> {
  * @returns actionable missing-file, field, placeholder and resource diagnostics.
  */
 export function localeMetadataProblems(root: string): string[] {
+  const isPrivatePackage = (directory: string): boolean => {
+    const manifest = join(root, directory, 'package.json')
+    if (!existsSync(manifest)) return false
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
+      return typeof parsed === 'object' && parsed !== null && 'private' in parsed && parsed.private === true
+    } catch {
+      return false
+    }
+  }
   const directories = new Set(globSync('packages/**/locale/**/*.json', {
     cwd: root, exclude: ['packages/**/node_modules/**', 'packages/**/lib/**', 'packages/**/tests/**'],
-  }).map(file => file.replaceAll('\\', '/')).filter(file => SHIPPED_LOCALE_IDS.some(language => basename(file) === `${language}.json`)).map(file => posix.dirname(file)))
+  }).map(file => file.replaceAll('\\', '/')).filter(file => SHIPPED_LOCALE_IDS.some(language => basename(file) === `${language}.json`)).map(file => posix.dirname(file))
+    .filter(directory => !isPrivatePackage(directory.slice(0, directory.indexOf('/locale')))))
   for (const entry of collectConfigCatalog(root)) {
     const dir = entry.dir.replaceAll('\\', '/')
+    if (isPrivatePackage(dir)) continue
     if (PRODUCT_PACKAGE_POLICY[dir]?.category === 'test') continue
     if (entry.kind !== 'config' && entry.kind !== 'no-config') continue
     const directory = `${dir}/locale`

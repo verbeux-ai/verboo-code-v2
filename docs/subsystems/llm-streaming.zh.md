@@ -1193,6 +1193,38 @@ Types: [FileAttachmentRef](attachment.zh.md) · [ImageAttachmentRef](attachment.
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxllmopenaiaccount--openaiaccountroute"></a>
+
+### `ctx.llmOpenaiAccount` — `OpenAiAccountRoute`
+
+The `openai-account` route and its usage reading.
+
+The adapter registers with this plugin's fiber, so disposal withdraws the route; the usage method never throws, because a reading is display data and a failed read must not fail the caller's request.
+
+```ts cordis-catalog
+/**
+ * Discover which models this account may use, cheapest first.
+ *
+ * Called after a sign-in. A second trigger while a sweep runs joins it rather
+ * than spending the account's quota twice.
+ * @returns what the sweep concluded, or an empty result while signed out.
+ */
+@Remote('discoverModels') async discoverModels(): Promise<SweepResult>
+
+/**
+ * Read the subscription usage of the signed-in account.
+ *
+ * Absent, signed-out, failed, or unreadable reads produce `undefined`; the
+ * method never throws, so a client renders nothing instead of a zeroed
+ * meter. The reading carries no token, request text, or account secret.
+ * @param signal - caller cancellation; an aborted read yields no reading.
+ * @returns the usage reading, or `undefined` when none could be obtained.
+ */
+@Remote('usage') async usage(signal: AbortSignal): Promise<SubscriptionUsage | undefined>
+```
+
+Source: [`packages/llm/llm-openai-account/src/index.ts`](../../packages/llm/llm-openai-account/src/index.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events
@@ -1287,4 +1319,40 @@ Prepare headers for one pi-ai inference call, excluding model discovery. Listene
 ```
 
 Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
+
+<a id="openai-account-events"></a>
+
+### `openai-account/*` events
+
+<a id="openai-accountsign-in-required--emit"></a>
+
+#### `openai-account/sign-in-required` — emit
+
+A provider call needs the user to sign in again; emitted once per cleared session.
+
+```ts cordis-catalog
+/**
+ * A provider call needs the user to sign in again; emitted once per cleared session.
+ * @mode emit
+ */
+'openai-account/sign-in-required'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
+
+<a id="openai-accountsigned-out--emit"></a>
+
+#### `openai-account/signed-out` — emit
+
+The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+
+```ts cordis-catalog
+/**
+ * The stored session was removed locally, whether by sign-out or by a rejected refresh grant.
+ * @mode emit
+ */
+'openai-account/signed-out'(): void
+```
+
+Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
 <!-- END GENERATED cordis-surface -->
