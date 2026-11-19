@@ -910,7 +910,7 @@ describe('execute payload', () => {
     b.command.observeFeatureCommands(begin)
     await b.warm(proj('s1'))
     await expect(b.source.matchEnter!(proj('s1'), '/plan', new AbortController().signal, { attachments: 0 })).resolves.toBe('handled')
-    await vi.waitFor(() => expect(finish).toHaveBeenCalledExactlyOnceWith('completed'))
+    await vi.waitFor(() => { expect(finish).toHaveBeenCalledExactlyOnceWith('completed') })
     expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
   })
 

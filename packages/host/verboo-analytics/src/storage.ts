@@ -12,14 +12,14 @@ export const consentSchema = z.object({
   decision: z.enum(['unknown', 'granted', 'denied']), revision: z.number().int().nonnegative(), policyVersion: z.literal(1),
   decisionOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional(),
   referenceProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional(),
-  decidedAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }), enabled: z.boolean(),
+  decidedAt: z.iso.datetime({ offset: true }), expiresAt: z.iso.datetime({ offset: true }), enabled: z.boolean(),
 }).strict()
 
 /** Queue JSON is validated again before transmission, without reconstructing it. */
 export const eventSchema = z.object({
   schemaVersion: z.literal(1), eventId: z.uuid(),
   name: z.enum(['product_response_completed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_feature_used']),
-  consentRevision: z.number().int().positive(), occurredAt: z.string().datetime({ offset: true }),
+  consentRevision: z.number().int().positive(), occurredAt: z.iso.datetime({ offset: true }),
   consentProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/),
   surface: z.enum(['desktop', 'cli', 'dashboard']), os: z.enum(['macos', 'windows', 'linux', 'other']),
   appVersion: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/),
@@ -79,12 +79,12 @@ export class AnalyticsStorageStore {
    * @param change - synchronous mutation of the validated local state.
    */
   async update(change: (state: AnalyticsStorage) => void): Promise<void> {
-    await this.credentials.modifyRecord(key, async (current) => {
+    await this.credentials.modifyRecord(key, (current) => {
       const state: AnalyticsStorage = current?.kind === 'grant' ? storageSchema.parse(current.payload) : {
         version: 1, activeOwner: '', contexts: [], pending: [], lost: 0,
       }
       change(state)
-      return { kind: 'grant', payload: storageSchema.parse(state) }
+      return Promise.resolve({ kind: 'grant' as const, payload: storageSchema.parse(state) })
     })
   }
 

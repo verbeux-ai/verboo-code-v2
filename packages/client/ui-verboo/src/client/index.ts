@@ -44,7 +44,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
-import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
+import { OpenAiSignInOverlay as OpenAiSignInDialog, type OpenAiSignInActions } from './OpenAiSignIn.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ExecutionStatus } from './Execution.tsx'
 import { tokens, icons } from './theme.ts'
@@ -236,7 +236,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
-        const r = await trackFeatureOperation('checkout', () => ctx.remote.verboo.billingURL(id, purchase), result => result.ok && result.value.ok, Boolean(purchase))
+        const r = await trackFeatureOperation('checkout', () => ctx.remote.verboo.billingURL(id, purchase), result => result.ok && result.value.ok, purchase)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       open,
@@ -338,7 +338,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       // the background and never holds the dialog open.
       void ctx.remote.llmOpenaiAccount.discoverModels().then(() => {
         // A finished sweep changes the menu, so the model directory re-reads it.
-        void ctx.remote.session.initializeDefaultModel?.()
+        void ctx.remote.session.initializeDefaultModel()
       }).catch(() => {
         // Discovery is an enhancement; a failed sweep leaves the catalog intact.
       })
@@ -378,6 +378,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => featureObserver('model_switch')), 'Verboo: model switch analytics')
   ctx.effect(() => ctx.commandUi.observeFeatureCommands(featureObserver), 'Verboo: command feature analytics')
+  const analyticsStateMatches = (revision: number): boolean => revision === analyticsRevision && !analyticsDisposed
   const refreshAnalytics = async (): Promise<void> => {
     const snapshot = model.state.getSnapshot()
     const owner = snapshot.profile?.id ?? undefined
@@ -391,9 +392,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     analyticsReading = true
     try {
       const result = await ctx.remote.verbooAnalytics.status()
-      if (revision === analyticsRevision && !analyticsDisposed) analyticsPrivacy.set(result.ok ? result.value : null)
+      if (analyticsStateMatches(revision)) analyticsPrivacy.set(result.ok ? result.value : null)
     } catch (_error) {
-      if (revision === analyticsRevision && !analyticsDisposed) analyticsPrivacy.set(null)
+      if (analyticsStateMatches(revision)) analyticsPrivacy.set(null)
     } finally { analyticsReading = false }
   }
   const analyticsActions: AnalyticsPrivacyInjected = {
@@ -703,15 +704,16 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         name: 'shell.overlay', id: 'verboo.openai-signin', order: 130, locale: 'verboo',
         inject: () => {
           const product = face()
+          const openAiSignIn: OpenAiSignInActions = {
+            begin: () => product.beginOpenAiSignIn(),
+            complete: (handle: string) => product.completeOpenAiSignIn(handle),
+            signOut: () => product.signOutOpenAi(),
+            close: () => { product.closeOpenAiDialog() },
+          }
           return {
             ...product,
             hooks: { ...product.hooks, externalDialogOpen },
-            openAiSignIn: {
-              begin: product.beginOpenAiSignIn,
-              complete: product.completeOpenAiSignIn,
-              signOut: product.signOutOpenAi,
-              close: product.closeOpenAiDialog,
-            },
+            openAiSignIn,
           }
         },
       },

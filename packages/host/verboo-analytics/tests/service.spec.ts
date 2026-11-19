@@ -1,12 +1,13 @@
 /** Real Loader, local credentials and HTTP collector: no product content crosses the wire. */
 import { createHash, randomUUID } from 'node:crypto'
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ProductAnalyticsSubject } from '../src/types.ts'
@@ -21,7 +22,15 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import VerbooAnalytics from '../src/index.ts'
-import type { AnalyticsStorageStore } from '../src/storage.ts'
+import { AnalyticsStorageStore, eventSchema } from '../src/storage.ts'
+
+function createAnalyticsServer(handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>) {
+  return createServer((req, res) => {
+    void handler(req, res).catch((error: unknown) => {
+      res.destroy(error instanceof Error ? error : new Error('analytics fixture request failed'))
+    })
+  })
+}
 
 class AnonymousAccount extends DeepSeekAccount {
   getState = vi.fn<DeepSeekAccount['getState']>()
@@ -52,19 +61,22 @@ it('requires consent and sends only a completed root response through the real s
   let serverOrder = 9007199254740992n // Above Number.MAX_SAFE_INTEGER.
   let consent = { subjectId: 'a'.repeat(64), decision: 'unknown', revision: 0, policyVersion: 1,
     decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true, decisionOrder: '0' }
-  const server = createServer(async (req, res) => {
+  const server = createAnalyticsServer(async (req, res) => {
     let body = ''
     for await (const part of req) body += String(part)
     res.setHeader('content-type', 'application/json')
     if (req.url === '/api/analytics/product-consent') {
-      if (req.method === 'PUT') consent = { ...consent, decision: JSON.parse(body).decision, revision: consent.revision + 1, decisionOrder: String(++serverOrder) }
+      if (req.method === 'PUT') {
+        const decision = z.object({ decision: z.enum(['granted', 'denied']) }).parse(JSON.parse(body)).decision
+        consent = { ...consent, decision, revision: consent.revision + 1, decisionOrder: String(++serverOrder) }
+      }
       const issued = String(++serverOrder)
       res.end(JSON.stringify({ data: { ...consent, serverTime: new Date(serverNow).toISOString(), serverOrder: issued,
         ...(includeServerProof ? { serverProof: proof(issued) } : {}) } }))
       return
     }
     if (req.url === '/api/analytics/product-events') {
-      const event = JSON.parse(body)
+      const event = eventSchema.parse(JSON.parse(body))
       events.push(event)
       if (rejectEvents) { res.statusCode = 503; res.end('{}'); return }
       res.statusCode = 202
@@ -75,8 +87,10 @@ it('requires consent and sends only a completed root response through the real s
     res.statusCode = 404
     res.end('{}')
   })
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', () => { resolve() }) })
+  cleanup.push(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error) reject(error); else resolve() })
+  }))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server missing address')
   const origin = `http://127.0.0.1:${address.port}`
@@ -143,16 +157,15 @@ it('requires consent and sends only a completed root response through the real s
   await ctx.verbooAnalytics.status()
   const beforeResponses = events.filter(event => event.name === 'product_response_completed').length
   const beforeTools = events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool').length
-  const internal = ctx.verbooAnalytics as unknown as { owner: () => Promise<unknown> }
-  const originalOwner = internal.owner.bind(internal)
+  const account = ctx.deepseekAccount as AnonymousAccount
   let release!: () => void
   const barrier = new Promise<void>((resolve) => { release = resolve })
-  let holding = true
   let captured = false
-  internal.owner = async () => {
-    if (holding) { holding = false; captured = true; await barrier }
-    return await originalOwner()
-  }
+  account.getPlatformSession.mockImplementationOnce(async () => {
+    captured = true
+    await barrier
+    return null
+  })
   const realNow = Date.now.bind(Date)
   const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 60_000)
   try {
@@ -170,7 +183,7 @@ it('requires consent and sends only a completed root response through the real s
     await delay(1500)
     expect(events.filter(event => event.name === 'product_response_completed')).toHaveLength(beforeResponses)
     expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(beforeTools)
-  } finally { release(); clock.mockRestore(); internal.owner = originalOwner }
+  } finally { release(); clock.mockRestore(); account.getPlatformSession.mockResolvedValue(null) }
 
   // A compatible older server can still serve privacy settings, but it cannot
   // authorize a turn without a reference received before that turn started.
@@ -209,7 +222,7 @@ it('requires consent and sends only a completed root response through the real s
     expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(beforeTools)
   } finally { nextClock.mockRestore() }
 
-  const store = (ctx.verbooAnalytics as unknown as { store: AnalyticsStorageStore }).store
+  const store = new AnalyticsStorageStore(ctx.credentials)
   const beforeLost = (await store.read()).lost
   const legacyId = randomUUID()
   await store.update((state) => {
@@ -233,12 +246,20 @@ it('does not attribute delayed opening or login observations to a replacement ac
   cleanup.push(() => rm(home, { recursive: true, force: true }))
   const events: Array<{ eventId: string; name: string; authorization: string | undefined }> = []
   let serverOrder = 10n
-  const server = createServer(async (req, res) => {
+  let holdAccountAConsent = false
+  let accountAConsentStarted = false
+  let releaseAccountAConsent!: () => void
+  const accountAConsentGate = new Promise<void>((resolve) => { releaseAccountAConsent = resolve })
+  const server = createAnalyticsServer(async (req, res) => {
     let body = ''
     for await (const part of req) body += String(part)
     res.setHeader('content-type', 'application/json')
     if (req.url === '/api/analytics/product-consent') {
       const authenticated = req.headers.authorization !== undefined
+      if (req.headers.authorization === 'Bearer token-a' && holdAccountAConsent) {
+        accountAConsentStarted = true
+        await accountAConsentGate
+      }
       const issued = String(++serverOrder)
       res.end(JSON.stringify({ data: { subjectId: (req.headers.authorization === 'Bearer token-b' ? 'b' : 'a').repeat(64),
         decision: authenticated ? 'granted' : 'unknown', revision: authenticated ? 1 : 0,
@@ -247,7 +268,7 @@ it('does not attribute delayed opening or login observations to a replacement ac
       return
     }
     if (req.url === '/api/analytics/product-events') {
-      const event = JSON.parse(body)
+      const event = eventSchema.parse(JSON.parse(body))
       events.push({ ...event, authorization: req.headers.authorization })
       res.statusCode = 202
       res.end(JSON.stringify({ data: { status: 'accepted', eventId: event.eventId,
@@ -256,8 +277,10 @@ it('does not attribute delayed opening or login observations to a replacement ac
     }
     res.statusCode = 404; res.end('{}')
   })
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', () => { resolve() }) })
+  cleanup.push(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error) reject(error); else resolve() })
+  }))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server missing address')
   const origin = `http://127.0.0.1:${address.port}`
@@ -277,44 +300,46 @@ it('does not attribute delayed opening or login observations to a replacement ac
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()
   await ctx.verbooAnalytics.status() // Settle the initial anonymous synchronization.
-  const internal = ctx.verbooAnalytics as unknown as {
-    opened: (...args: unknown[]) => Promise<boolean>
-    enqueue: (...args: unknown[]) => Promise<void>
-    completedLogin: (sessionId: string, startedAt: number, completedAt: number,
-      reference: { order: bigint; serverTime: number; proof: string }) => Promise<void>
-  }
-  const originalOpened = internal.opened.bind(internal)
-  const originalEnqueue = internal.enqueue.bind(internal)
-  let release!: () => void
-  const blocked = new Promise<void>((resolve) => { release = resolve })
-  let openingWaiting = false
-  let loginWaiting = false
-  internal.opened = async (...args) => {
-    if (!openingWaiting) { openingWaiting = true; await blocked }
-    return await originalOpened(...args)
-  }
-  internal.enqueue = async (...args) => {
-    if (args[0] === 'product_login_completed' && !loginWaiting) { loginWaiting = true; await blocked }
-    return await originalEnqueue(...args)
-  }
   const account = ctx.deepseekAccount as AnonymousAccount
   const session = (user: string) => ({ origin, token: `token-${user}`,
     userId: brandString<AccountUserId>(`user-${user}`), sessionId: brandString<AccountSessionId>(`session-${user}`) })
   account.getPlatformSession.mockResolvedValue(session('a'))
   account.resolveToken.mockResolvedValue('token-a')
   ctx.emit('credentials/record-updated', credentialKey('verboo-account', 'default'))
-  await ctx.verbooAnalytics.status()
-  // A restored or previously signed-in session must not invent a login event.
-  expect(loginWaiting).toBe(false)
-  await internal.completedLogin('session-a', Date.parse('2019-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now(), proof: proof('100') })
-  expect(loginWaiting).toBe(false) // The grant began in 2020, after OAuth started.
-  await internal.completedLogin('session-a', Date.parse('2020-01-01T00:00:00Z'), Date.now(), { order: 100n, serverTime: Date.now(), proof: proof('100') })
-  expect(loginWaiting).toBe(false) // Equal millisecond timestamps cannot prove prior consent.
+  holdAccountAConsent = true
+  const delayedAccountAStatus = ctx.verbooAnalytics.status()
+  await vi.waitFor(() => { expect(accountAConsentStarted).toBe(true) })
+  account.getPlatformSession.mockResolvedValue(session('b'))
+  account.resolveToken.mockResolvedValue('token-b')
+  ctx.emit('credentials/record-updated', credentialKey('verboo-account', 'default'))
+  const coalescedAccountBStatus = ctx.verbooAnalytics.status()
+  holdAccountAConsent = false
+  releaseAccountAConsent()
+  await Promise.all([delayedAccountAStatus, coalescedAccountBStatus])
+  await ctx.verbooAnalytics.status() // The delayed A refresh had been coalesced with B's first status call.
+  await vi.waitFor(() => {
+    expect(events.filter(event => event.authorization === 'Bearer token-b' && event.name === 'product_opened')).toHaveLength(1)
+  }, { timeout: 5000 })
+  expect(events.some(event => event.authorization === 'Bearer token-a')).toBe(false)
+
+  // A login observation blocked in an account-owned dependency cannot be
+  // attributed to whichever account replaces it before the profile completes.
+  let releaseProfile!: () => void
+  let accountAProfileStarted = false
+  const accountAProfileGate = new Promise<void>((resolve) => { releaseProfile = resolve })
+  account.getPlatformSession.mockResolvedValue(session('a'))
+  account.resolveToken.mockResolvedValue('token-a')
+  ctx.emit('credentials/record-updated', credentialKey('verboo-account', 'default'))
+  account.getProfile.mockImplementationOnce(async () => {
+    accountAProfileStarted = true
+    await accountAProfileGate
+    return null
+  })
   const startedA = Date.now()
   const attemptA = brandString<SignInAttemptId>('attempt-a')
   ctx.emit('verboo-account/login-started', attemptA)
   ctx.emit('verboo-account/login-completed', brandString<AccountSessionId>('session-a'), attemptA, startedA, Date.now())
-  await vi.waitFor(() => { expect(openingWaiting && loginWaiting).toBe(true) })
+  await vi.waitFor(() => { expect(accountAProfileStarted).toBe(true) })
   account.getPlatformSession.mockResolvedValue(session('b'))
   account.resolveToken.mockResolvedValue('token-b')
   ctx.emit('credentials/record-updated', credentialKey('verboo-account', 'default'))
@@ -323,8 +348,10 @@ it('does not attribute delayed opening or login observations to a replacement ac
   const attemptB = brandString<SignInAttemptId>('attempt-b')
   ctx.emit('verboo-account/login-started', attemptB)
   ctx.emit('verboo-account/login-completed', brandString<AccountSessionId>('session-b'), attemptB, startedB, Date.now())
-  release()
-  await vi.waitFor(() => expect(events.filter(event => event.authorization === 'Bearer token-b' && event.name === 'product_login_completed')).toHaveLength(1), { timeout: 5000 })
+  releaseProfile()
+  await vi.waitFor(() => {
+    expect(events.filter(event => event.authorization === 'Bearer token-b' && event.name === 'product_login_completed')).toHaveLength(1)
+  }, { timeout: 5000 })
   await delay(1200)
   const bEvents = events.filter(event => event.authorization === 'Bearer token-b')
   expect(bEvents.filter(event => event.name === 'product_opened')).toHaveLength(1)
@@ -339,7 +366,7 @@ it('deduplicates the first observed opening across simultaneous Hosts sharing cr
   let release!: () => void
   const bothReading = new Promise<void>((resolve) => { release = resolve })
   let reads = 0
-  const server = createServer(async (req, res) => {
+  const server = createAnalyticsServer(async (req, res) => {
     let body = ''
     for await (const part of req) body += String(part)
     res.setHeader('content-type', 'application/json')
@@ -352,7 +379,7 @@ it('deduplicates the first observed opening across simultaneous Hosts sharing cr
       return
     }
     if (req.url === '/api/analytics/product-events') {
-      const event = JSON.parse(body)
+      const event = eventSchema.parse(JSON.parse(body))
       events.push(event)
       res.statusCode = 202
       res.end(JSON.stringify({ data: { status: 'accepted', eventId: event.eventId,
@@ -361,8 +388,10 @@ it('deduplicates the first observed opening across simultaneous Hosts sharing cr
     }
     res.statusCode = 404; res.end('{}')
   })
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', () => { resolve() }) })
+  cleanup.push(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error) reject(error); else resolve() })
+  }))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server missing address')
   const origin = `http://127.0.0.1:${address.port}`

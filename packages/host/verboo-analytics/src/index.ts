@@ -46,7 +46,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 const receiptSchema = z.object({ data: z.object({ status: z.literal('accepted'), receipt: z.object({ eventId: z.uuid(), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/) }) }) })
-const consentResponse = z.object({ data: consentSchema.extend({ serverTime: z.string().datetime({ offset: true }).optional(),
+const consentResponse = z.object({ data: consentSchema.extend({ serverTime: z.iso.datetime({ offset: true }).optional(),
   serverOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional(),
   serverProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional() }) })
 
@@ -158,7 +158,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       if (event.type === 'user/message' && event.data.source.kind === 'user' && facts.root && facts.turn !== null) {
         if (this.turnOwners.get(session)?.turn !== facts.turn) {
           const checkpoint = this.turnCheckpoints.get(session)
-          const owner = this.owner().catch((_error) => {
+          const owner = this.owner().catch((_error: unknown) => {
             this.failure = 'storage'
             this.ctx.logger.warn('Optional product analytics could not capture response identity', { code: 'identity_unavailable' })
             return undefined
@@ -192,7 +192,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
   }
 
   private background(work: Promise<void>): void {
-    const task = work.catch((error) => {
+    const task = work.catch((error: unknown) => {
       this.failure = error instanceof AccountRequestError ? 'unavailable' : 'storage'
       this.ctx.logger.warn('Optional product analytics unavailable', { code: this.failure })
     }).finally(() => { this.tasks.delete(task) })
@@ -202,13 +202,13 @@ export default class VerbooAnalytics extends TypertRemoteService {
   private async owner(): Promise<Owner | undefined> {
     const generation = this.generation
     const session = await this.ctx.deepseekAccount.getPlatformSession()
-    if (generation !== this.generation || this.lifetime.signal.aborted) return undefined
+    if (!this.isGenerationCurrent(generation)) return undefined
     if (session !== null && session.userId === null) return undefined
     const identity = await this.store.select(session?.userId ?? undefined)
-    if (generation !== this.generation || this.lifetime.signal.aborted) return undefined
+    if (!this.isGenerationCurrent(generation)) return undefined
     const token = session === null ? undefined : await this.ctx.deepseekAccount.resolveToken(this.deployment.routerBaseURL)
     if (session !== null && token === undefined) return undefined
-    if (generation !== this.generation) return undefined
+    if (!this.isGenerationCurrent(generation)) return undefined
     return {
       identity, generation,
       ...(token === undefined ? {} : { token }),
@@ -217,10 +217,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
   }
 
   private async current(owner: Owner): Promise<boolean> {
-    if (owner.generation !== this.generation || this.lifetime.signal.aborted) return false
+    if (!this.isGenerationCurrent(owner.generation)) return false
     const session = await this.ctx.deepseekAccount.getPlatformSession()
-    return owner.generation === this.generation && !this.lifetime.signal.aborted && owner.sessionId === session?.sessionId &&
+    return this.isGenerationCurrent(owner.generation) && owner.sessionId === session?.sessionId &&
       (session === null ? owner.identity.owner.startsWith('anonymous:') : session.userId === owner.identity.owner)
+  }
+
+  private isGenerationCurrent(generation: number): boolean {
+    return generation === this.generation && !this.lifetime.signal.aborted
   }
 
   private headers(owner: Owner): Headers {
@@ -302,7 +306,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       this.openedOwners.add(captured.identity.owner)
       this.background(this.opened(captured, reference).then((opened) => {
         if (!opened) this.openedOwners.delete(captured.identity.owner)
-      }).catch((error) => { this.openedOwners.delete(captured.identity.owner); throw error }))
+      }).catch((error: unknown) => { this.openedOwners.delete(captured.identity.owner); throw error }))
     }
   }
 
@@ -335,12 +339,12 @@ export default class VerbooAnalytics extends TypertRemoteService {
     const secret = owner.identity.anonymousLink
     if (secret === null) return
     try {
-      const response = z.object({ data: z.object({ status: z.literal('accepted') }) }).parse(await this.request(owner, '/api/analytics/product-identity', 'POST', '{}', secret))
-      if (response.data.status === 'accepted') await this.store.update((state) => {
+      z.object({ data: z.object({ status: z.literal('accepted') }) }).parse(await this.request(owner, '/api/analytics/product-identity', 'POST', '{}', secret))
+      await this.store.update((state) => {
         const identity = state.contexts.find(item => item.owner === owner.identity.owner)
         if (identity?.anonymousLink === secret && owner.generation === this.generation) identity.linked = true
       })
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof AccountRequestError && (error.status === 403 || error.status === 409)) {
         await this.store.update((state) => {
           const identity = state.contexts.find(item => item.owner === owner.identity.owner)
@@ -408,7 +412,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
     const owner = await this.owner()
     const state = await this.store.read()
     const identity = state.contexts.find(item => item.owner === owner?.identity.owner)
-    const consent = identity?.pendingDecision === 'denied' && identity.consent !== null && identity?.consent !== undefined
+    const consent = identity?.pendingDecision === 'denied' && identity.consent !== null
       ? { ...identity.consent, decision: 'denied' as const }
       : identity?.consent ?? null
     return {
