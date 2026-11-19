@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const decoratorSyntax = /^\s*@[A-Za-z_$][\w$]*/m
@@ -7,6 +8,16 @@ const decoratorSyntax = /^\s*@[A-Za-z_$][\w$]*/m
  * Node lists the positive spelling in `allowedNodeEnvironmentFlags` for this negatable flag.
  */
 export const vitestExecArgv = process.allowedNodeEnvironmentFlags.has('--webstorage') ? ['--no-webstorage'] : []
+
+/**
+ * Source entry aliases for packages used by zero-build Vitest lanes. Their
+ * workspace exports point at ignored `lib/` output, so clean checkouts need
+ * these aliases to resolve the same package sources as TypeScript.
+ */
+export const vitestCleanCheckoutAliases = {
+  '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
+  '@deepseek-ai/dsh-http-proxy': fileURLToPath(new URL('./packages/util/http-proxy/src/index.ts', import.meta.url)),
+}
 
 /**
  * Transform standard TypeScript decorators before Vite's default parser sees source files.
