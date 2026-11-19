@@ -66,6 +66,16 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** Private reference tool run from the repository; it publishes no files. */
 const pluginMarketGeneratorDirectory = 'apps/plugin-market-generator'
+/** Product packages bundled into Verboo Code; these workspace packages are deliberately private. */
+const privateProductPackageDirectories = new Set([
+  'packages/api/verboo-mcp',
+  'packages/api/verboo-product',
+  'packages/bundle/verboo-app',
+  'packages/client/ui-verboo',
+  'packages/credentials/openai-account',
+  'packages/credentials/verboo-account',
+  'packages/extensions/verboo-connections',
+])
 /**
  * Ordinary directories whose packages this repository publishes: one release member each. The reference plugin
  * market generator is a private repository tool, not a published application.
@@ -210,6 +220,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // unpublished, as everywhere else in the repository.
   '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-dockkit': ['lib/**/*.css'],
+  '@deepseek-ai/dsh-client-ui-verboo': ['LICENSES.md'],
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview': ['lib/client.*.js'],
   '@deepseek-ai/dsh-client-ui-sidebar-terminal': ['lib/client.*.js'],
   '@deepseek-ai/dsh-client-web': ['lib/**/*.css', 'lib/apply-injections.js'],
@@ -458,6 +469,7 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
   if (dir === 'packages/ssh/ssh-helper-runtime') return false
+  if (privateProductPackageDirectories.has(dir)) return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 

@@ -108,8 +108,8 @@
     "lib/index.js",
     "lib/client.js",
     "lib/assets",
-    "lib/types/**/*.d.ts",
-    "LICENSES.md"
+    "LICENSES.md",
+    "lib/types/**/*.d.ts"
   ],
   "private": true,
   "dependencies": {
