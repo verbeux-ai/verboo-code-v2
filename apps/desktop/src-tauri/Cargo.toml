@@ -22,3 +22,6 @@ dunce = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release.build-override]
+strip = false
