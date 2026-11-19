@@ -17,6 +17,11 @@ export const vitestExecArgv = process.allowedNodeEnvironmentFlags.has('--webstor
 export const vitestCleanCheckoutAliases = {
   '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
   '@deepseek-ai/dsh-http-proxy': fileURLToPath(new URL('./packages/util/http-proxy/src/index.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/assistant-stream': fileURLToPath(new URL('./packages/llm/llm/src/assistant-stream.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/brand': fileURLToPath(new URL('./packages/llm/llm/src/brand.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/message': fileURLToPath(new URL('./packages/llm/llm/src/message.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm/types': fileURLToPath(new URL('./packages/llm/llm/src/types.ts', import.meta.url)),
+  '@deepseek-ai/dsh-llm': fileURLToPath(new URL('./packages/llm/llm/src/index.ts', import.meta.url)),
 }
 
 /**
