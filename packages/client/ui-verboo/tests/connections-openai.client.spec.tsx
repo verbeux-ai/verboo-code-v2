@@ -37,7 +37,7 @@ function page(signedIn: boolean, dictionary: Readonly<Record<string, string>> = 
       const copy = dictionary[key] ?? key
       if (values === undefined) return copy
       return copy.replace(/\{(\w+)\}/g, (match, name: string) =>
-        typeof values[name] === 'string' ? String(values[name]) : match)
+        typeof values[name] === 'string' ? values[name] : match)
     },
     loadConnections: vi.fn(), loadMcpServers: vi.fn(), saveMcpServer: vi.fn(async () => true),
     deleteMcpServer: vi.fn(async () => true), setMcpEnabled: vi.fn(async () => true),
