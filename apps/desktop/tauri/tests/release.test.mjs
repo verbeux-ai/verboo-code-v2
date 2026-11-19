@@ -147,3 +147,8 @@ test('rejects corrupted Linux bytes even when both macOS targets are omitted', a
   await writeFile(join(f.directory, `Verboo-Code-v2-${configuration.version}-Linux-x64.AppImage`), 'corrupted')
   await assert.rejects(f.verify())
 })
+
+test('keeps release build dependencies unstripped for macOS proc-macro loading', async () => {
+  const manifest = await readFile(join(desktop, 'src-tauri/Cargo.toml'), 'utf8')
+  assert.match(manifest, /\[profile\.release\.build-override\]\s+strip = false/)
+})
