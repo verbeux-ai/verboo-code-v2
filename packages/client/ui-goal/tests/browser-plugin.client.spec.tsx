@@ -264,7 +264,7 @@ describe('ui-goal browser plugin', () => {
     const verbs = b.entry()!.inject!(sid('s1'))
     await verbs.onEdit('SECRET OBJECTIVE')
     await verbs.onPause()
-    expect(begin.mock.calls).toEqual([['goal'], ['goal']])
+    expect(begin.mock.calls).toEqual([['goal', sid('s1')], ['goal', sid('s1')]])
     expect(finish.mock.calls).toEqual([['completed'], ['completed']])
   })
 
@@ -276,7 +276,7 @@ describe('ui-goal browser plugin', () => {
     await b.fiber.await()
     const verbs = b.entry()!.inject!(sid('s1'))
     await verbs.onResume()
-    expect(begin).toHaveBeenCalledExactlyOnceWith('goal')
+    expect(begin).toHaveBeenCalledExactlyOnceWith('goal', sid('s1'))
     expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
   })
 

@@ -132,7 +132,7 @@ export function apply(ctx: ClientContext): void {
       const observeAction = async (action: () => Promise<GoalActionResult>): Promise<GoalActionResult> => {
         let finish: ((outcome: 'completed' | 'failed') => void) | undefined
         try {
-          if (sessions.subagentAddress(sessionId) === undefined) finish = ctx.get('commandUi')?.beginFeatureObservation('goal')
+          finish = ctx.get('commandUi')?.beginFeatureObservation('goal', sessionId)
         } catch (_error) { /* Observation must not block the goal control. */ }
         const observe = (outcome: 'completed' | 'failed'): void => {
           try { finish?.(outcome) } catch (_error) { /* Observation must not block the goal control. */ }

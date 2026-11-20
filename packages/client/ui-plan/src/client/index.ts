@@ -141,7 +141,7 @@ export function apply(ctx: ClientContext): void {
       exitPlanMode: async () => {
         let finish: ((outcome: 'completed' | 'failed') => void) | undefined
         try {
-          if (ctx.sessions.subagentAddress(sessionId) === undefined) finish = ctx.get('commandUi')?.beginFeatureObservation('plan')
+          finish = ctx.get('commandUi')?.beginFeatureObservation('plan', sessionId)
         } catch (_error) { /* Observation must not block the plan control. */ }
         const observe = (outcome: 'completed' | 'failed'): void => {
           try { finish?.(outcome) } catch (_error) { /* Observation must not block the plan control. */ }

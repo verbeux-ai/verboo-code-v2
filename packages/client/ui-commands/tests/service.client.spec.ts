@@ -914,6 +914,17 @@ describe('execute payload', () => {
     expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
   })
 
+  it('does not begin product observation for a subagent session', async () => {
+    const b = await bench({ addressed: sid('child') })
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.command.observeFeatureCommands(begin)
+    const observe = b.command.beginFeatureObservation('goal', sid('child'))
+    observe('completed')
+    expect(begin).not.toHaveBeenCalled()
+    expect(finish).not.toHaveBeenCalled()
+  })
+
   it('claim.submit addresses the session; admitted outcomes stay off the composer (flow card owns them)', async () => {
     const { source, warm, executeCalls, executions } = await bench({
       execute: () => Promise.resolve({ matched: true }),

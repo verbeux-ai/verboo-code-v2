@@ -105,9 +105,11 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * @param feature - fixed category, with no command text or session data.
    * @returns a contained callback that records the settled outcome.
    */
-  beginFeatureObservation(feature: 'plan' | 'goal'): (outcome: 'completed' | 'failed') => void {
+  beginFeatureObservation(feature: 'plan' | 'goal', sessionId: SessionId): (outcome: 'completed' | 'failed') => void {
     let finish: ReturnType<BeginFeatureCommandObservation>
-    try { finish = this.featureCommandObserver?.begin(feature) } catch (_error) { /* Observation cannot block actions. */ }
+    try {
+      if (this.sessions().subagentAddress(sessionId) === undefined) finish = this.featureCommandObserver?.begin(feature)
+    } catch (_error) { /* Observation cannot block actions. */ }
     return (outcome) => {
       try { finish?.(outcome) } catch (_error) { /* Observation cannot block actions. */ }
     }
@@ -449,8 +451,8 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     attachments: readonly SubmitAttachment[] = [],
   ): Promise<SubmitOutcome> {
     const name = submittedCommandName(line)
-    const observe = (name === 'plan' || name === 'goal') && this.sessions().subagentAddress(session.sessionId) === undefined
-      ? this.beginFeatureObservation(name) : () => {}
+    const observe = name === 'plan' || name === 'goal'
+      ? this.beginFeatureObservation(name, session.sessionId) : () => {}
     let result: Awaited<ReturnType<typeof this.ctx.remote.commands.execute>>
     try { result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments) } catch (error) {
       observe('failed')
