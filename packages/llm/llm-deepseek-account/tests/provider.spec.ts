@@ -95,7 +95,7 @@ it('resolves listed capabilities with this build\'s model knowledge', async () =
   })
   await expect(ctx.llm.resolveModelInfo('deepseek-account', 'deepseek-v4-pro')).resolves.not.toHaveProperty('systemPromptUpdate')
   expect(server.requests).toHaveLength(1)
-  expect(server.requests[0]?.headers['user-agent']).toMatch(/^deepseek-harness\//)
+  expect(server.requests[0]?.headers['user-agent']).toMatch(/^verboo-code\//)
 })
 
 it('advertises the badges its listing declares', async () => {
@@ -162,7 +162,7 @@ it('hides and refuses listed models this build cannot serve before any inference
   await expect(ctx.llm.prepareCall({ provider: 'deepseek-account', model: 'deepseek-v5' })).rejects.toMatchObject({ code: 'MODEL_UNSUPPORTED' })
   await expect(ctx.llm.prepareCall({ provider: 'deepseek-account', model: 'deepseek-v4-pro' })).rejects.toMatchObject({ code: 'MODEL_UNSUPPORTED' })
   await expect(ctx.llm.prepareCall({ provider: 'deepseek-account', model: 'deepseek-v5-next' }))
-    .rejects.toMatchObject({ code: 'CLIENT_UPGRADE_REQUIRED', message: expect.stringMatching(/requires DeepSeek Harness 99\.0\.0-alpha\.1 or later; current version is /) as string })
+    .rejects.toMatchObject({ code: 'CLIENT_UPGRADE_REQUIRED', message: expect.stringMatching(/requires Verboo Code 99\.0\.0-alpha\.1 or later; current version is /) as string })
   await expect(ctx.llm.prepareCall({ provider: 'deepseek-account', model: 'unlisted-pass-through' })).resolves.toBeDefined()
   expect(server.requests.map(request => request.url)).toEqual(['/models'])
   expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[llm-deepseek-account]', expect.stringContaining('loaded 5 model(s), skipped 0 row(s)') as string)

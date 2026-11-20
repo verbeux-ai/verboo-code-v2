@@ -15,6 +15,12 @@ export const vitestExecArgv = process.allowedNodeEnvironmentFlags.has('--webstor
  * these aliases to resolve the same package sources as TypeScript.
  */
 export const vitestCleanCheckoutAliases = {
+  '@deepseek-ai/cordis/src': fileURLToPath(new URL('./vendor/cordis/src', import.meta.url)),
+  '@deepseek-ai/dsh-session/types': fileURLToPath(new URL('./packages/core/session/src/types.ts', import.meta.url)),
+  '@deepseek-ai/dsh-session/surface': fileURLToPath(new URL('./packages/core/session/src/surface.ts', import.meta.url)),
+  '@deepseek-ai/dsh-session/fork': fileURLToPath(new URL('./packages/core/session/src/fork.ts', import.meta.url)),
+  '@deepseek-ai/cordis': fileURLToPath(new URL('./vendor/cordis/src/index.ts', import.meta.url)),
+  '@deepseek-ai/dsh-session': fileURLToPath(new URL('./packages/core/session/src/index.ts', import.meta.url)),
   '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
   '@deepseek-ai/dsh-http-proxy': fileURLToPath(new URL('./packages/util/http-proxy/src/index.ts', import.meta.url)),
   '@deepseek-ai/dsh-llm/assistant-stream': fileURLToPath(new URL('./packages/llm/llm/src/assistant-stream.ts', import.meta.url)),
