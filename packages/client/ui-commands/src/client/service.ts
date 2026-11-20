@@ -103,6 +103,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   /**
    * Begin an optional observation for a local plan or goal control.
    * @param feature - fixed category, with no command text or session data.
+   * @param sessionId - target session, used only to exclude subagent controls.
    * @returns a contained callback that records the settled outcome.
    */
   beginFeatureObservation(feature: 'plan' | 'goal', sessionId: SessionId): (outcome: 'completed' | 'failed') => void {
