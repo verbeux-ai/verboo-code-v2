@@ -3,8 +3,12 @@
  * guarantees that keep a token out of every observable surface.
  */
 import { createHash } from 'node:crypto'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { OpenAiAccount, claimsOf, pkcePair } from '../src/account.ts'
 import { AccountRequestError } from '../src/http.ts'
 import { GrantVault } from '../src/vault.ts'
@@ -45,11 +49,12 @@ function memoryStore(): { getSecret(): Promise<number[] | null>; setSecret(secre
   }
 }
 
-/** Distinct home per fixture, so no two runs share a store. */
-let counter = 0
+/** One isolated application home per fixture. */
 const contexts: Context[] = []
+const homes: string[] = []
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
+  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true })
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -57,12 +62,15 @@ afterEach(async () => {
 /** Mount the account service with a stubbed transport and an in-memory vault. */
 async function harness(handler: (url: string, init: RequestInit) => Response): Promise<OpenAiAccount> {
   const ctx = new Context()
+  const home = await mkdtemp(join(tmpdir(), 'openai-account-test-'))
+  homes.push(home)
+  ctx.provide('launchEnvironment', createLaunchEnvironmentSnapshot([{ source: 'process', values: { DSH_HOME: home } }]))
   contexts.push(ctx)
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     handler(String(input), init ?? {})))
   // Not prepared here: the service must create the key on its first write, as a
   // fresh installation does.
-  const vault = new GrantVault('https://auth.openai.com/oauth/token', `/tmp/openai-account-test-${String(counter++)}`, memoryStore())
+  const vault = new GrantVault('https://auth.openai.com/oauth/token', home, memoryStore())
   const service = new OpenAiAccount(ctx, {}, vault)
   await ctx.plugin({ apply: () => undefined })
   return service

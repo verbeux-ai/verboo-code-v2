@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "在 Verboo Code 中管理用户定义的 MCP 服务器，包括已保存的凭据引用和实时连接状态。"
+  }
+}

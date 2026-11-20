@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Leitet ChatGPT-Modelle über das Codex-responses-Protokoll und klassifiziert Ratenlimits und Nutzung."
+  }
+}

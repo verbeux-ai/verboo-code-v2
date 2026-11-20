@@ -49,6 +49,18 @@ function providePreview(ctx: Context) {
 
 const SID = 's-plan' as SessionId
 
+function isPlanChipInjected(value: unknown): value is PlanChipInjected {
+  return typeof value === 'object' && value !== null && 'exitPlanMode' in value &&
+    typeof value.exitPlanMode === 'function'
+}
+
+function injectPlanChip(entry: { inject?: unknown }): PlanChipInjected {
+  if (typeof entry.inject !== 'function') throw new Error('plan chip entry has no injector')
+  const injected: unknown = entry.inject(SID)
+  if (!isPlanChipInjected(injected)) throw new Error('plan chip injector returned an invalid face')
+  return injected
+}
+
 async function bench() {
   const ctx = new Context()
   const preview = providePreview(ctx)
@@ -177,7 +189,7 @@ describe('ui-plan browser apply', () => {
     await fiber.await()
     const entry = b.slots.entries('conversation.input.plan')[0]!
     expect(entry.component).toBe(PlanChip)
-    const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+    const injected = injectPlanChip(entry)
 
     await expect(injected.exitPlanMode()).resolves.toBeNull()
     expect(b.execute).toHaveBeenLastCalledWith(SID, '/plan off', [])
@@ -211,7 +223,7 @@ describe('ui-plan browser apply', () => {
     try {
       await fiber.await()
       const entry = b.slots.entries('conversation.input.plan')[0]!
-      const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+      const injected = injectPlanChip(entry)
       await expect(injected.exitPlanMode()).resolves.toBeNull()
       expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
       expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
@@ -235,7 +247,7 @@ describe('ui-plan browser apply', () => {
     try {
       await fiber.await()
       const entry = b.slots.entries('conversation.input.plan')[0]!
-      const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+      const injected = injectPlanChip(entry)
       await expect(injected.exitPlanMode()).resolves.toBeNull()
     } finally { await fiber.dispose() }
   })

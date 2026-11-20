@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Acceda a los detalles de los planes de Verboo Code y a las conexiones de cada usuario sin exponer secretos a los clientes de la API."
+  }
+}

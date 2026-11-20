@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Codex responses プロトコルで ChatGPT モデルにルーティングし、レート制限と使用状況を分類します。"
+  }
+}
