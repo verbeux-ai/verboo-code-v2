@@ -670,34 +670,15 @@ export class ProductModel {
     }
   }
   /**
-   * Connect or disconnect one stored definition without editing it.
-   * @param name - server key.
-   * @param enabled - whether the server should hold a live connection.
-   * @returns whether the Host applied the change.
-   */
-  /**
    * Begin an OAuth sign-in and open its page in the reserved browser tab.
    * @param name - server key.
    * @returns whether the Host accepted the request; a refreshable grant opens nothing.
    */
   async signInMcpServer(name: string): Promise<boolean> {
-    if (this.state.getSnapshot().busy !== null) return false
-    const generation = this.generation
-    this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null, mcpError: null })
-    try {
-      const result = await this.api.signInMcpServer(name)
-      if (generation !== this.generation) return false
-      if (!result.ok) {
-        this.patch({ actionFailed: 'mcp-signin', mcpError: result.message })
-        return false
-      }
-      if (result.data !== '') await this.api.open(result.data)
-      this.patch({ mcpError: null })
-      await this.reloadMcpServers()
-      return true
-    } finally {
-      this.patch({ busy: null })
-    }
+    const opened = await this.runMcpGrant(name, () => this.api.signInMcpServer(name))
+    // A refreshed grant needs no human step, so an empty page opens nothing.
+    if (opened !== null && opened !== '') await this.api.open(opened)
+    return opened !== null
   }
 
   /**
@@ -707,22 +688,8 @@ export class ProductModel {
    * @returns whether the Host accepted it.
    */
   async setMcpToken(name: string, token: string): Promise<boolean> {
-    if (this.state.getSnapshot().busy !== null) return false
-    const generation = this.generation
-    this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null, mcpError: null })
-    try {
-      const result = await this.api.setMcpToken(name, token)
-      if (generation !== this.generation) return false
-      if (!result.ok) {
-        this.patch({ actionFailed: 'mcp-signin', mcpError: result.message })
-        return false
-      }
-      this.patch({ mcpError: null })
-      await this.reloadMcpServers()
-      return true
-    } finally {
-      this.patch({ busy: null })
-    }
+    const stored = await this.runMcpGrant(name, () => this.api.setMcpToken(name, token))
+    return stored !== null
   }
 
   /**
@@ -731,24 +698,43 @@ export class ProductModel {
    * @returns whether the Host accepted it.
    */
   async signOutMcpServer(name: string): Promise<boolean> {
-    if (this.state.getSnapshot().busy !== null) return false
+    const dropped = await this.runMcpGrant(name, () => this.api.signOutMcpServer(name))
+    return dropped !== null
+  }
+
+  /**
+   * Run one OAuth grant operation for a single definition: hold the busy seat,
+   * ignore a result that settles after the account changed, and refresh the
+   * listed definitions on success.
+   * @param name - server key the seat is held for.
+   * @param call - the Host operation; its data is whatever the caller needs.
+   * @returns the operation's data, or `null` when it did not apply.
+   */
+  private async runMcpGrant<T>(name: string, call: () => Promise<McpResult<T>>): Promise<T | null> {
+    if (this.state.getSnapshot().busy !== null) return null
     const generation = this.generation
     this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null, mcpError: null })
     try {
-      const result = await this.api.signOutMcpServer(name)
-      if (generation !== this.generation) return false
+      const result = await call()
+      if (generation !== this.generation) return null
       if (!result.ok) {
         this.patch({ actionFailed: 'mcp-signin', mcpError: result.message })
-        return false
+        return null
       }
       this.patch({ mcpError: null })
       await this.reloadMcpServers()
-      return true
+      return result.data
     } finally {
       this.patch({ busy: null })
     }
   }
 
+  /**
+   * Connect or disconnect one stored definition without editing it.
+   * @param name - server key.
+   * @param enabled - whether the server should hold a live connection.
+   * @returns whether the Host applied the change.
+   */
   async setMcpEnabled(name: string, enabled: boolean): Promise<boolean> {
     if (this.state.getSnapshot().busy !== null) return false
     const generation = this.generation
