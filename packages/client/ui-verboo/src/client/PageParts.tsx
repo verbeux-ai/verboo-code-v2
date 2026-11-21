@@ -1,25 +1,31 @@
+import type { ReactNode } from 'react'
 import type { ProductProps } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
 import css from './Product.module.css'
 
-/** Product page heading with an optional refresh action. */
-export function PageHead({ title, description, t, onRefresh, onClose, loading }: {
+/** Product page heading with optional page-level actions beside refresh. */
+export function PageHead({ title, description, t, onRefresh, onClose, loading, actions }: {
   title: string
   description: string
   t: ProductProps['t']
   onRefresh?: () => void
   onClose?: () => void
   loading?: boolean
+  /** Page-level actions, placed left of refresh in the heading's trailing group. */
+  actions?: ReactNode
 }) {
   return (
     <header className={css.pageHead}>
       <div><h1>{title}</h1><p>{description}</p></div>
-      {onRefresh && <button className={css.secondary} disabled={loading} onClick={onRefresh}>
-        <Glyph name="rotate-cw" size={16} />{t('refresh')}
-      </button>}
-      {onClose && <button type="button" className={css.iconButton} aria-label={t('close')} onClick={onClose}>
-        <Glyph name="x" size={18} />
-      </button>}
+      <div className={css.pageActions}>
+        {actions}
+        {onRefresh && <button className={css.secondary} disabled={loading} onClick={onRefresh}>
+          <Glyph name="rotate-cw" size={16} />{t('refresh')}
+        </button>}
+        {onClose && <button type="button" className={css.iconButton} aria-label={t('close')} onClick={onClose}>
+          <Glyph name="x" size={18} />
+        </button>}
+      </div>
     </header>
   )
 }

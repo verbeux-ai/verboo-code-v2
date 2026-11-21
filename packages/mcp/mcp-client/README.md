@@ -104,6 +104,15 @@ Credential notifications rebuild the connection only when the resolved values ch
 
 With template expansion enabled, failure diagnostics, tool-call failures, and MCP `isError` tool-result text keep upstream messages but replace every value the instance resolved, including earlier rotations and URL-encoded forms, with `[redacted]`. Successful tool results retain their content.
 
+<a id="oauth-for-remote-servers"></a>
+### OAuth for remote servers
+
+`createMcpOAuthProvider` builds the client-side provider an OAuth-protected HTTP server needs. It persists five values through a caller-supplied `McpOAuthStore`: the token set, the dynamically registered client information, the PKCE verifier, the CSRF `state` value, and the discovery state. A store instance is already scoped to one server, so the slot name alone identifies a value.
+
+`beginMcpOAuth` returns `authorized` when a stored refresh grant still works, and otherwise returns the authorization page for the caller to open. The provider never launches a browser: `redirectToAuthorization` records the URL, and the surface decides what to do with it. `completeMcpOAuth` redeems the code a loopback callback received, passing the RFC 9207 `iss` parameter through so the SDK can reject a response from a different authorization server.
+
+The discovery state is not an optimization alone. The SDK binds the callback leg to the authorization server discovery found, which is what refuses a mix-up response (SEP-2352); a provider that omits it logs that the binding cannot be checked. Persisting it also avoids re-probing the well-known documents on a second attempt.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -136,6 +145,7 @@ This section explains the design decisions behind the bridge and points at the c
 | [`src/transport.ts`](src/transport.ts) | Transport factory: stdio spawn with scrubbed env, Streamable HTTP |
 | [`src/status.ts`](src/status.ts) | Status cell keyed by Fiber, retaining its final cleanup result |
 | [`src/probe.ts`](src/probe.ts) | One-shot probe: connect, identify, list tools, close — nothing registers |
+| [`src/oauth.ts`](src/oauth.ts) | OAuth 2.1 provider, refresh-or-redirect, and callback redemption |
 | [`src/deadline.ts`](src/deadline.ts) | Shared settlement deadline behind the startup and probe budgets |
 | [`src/diagnostic.ts`](src/diagnostic.ts) | Cause-chain diagnostics and secret-value redaction |
 | [`src/types.ts`](src/types.ts) | Client-safe connection status and probe outcome types (`./types`) |

@@ -78,9 +78,10 @@ describe('AssistantMarkdown reasoning blocks', () => {
     const tailToggle = toggles[1]!
     const tailRow = tailToggle.closest('[data-variant="think"]')
     expect(tailRow?.getAttribute('data-state')).toBe('running')
-    expect(view.queryByText(tail.text)).toBeNull()
-    fireEvent.click(tailToggle)
+    // The opening line is the streaming preview, so it is already visible.
     expect(view.getByText(tail.text)).toBeTruthy()
+    fireEvent.click(tailToggle)
+    expect(view.getAllByText(tail.text)).toHaveLength(1)
     expect(earlierToggle.getAttribute('aria-expanded')).toBe('true')
 
     view.rerender(<AssistantMarkdown {...props} blocks={blocks} streaming={false} />)
@@ -151,20 +152,20 @@ describe('ReasoningRow', () => {
 
   it.each([
     ['', ''],
-    ['An unfinished line', ''],
+    ['An unfinished line', 'An unfinished line'],
     ['A completed first line\nUnfinished continuation', 'A completed first line'],
     ['First\nSecond\nThird\n', 'First'],
     ['First\n\nNext unfinished', 'First'],
-    ['First\n\nNext complete\nDetails', 'Next complete'],
-    ['First\n\n\nNext complete\n', 'Next complete'],
-    ['First\n \n\t\nNext complete\nDetails', 'Next complete'],
-    ['First\r\n\r\n\r\nNext complete\r\n', 'Next complete'],
-    ['First\r\n \r\n\t\r\nNext complete\r\nDetails', 'Next complete'],
+    ['First\n\nNext complete\nDetails', 'First'],
+    ['First\n\n\nNext complete\n', 'First'],
+    ['First\n \n\t\nNext complete\nDetails', 'First'],
+    ['First\r\n\r\n\r\nNext complete\r\n', 'First'],
+    ['First\r\n \r\n\t\r\nNext complete\r\nDetails', 'First'],
     ['First\n\n\nNext unfinished', 'First'],
     ['\n\n\nFirst complete\n', 'First complete'],
-    ['First\r\n \t\r\nNext complete\r\n', 'Next complete'],
+    ['First\r\n \t\r\nNext complete\r\n', 'First'],
     ['First\n\n\n', 'First'],
-  ])('previews the completed paragraph first line for %j', (text, summary) => {
+  ])('previews the opening line for %j', (text, summary) => {
     const view = render(<ReasoningRow renderSlot={renderSlot} useDisclosure={useDisclosure}
       text={text} running usePresentation={useDetailedPresentation} t={t} />)
     const root = view.container.querySelector('[data-variant="think"]')!
@@ -244,7 +245,7 @@ describe('ReasoningRow', () => {
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('advances on completed paragraph first lines, then restores the settled first line', () => {
+  it('holds the opening line for the whole stream instead of advancing per paragraph', () => {
     const view = render(
       <AssistantMarkdown renderSlot={renderSlot} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
         usePresentation={useDetailedPresentation}
@@ -256,8 +257,10 @@ describe('ReasoningRow', () => {
     )
     expect(view.getByText('运行中')).toBeTruthy()
     expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-    expect(view.getByText('Newest reasoning tokens').closest('[data-streaming]')?.getAttribute('data-streaming'))
+    // The preview is the opening line, not the newest completed paragraph.
+    expect(view.getByText('Inspect the session').closest('[data-streaming]')?.getAttribute('data-streaming'))
       .toBe('true')
+    expect(view.queryByText('Newest reasoning tokens')).toBeNull()
 
     view.rerender(
       <AssistantMarkdown renderSlot={renderSlot} useDisclosure={useDisclosure} useGroupAction={useSearchableHidden}
@@ -268,7 +271,7 @@ describe('ReasoningRow', () => {
         loadImage={unusedImageLoader}
       />,
     )
-    expect(view.getByText('Newest reasoning tokens').closest('[data-streaming]')
+    expect(view.getByText('Inspect the session').closest('[data-streaming]')
       ?.getAttribute('data-streaming')).toBe('true')
     expect(view.queryByText('Checking boundaries')).toBeNull()
 
@@ -282,7 +285,8 @@ describe('ReasoningRow', () => {
         loadImage={unusedImageLoader}
       />,
     )
-    expect(view.getByText('Checking boundaries')).toBeTruthy()
+    expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(view.queryByText('Checking boundaries')).toBeNull()
     expect(view.queryByText('Newest reasoning tokens')).toBeNull()
 
     view.rerender(
@@ -328,7 +332,7 @@ describe('ReasoningRow', () => {
     },
     {
       label: 'streaming',
-      text: 'Inspect the session\n\n**Comparing checkout and merge bases**\n',
+      text: '**Comparing checkout and merge bases**\nInspect the session\n',
       streaming: true,
     },
   ])('strips double-asterisk markers from the $label summary and renders body emphasis', ({ text, streaming }) => {

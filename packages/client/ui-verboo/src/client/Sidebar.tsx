@@ -1,11 +1,9 @@
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Menu,
   Modal,
   Tooltip,
-  isBehindModal,
   useModalLayer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
@@ -22,6 +20,9 @@ const panels = {
   plan: 'verboo.plan' as MainPanelId,
   preferences: 'verboo.preferences' as MainPanelId,
 }
+
+/** Time the fading expanded content stays mounted before the rail layout applies. */
+const COLLAPSE_SETTLE_MS = 150
 
 function ConversationRow({
   session,
@@ -254,44 +255,50 @@ export function Sidebar(props: SidebarProps) {
   const state = props.useProduct(s => s)
   const extras = props.useNavigation(s => s)
   const selected = usePanelInfo(s => s.activePanelId)
-  const [preview, setPreview] = useState(false)
-  const floating = collapsed && !drawer && preview
-  const wide = drawer || !collapsed || floating
   const ref = useRef<HTMLDivElement>(null)
-  const pointerInside = useRef(false)
-  const focusFrame = useRef<number | null>(null)
-  const returningFocus = useRef(false)
-  const previewDismissed = useRef(false)
-  useEffect(() => { if (!floating) pointerInside.current = false }, [floating])
-  useEffect(() => () => {
-    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current)
-  }, [])
+  // Collapse is a slide plus crossfade, never a morph: the content keeps its
+  // expanded layout (frozen inline width) and fades in place while the frame's
+  // column slides and clips it. The rail layout only applies once the fade has
+  // settled, so no row reflows mid-slide and nothing pops.
+  const [settled, setSettled] = useState(collapsed)
   useEffect(() => {
-    if (!collapsed || drawer) { setPreview(false); return }
-    const edge = (event: PointerEvent) => {
-      if (event.clientX > 56) previewDismissed.current = false
-      if (!previewDismissed.current && !isBehindModal(ref.current) && event.pointerType === 'mouse' && event.clientX <= 10 && matchMedia('(hover: hover)').matches)
-        setPreview(true)
-    }
-    document.addEventListener('pointermove', edge)
-    return () => { document.removeEventListener('pointermove', edge) }
+    if (drawer || !collapsed) { setSettled(collapsed); return }
+    const timer = window.setTimeout(() => { setSettled(true) }, COLLAPSE_SETTLE_MS)
+    return () => { window.clearTimeout(timer) }
   }, [collapsed, drawer])
-  useEffect(() => {
-    if (!floating) return
-    const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || ref.current?.contains(event.target)
-        || event.target.closest('[data-menu-material], [role=dialog]')) return
-      setPreview(false)
-    }
-    document.addEventListener('pointerdown', outside)
-    return () => { document.removeEventListener('pointerdown', outside) }
-  }, [floating])
+  const wide = drawer || !collapsed || !settled
+  // The frozen width is the last expanded one; the sliding column then clips
+  // the fading content instead of squeezing it.
+  const lastWideWidth = useRef(props.width)
+  if (drawer || !collapsed) lastWideWidth.current = props.width
+  // Only a live collapse animates the rail in; a page that starts collapsed
+  // renders it statically.
+  const animateRail = useRef(!collapsed)
+  if (drawer || !collapsed) animateRail.current = !collapsed
   useModalLayer(ref, drawer && !collapsed, toggleSidebar)
   const workspaces = props.useWorkspaces(s => s)
   const sessions = props.useSessions(s => s)
   const current = Object.values(sessions.byId).find(
     s => (s.retainedBy.mainView ?? 0) > 0,
   )?.id
+  // The New Conversation page keeps navigation on screen: no Session is
+  // selected yet, or the current one has never been prompted. There is nothing
+  // to give the width to, so the rail is not offered and a collapsed arrival
+  // expands once.
+  const newConversation = selected === null
+    && (current === undefined || sessions.byId[current]?.blank === true)
+  // The expand runs at most once per arrival on the New Conversation page: the
+  // injected toggle is a fresh closure per render, so an effect that depended
+  // on its identity would re-fire and could oscillate with the layout store.
+  const toggleRef = useRef(toggleSidebar)
+  toggleRef.current = toggleSidebar
+  const expandedForNewConversation = useRef(false)
+  useEffect(() => {
+    if (!newConversation) { expandedForNewConversation.current = false; return }
+    if (!collapsed || expandedForNewConversation.current) return
+    expandedForNewConversation.current = true
+    toggleRef.current()
+  }, [newConversation, collapsed])
   const [adding, setAdding] = useState(false)
   const [projectError, setProjectError] = useState(false)
   const [query, setQuery] = useState('')
@@ -309,7 +316,6 @@ export function Sidebar(props: SidebarProps) {
     }
   }
   const closeDrawer = () => {
-    setPreview(false)
     if (drawer && !collapsed) toggleSidebar()
   }
   const go = (id: MainPanelId | null) => {
@@ -340,60 +346,26 @@ export function Sidebar(props: SidebarProps) {
   const ungrouped = rows(sessions.ids.filter(id => !owned.has(id)))
   const content = (
     <div ref={ref} className={css.sidebar} data-wide={wide} data-verboo-shell
-      data-sidebar-preview={floating || undefined}
-      onPointerEnter={(event) => {
-        pointerInside.current = true
-        if (!previewDismissed.current && !isBehindModal(ref.current) && event.pointerType === 'mouse' && collapsed && !drawer) setPreview(true)
-      }}
-      onPointerLeave={() => {
-        pointerInside.current = false
-        if (!ref.current?.contains(document.activeElement) && document.querySelector('[role=menu], [role=dialog]') === null)
-          setPreview(false)
-      }}
-      onFocusCapture={(event) => {
-        if (returningFocus.current) { returningFocus.current = false; return }
-        if (event.target instanceof Element && event.target.closest('[data-sidebar-toggle]')) return
-        if (!collapsed || drawer || preview) return
-        const label = event.target instanceof Element ? event.target.getAttribute('aria-label') : null
-        setPreview(true)
-        focusFrame.current = requestAnimationFrame(() => {
-          if (ref.current?.contains(document.activeElement)) return
-          const original = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button[aria-label]') ?? [])
-            .find(button => label !== null && button.getAttribute('aria-label') === label)
-          const target = original ?? ref.current?.querySelector<HTMLButtonElement>('[data-sidebar-toggle]')
-          target?.focus()
-        })
-      }}
-      onBlurCapture={(event) => {
-        if (!pointerInside.current && !(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)))
-          setPreview(false)
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented || !floating
-          || (event.target instanceof Element && event.target.closest('[role=menu], [role=dialog]'))) return
-        event.preventDefault()
-        previewDismissed.current = true
-        setPreview(false)
-        focusFrame.current = requestAnimationFrame(() => {
-          returningFocus.current = true
-          ref.current?.querySelector<HTMLButtonElement>('[data-sidebar-toggle]')?.focus({ preventScroll: true })
-        })
-      }}>
+      data-sidebar-fading={!drawer && collapsed && wide || undefined}
+      data-sidebar-rail={!wide && animateRail.current || undefined}
+      style={wide ? { width: !drawer && collapsed ? lastWideWidth.current : props.width } : undefined}>
       <div className={css.sidebarHead}>
         {wide ? <Brand t={t} /> : <BrandMark />}
-        <Tooltip portal label={t(floating ? 'pinNavigation' : collapsed ? 'expand' : 'collapse')}>
-          <button
-            className={css.iconButton}
-            aria-label={t(floating ? 'pinNavigation' : collapsed ? 'expand' : 'collapse')}
-            onClick={() => { previewDismissed.current = true; pointerInside.current = false; setPreview(false); toggleSidebar() }}
-            data-sidebar-toggle
-          >
-            <Glyph
-              name={floating ? 'pin' : collapsed ? 'panel-left-open' : 'panel-left-close'}
-              size={17}
-            />
-          </button>
-        </Tooltip>
+        {newConversation ? null : (
+          <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
+            <button
+              className={css.iconButton}
+              aria-label={t(collapsed ? 'expand' : 'collapse')}
+              onClick={toggleSidebar}
+              data-sidebar-toggle
+            >
+              <Glyph
+                name={collapsed ? 'panel-left-open' : 'panel-left-close'}
+                size={17}
+              />
+            </button>
+          </Tooltip>
+        )}
       </div>
       <Tooltip portal label={t('newTask')} disabled={wide}>
         <button
@@ -412,7 +384,8 @@ export function Sidebar(props: SidebarProps) {
         <Tooltip portal label={t('searchProjects')} disabled={wide}>
           <button className={css.navRow} aria-label={t('searchProjects')} aria-pressed={searching}
             onClick={() => {
-              if (!wide) setPreview(true)
+              // The rail has no room for the field, so searching expands the column first.
+              if (collapsed) toggleSidebar()
               setSearching(!searching)
             }}>
             <Glyph name="search" />
@@ -615,7 +588,7 @@ export function Sidebar(props: SidebarProps) {
       </footer>
     </div>
   )
-  return floating ? createPortal(content, document.body) : content
+  return content
 }
 export function Leading(props: ProductProps) {
   return (

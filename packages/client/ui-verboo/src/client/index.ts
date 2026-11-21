@@ -200,6 +200,18 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         const r = await ctx.remote.verbooMcp.setEnabled(name, enabled)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
+      signInMcpServer: async (name) => {
+        const r = await ctx.remote.verbooMcp.signIn(name)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      setMcpToken: async (name, token) => {
+        const r = await ctx.remote.verbooMcp.setToken(name, token)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
+      signOutMcpServer: async (name) => {
+        const r = await ctx.remote.verbooMcp.signOut(name)
+        return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
+      },
       probeMcpServer: async (input, signal) => {
         const r = await ctx.remote.verbooMcp.probe(input, signal)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
@@ -440,6 +452,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     deleteMcpServer: name => model.deleteMcpServer(name),
     setMcpEnabled: (name, enabled) => model.setMcpEnabled(name, enabled),
     probeMcpServer: input => model.probeMcpServer(input),
+    signInMcpServer: name => model.signInMcpServer(name),
+    setMcpToken: (name, token) => model.setMcpToken(name, token),
+    signOutMcpServer: name => model.signOutMcpServer(name),
     clearMcpProbe: () =>{  model.clearMcpProbe() },
     billing: (id, purchase) => {
       try {

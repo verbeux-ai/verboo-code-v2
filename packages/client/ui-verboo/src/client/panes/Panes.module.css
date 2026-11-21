@@ -23,6 +23,9 @@
   min-width: 0;
   min-height: 0;
 }
+/* No stroke around a pane. The window frame draws the outer edge and the
+   gutters separate panes, so an outline here only boxed the conversation
+   inside the window: one container nested in another. */
 .conversation {
   display: flex;
   flex-direction: column;
@@ -30,8 +33,6 @@
   min-height: 0;
   min-width: 0;
   background: var(--dsw-alias-bg-base);
-  outline: 0.5px solid var(--dsw-alias-border-l3);
-  outline-offset: -1px;
 }
 .workspace[data-pane-split] .canvas {
   background: var(--dsw-alias-bg-base);
@@ -39,13 +40,31 @@
 .workspace[data-pane-split] .pane {
   padding: 0.75px;
 }
+/* The bar stays open: the resting card already carries its whole control row
+   (attach, modes, model, send), so no draft, focus, or pane state reflows it
+   between a collapsed pill and an expanded card. */
 .workspace .pane :global([data-composer-card]) {
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   --dsh-composer-focus-ring: 0 0 0 0 transparent;
+  /* Pane focus and caret focus only repaint the card's stroke and ring. Both
+     are shadows on the same surface, so they interpolate; the accent arrives
+     instead of snapping. */
+  transition: box-shadow 140ms ease;
 }
 .workspace .pane[data-pane-focused] :global([data-composer-card]) {
   --dsw-elevation-stroke-color: var(--dsw-alias-state-business-primary);
   --dsw-elevation-stroke: 0 0 0 1px var(--dsw-elevation-stroke-color);
+}
+/* Send fills in as soon as a draft can be sent; fading that edge keeps the
+   composer from flickering between empty and ready. */
+.workspace :global([data-composer-primary]) {
+  transition: background-color 100ms ease, opacity 140ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace .pane :global([data-composer-card]),
+  .workspace :global([data-composer-primary]) {
+    transition: none;
+  }
 }
 /* A split pane's header sits on the elevated rung, so it rebinds the scrollbar
    indirection; inheriting from `body` would carry the base rung's thumb colour. */
@@ -87,41 +106,6 @@
     :global([data-conversation-header-corner])
   ) {
   white-space: nowrap;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0;
-  padding: 4px 8px 4px 0;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) :global([data-input-scroll]) {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  max-height: 36px;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) :global([contenteditable]) {
-  min-height: 36px;
-  padding-top: 6px;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) :global([data-composer-placeholder]) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) :global([data-composer-toolbar]) {
-  grid-column: 2;
-  grid-row: 1;
-  padding: 0;
-  container-type: normal;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing])) :global([data-composer-primary]) {
-  transform: none;
-}
-.workspace :global([data-composer-empty]:not([data-composer-editing]))
-  :is(:global([data-composer-tools]), :global([data-composer-secondary])) {
-  display: none;
 }
 .workspace[data-conversation-minimalist] :global([data-chat-assistant-mark]) {
   display: none;
@@ -211,15 +195,24 @@
   margin-top: -4px;
   cursor: row-resize;
 }
+/* Pane gutter. One 1px hairline on the exact boundary, the same weight and
+   colour as every other divider in the product: panes are separated by a seam,
+   not outlined. The accent is reserved for the gesture that needs feedback —
+   an active drag or keyboard focus on the handle — so the resting layout never
+   carries a permanent purple bar. */
 .divider::after {
   content: '';
   position: absolute;
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, var(--dsw-alias-bg-base));
+  background: var(--dsw-alias-border-l3);
+  transition: background-color 120ms ease;
   pointer-events: none;
 }
-.divider[data-focused]::after { background: var(--dsw-alias-state-business-primary); }
-.divider[data-axis='x']::after { left: 3.25px; top: 0; width: 1.5px; height: 100%; }
-.divider[data-axis='y']::after { top: 3.25px; left: 0; height: 1.5px; width: 100%; }
+/* `:active` covers the whole pointer drag: the handle holds pointer capture, so
+   the accent survives the pointer leaving the 8px strip mid-resize. */
+.divider:active::after { background: var(--dsw-alias-state-business-primary); }
+/* Half of (strip − 1px) centres the hairline on the boundary the strip straddles. */
+.divider[data-axis='x']::after { left: 3.5px; top: 0; width: 1px; height: 100%; }
+.divider[data-axis='y']::after { top: 3.5px; left: 0; height: 1px; width: 100%; }
 .divider:focus-visible {
   outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -2px;
@@ -375,11 +368,7 @@
       :global([data-conversation-header-utilities]),
       :global([data-conversation-header-corner])
     ),
-  .workspace[data-pane-split] .pane:not([data-pane-focused]) .header:not(:hover):not(:focus-within) .actions,
-  .workspace[data-pane-split]
-    :global([data-composer-card]):not(:hover)
-    :global([data-composer-toolbar]):not(:focus-within)
-    :is(:global([data-composer-tools]), :global([data-composer-secondary])) {
+  .workspace[data-pane-split] .pane:not([data-pane-focused]) .header:not(:hover):not(:focus-within) .actions {
     max-width: 0;
     margin-inline: 0;
     overflow: clip;
@@ -391,8 +380,10 @@
     background: var(--dsw-alias-interactive-bg-hover);
     color: var(--verboo-ink);
   }
+  /* Hover only brightens the hairline: the gutter reads as a grab target
+     without turning into an accent bar before the user actually resizes. */
   .divider:hover::after {
-    background: var(--dsw-alias-state-business-primary);
+    background: var(--dsw-alias-label-dimmed);
   }
 }
 @media (pointer: coarse) {

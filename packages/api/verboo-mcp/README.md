@@ -33,6 +33,10 @@ Header and environment **values** are secrets. The surface submits them, the Hos
 
 `probe` tests a definition without saving it: it resolves templates, connects, lists tools and closes, reporting the failing stage (`connect` or `list`) separately from closure. Nothing registers on `ctx.tools` and no namespace is reserved.
 
+A definition carries an authentication mode. `headers` sends the static values the user typed, `none` sends no credential, and `oauth` sends a bearer token the Host obtained through an authorization flow. OAuth exists only for `streamable-http`: a spawned process completes no redirect, so the write refuses it for `stdio`, and it refuses static headers too, because a typed `Authorization` would outrank the grant. An OAuth definition stores one `Authorization` template and no value; the credential behind it holds the complete header.
+
+`signIn` starts a flow through the [MCP client](../../mcp/mcp-client/README.md) provider and returns the authorization page for the caller to open, or an empty string when the stored refresh grant was still valid. The Host answers the redirect at `/mcp/oauth/callback` on its own web server and matches the response to the attempt by the `state` it minted. `setToken` accepts a token the user pasted instead, for an authorization server the browser flow cannot reach: a bare token becomes `Bearer <token>` and a complete header value is kept verbatim. `signOut` drops the grant and the header, so the next attempt starts from discovery. `oauthSignedIn` reports whether a value is present, whichever way the user supplied it.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -14,29 +14,27 @@ function firstLine(text: string): string {
   return newline === -1 ? text : text.slice(0, newline)
 }
 
-function latestCompletedParagraphFirstLine(text: string): string {
-  let summary = ''
-  let paragraphStart = 0
-  const separator = /\r?\n(?:[\t ]*\r?\n)+/g
-  while (true) {
-    const nextParagraph = separator.exec(text)
-    const paragraphEnd = nextParagraph === null ? text.length
-      : nextParagraph.index + nextParagraph[0].indexOf('\n')
-    const newline = text.indexOf('\n', paragraphStart)
-    if (newline !== -1 && newline <= paragraphEnd) {
-      const candidate = text.slice(paragraphStart, newline).trim()
-      if (candidate !== '') summary = candidate
-    }
-    if (nextParagraph === null) return summary
-    paragraphStart = nextParagraph.index + nextParagraph[0].length
+/**
+ * The block's opening line: the first line that carries text, trimmed. It is
+ * fixed as soon as it appears, so a streaming preview keeps one stable width
+ * instead of chasing each completed paragraph.
+ * @param text - complete or streaming reasoning text.
+ * @returns the opening line, or `''` while the block holds no text yet.
+ */
+function openingLine(text: string): string {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed !== '') return trimmed
   }
+  return ''
 }
 
 /**
  * Render one assistant reasoning block collapsed until the reader opens it. The
  * collapsed summary omits double-asterisk markers; expanded content renders
- * the complete Markdown with secondary typography. A streaming preview advances
- * when a paragraph's first line completes. Mode changes toggle CSS display without unmounting
+ * the complete Markdown with secondary typography. The preview holds the block's
+ * opening line for the whole stream, so the row keeps one stable width while the
+ * model thinks instead of jumping to each completed paragraph. Mode changes toggle CSS display without unmounting
  * collapsed summaries. The Body Slot receives both original and display-ready text.
  * @param props.text - complete or streaming reasoning text.
  * @param props.running - whether this block is the streaming tail.
@@ -61,7 +59,7 @@ export const ReasoningRow = memo(function ReasoningRow({
     const text = reasoningText(rawText)
     return { text, hidden: text !== rawText && text.trim() === '' }
   }, [rawText])
-  const summaryText = running ? latestCompletedParagraphFirstLine(text) : firstLine(text)
+  const summaryText = running ? openingLine(text) : firstLine(text)
   const summary = useMemo(() => summaryText.replaceAll('**', ''), [summaryText])
   const preview = usePresentation(policy => !expanded && summary !== ''
     && (running || policy.settledReasoningPreview))

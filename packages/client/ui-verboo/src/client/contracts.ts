@@ -100,6 +100,12 @@ export interface ProductInjected {
   setMcpEnabled(name: string, enabled: boolean): Promise<boolean>
   /** Test a definition without saving it. */
   probeMcpServer(input: McpServerInput): Promise<boolean>
+  /** Start an OAuth sign-in for one stored definition. */
+  signInMcpServer(name: string): Promise<boolean>
+  /** Store a pasted bearer token for one OAuth definition. */
+  setMcpToken(name: string, token: string): Promise<boolean>
+  /** Drop one definition's OAuth grant. */
+  signOutMcpServer(name: string): Promise<boolean>
   /** Drop the last probe outcome. */
   clearMcpProbe(): void
   billing(id: PlanId | null, purchase: boolean): void

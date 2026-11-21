@@ -30,14 +30,14 @@ const waiting = (id: string): AccountView =>
   view('a', { id: attemptId(id), phase: 'waiting-browser', authorizeUrl: 'https://code.verboo.ai/oauth/authorize' })
 
 const server = (): CustomMcpServerView => ({
-  name: 'docs', transport: 'streamable-http', url: 'https://x/mcp',
+  name: 'docs', transport: 'streamable-http', auth: 'headers', oauthSignedIn: false, url: 'https://x/mcp',
   headerNames: [], command: '', args: [], envNames: [], enabled: true,
   credentialRefs: [], createdAt: '2026-11-05T12:00:00Z', updatedAt: '2026-11-05T12:00:00Z',
   status: { state: 'connected', toolCount: 1, lastError: '', missing: [] },
 })
 
 const mcpInput = {
-  name: 'docs', transport: 'streamable-http' as const, url: 'https://x/mcp',
+  name: 'docs', transport: 'streamable-http' as const, auth: 'headers' as const, oauthSignedIn: false, url: 'https://x/mcp',
   headers: {}, command: '', args: [], env: {}, enabled: true,
 }
 
@@ -66,7 +66,9 @@ function fixture(overrides: Partial<ProductApi> = {}) {
     saveMcpServer: vi.fn(async () => ({ ok: true as const, data: server() })),
     deleteMcpServer: vi.fn(async () => ({ ok: true as const, data: null })),
     setMcpEnabled: vi.fn(async () => ({ ok: true as const, data: server() })),
-    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probeData })),
+signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
+    setMcpToken: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),
+    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probeData })),
     ...overrides,
   }
   return { api, model: new ProductModel(api, 30000) }
