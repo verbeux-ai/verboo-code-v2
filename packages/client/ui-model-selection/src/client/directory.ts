@@ -15,6 +15,9 @@ import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelCatalogDirectory } from './catalog.ts'
 
+/** Begin a local observation without passing model names or session data. */
+export type BeginModelSwitchObservation = () => ((outcome: 'completed' | 'failed') => void) | undefined
+
 /** Directory snapshot both entries render from. */
 export interface ModelDirectoryState {
   /** Saved selection, retained even when its provider or model leaves the catalog. */
@@ -56,6 +59,7 @@ export class ModelDirectory {
    * @param projected - durable model selection projected from Session history.
    * @param isBlank - whether this Session has no first message yet.
    * @param track - desktop-only callback after a successful user selection.
+   * @param beginSwitchObservation - optional product-owned observation started before the selection RPC.
    */
   constructor(
     private readonly sessions: Pick<TypertClientRemote['session'], 'selectModel'>,
@@ -65,6 +69,7 @@ export class ModelDirectory {
     private readonly projected: ObservableSnapshot<unknown>,
     private readonly isBlank: () => boolean,
     private readonly track?: TrackProductEvent,
+    private readonly beginSwitchObservation?: BeginModelSwitchObservation,
   ) {
     this.unsubscribeCatalog = catalog.store.subscribe(() => { this.syncInputs() })
     this.unsubscribeSelection = projected.subscribe(() => { this.syncInputs() })
@@ -92,22 +97,37 @@ export class ModelDirectory {
   async select(selection: ModelSelection): Promise<RemoteResult<void>> {
     this.assertAvailable()
     const previous = this.store.getSnapshot().current
+    const switching = previous !== null && (previous.provider !== selection.provider || previous.model !== selection.model)
+    let observation: ReturnType<BeginModelSwitchObservation>
+    try { observation = switching ? this.beginSwitchObservation?.() : undefined } catch (_error) {
+      // Observation never blocks selection.
+    }
+    const observe = (outcome: 'completed' | 'failed'): void => {
+      try { observation?.(outcome) } catch (_error) { /* Observation never blocks selection. */ }
+    }
     const previousEffort = previous?.reasoningEffort ?? (previous === null ? undefined : this.catalog.reasoningFor(previous)?.defaultEffort)
     const nextEffort = selection.reasoningEffort ?? this.catalog.reasoningFor(selection)?.defaultEffort
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.pending = selection; s.error = null })
-    const result = await this.sessions.selectModel({
-      sessionId: this.sessionId,
-      provider: selection.provider,
-      model: selection.model,
-      ...selection.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: selection.reasoningEffort },
-    })
+    let result: RemoteResult<unknown>
+    try {
+      result = await this.sessions.selectModel({
+        sessionId: this.sessionId,
+        provider: selection.provider,
+        model: selection.model,
+        ...selection.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: selection.reasoningEffort },
+      })
+    } catch (error) {
+      if (!this.disposed && generation === this.generation) observe('failed')
+      throw error
+    }
     if (this.disposed || generation !== this.generation) {
       return result.ok ? { ok: true, value: undefined } : result
     }
     if (!result.ok) {
+      observe('failed')
       this.store.update((s) => {
         s.status = 'error'
         s.pending = null
@@ -115,6 +135,7 @@ export class ModelDirectory {
       })
       return result
     }
+    observe('completed')
     if (previous !== null) {
       const from = `${previous.provider}/${previous.model}`
       const to = `${selection.provider}/${selection.model}`

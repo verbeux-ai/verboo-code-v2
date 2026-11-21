@@ -2020,6 +2020,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'llmOpenaiAccount',
+    summary: 'The `openai-account` route and its usage reading.',
+    description: 'The `openai-account` route and its usage reading.\n\nThe adapter registers with this plugin\'s fiber, so disposal withdraws the route; the usage method never throws, because a reading is display data and a failed read must not fail the caller\'s request.',
+    methods: [
+      {
+        signature: '@Remote(\'discoverModels\') async discoverModels(): Promise<SweepResult>',
+        description: 'Discover which models this account may use, cheapest first.\n\nCalled after a sign-in. A second trigger while a sweep runs joins it rather than spending the account\'s quota twice.',
+        parameters: [],
+        returns: 'what the sweep concluded, or an empty result while signed out.',
+      },
+      {
+        signature: '@Remote(\'usage\') async usage(signal: AbortSignal): Promise<SubscriptionUsage | undefined>',
+        description: 'Read the subscription usage of the signed-in account.\n\nAbsent, signed-out, failed, or unreadable reads produce `undefined`; the method never throws, so a client renders nothing instead of a zeroed meter. The reading carries no token, request text, or account secret.',
+        parameters: [{ name: 'signal', description: 'caller cancellation; an aborted read yields no reading.' }],
+        returns: 'the usage reading, or `undefined` when none could be obtained.',
+      },
+    ],
+  },
+  {
     key: 'lsp',
     summary: 'The LSP capability seam (`ctx.lsp`).',
     description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
@@ -4289,6 +4308,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'verbooAnalytics',
+    summary: 'Host-owned consent, response observation and receipt-checked product outbox.',
+    description: 'Host-owned consent, response observation and receipt-checked product outbox.',
+    methods: [
+      {
+        signature: '@Remote async status(): Promise<ProductAnalyticsStatus>',
+        description: 'Read the product analytics preference and queue status for the current identity.',
+        parameters: [],
+        returns: 'preference for the current identity; unavailable does not grant collection.',
+      },
+      {
+        signature: '@Remote async choose(decision: \'granted\' | \'denied\'): Promise<ProductConsentResult>',
+        description: 'Persist an explicit choice. Refusal blocks locally before any network call.',
+        parameters: [{ name: 'decision', description: 'product-only choice, independent of advertising.' }],
+        returns: 'confirmed preference, or a fixed failure without credentials.',
+      },
+      {
+        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void',
+        description: 'Observe one allowlisted feature without tool names, arguments or page data.',
+        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }, { name: 'consentProof', description: 'signed reference observed when the action began.' }],
+      },
+    ],
+  },
+  {
     key: 'verbooMcp',
     summary: 'The user-defined MCP server service.',
     description: 'The user-defined MCP server service. Definitions live in a `per-record` storage domain; each mounted definition owns one `ctx.mcpManager.register()` disposer, so reconciliation adds and withdraws servers without touching manager-configured ones.',
@@ -5288,6 +5331,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'name', description: 'the configured `servers` key or registered name.' }, { name: 'status', description: 'the status now current for that server.' }],
   },
   {
+    name: 'openai-account/sign-in-required',
+    mode: 'emit',
+    signature: '\'openai-account/sign-in-required\'(): void',
+    summary: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    description: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    parameters: [],
+  },
+  {
+    name: 'openai-account/signed-out',
+    mode: 'emit',
+    signature: '\'openai-account/signed-out\'(): void',
+    summary: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    description: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    parameters: [],
+  },
+  {
     name: 'permission-presets/catalog-changed',
     mode: 'emit',
     signature: '\'permission-presets/catalog-changed\'(): void',
@@ -5518,6 +5577,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Ask composed answerers for structured user input.',
     description: 'Ask composed answerers for structured user input. Return an answer to claim the request or call `next()` to delegate. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.',
     parameters: [{ name: 'request', description: 'pending user-question request.' }],
+  },
+  {
+    name: 'verboo-account/login-completed',
+    mode: 'emit',
+    signature: '\'verboo-account/login-completed\'(sessionId: AccountSessionId, attemptId: SignInAttemptId, startedAt: number, completedAt: number): void',
+    summary: 'A local OAuth grant was committed; the opaque session ID stays in the Host.',
+    description: 'A local OAuth grant was committed; the opaque session ID stays in the Host.',
+    parameters: [{ name: 'sessionId', description: 'local login identity.' }, { name: 'attemptId', description: 'local attempt identity.' }, { name: 'startedAt', description: 'UTC timestamp when the user started OAuth, in milliseconds.' }, { name: 'completedAt', description: 'UTC timestamp in milliseconds.' }],
+  },
+  {
+    name: 'verboo-account/login-started',
+    mode: 'emit',
+    signature: '\'verboo-account/login-started\'(attemptId: SignInAttemptId): void',
+    summary: 'A new local OAuth attempt is starting.',
+    description: 'A new local OAuth attempt is starting.',
+    parameters: [{ name: 'attemptId', description: 'opaque local attempt identity.' }],
   },
   {
     name: 'web/providers-changed',
@@ -7912,6 +7987,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PrincipalMap {\n    owner: {\n        readonly kind: \'owner\';\n    };\n}',
   },
   {
+    name: 'ProductAnalyticsStatus',
+    declaration: 'export interface ProductAnalyticsStatus {\n    consent: ProductConsent | null;\n    pending: number;\n    lost: number;\n    failure: \'none\' | \'unavailable\' | \'storage\' | \'rejected\';\n}',
+  },
+  {
+    name: 'ProductAnalyticsSubject',
+    declaration: 'export type ProductAnalyticsSubject = Branded<\'ProductAnalyticsSubject\'>;',
+  },
+  {
+    name: 'ProductConsent',
+    declaration: 'export interface ProductConsent {\n    subjectId: ProductAnalyticsSubject;\n    decision: ProductDecision;\n    revision: number;\n    policyVersion: 1;\n    decidedAt: string;\n    expiresAt: string;\n    enabled: boolean;\n    referenceProof?: string | undefined;\n}',
+  },
+  {
+    name: 'ProductConsentResult',
+    declaration: 'export type ProductConsentResult = {\n    ok: true;\n    status: ProductAnalyticsStatus;\n} | {\n    ok: false;\n    code: \'unavailable\' | \'storage\' | \'account_changed\';\n};',
+  },
+  {
+    name: 'ProductDecision',
+    declaration: 'export type ProductDecision = \'unknown\' | \'granted\' | \'denied\';',
+  },
+  {
     name: 'ProductError',
     declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'quote_changed\' | \'contract_error\';',
   },
@@ -7922,6 +8017,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProductEventMap',
     declaration: 'export interface ProductEventMap {\n    desktop_app_launch: Record<string, never>;\n    auth_page_view: Record<string, never>;\n    auth_page_click: {\n        button_name: \'sign_in\' | \'api-key\';\n    };\n    api_key_save_click: Record<string, never>;\n    onboarding_page_view: {\n        page_name: OnboardingPage;\n    };\n    onboarding_page_click: {\n        page_name: OnboardingPage;\n        button_name: \'next\' | \'back\' | \'skip\' | \'charge\' | \'later\' | \'continue\';\n        selected_content?: \'office\' | \'code\' | \'code_office\' | \'focus_result\' | \'key_detail\' | \'full_process\';\n    };\n    onboarding_popup_view: {\n        popup_name: \'skip_charge\' | \'skip_setting\';\n    };\n    onboarding_popup_click: {\n        popup_name: \'skip_charge\' | \'skip_setting\';\n        button_name: \'charge\' | \'know\' | \'enter\' | \'setting\' | \'close\';\n    };\n    desktop_upgrade_click: Record<string, never>;\n    desktop_upgrade_download_result: {\n        is_success: boolean;\n        error_reason?: string;\n    };\n    desktop_upgrade_install_restart_click: Record<string, never>;\n    send_button_click: {\n        session_id?: SessionId;\n        model_name?: string;\n        thinking_effort?: string;\n        run_mode: \'plan\' | \'goal\' | \'default\';\n        msg_type: \'default\' | \'steer\' | \'queue\';\n        is_new_session: boolean;\n        agent_preset?: AnalyticsPreset | \'other\';\n    };\n    model_switch: {\n        session_id?: SessionId;\n        switch_from: string;\n        switch_to: string;\n    };\n    thinking_level_switch: {\n /* …truncated — full shape in source */',
+  },
+  {
+    name: 'ProductFeature',
+    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\';',
   },
   {
     name: 'ProductTelemetryRecord',
@@ -9620,6 +9719,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
+    name: 'SubscriptionAdditionalLimit',
+    declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'SubscriptionLimitWindow',
+    declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionUsage',
+    declaration: 'export interface SubscriptionUsage {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly credits?: number;\n    readonly unlimited: boolean;\n    readonly planType?: string;\n    readonly activeUntil?: string;\n    readonly reachedType?: string;\n    readonly additionalLimits?: readonly SubscriptionAdditionalLimit[];\n    readonly asOf: string;\n}',
+  },
+  {
     name: 'SurfaceEvent',
     declaration: 'export type SurfaceEvent = SessionEvent<SurfaceEventType>;',
   },
@@ -9638,6 +9749,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SurfaceSnapshot',
     declaration: 'export interface SurfaceSnapshot {\n    readonly generation: number;\n    readonly tree: readonly SerializedNode[] | null;\n}',
+  },
+  {
+    name: 'SweepResult',
+    declaration: 'export interface SweepResult {\n    readonly supported: readonly string[];\n    readonly unsupported: readonly string[];\n    readonly skipped: readonly string[];\n    readonly stoppedAtLimit: boolean;\n}',
   },
   {
     name: 'SystemMessage',

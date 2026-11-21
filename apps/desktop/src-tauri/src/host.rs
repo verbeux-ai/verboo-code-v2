@@ -98,6 +98,7 @@ impl HostProcess {
     pub fn start(
         config: &RuntimeConfig,
         home: &Path,
+        app_version: &str,
     ) -> Result<(Self, Receiver<HostEvent>), String> {
         fs::create_dir_all(home).map_err(|_| "host_home_unavailable")?;
         // Windows canonicalization produces verbatim paths (\\?\C:\...).
@@ -108,6 +109,9 @@ impl HostProcess {
             .arg(dunce::simplified(&config.cli_manifest))
             .current_dir(dunce::simplified(&config.working_directory))
             .env("DSH_HOME", dunce::simplified(home))
+            // The packaged application's version is authoritative, even if a
+            // parent shell happens to carry a build-time DSH_CLIENT_VERSION.
+            .env("DSH_CLIENT_VERSION", app_version)
             .env_remove("ELECTRON_RUN_AS_NODE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -229,7 +233,7 @@ mod tests {
             working_directory: repository,
             home: None,
         };
-        let (mut host, events) = HostProcess::start(&config, &home).unwrap();
+        let (mut host, events) = HostProcess::start(&config, &home, "0.0.0-test").unwrap();
         let HostEvent::Ready { url } = events.recv_timeout(STARTUP_DEADLINE).unwrap() else {
             panic!("Host did not become ready")
         };
@@ -243,6 +247,38 @@ mod tests {
             Ok(HostEvent::Stopped)
         ));
         assert!(events.recv_timeout(Duration::from_secs(2)).is_err());
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn passes_packaged_version_to_the_host_process() {
+        let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let home = std::env::temp_dir().join(format!(
+            "verboo-version-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = RuntimeConfig {
+            node: std::env::var_os("VERBOO_TEST_NODE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| "node".into()),
+            host: repository.join("apps/desktop/tauri/tests/fixtures/host-version-probe.mjs"),
+            cli_manifest: repository.join("apps/cli/package.json"),
+            working_directory: repository,
+            home: None,
+        };
+        let (mut host, events) = HostProcess::start(&config, &home, "0.2.2-alpha.31").unwrap();
+        let HostEvent::Ready { url } = events.recv_timeout(STARTUP_DEADLINE).unwrap() else {
+            panic!("version probe did not become ready")
+        };
+        assert_eq!(url, "0.2.2-alpha.31");
+        host.stop().unwrap();
         fs::remove_dir_all(home).unwrap();
     }
 }

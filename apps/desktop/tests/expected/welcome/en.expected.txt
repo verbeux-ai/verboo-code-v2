@@ -1,6 +1,6 @@
-DeepSeek Harness
-DeepSeek Harness
-Welcome to DeepSeek Harness
+Verboo Code
+Verboo Code
+Welcome to Verboo Code
 Build potential. Explore intelligence.
 Sign in
 Add API Key

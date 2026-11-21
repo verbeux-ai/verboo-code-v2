@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Ouvre les liens externes via un service unique partagé par le navigateur latéral, les fenêtres contextuelles et le relais natif."
+  }
+}

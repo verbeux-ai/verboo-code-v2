@@ -1877,6 +1877,36 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-product-telemetry-otel -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
+<a id="deepseek-aidsh-host-verboo-analytics"></a>
+
+## `@deepseek-ai/dsh-host-verboo-analytics`
+
+- `inject`: `credentials` · `deepseekAccount` · `sessionProjections`
+- `source`: [`packages/host/verboo-analytics/src/index.ts:19`](../packages/host/verboo-analytics/src/index.ts)
+
+```ts config-catalog
+/** Public collector configuration; all destination credentials stay on the server. */
+export interface Config {
+  /** Origin of the Verboo API that owns product consent and event receipts. */
+  apiOrigin?: string
+  /** Origin of the account router used by the shared deployment configuration. */
+  routerBaseURL?: string
+  /** Permit an HTTP loopback origin for isolated local tests. */
+  allowLoopbackHttp?: boolean
+  /** Product surface recorded on admitted events. */
+  surface?: ProductSurface
+  /** Public build version attached to admitted events. */
+  appVersion?: string
+  /** Delay in milliseconds between retries of pending deliveries. */
+  retryIntervalMs?: number
+}
+
+/** Surfaces assigned by the application composition, never inferred from a UA. */
+export type ProductSurface = 'desktop' | 'cli' | 'dashboard'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1994,6 +2024,23 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-api-key -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-openai-account -->
+<a id="deepseek-aidsh-llm-openai-account"></a>
+
+## `@deepseek-ai/dsh-llm-openai-account`
+
+- `inject`: `llm`
+- `source`: [`packages/llm/llm-openai-account/src/config.ts:34`](../packages/llm/llm-openai-account/src/config.ts)
+
+```ts config-catalog
+/** Configuration accepted by this plugin. */
+export interface Config {
+  /** Deadline in milliseconds of one usage read; a read that exceeds it yields no reading. */
+  usageTimeoutMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-openai-account -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-pi-ai -->
 <a id="deepseek-aidsh-llm-pi-ai"></a>
@@ -2631,6 +2678,39 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-office-to-pdf -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-openai-account -->
+<a id="deepseek-aidsh-openai-account"></a>
+
+## `@deepseek-ai/dsh-openai-account`
+
+- `inject`: `credentials`
+- `source`: [`packages/credentials/openai-account/src/config.ts:5`](../packages/credentials/openai-account/src/config.ts)
+
+```ts config-catalog
+/** Public endpoints, client identity, and bounded lifetimes for one login. */
+export interface Config {
+  /** Authorization endpoint the browser is sent to. */
+  authorizeUrl?: string
+  /** Token endpoint for the authorization-code exchange and refresh rotation. */
+  tokenUrl?: string
+  /** Revocation endpoint called when a stored grant is removed. */
+  revokeUrl?: string
+  /** Public OAuth client identifier. */
+  clientId?: string
+  /** Scopes requested for the login; `openid` and `offline_access` are required. */
+  scopes?: string[]
+  /** Allow cleartext loopback endpoints for local integration fixtures. */
+  allowLoopbackHttp?: boolean
+  /** Maximum duration in milliseconds of one account HTTP request. */
+  requestTimeoutMs?: number
+  /** Maximum duration in milliseconds of one browser login attempt. */
+  attemptTimeoutMs?: number
+  /** Remaining access-token lifetime in milliseconds that forces a refresh. */
+  refreshLeewayMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-openai-account -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-permission-presets -->
 <a id="deepseek-aidsh-permission-presets"></a>

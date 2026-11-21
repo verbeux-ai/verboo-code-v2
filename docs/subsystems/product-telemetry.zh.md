@@ -78,4 +78,37 @@ emit(record: ProductTelemetryRecord): void
 ```
 
 Source: [`packages/host/product-telemetry-otel/src/index.ts`](../../packages/host/product-telemetry-otel/src/index.ts)
+
+<a id="ctxverbooanalytics--verbooanalytics"></a>
+
+### `ctx.verbooAnalytics` — `VerbooAnalytics`
+
+Host-owned consent, response observation and receipt-checked product outbox.
+
+```ts cordis-catalog
+/**
+ * Read the product analytics preference and queue status for the current identity.
+ * @returns preference for the current identity; unavailable does not grant collection.
+ */
+@Remote async status(): Promise<ProductAnalyticsStatus>
+
+/**
+ * Persist an explicit choice. Refusal blocks locally before any network call.
+ * @param decision - product-only choice, independent of advertising.
+ * @returns confirmed preference, or a fixed failure without credentials.
+ */
+@Remote async choose(decision: 'granted' | 'denied'): Promise<ProductConsentResult>
+
+/**
+ * Observe one allowlisted feature without tool names, arguments or page data.
+ * @param feature - fixed product category.
+ * @param outcome - fixed observation outcome.
+ * @param subjectId - consent subject observed when the user initiated the action.
+ * @param consentRevision - granted revision observed when the action began.
+ * @param consentProof - signed reference observed when the action began.
+ */
+@Remote feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void
+```
+
+Source: [`packages/host/verboo-analytics/src/index.ts`](../../packages/host/verboo-analytics/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -108,6 +108,16 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'verbooAnalytics', pkg: 'host-verboo-analytics', title: 'Consented Verboo product analytics', mode: 'service',
+    consumers: ['client-ui-verboo'],
+    note: 'Owns product consent, metadata-only observations, and a durable receipt-checked delivery queue.',
+  },
+  {
+    key: 'llmOpenaiAccount', pkg: 'llm-openai-account', title: 'OpenAI account model route', mode: 'service',
+    consumers: ['client-ui-verboo'],
+    note: 'Discovers available subscription models and reads usage for the authenticated account.',
+  },
+  {
     key: 'verbooMcp', pkg: 'api-verboo-mcp', title: 'Verboo account MCP servers', mode: 'service',
     consumers: ['client-ui-verboo', 'verboo-connections'],
     note: 'Stores account-owned server definitions and reconciles their credential-backed MCP registrations.',

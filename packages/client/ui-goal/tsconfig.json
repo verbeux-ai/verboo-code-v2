@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../ui-commands" },
     {
       "path": "../../../vendor/cordis"
     },

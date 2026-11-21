@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-18-product-analytics-consent-evidence.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-18-product-analytics-consent-evidence.md
+/agent-note-product-analytics-consent-evidence:
+  en: beaad844f6894ff3
+  zh: 9e9b3b973c87e2f0
+/agent-note-product-analytics-consent-evidence/problem:
+  en: 00128f4a5e2becfc
+  zh: 668951fbec7aa36c
+/agent-note-product-analytics-consent-evidence/decision:
+  en: 12fa3ab450efa686
+  zh: 298112515bfb7f98
+/agent-note-product-analytics-consent-evidence/alternatives-considered:
+  en: ad008bf67b972cf2
+  zh: aa8b9b361ace5259
+/agent-note-product-analytics-consent-evidence/consequences:
+  en: 4310d9d7dc2e81f7
+  zh: 7456248fd079c2f9

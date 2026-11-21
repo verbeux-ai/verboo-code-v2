@@ -3,6 +3,27 @@ import type { Context } from '@deepseek-ai/cordis'
 import { VerbooAccount } from './account.ts'
 import * as Models from './models.ts'
 import type { Config } from './config.ts'
+import type { AccountSessionId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A new local OAuth attempt is starting.
+     * @param attemptId - opaque local attempt identity.
+     * @mode emit
+     */
+    'verboo-account/login-started'(attemptId: SignInAttemptId): void
+    /**
+     * A local OAuth grant was committed; the opaque session ID stays in the Host.
+     * @param sessionId - local login identity.
+     * @param attemptId - local attempt identity.
+     * @param startedAt - UTC timestamp when the user started OAuth, in milliseconds.
+     * @param completedAt - UTC timestamp in milliseconds.
+     * @mode emit
+     */
+    'verboo-account/login-completed'(sessionId: AccountSessionId, attemptId: SignInAttemptId, startedAt: number, completedAt: number): void
+  }
+}
 
 export { Config } from './config.ts'
 export const name = 'verboo-account'

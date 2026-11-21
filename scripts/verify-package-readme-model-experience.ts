@@ -49,6 +49,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/host/verboo-analytics': { kind: 'none', reason: 'Consented product measurements observe session facts without adding model input or Session events.' },
   'packages/client/ui-context-menu': { kind: 'none', reason: 'Client menu presentation and contributed callbacks add no model input.' },
   'packages/client/external-links': { kind: 'none', reason: 'Chooses where a click opens and adds no model input or Session event.' },
   'packages/credentials/openai-account': { kind: 'none', reason: 'Stores a subscription credential and reports plan facts; no model input or Session event.' },

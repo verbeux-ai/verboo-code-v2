@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "读取 Verboo Code 套餐详情和用户连接信息，同时不向 API 客户端暴露密钥。"
+  }
+}

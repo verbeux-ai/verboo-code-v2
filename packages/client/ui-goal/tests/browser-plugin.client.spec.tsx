@@ -255,6 +255,39 @@ describe('ui-goal browser plugin', () => {
     expect(b.calls[3]?.args).toEqual(['s1', ref])
   })
 
+  it('observes goal controls without forwarding objective text or session identity', async () => {
+    const b = await bench({ projection: makeProjection() })
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.ctx.provide('commandUi', { beginFeatureObservation: begin } as never)
+    await b.fiber.await()
+    const verbs = b.entry()!.inject!(sid('s1'))
+    await verbs.onEdit('SECRET OBJECTIVE')
+    await verbs.onPause()
+    expect(begin.mock.calls).toEqual([['goal', sid('s1')], ['goal', sid('s1')]])
+    expect(finish.mock.calls).toEqual([['completed'], ['completed']])
+  })
+
+  it('observes a rejected goal control as failure without forwarding its error', async () => {
+    const b = await bench({ projection: makeProjection(), failWith: new RemoteError('gateway/internal', 'SECRET ERROR', {}) })
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.ctx.provide('commandUi', { beginFeatureObservation: begin } as never)
+    await b.fiber.await()
+    const verbs = b.entry()!.inject!(sid('s1'))
+    await verbs.onResume()
+    expect(begin).toHaveBeenCalledExactlyOnceWith('goal', sid('s1'))
+    expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+  })
+
+  it('does not block goal controls if the optional observer fails', async () => {
+    const b = await bench({ projection: makeProjection() })
+    b.ctx.provide('commandUi', { beginFeatureObservation: () => { throw new Error('observer failure') } } as never)
+    await b.fiber.await()
+    const verbs = b.entry()!.inject!(sid('s1'))
+    await expect(verbs.onPause()).resolves.toMatchObject({ ok: true })
+  })
+
   it('verbs read a remounted Remote namespace at action time', async () => {
     const b = await bench({ projection: makeProjection() })
     await b.fiber.await()

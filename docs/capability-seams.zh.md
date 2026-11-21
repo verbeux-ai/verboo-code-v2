@@ -9,9 +9,13 @@
 
 ```mermaid
 flowchart LR
+  pkg_host_verboo_analytics["host-verboo-analytics"]
+  svc_verbooAnalytics["ctx.verbooAnalytics<br/>Consented Verboo product analytics"]
+  pkg_client_ui_verboo["client-ui-verboo"]
+  pkg_llm_openai_account["llm-openai-account"]
+  svc_llmOpenaiAccount["ctx.llmOpenaiAccount<br/>OpenAI account model route"]
   pkg_api_verboo_mcp["api-verboo-mcp"]
   svc_verbooMcp["ctx.verbooMcp<br/>Verboo account MCP servers"]
-  pkg_client_ui_verboo["client-ui-verboo"]
   pkg_verboo_connections["verboo-connections"]
   pkg_api_verboo_product["api-verboo-product"]
   svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
@@ -401,12 +405,14 @@ flowchart LR
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_product_telemetry_otel --> svc_productTelemetry
+  pkg_host_verboo_analytics --> svc_verbooAnalytics
   pkg_host_webserver --> svc_webServer
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
+  pkg_llm_openai_account --> svc_llmOpenaiAccount
   pkg_llm_pi_ai --> svc_llm
   pkg_llm_replay --> svc_llm
   pkg_lsp --> svc_lsp
@@ -545,6 +551,7 @@ flowchart LR
   svc_jobs --> pkg_tool_terminal
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_llmOpenaiAccount --> pkg_client_ui_verboo
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
@@ -637,6 +644,7 @@ flowchart LR
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
+  svc_verbooAnalytics --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_verboo_connections
   svc_verbooProduct --> pkg_client_ui_verboo
@@ -663,6 +671,8 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.verbooAnalytics` | `service` | [`host-verboo-analytics`](../packages/host/verboo-analytics) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | 管理产品分析同意、仅含元数据的观测以及持久化、按回执确认的投递队列。 |
+| `ctx.llmOpenaiAccount` | `service` | [`llm-openai-account`](../packages/llm/llm-openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | 为已登录账户发现可用订阅模型并读取用量。 |
 | `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | 按账号存储服务器定义，并协调使用凭据的 MCP 注册。 |
 | `ctx.verbooProduct` | `service` | [`api-verboo-product`](../packages/api/verboo-product) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | 读取当前账号的方案和连接，并将已连接工具的操作交给 Verboo 中央 API。 |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | 负责卡片工具、卡片状态、用户操作和状态通知；各卡片种类注册自己的动作和处理器。 |

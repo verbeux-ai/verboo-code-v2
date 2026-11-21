@@ -1,0 +1,97 @@
+---
+description: "使用持久化、校验回执的发件箱衡量经同意的 Verboo 桌面回复和功能使用。"
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-host-verboo-analytics
+
+[English](README.md) | 中文
+
+## 概述
+
+在用户明确选择允许产品分析后衡量符合条件的 Verboo 产品使用情况。Host 在凭据提供器中保存选择和有界发件箱，并向 Verboo 收集器发送事件，直到收到匹配的回执。接收器负责向 PostHog 投递；目标密钥和对话内容不会进入客户端。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [深入探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+Verboo 产品层将此服务与账户、凭据和会话投影一起挂载。
+
+### 何时选择
+
+在能够显示和更改产品隐私选择的 Verboo 组合中使用。单独的广告选择不会启用此服务。
+
+### 最小配置
+
+产品组合包提供收集器地址和使用场景。桌面覆盖层设置 `surface: desktop`；服务也接受 `cli` 和 `dashboard`。
+
+```yaml
+- name: '@deepseek-ai/dsh-host-verboo-analytics'
+  config:
+    surface: desktop
+    appVersion: 'development'
+```
+
+收集器必须单独启用产品分析。已挂载组合请参阅[产品层](../../bundle/verboo-app/README.zh.md)。
+
+-----
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+<details>
+<summary>实现内部——点击展开</summary>
+
+投影仅记录根级人工轮次的有界回复事实。实时完成的回复产生事件；重放仅重建状态，不重新发送观察结果。同意版本和账户归属保护每个排队事件。精确匹配事件 ID 与负载哈希的回执允许删除事件；拒绝会丢弃该授权下的待处理事件。功能调用只接受固定类别、结果和操作开始时捕获的同意主体，不接受页面内容、工具名称、参数、提示词或回复。
+
+| 源文件 | 职责 |
+|---|---|
+| [index.ts](src/index.ts) | 同意、事件提交、回执和账户隔离 |
+| [projection.ts](src/projection.ts) | 符合条件的回复事实 |
+| [storage.ts](src/storage.ts) | 持久化身份和有界发件箱 |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## 深入探索
+
+- [Verboo 产品组合包](../../bundle/verboo-app/README.zh.md)——已挂载的产品组合。
+- [Verboo 账户](../../credentials/verboo-account/README.zh.md)——账户会话和凭据。
+- [会话投影](../../session/session-projection/README.zh.md)——确定性的会话事实。
+
+<a id="model-experience"></a>
+## 模型体验
+
+无；服务记录产品事件，不向模型上下文添加内容。
+
+#### KV Cache 影响
+
+无；事件提交不会改变模型请求。
+
+## 已知限制与后续工作
+
+<a id="known-limitations-and-deferred-work"></a>
+
+当前服务具有以下边界。
+
+- 发件箱有容量上限；跨重启保留需要可用的持久化凭据存储。
+- CLI 挂载和浏览器扩展埋点需要各自的产品组合。
+- 收集器接受事件不代表 PostHog 已摄取；须单独确认目标。
+- 撤销时已在途的请求可能已到达收集器。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。
