@@ -89,8 +89,27 @@ function QueueThumb({ attachment, loadImage, label }: {
     return () => { alive = false }
   }, [attachment, loadImage])
   return url === null
-    ? <span className={css.thumb} aria-hidden />
+    ? <span className={`${css.thumb} ${css.thumbPlaceholder}`} aria-hidden />
     : <img className={css.thumb} src={url} alt={label} />
+}
+
+/**
+ * Preview of an attachment on a message still waiting for the Host. The object
+ * URL can outlive its blob or fail to decode, so the element holds the 24px
+ * slot with the borderless skeleton until a frame actually paints: a broken
+ * `img` would otherwise draw the browser's own empty box inside the row.
+ */
+function PendingThumb({ src, alt }: { src: string; alt: string }) {
+  const [painted, setPainted] = useState(false)
+  return (
+    <img
+      className={painted ? css.thumb : `${css.thumb} ${css.thumbPlaceholder}`}
+      src={src}
+      alt={alt}
+      onLoad={() => { setPainted(true) }}
+      onError={() => { setPainted(false) }}
+    />
+  )
 }
 
 /** Full props of a dock entry: InputZone owner share + session standard kit + global seat + the locale seat. */
@@ -329,9 +348,8 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                   <span className={css.attachments}>
                     {submission.attachments.map((attachment, index) => attachment.type === 'image'
                       ? (
-                        <img
+                        <PendingThumb
                           key={`${attachment.value.previewUrl}:${index}`}
-                          className={css.thumb}
                           src={attachment.value.previewUrl}
                           alt={t('queue.image')}
                         />

@@ -9,6 +9,8 @@
  */
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import type { McpOAuthSlot } from '@deepseek-ai/dsh-mcp-client'
+import type { McpAuthMode } from './types.ts'
 
 /** Server key: the MCP manager's own `serverName` pattern, which also names the tool namespace. */
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
@@ -31,6 +33,8 @@ export const mcpServerSchema = z
     args: z.array(z.string()).default([]),
     /** Environment key to `${credential:REF}` template. */
     env: z.record(z.string().regex(SETTING_KEY), z.string()).default({}),
+    /** Authentication mode; absent on a record written before modes existed. */
+    auth: z.enum(['none', 'headers', 'oauth']).optional(),
     enabled: z.boolean().default(true),
     /** Every reference this definition resolves before connecting, in definition order. */
     credentialRefs: z.array(z.string().regex(CREDENTIAL_REF)).default([]),
@@ -49,6 +53,29 @@ export const mcpServerDomain = defineDomain({
   layout: 'per-record',
   tables: { servers: domainTable<string, StoredMcpServer>(mcpServerSchema) },
 })
+
+/**
+ * Read the authentication mode of a stored definition. A record written before
+ * modes existed carries header values only when the user supplied them, so its
+ * mode is derived from them rather than migrated.
+ * @param entry - stored definition.
+ * @returns the mode the definition authenticates with.
+ */
+export function authModeOf(entry: Pick<StoredMcpServer, 'auth' | 'headers'>): McpAuthMode {
+  if (entry.auth !== undefined) return entry.auth
+  return Object.keys(entry.headers).length > 0 ? 'headers' : 'none'
+}
+
+/**
+ * Credential reference for one OAuth state slot (tokens, client registration,
+ * PKCE verifier, or CSRF state) of one server.
+ * @param server - owning server name.
+ * @param slot - which value the reference names.
+ * @returns the reference name the credential seam accepts.
+ */
+export function mcpOAuthSlotRef(server: string, slot: McpOAuthSlot): string {
+  return mcpCredentialRef(server, slot)
+}
 
 /**
  * Build the credential reference one header or environment value is stored

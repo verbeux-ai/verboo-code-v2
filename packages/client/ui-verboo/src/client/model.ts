@@ -36,6 +36,7 @@ export interface ProductSnapshot {
     | 'mcp-save'
     | 'mcp-delete'
     | 'mcp-toggle'
+    | 'mcp-signin'
     | null
   starting: boolean
   plans: Plans | null
@@ -149,6 +150,25 @@ export interface ProductApi {
    * @returns the probe outcome, including advertised tool names.
    */
   probeMcpServer(this: void, input: McpServerInput, signal?: AbortSignal): Promise<McpResult<McpServerProbe>>
+  /**
+   * Start an OAuth sign-in for one stored definition.
+   * @param name - server key.
+   * @returns the authorization page to open, or an empty string when the stored grant was refreshed.
+   */
+  signInMcpServer(this: void, name: string): Promise<McpResult<string>>
+  /**
+   * Store a bearer token the user pasted for one OAuth definition.
+   * @param name - server key.
+   * @param token - token, or a complete `Authorization` header value.
+   * @returns the stored definition with its live state.
+   */
+  setMcpToken(this: void, name: string, token: string): Promise<McpResult<CustomMcpServerView>>
+  /**
+   * Drop one definition's OAuth grant.
+   * @param name - server key.
+   * @returns the stored definition with its live state.
+   */
+  signOutMcpServer(this: void, name: string): Promise<McpResult<CustomMcpServerView>>
 }
 const initial = (): ProductSnapshot => ({
   view: null,
@@ -649,6 +669,66 @@ export class ProductModel {
       if (generation === this.generation) this.patch({ busy: null })
     }
   }
+  /**
+   * Begin an OAuth sign-in and open its page in the reserved browser tab.
+   * @param name - server key.
+   * @returns whether the Host accepted the request; a refreshable grant opens nothing.
+   */
+  async signInMcpServer(name: string): Promise<boolean> {
+    const opened = await this.runMcpGrant(name, () => this.api.signInMcpServer(name))
+    // A refreshed grant needs no human step, so an empty page opens nothing.
+    if (opened !== null && opened !== '') await this.api.open(opened)
+    return opened !== null
+  }
+
+  /**
+   * Store a pasted token for one OAuth definition.
+   * @param name - server key.
+   * @param token - token or complete header value.
+   * @returns whether the Host accepted it.
+   */
+  async setMcpToken(name: string, token: string): Promise<boolean> {
+    const stored = await this.runMcpGrant(name, () => this.api.setMcpToken(name, token))
+    return stored !== null
+  }
+
+  /**
+   * Drop one definition's OAuth grant.
+   * @param name - server key.
+   * @returns whether the Host accepted it.
+   */
+  async signOutMcpServer(name: string): Promise<boolean> {
+    const dropped = await this.runMcpGrant(name, () => this.api.signOutMcpServer(name))
+    return dropped !== null
+  }
+
+  /**
+   * Run one OAuth grant operation for a single definition: hold the busy seat,
+   * ignore a result that settles after the account changed, and refresh the
+   * listed definitions on success.
+   * @param name - server key the seat is held for.
+   * @param call - the Host operation; its data is whatever the caller needs.
+   * @returns the operation's data, or `null` when it did not apply.
+   */
+  private async runMcpGrant<T>(name: string, call: () => Promise<McpResult<T>>): Promise<T | null> {
+    if (this.state.getSnapshot().busy !== null) return null
+    const generation = this.generation
+    this.patch({ busy: 'mcp:' + name, actionFailed: null, feedback: null, mcpError: null })
+    try {
+      const result = await call()
+      if (generation !== this.generation) return null
+      if (!result.ok) {
+        this.patch({ actionFailed: 'mcp-signin', mcpError: result.message })
+        return null
+      }
+      this.patch({ mcpError: null })
+      await this.reloadMcpServers()
+      return result.data
+    } finally {
+      this.patch({ busy: null })
+    }
+  }
+
   /**
    * Connect or disconnect one stored definition without editing it.
    * @param name - server key.

@@ -7,8 +7,8 @@
  */
 import { Buffer } from 'node:buffer'
 import { assertTemplateSyntax } from '@deepseek-ai/dsh-mcp-client'
-import { MCP_SERVER_NAME, referencedCredentials, splitSecrets } from './store.ts'
-import type { McpError, McpServerInput, McpTransport } from './types.ts'
+import { MCP_SERVER_NAME, mcpCredentialTemplate, referencedCredentials, splitSecrets } from './store.ts'
+import type { McpAuthMode, McpError, McpServerInput, McpTransport } from './types.ts'
 
 /** Bounds a submitted definition cannot exceed. */
 export const MAX_ARGS = 64
@@ -56,6 +56,8 @@ export interface NormalizedDefinition {
   headers: Record<string, string>
   /** Environment key to credential template. */
   env: Record<string, string>
+  /** How the definition authenticates. */
+  auth: McpAuthMode
   /** Whether a live connection is requested. */
   enabled: boolean
   /** Plaintext secret values to write to the credential store. */
@@ -163,6 +165,9 @@ export function normalizeDefinition(input: McpServerInput): NormalizedDefinition
     if (Object.keys(input.headers).length > 0) {
       fail('headers: a stdio server takes no headers — pass secrets as environment values')
     }
+    if (input.auth === 'oauth') {
+      fail('auth: OAuth needs a browser redirect, which a stdio server cannot complete — use streamable-http')
+    }
     checkSettings(input.env, 'env')
     checkTemplates(input.env, 'env')
     const { templates, secrets } = splitSecrets(name, input.env)
@@ -174,6 +179,7 @@ export function normalizeDefinition(input: McpServerInput): NormalizedDefinition
       args,
       headers: {},
       env: templates,
+      auth: input.auth ?? (Object.keys(templates).length > 0 ? 'headers' : 'none'),
       enabled: input.enabled,
       secrets,
       credentialRefs: referencedCredentials(Object.values(templates).join(' ')),
@@ -186,9 +192,31 @@ export function normalizeDefinition(input: McpServerInput): NormalizedDefinition
   if (Object.keys(input.env).length > 0) {
     fail('env: a streamable-http server takes no environment — pass secrets as headers')
   }
+  const endpoint = checkEndpoint(url)
+  const auth: McpAuthMode = input.auth
+    ?? (Object.keys(input.headers).length > 0 ? 'headers' : 'none')
+  if (auth === 'oauth') {
+    // The bearer value is obtained by the Host, never typed into the form: a
+    // static header here would silently outrank the grant.
+    if (Object.keys(input.headers).length > 0) {
+      fail('headers: an OAuth server takes no static headers — the Host sends the bearer token')
+    }
+    return {
+      name,
+      transport,
+      url: endpoint,
+      command: '',
+      args: [],
+      headers: { Authorization: mcpCredentialTemplate(name, 'Authorization') },
+      env: {},
+      auth,
+      enabled: input.enabled,
+      secrets: [],
+      credentialRefs: [referencedCredentials(mcpCredentialTemplate(name, 'Authorization'))[0] as string],
+    }
+  }
   checkSettings(input.headers, 'headers')
   checkTemplates(input.headers, 'headers')
-  const endpoint = checkEndpoint(url)
   const { templates, secrets } = splitSecrets(name, input.headers)
   return {
     name,
@@ -198,6 +226,7 @@ export function normalizeDefinition(input: McpServerInput): NormalizedDefinition
     args: [],
     headers: templates,
     env: {},
+    auth,
     enabled: input.enabled,
     secrets,
     credentialRefs: referencedCredentials(Object.values(templates).join(' ')),

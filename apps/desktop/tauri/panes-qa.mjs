@@ -57,12 +57,14 @@ export async function verifyComposerActivation(page, state, dir) {
   const thirdPane = page.locator(`[data-pane-id="${thirdId}"]`)
   await editor(panes.first()).focus()
   await editor(thirdPane).click()
-  assert.equal(await thirdPane.locator('[data-composer-card]').getAttribute('data-composer-editing'), null)
-  assert.ok((await thirdPane.locator('[data-composer-card]').boundingBox()).height <= 56)
+  const thirdCard = thirdPane.locator('[data-composer-card]')
+  const openHeight = (await thirdCard.boundingBox()).height
+  assert.equal(await thirdCard.getAttribute('data-composer-editing'), null)
+  assert.ok(openHeight > 76, 'A pane that is only selected keeps the bar open')
   await page.screenshot({ path: join(dir, 'three-panes-first-click.png') })
   await editor(thirdPane).click()
-  assert.ok((await thirdPane.locator('[data-composer-card]').boundingBox()).height > 76)
-  console.log('Composer activation QA passed: compact selection, active stroke, first keystroke, pointer editing, empty blur and independent chats.')
+  assert.ok(Math.abs((await thirdCard.boundingBox()).height - openHeight) < 0.5, 'Starting to edit does not reflow the bar')
+  console.log('Composer activation QA passed: open bar at rest and while editing, active stroke, first keystroke, pointer editing, empty blur and independent chats.')
 }
 
 /** A real background-job action must not grow the split header when it collapses. */
@@ -199,15 +201,21 @@ export async function verifyPanes(page, context, state, dir) {
   await verifyNavigationAndQuit(page, panes.first(), dir)
   assert.equal(await panes.first().locator('[data-model-id="pro/deepseek-v4.1-flash"]').count(), 1)
   const firstCard = panes.first().locator('[data-composer-card]')
+  const openCardHeight = (await firstCard.boundingBox()).height
+  assert.ok(openCardHeight > 76, 'The bar shows its whole control row at rest')
+  const staysOpen = async label => {
+    const height = (await firstCard.boundingBox()).height
+    assert.ok(Math.abs(height - openCardHeight) < 0.5, `${label} (${height} ≠ ${openCardHeight})`)
+  }
   await composer(panes.first()).evaluate(element => element.blur())
-  assert.ok((await firstCard.boundingBox()).height <= 56, 'An empty idle composer stays compact')
+  await staysOpen('Blurring an empty bar reflows it')
   await composer(panes.first()).focus()
-  assert.ok((await firstCard.boundingBox()).height <= 56, 'Restoring keyboard focus does not start editing')
+  await staysOpen('Restoring keyboard focus reflows the bar')
   await composer(panes.first()).click()
-  assert.ok((await firstCard.boundingBox()).height > 76, 'Clicking an empty composer expands it for typing')
+  await staysOpen('Clicking an empty bar reflows it')
   await firstCard.locator('[data-composer-tools] button').first().focus()
-  assert.ok((await firstCard.boundingBox()).height > 76, 'Keyboard focus in composer controls keeps the composer expanded')
-  await page.screenshot({ path: join(dir, 'composer-idle-editing.png'), animations: 'disabled' })
+  await staysOpen('Keyboard focus in composer controls reflows the bar')
+  await page.screenshot({ path: join(dir, 'composer-open-states.png'), animations: 'disabled' })
   await composer(panes.first()).fill('Rascunho independente A')
   await composer(panes.first()).press(`${primaryModifier}+d`)
   await checkCount(2)
@@ -335,16 +343,14 @@ export async function verifyPanes(page, context, state, dir) {
   await page.mouse.move(900, 5)
   const utilities = focused().locator('[data-conversation-header-utilities]')
   const tools = focused().locator('[data-composer-tools]')
-  assert.equal(await utilities.evaluate((element) => getComputedStyle(element).opacity), '1')
-  assert.equal(await tools.evaluate((element) => getComputedStyle(element).opacity), '0')
+  const opacity = element => element.evaluate((node) => getComputedStyle(node).opacity)
+  assert.equal(await opacity(utilities), '1')
+  assert.equal(await opacity(tools), '1', 'The resting bar keeps its controls visible without hover')
   await focused().locator('[data-conversation-header]').hover()
-  assert.equal(await utilities.evaluate((element) => getComputedStyle(element).opacity), '1')
+  assert.equal(await opacity(utilities), '1')
   await page.screenshot({ path: join(dir, 'panes-header-hover.png'), animations: 'disabled' })
-  await focused().locator('[data-composer-card]').hover()
-  assert.equal(await tools.evaluate((element) => getComputedStyle(element).opacity), '1')
-  await tools.locator('button').first().focus()
   await page.mouse.move(900, 5)
-  assert.equal(await tools.evaluate((element) => getComputedStyle(element).opacity), '1')
+  assert.equal(await opacity(tools), '1', 'Leaving the bar keeps its controls visible')
   await composer(focused()).focus()
   await page.screenshot({ path: join(dir, 'panes-four-dark.png'), animations: 'disabled' })
   await page.emulateMedia({ colorScheme: 'light' })
@@ -403,24 +409,24 @@ export async function verifyPanes(page, context, state, dir) {
   await stop(left).waitFor()
   await stop(right).waitFor()
   const cardHeight = (pane) => pane.locator('[data-composer-card]').evaluate((element) => element.getBoundingClientRect().height)
-  const compactHeight = await cardHeight(left)
-  assert.ok(compactHeight <= 56, 'An empty running composer must fit on one line')
-  assert.ok(await cardHeight(right) <= 56)
-  await page.screenshot({ path: join(dir, 'panes-running-compact.png'), animations: 'disabled' })
+  const openHeight = await cardHeight(left)
+  assert.ok(openHeight > 76, 'A running composer keeps the bar open')
+  assert.ok(Math.abs((await cardHeight(right)) - openHeight) < 0.5, 'Both running bars share one open height')
+  await page.screenshot({ path: join(dir, 'panes-running-open.png'), animations: 'disabled' })
   await composer(left).click()
-  assert.ok(await cardHeight(left) <= 56, 'The first click selects an inactive running input without expanding it')
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'The first click selects an inactive running input without reflowing the bar')
   await composer(left).click()
-  assert.ok(await cardHeight(left) > compactHeight + 20, 'A click in the selected input expands it during generation')
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'A click in the selected input keeps the bar open during generation')
   await left.locator('[data-composer-tools] button').first().focus()
-  assert.ok(await cardHeight(left) > compactHeight + 20, 'Keyboard focus in the running composer controls must not collapse them')
-  await page.screenshot({ path: join(dir, 'composer-running-editing.png'), animations: 'disabled' })
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'Keyboard focus in the running composer controls keeps the bar open')
+  await page.screenshot({ path: join(dir, 'composer-running-open.png'), animations: 'disabled' })
   await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
-  assert.ok(await cardHeight(left) <= 56)
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'Blurring the running bar keeps it open')
   await composer(left).fill('Primeira linha\nSegunda linha')
-  assert.ok(await cardHeight(left) > compactHeight + 20, 'Typing must expand the composer without losing the draft')
+  assert.ok(await cardHeight(left) > openHeight + 20, 'A second line grows the bar without losing the draft')
   await composer(left).fill('')
   await stop(left).waitFor()
-  assert.ok(await cardHeight(left) > compactHeight + 20, 'Clearing a draft while editing must not collapse the editor: ' + JSON.stringify(await left.locator('[data-composer-card]').evaluate(element => ({
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'Clearing a draft while editing returns the bar to its open height: ' + JSON.stringify(await left.locator('[data-composer-card]').evaluate(element => ({
     editing: element.dataset.composerEditing, empty: element.dataset.composerEmpty, running: element.dataset.composerRunning,
     focusInside: element.contains(document.activeElement), focusTag: document.activeElement?.tagName,
     editable: document.activeElement?.getAttribute('contenteditable'),
@@ -430,7 +436,7 @@ export async function verifyPanes(page, context, state, dir) {
   await composer(left).press('Escape')
   await stop(left).waitFor({ state: 'hidden' })
   await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
-  assert.ok(await cardHeight(left) <= 56, 'An idle empty composer returns to one line')
+  assert.ok(Math.abs((await cardHeight(left)) - openHeight) < 0.5, 'An idle empty composer keeps the same open bar')
   assert.equal(await stop(right).isVisible(), true, 'Stopping one pane stopped the other conversation')
   finishRight()
   await stop(right).waitFor({ state: 'hidden' })
@@ -622,13 +628,23 @@ export async function verifyPanes(page, context, state, dir) {
   )
 }
 
-/** Selection stays compact; explicit editing and a first keystroke expand the borrowed editor. */
+/** One open layout: selection, focus, and editing never reflow the bar. */
 async function verifyPaneActivation(page, first, second, dir) {
   const editor = pane => pane.locator('[data-composer-card] [contenteditable=true]')
   const card = pane => pane.locator('[data-composer-card]')
-  const compact = async pane => {
-    assert.equal(await card(pane).getAttribute('data-composer-editing'), null)
-    assert.ok((await card(pane).boundingBox()).height <= 56, 'Selection must retain a one-line composer')
+  const bar = async pane => {
+    const height = (await card(pane).boundingBox()).height
+    assert.ok(height > 76, 'The composer keeps its open card')
+    assert.equal(
+      await card(pane).locator('[data-composer-tools]').evaluate(element => getComputedStyle(element).opacity),
+      '1',
+      'The composer keeps its control row visible',
+    )
+    return height
+  }
+  const resting = async pane => {
+    assert.equal(await card(pane).getAttribute('data-composer-editing'), null, 'A selected pane is not editing')
+    return bar(pane)
   }
   const marked = async (active, inactive) => {
     assert.equal(await active.getAttribute('data-pane-focused'), 'true')
@@ -640,41 +656,42 @@ async function verifyPaneActivation(page, first, second, dir) {
   await editor(first).focus()
   await editor(first).press(`${primaryModifier}+a`)
   await editor(first).press('Backspace')
-  assert.equal((await editor(first).innerText()).trim(), '', 'Clear the retained draft before measuring compact selection')
+  assert.equal((await editor(first).innerText()).trim(), '', 'Clear the retained draft before measuring the open bar')
+  const baseline = await bar(first)
   await editor(second).focus()
   await editor(second).press(`${primaryModifier}+Alt+ArrowLeft`)
-  await compact(first)
-  await compact(second)
+  assert.ok(Math.abs((await resting(first)) - baseline) < 0.5)
+  assert.ok(Math.abs((await resting(second)) - baseline) < 0.5)
   assert.equal(await editor(first).evaluate(element => element === document.activeElement), true)
   await marked(first, second)
   for (const theme of ['dark', 'light']) {
     await page.emulateMedia({ colorScheme: theme })
-    await page.screenshot({ path: join(dir, `pane-selected-compact-${theme}.png`) })
+    await page.screenshot({ path: join(dir, `pane-selected-open-${theme}.png`) })
   }
   await editor(first).press('x')
   await page.waitForFunction(() => document.querySelector('[data-pane-focused] [data-composer-card]')?.hasAttribute('data-composer-editing'))
   assert.equal(await editor(first).innerText(), 'x', 'The first keystroke must reach the selected conversation')
-  assert.ok((await card(first).boundingBox()).height > 76)
-  await page.screenshot({ path: join(dir, 'pane-typing-expanded.png') })
+  assert.ok(Math.abs((await bar(first)) - baseline) < 0.5, 'Editing keeps the same open bar')
+  await page.screenshot({ path: join(dir, 'pane-typing-open.png') })
   await editor(first).press('Backspace')
-  assert.ok((await card(first).boundingBox()).height > 76, 'Clearing the draft while editing keeps it open')
+  assert.ok(Math.abs((await bar(first)) - baseline) < 0.5, 'Clearing the draft while editing keeps the bar open')
   await second.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).last().click()
-  await compact(first)
-  await compact(second)
+  await resting(first)
+  await resting(second)
   await marked(second, first)
   await editor(second).focus()
-  await compact(second)
+  await resting(second)
   await editor(second).click()
-  assert.ok((await card(second).boundingBox()).height > 76, 'Clicking the selected composer starts editing')
+  assert.ok(Math.abs((await bar(second)) - baseline) < 0.5, 'Clicking the selected composer keeps the bar open')
   await first.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).click()
-  await compact(second)
+  await resting(second)
   await marked(first, second)
   await editor(second).click()
-  await compact(second)
+  await resting(second)
   await marked(second, first)
   await page.screenshot({ path: join(dir, 'pane-first-click-selects.png') })
   await editor(second).click()
-  assert.ok((await card(second).boundingBox()).height > 76, 'A second click starts editing after selecting an inactive input')
+  assert.ok(Math.abs((await bar(second)) - baseline) < 0.5, 'A second click selects the open bar without reflowing it')
   await first.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).click()
   await editor(first).fill(draft)
   await editor(second).focus()

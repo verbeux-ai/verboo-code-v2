@@ -27,6 +27,8 @@ const connections: Connections = { available: true, toolkits: [], accounts: [] }
 const server = (overrides: Partial<CustomMcpServerView> = {}): CustomMcpServerView => ({
   name: 'docs',
   transport: 'streamable-http',
+  auth: 'headers',
+  oauthSignedIn: false,
   url: 'https://mcp.example.com/mcp',
   headerNames: [],
   command: '',
@@ -43,6 +45,7 @@ const server = (overrides: Partial<CustomMcpServerView> = {}): CustomMcpServerVi
 const input = (overrides: Partial<McpServerInput> = {}): McpServerInput => ({
   name: 'docs',
   transport: 'streamable-http',
+  auth: 'headers',
   url: 'https://mcp.example.com/mcp',
   headers: {},
   command: '',
@@ -85,7 +88,9 @@ function fixture(overrides: Partial<ProductApi> = {}) {
     saveMcpServer: vi.fn(async () => ({ ok: true as const, data: server() })),
     deleteMcpServer: vi.fn(async () => ({ ok: true as const, data: null })),
     setMcpEnabled: vi.fn(async () => ({ ok: true as const, data: server({ enabled: false }) })),
-    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probe() })),
+signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
+    setMcpToken: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),
+    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probe() })),
     ...overrides,
   }
   return { api, model: new ProductModel(api, 30000) }

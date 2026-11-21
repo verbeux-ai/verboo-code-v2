@@ -56,13 +56,13 @@
   text-overflow: ellipsis;
 }
 
+/* One geometry in every state. While streaming the preview used to render with
+   `overflow: visible`, so its width tracked the growing text and snapped back to
+   an ellipsized line when the block settled: the row — and the turn card holding
+   it — moved on every token. The text now clips and ellipsizes identically while
+   running and after, so only its content changes, never the layout. */
 .summary[data-streaming] {
-  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
-}
-
-.summary[data-streaming] .summaryText {
-  overflow: visible;
-  text-overflow: clip;
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }
 
 .root:not([data-preview]) .separator,

@@ -34,6 +34,14 @@ export type { McpConnectionStatusHandle } from './status.ts'
 export type * from './types.ts'
 export { probeServer } from './probe.ts'
 export { assertTemplateSyntax } from './templates.ts'
+export { beginMcpOAuth, completeMcpOAuth, createMcpOAuthProvider } from './oauth.ts'
+export type {
+  McpOAuthAttempt,
+  McpOAuthProvider,
+  McpOAuthProviderOptions,
+  McpOAuthSlot,
+  McpOAuthStore,
+} from './oauth.ts'
 export type { McpProbeOptions } from './probe.ts'
 
 /** Cordis plugin name used by loader diagnostics. */

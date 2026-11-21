@@ -33,6 +33,10 @@ kind: "package-reference"
 
 `probe` 在不保存的情况下测试定义：解析模板、连接、列出工具并关闭，分别报告失败阶段（`connect` 或 `list`）与关闭结果。它不在 `ctx.tools` 注册任何内容，也不占用命名空间。
 
+定义带有身份验证模式。`headers` 发送用户输入的静态值，`none` 不发送凭据，`oauth` 发送 Host 通过授权流程获得的持有者令牌。OAuth 仅适用于 `streamable-http`：子进程无法完成重定向，因此写入会拒绝 `stdio`；它同样拒绝静态请求头，因为手动输入的 `Authorization` 会覆盖授权结果。OAuth 定义只保存一个 `Authorization` 模板而不保存值，其背后的凭据保存完整的请求头。
+
+`signIn` 通过 [MCP client](../../mcp/mcp-client/README.zh.md) 提供者启动流程，返回调用方需要打开的授权页面；当已保存的刷新授权仍然有效时返回空字符串。Host 在自己的 Web 服务器上于 `/mcp/oauth/callback` 应答重定向，并用其生成的 `state` 将响应匹配到该次尝试。`setToken` 接受用户改为粘贴的令牌，用于浏览器流程无法访问的授权服务器：裸令牌会变成 `Bearer <token>`，完整的请求头值则原样保留。`signOut` 丢弃授权与请求头，使下一次尝试从发现开始。`oauthSignedIn` 报告是否已存在值，无论用户以何种方式提供。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

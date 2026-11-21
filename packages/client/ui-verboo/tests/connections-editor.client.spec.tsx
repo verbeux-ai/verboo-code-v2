@@ -36,6 +36,8 @@ const account = (id: string, slug: string, label: string, status: Connection['st
 const server = (overrides: Partial<CustomMcpServerView> = {}): CustomMcpServerView => ({
   name: 'docs',
   transport: 'streamable-http',
+  auth: 'headers',
+  oauthSignedIn: false,
   url: 'https://mcp.example.com/mcp',
   headerNames: ['Authorization'],
   command: '',
@@ -232,6 +234,7 @@ describe('editor rows', () => {
         command: 'npx',
         args: ['-y', 'server'],
         env: { TOKEN: 'abc' },
+        auth: 'headers',
         enabled: true,
       })
     })
@@ -683,8 +686,9 @@ describe('state combinations rendered at once', () => {
 
   it('shows the MCP loading placeholder before the first read settles', () => {
     const { props } = fixture({ mcpServers: null, loadingMcp: true })
-    render(<ConnectionsPage {...props} />)
-    expect(screen.getByText('Servidores MCP')).toBeTruthy()
+    const view = render(<ConnectionsPage {...props} />)
+    expect(view.container.querySelector('[data-verboo-mcp]')).toBeTruthy()
+    expect(screen.getByLabelText('Carregando')).toBeTruthy()
   })
 
   it('explains a failed live connection on its card', () => {

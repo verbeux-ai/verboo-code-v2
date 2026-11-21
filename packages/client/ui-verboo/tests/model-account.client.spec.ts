@@ -35,6 +35,8 @@ const waiting = (id: string, withUrl = true): AccountView =>
 const server = (): CustomMcpServerView => ({
   name: 'docs',
   transport: 'streamable-http',
+  auth: 'headers',
+  oauthSignedIn: false,
   url: 'https://mcp.example.com/mcp',
   headerNames: ['Authorization'],
   command: '',
@@ -70,7 +72,9 @@ function fixture(overrides: Partial<ProductApi> = {}) {
     saveMcpServer: vi.fn(async () => ({ ok: true as const, data: server() })),
     deleteMcpServer: vi.fn(async () => ({ ok: true as const, data: null })),
     setMcpEnabled: vi.fn(async () => ({ ok: true as const, data: server() })),
-    probeMcpServer: vi.fn(async () => ({
+signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
+    setMcpToken: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),
+    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),    probeMcpServer: vi.fn(async () => ({
       ok: true as const,
       data: { ok: true, stage: null, message: null, serverName: 'x', serverVersion: '1', toolNames: [], truncated: false, durationMs: 1 },
     })),
@@ -523,7 +527,7 @@ describe('MCP write guards', () => {
     const gate = Promise.withResolvers<McpResult<CustomMcpServerView>>()
     const { model } = fixture({ saveMcpServer: vi.fn(async () => gate.promise) })
     const saving = model.saveMcpServer({
-      name: 'docs', transport: 'streamable-http', url: 'https://x/mcp',
+      name: 'docs', transport: 'streamable-http', auth: 'headers', url: 'https://x/mcp',
       headers: {}, command: '', args: [], env: {}, enabled: true,
     })
     model.adopt(view('b'))
@@ -553,7 +557,7 @@ describe('MCP write guards', () => {
     const gate = Promise.withResolvers<Awaited<ReturnType<ProductApi['probeMcpServer']>>>()
     const { model } = fixture({ probeMcpServer: vi.fn(async () => gate.promise) })
     const probing = model.probeMcpServer({
-      name: 'docs', transport: 'streamable-http', url: 'https://x/mcp',
+      name: 'docs', transport: 'streamable-http', auth: 'headers', url: 'https://x/mcp',
       headers: {}, command: '', args: [], env: {}, enabled: true,
     })
     model.adopt(view('b'))
@@ -601,7 +605,7 @@ describe('remaining guards and recovery paths', () => {
     const { api, model } = fixture({ disconnect: vi.fn(async () => gate.promise) })
     const busy = model.disconnect(connectionId)
     const input = {
-      name: 'docs', transport: 'streamable-http' as const, url: 'https://x/mcp',
+      name: 'docs', transport: 'streamable-http' as const, auth: 'headers' as const, oauthSignedIn: false, url: 'https://x/mcp',
       headers: {}, command: '', args: [], env: {}, enabled: true,
     }
     expect(await model.saveMcpServer(input)).toBe(false)
@@ -653,7 +657,7 @@ describe('remaining guards and recovery paths', () => {
     const gate = Promise.withResolvers<McpResult<CustomMcpServerView>>()
     const { model } = fixture({ saveMcpServer: vi.fn(async () => gate.promise) })
     const saving = model.saveMcpServer({
-      name: 'docs', transport: 'streamable-http', url: 'https://x/mcp',
+      name: 'docs', transport: 'streamable-http', auth: 'headers', url: 'https://x/mcp',
       headers: {}, command: '', args: [], env: {}, enabled: true,
     })
     model.adopt(view('b'))

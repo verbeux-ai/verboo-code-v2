@@ -9,17 +9,23 @@
  *
  * @module @deepseek-ai/dsh-api-verboo-mcp
  */
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { probeServer } from '@deepseek-ai/dsh-mcp-client'
 import type { Config as McpClientConfig, McpProbeResult } from '@deepseek-ai/dsh-mcp-client'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-mcp-manager'
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type { McpManagedServerView } from '@deepseek-ai/dsh-mcp-manager/types'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
-import { mcpServerDomain } from './store.ts'
+import { mcpServerDomain, authModeOf } from './store.ts'
+import {
+  answerCallback, beginAuthorization, forgetAuthorization, hasAuthorization, OAUTH_CALLBACK_PATH,
+  storeAuthorizationHeader,
+} from './oauth.ts'
 import type { StoredMcpServer } from './store.ts'
 import { DefinitionError, normalizeDefinition } from './validate.ts'
 import type { NormalizedDefinition } from './validate.ts'
@@ -152,6 +158,28 @@ export default class VerbooMcpServers extends TypertRemoteService {
    * release both on teardown.
    */
   *[Service.init](): Generator<() => Promise<void> | void, void, void> {
+    // The loopback callback answers one authorization redirect. It is
+    // registered with the attempt, not with the definition, so a Host without
+    // a web server simply offers no browser sign-in.
+    const webServer = this.ctx.get('webServer')
+    if (webServer !== undefined) {
+      yield webServer.register({
+        kind: 'exact',
+        path: OAUTH_CALLBACK_PATH,
+        handler: (req: IncomingMessage, res: ServerResponse) => {
+          void (async () => {
+            const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+            if (req.method !== 'GET') {
+              res.writeHead(405, { 'cache-control': 'no-store' }).end()
+              return
+            }
+            const answer = await answerCallback(this.ctx, url.searchParams)
+            res.writeHead(answer.status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' })
+            res.end(answer.body)
+          })()
+        },
+      })
+    }
     const opening = this.ctx.storageDomain.open(mcpServerDomain)
     this.opening = opening
     yield async () => {
@@ -235,10 +263,13 @@ export default class VerbooMcpServers extends TypertRemoteService {
     entry: StoredMcpServer,
     live: McpManagedServerView | undefined,
     missing: string[],
+    oauthSignedIn: boolean,
   ): CustomMcpServerView {
     return {
       name: entry.name,
       transport: entry.transport,
+      auth: authModeOf(entry),
+      oauthSignedIn,
       url: entry.url,
       headerNames: Object.keys(entry.headers),
       command: entry.command,
@@ -318,9 +349,17 @@ export default class VerbooMcpServers extends TypertRemoteService {
     return missing
   }
 
-  private async present(stored: StoredMcpServer): Promise<CustomMcpServerView> {
-    const live = this.ctx.mcpManager.list().find(view => view.name === stored.name)
-    return this.view(stored, live, await this.missingCredentials(stored))
+  private async present(
+    stored: StoredMcpServer,
+    live: McpManagedServerView | undefined =
+      this.ctx.mcpManager.list().find(view => view.name === stored.name),
+  ): Promise<CustomMcpServerView> {
+    return this.view(
+      stored,
+      live,
+      await this.missingCredentials(stored),
+      authModeOf(stored) === 'oauth' && await hasAuthorization(this.ctx, stored.name),
+    )
   }
 
   /**
@@ -334,7 +373,7 @@ export default class VerbooMcpServers extends TypertRemoteService {
       const live = new Map(this.ctx.mcpManager.list().map(view => [view.name, view]))
       const views: CustomMcpServerView[] = []
       for (const entry of await this.entries()) {
-        views.push(this.view(entry, live.get(entry.name), await this.missingCredentials(entry)))
+        views.push(await this.present(entry, live.get(entry.name)))
       }
       return views
     })
@@ -367,6 +406,7 @@ export default class VerbooMcpServers extends TypertRemoteService {
         command: definition.command,
         args: definition.args,
         env: definition.env,
+        auth: definition.auth,
         enabled: definition.enabled,
         credentialRefs: definition.credentialRefs,
         createdAt: existing?.createdAt ?? now,
@@ -448,6 +488,74 @@ export default class VerbooMcpServers extends TypertRemoteService {
     if (dispose === undefined) return
     dispose()
     this.mounted.delete(name)
+  }
+
+  /**
+   * Start an OAuth sign-in for one stored definition and report the page the
+   * user must open. A grant that is still refreshable needs no page.
+   * @param name - server key.
+   * @returns the authorization URL, or `'` when the stored grant was refreshed.
+   */
+  @Remote('signIn')
+  async signInFromClient(name: string): Promise<McpResult<string>> {
+    return this.read(async () => {
+      const entry = (await this.store()).table('servers').get(name)
+      if (entry === undefined) throw new DefinitionError('not_found', `no MCP server named "${name}"`)
+      if (authModeOf(entry) !== 'oauth') {
+        throw new DefinitionError('invalid_input', `"${name}" does not use OAuth`)
+      }
+      const url = await beginAuthorization(this.ctx, name, entry.url)
+      this.unmount(name)
+      await this.reconcile()
+      return url
+    })
+  }
+
+  /**
+   * Redeem a bearer token the user pasted, for an authorization server the
+   * browser flow cannot reach. The value is written as this server's header
+   * credential and never stored in the definition.
+   * @param name - server key.
+   * @param token - complete `Authorization` header value or a bare bearer token.
+   * @returns the stored definition with its live state.
+   */
+  @Remote('setToken')
+  async setTokenFromClient(name: string, token: string): Promise<McpResult<CustomMcpServerView>> {
+    return this.read(async () => {
+      const table = (await this.store()).table('servers')
+      const entry = table.get(name)
+      if (entry === undefined) throw new DefinitionError('not_found', `no MCP server named "${name}"`)
+      if (authModeOf(entry) !== 'oauth') {
+        throw new DefinitionError('invalid_input', `"${name}" does not use OAuth`)
+      }
+      const value = token.trim()
+      if (value === '') throw new DefinitionError('invalid_input', 'token: a token is required')
+      if (value.length > 8192) throw new DefinitionError('invalid_input', 'token: longer than 8192 characters')
+      // A bare token becomes the bearer value; a whole header is kept verbatim
+      // so an unusual scheme (DPoP, a vendor prefix) still works.
+      const header = /^[A-Za-z][A-Za-z0-9_-]*\s/.test(value) ? value : `Bearer ${value}`
+      await storeAuthorizationHeader(this.ctx, name, header)
+      this.unmount(name)
+      await this.reconcile()
+      return this.present(entry)
+    })
+  }
+
+  /**
+   * Drop one definition's OAuth grant so the next sign-in starts clean.
+   * @param name - server key.
+   * @returns the stored definition with its live state.
+   */
+  @Remote('signOut')
+  async signOutFromClient(name: string): Promise<McpResult<CustomMcpServerView>> {
+    return this.read(async () => {
+      const entry = (await this.store()).table('servers').get(name)
+      if (entry === undefined) throw new DefinitionError('not_found', `no MCP server named "${name}"`)
+      await forgetAuthorization(this.ctx, name)
+      this.unmount(name)
+      await this.reconcile()
+      return this.present(entry)
+    })
   }
 
   /**
@@ -556,7 +664,7 @@ export default class VerbooMcpServers extends TypertRemoteService {
     const out: VerbooMcpServerSummary[] = []
     for (const entry of await this.entries()) {
       const liveView = live.get(entry.name)
-      const view = this.view(entry, liveView, await this.missingCredentials(entry))
+      const view = await this.present(entry)
       out.push({
         name: entry.name,
         transport: entry.transport,
