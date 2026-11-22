@@ -42,6 +42,7 @@ import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { PACKAGE_ASSET_SEGMENT, packageAssetMediaType } from './assets.ts'
 import { exactPackageSpecifier, parseDshClient, stripClientSuffix } from './client/manifest.ts'
 import type { WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph, WebBootRelease } from './client/manifest.ts'
+export { PACKAGE_ASSET_REVISION_LENGTH, packageAssetRevision } from './asset-revision.ts'
 
 export { stripClientSuffix } from './client/manifest.ts'
 export type {

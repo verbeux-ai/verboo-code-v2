@@ -7,17 +7,28 @@
  * Blob URL before any bundle runs.
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/package-assets
  */
-import { PACKAGE_ASSET_MEDIA_TYPES as ASSET_MEDIA_TYPES } from '@deepseek-ai/dsh-client-modules/src/assets.ts'
 import { join } from './module-system/posix-path.ts'
 import type { MemoryVfs } from './storage/memory.ts'
 import { packTar, parseTar } from './storage/tar.ts'
 import type { VfsDirent } from './storage/types.ts'
 
 /**
- * Media type of each asset extension the Client build emits. The build and this
- * resolver must agree on the table, so it has one owner rather than a copy that
- * silently loses an extension the build starts publishing.
+ * Media type of each asset extension the Client build emits.
+ *
+ * The build's own table lives in `dsh-client-modules`, which imports `node:crypto`
+ * for content revisioning and therefore cannot enter a browser bundle. This
+ * resolver runs inside the worker image, so it states the table locally; the
+ * package-asset test walks the build's map and fails if the two ever disagree.
  */
+const ASSET_MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
+  ['.woff2', 'font/woff2'],
+  ['.woff', 'font/woff'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+])
 
 /** Entries of one directory. */
 function entriesOf(vfs: MemoryVfs, directory: string): VfsDirent[] {

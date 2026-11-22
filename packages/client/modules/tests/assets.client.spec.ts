@@ -8,9 +8,9 @@ import {
   PACKAGE_ASSET_SEGMENT,
   packageAssetMediaType,
   packageAssetReference,
-  packageAssetRevision,
   packageAssetRevisionedPath,
 } from '../src/assets.ts'
+import { packageAssetRevision } from '../src/asset-revision.ts'
 
 describe('packageAssetMediaType', () => {
   it.each([

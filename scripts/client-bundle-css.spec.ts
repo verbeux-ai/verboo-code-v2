@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { build, type TsdownBundle, type UserConfig } from 'tsdown'
 import { afterEach, describe, expect, it } from 'vitest'
-import { packageAssetRevision } from '../packages/client/modules/src/assets.ts'
+import { packageAssetRevision } from '../packages/client/modules/src/asset-revision.ts'
 import { clientBundle } from '../packages/client/tsdown.client.ts'
 
 interface EmittedAsset {
