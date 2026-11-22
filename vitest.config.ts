@@ -218,7 +218,7 @@ function remoteStubFor(packageName: string): string {
   const methods = Object.keys(VIEWER_ENDPOINT_CLASSES)
     .filter(endpoint => endpoint.startsWith(`${namespace}/`))
     .map(endpoint => `${namespace}/${endpoint.slice(namespace.length + 1)}`)
-    .map(endpoint => `${endpoint}: { invocation: { kind: 'direct' }, parameters: [] }`)
+    .map(endpoint => `'${endpoint}': { invocation: { kind: 'direct' }, parameters: [] }`)
   const methodEntries = methods.length === 0 ? '' : methods.join(',\n    ') + ','
   writeFileSync(file, `import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import { z } from 'zod'
