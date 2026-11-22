@@ -15,9 +15,9 @@
  */
 
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -175,6 +175,10 @@ export class OpenAiAccount extends Service {
     }
     // The key lives in the OS credential store, so the file holds ciphertext
     // only; the mode keeps another local account from reading even that.
+    // A first login on a fresh installation has no home directory yet, so it is
+    // created here rather than assumed: the credential is the first thing this
+    // package ever writes.
+    await mkdir(dirname(this.grantFile), { recursive: true, mode: 0o700 })
     await writeFile(this.grantFile, `${JSON.stringify(sealed)}\n`, { mode: 0o600 })
   }
 
