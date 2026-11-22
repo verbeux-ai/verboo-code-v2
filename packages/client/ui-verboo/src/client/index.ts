@@ -23,7 +23,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
-import { en, pt, zh } from './locales.ts'
+import { en, pt, zh, ja, es, fr, de, ru } from './locales.ts'
 import { Config } from '../config.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
@@ -88,7 +88,7 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(
-    () => ctx.locale.register('verboo', { en, pt, zh }),
+    () => ctx.locale.register('verboo', { en, pt, zh, ja, es, fr, de, ru }),
     'Verboo: dictionaries',
   )
   ctx.effect(
