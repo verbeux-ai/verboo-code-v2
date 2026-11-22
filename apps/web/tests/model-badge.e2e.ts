@@ -73,7 +73,7 @@ describe.skipIf(MODE === 'record')('web e2e: catalog model badges', () => {
       expect(await menu.getByRole('group', { name: 'External', exact: true }).locator('[data-tone]').count()).toBe(0)
       expect(await menu.getByRole('menuitemradio', { name: 'Invalid badge model', exact: true }).locator('[data-tone]').count()).toBe(0)
       expect(await menu.getByRole('menuitemradio', { name: `${LONG_NAME} Preview`, exact: true }).locator('[data-tone]').getAttribute('data-tone')).toBe('neutral')
-      const account = menu.getByRole('group', { name: 'DeepSeek 账号', exact: true })
+      const account = menu.getByRole('group', { name: 'Verboo 账号', exact: true })
       expect(await account.getByText('1017', { exact: true }).getAttribute('data-tone')).toBe('info')
       await account.getByRole('menuitemradio', { name: `${NAME} 1017`, exact: true }).click()
       await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash' })
