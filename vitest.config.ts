@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
@@ -191,8 +192,36 @@ const claudeCodeTestingAliases = {
 // only in built `lib/` output. On a clean checkout Vite resolves that import while transforming the
 // entry, before `vi.mock` can answer it, so the jsdom assembly suites need a resolvable stand-in.
 const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/liveshare/lib/typert.remote-client.js', import.meta.url))
-const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
-  '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
+const generatedRemoteStub = fileURLToPath(new URL('./scripts/generated-remote-stub.ts', import.meta.url))
+
+/**
+ * Every workspace package that publishes a generated `./remote` contribution
+ * resolves that subpath through its own `exports` to a built `lib/` file. A
+ * clean checkout has none of them, so each absent build falls back to the shared
+ * stand-in above.
+ * @returns aliases keyed by the `<package>/remote` specifier.
+ */
+function absentRemoteAliases(): Record<string, string> {
+  const aliases: Record<string, string> = {}
+  for (const manifestPath of globSync('packages/*/*/package.json')) {
+    const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    if (typeof manifest !== 'object' || manifest === null) continue
+    const { name, exports } = manifest as { name?: unknown; exports?: unknown }
+    if (typeof name !== 'string' || typeof exports !== 'object' || exports === null) continue
+    const remote: unknown = (exports as Record<string, unknown>)['./remote']
+    const target = typeof remote === 'string' ? remote : (remote as { default?: unknown } | undefined)?.default
+    if (typeof target !== 'string') continue
+    if (existsSync(join(dirname(manifestPath), target))) continue
+    aliases[`${name}/remote`] = generatedRemoteStub
+  }
+  return aliases
+}
+
+const generatedRemoteAliases = {
+  ...absentRemoteAliases(),
+  ...existsSync(liveshareRemoteBuild) ? {} : {
+    '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
+  },
 }
 // The vendored packages publish from built `lib/`, which a clean checkout does
 // not have. The tsconfig path aliases point at their `src`, but Vite resolves a

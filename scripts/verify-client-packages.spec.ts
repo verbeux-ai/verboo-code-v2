@@ -316,6 +316,7 @@ describe('package assets', () => {
       './assets/photo.jpeg',
       './assets/lazy.jpg',
       './assets/legacy.svg',
+      './assets/font.woff2',
     ])
   })
 
