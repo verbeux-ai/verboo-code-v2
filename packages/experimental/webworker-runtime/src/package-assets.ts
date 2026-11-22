@@ -7,19 +7,17 @@
  * Blob URL before any bundle runs.
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/package-assets
  */
+import { PACKAGE_ASSET_MEDIA_TYPES as ASSET_MEDIA_TYPES } from '@deepseek-ai/dsh-client-modules/src/assets.ts'
 import { join } from './module-system/posix-path.ts'
 import type { MemoryVfs } from './storage/memory.ts'
 import { packTar, parseTar } from './storage/tar.ts'
 import type { VfsDirent } from './storage/types.ts'
 
-/** Media type of each asset extension the Client build emits. */
-const ASSET_MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
-  ['.svg', 'image/svg+xml'],
-  ['.png', 'image/png'],
-  ['.webp', 'image/webp'],
-  ['.jpg', 'image/jpeg'],
-  ['.jpeg', 'image/jpeg'],
-])
+/**
+ * Media type of each asset extension the Client build emits. The build and this
+ * resolver must agree on the table, so it has one owner rather than a copy that
+ * silently loses an extension the build starts publishing.
+ */
 
 /** Entries of one directory. */
 function entriesOf(vfs: MemoryVfs, directory: string): VfsDirent[] {
