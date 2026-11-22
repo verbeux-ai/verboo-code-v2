@@ -1,5 +1,5 @@
-DeepSeek Harness
-DeepSeek Harness
+Verboo Code
+Verboo Code
 Sign in timed out
 Sign in again
 Add API Key
