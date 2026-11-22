@@ -28,7 +28,9 @@
   min-height: var(--dsh-composer-dock-min-height, calc(22px + var(--dsh-content-font-delta-secondary, 0px)));
 }
 
-.hero .dock:empty {
+/* The slot host can leave an empty display-contents wrapper in the hero. */
+.hero .dock:empty,
+.hero .dock:has(> [data-slot='conversation.input.context']:only-child:empty) {
   display: none;
 }
 

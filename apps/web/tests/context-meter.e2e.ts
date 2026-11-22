@@ -7,6 +7,7 @@ import { fixtureUserPrompts, launchWebScaffold, selectedSessionFixture, watchCon
 import { connectFreshWorkspace, newEnglishPage } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.v3.jsonl', import.meta.url))
+const BASE_DIAGNOSTICS = fileURLToPath(new URL('./fixtures/context-meter-base.patch.yml', import.meta.url))
 const NO_CHAT = fileURLToPath(new URL('./fixtures/context-meter-no-chat.patch.yml', import.meta.url))
 
 describe.skipIf(webSnapshotMode() === 'record').each([
@@ -19,7 +20,8 @@ describe.skipIf(webSnapshotMode() === 'record').each([
       replayFixture: fixture,
       compareReplaySession: false,
       paceMs: 5,
-      ...withStats ? {} : { extraOverlayPath: NO_CHAT },
+      // The bundled product hides these diagnostics. Exercise the base UI.
+      extraOverlayPath: withStats ? [BASE_DIAGNOSTICS] : [BASE_DIAGNOSTICS, NO_CHAT],
     })
     try {
       const browser = await engine.launch()
