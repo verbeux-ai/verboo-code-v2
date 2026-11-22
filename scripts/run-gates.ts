@@ -431,7 +431,7 @@ function ciPrimaryGates(): Gate[] {
     pnpmScript('typecheck', 'typecheck:contracts-ready', { needs: ['typert-contracts'] }),
     lintGate({ needs: ['typert-contracts'] }),
     pnpmScript('duplication', 'duplication'),
-    ...coverageGates(),
+    ...coverageGates({ ownsTypert: false }),
     ...nodeCompatSmokeGates(),
     snapshotGate(),
     ...docSyncLeafGates({
@@ -601,12 +601,15 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates('win32').map(gate => gate.id === 'electron-install' ? gate : {
+  const coverage = coverageGates({ ownsTypert: true }, 'win32').map(gate => gate.id === 'electron-install' ? gate : {
     ...gate,
     needs: [...new Set(['build', ...(gate.needs ?? [])])],
   })
   const coverageAfter = coverage.map(gate => gate.id)
-  const observational = ciWindowsObservationalGates()
+  // The complete lane's coverage already runs the Typert pass before every
+  // diagnostic (its needs carry it, and the diagnostics follow via after), so
+  // the observational set declares none — a second declaration would duplicate.
+  const observational = ciWindowsObservationalGates({ typert: [] })
     // Coverage owns Electron preparation. The required production site replaces
     // the MPA build, which writes to the same output directory.
     .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build' && gate.id !== 'electron-install')
@@ -637,9 +640,12 @@ function electronInstallGate(): Gate {
   }
 }
 
-function ciWindowsObservationalGates(): Gate[] {
+function ciWindowsObservationalGates(options: { typert?: Gate[] } = {}): Gate[] {
   const predecessors = [
     ...ciStaticGates({ ownsBuild: true }),
+    // A caller that owns no Typert pass writes the generated declarations
+    // itself: its diagnostics read them.
+    ...options.typert ?? [typertContractsGate()],
     electronInstallGate(),
     // Linux owns required lint and snapshots; Windows omits those duplicates.
     pnpmScript('duplication', 'duplication'),
@@ -707,7 +713,13 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   }
 }
 
-function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
+/**
+ * @param options - `ownsTypert` adds the Typert contracts pass to this graph; a
+ *   caller that already declares it passes false to keep one declaration.
+ * @param platform - the platform whose electron gate applies.
+ * @returns the exhaustive coverage lane, built and validated.
+ */
+function coverageGates(options: { ownsTypert?: boolean } = {}, platform: NodeJS.Platform = process.platform): Gate[] {
   const electron = platform === 'win32' ? [electronInstallGate()] : []
   const workers = coverageWorkerArgs()
   const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
@@ -727,10 +739,15 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
       streamOutput: true,
     })
+  // Client-assembly suites import generated `/remote` contributions, which only
+  // the Typert contracts pass writes. Without it a clean checkout resolves those
+  // subpaths to absent builds and the assembly mounts empty stand-ins.
+  const typert = options.ownsTypert ? [typertContractsGate()] : []
   return [
     pnpmScript('native-system', 'build:native-system'),
+    ...typert,
     ...electron,
-    { ...instrumented, needs: ['native-system', ...electron.map(gate => gate.id)] },
+    { ...instrumented, needs: ['native-system', ...typert.map(gate => gate.id), ...electron.map(gate => gate.id)] },
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
@@ -738,7 +755,7 @@ function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
       ...workers.exempt,
     ], {
       label: 'test:coverage-exempt-heavy',
-      needs: ['native-system'],
+      needs: ['native-system', ...typert.map(gate => gate.id)],
     }),
   ]
 }
