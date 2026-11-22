@@ -77,51 +77,44 @@ describe.skipIf(MODE === 'record').each([
     await trigger.click()
     await page.getByRole('menuitem', { name: /推理等级/ }).click()
 
-    // Declared levels, nothing else: the provider-default entry (the route
-    // configures no `reasoning`), then Off/High/Max — minimal, low, medium,
-    // and xhigh were not declared and must not be offered.
-    const levels = page.getByRole('menuitemradio')
-    await expect.poll(async () => levels.allTextContents(), { timeout: 10_000 })
-      .toEqual(['Default', 'Off', 'High', 'Max'])
+    const slider = page.getByRole('slider', { name: '推理等级' })
+    await slider.waitFor()
+    expect(await slider.getAttribute('min')).toBe('0')
+    expect(await slider.getAttribute('max')).toBe('3')
+    expect(await slider.getAttribute('aria-valuetext')).toBe('Default')
     const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
 
-    // Keyboard: the clicked cell unmounts with its pane, so the drilled pane's
-    // checked row takes the focus it left behind. ↑↓ walk the rows from there
-    // and Tab settles the focused one exactly as Enter would.
     await expect.poll(
-      () => levels.nth(0).evaluate(element => element === document.activeElement),
+      () => slider.evaluate(element => element === document.activeElement),
       { timeout: 10_000 },
     ).toBe(true)
-    await page.keyboard.press('ArrowDown')
-    await expect.poll(
-      () => levels.nth(1).evaluate(element => element === document.activeElement),
-      { timeout: 10_000 },
-    ).toBe(true)
-    await page.keyboard.press('ArrowDown')
-    await expect.poll(
-      () => levels.nth(2).evaluate(element => element === document.activeElement),
-      { timeout: 10_000 },
-    ).toBe(true)
+    // A native step commits on key release while leaving the control focused.
+    for (const [key, label, effort] of [
+      ['ArrowRight', '关闭', 'off'], ['ArrowRight', '高', 'high'],
+      ['ArrowRight', '最高', 'max'], ['ArrowLeft', '高', 'high'],
+    ] as const) {
+      await page.keyboard.press(key)
+      await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe(label)
+      await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection().reasoningEffort).toBe(effort)
+    }
+    expect(await slider.evaluate(element => element === document.activeElement)).toBe(true)
 
-    // Settling with Tab is the same gesture that saves the default selection, so
-    // the effort lands in the Agent default Settings section beside provider/model.
-    await page.keyboard.press('Tab')
-    await expect.poll(() => levels.count(), { timeout: 10_000 }).toBe(0)
     await expect.poll(
       async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'),
       { timeout: 10_000 },
     ).toContain('reasoningEffort: high')
     await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 })
-      .toBe('选择模型，当前 Acme Think，推理等级 High')
+      .toBe('选择模型，当前 Acme Think，推理等级 高')
 
-    // Reopening the drilled pane parks the keyboard on the level in use, and
-    // Shift+Tab walks back out like Escape: to the drilled cell, then closed.
+    // Reopening restores the selected level and focuses the slider.
+    await trigger.click()
+    await slider.waitFor({ state: 'detached' })
     await trigger.click()
     await page.getByRole('menuitem', { name: /推理等级/ }).click()
-    const high = page.getByRole('menuitemradio', { name: 'High' })
+    await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('高')
     await expect.poll(
-      () => high.evaluate(element => element === document.activeElement),
+      () => slider.evaluate(element => element === document.activeElement),
       { timeout: 10_000 },
     ).toBe(true)
     await page.keyboard.press('Shift+Tab')
@@ -151,7 +144,7 @@ describe.skipIf(MODE === 'record').each([
         await page.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ }).click()
         const focused = pane === 'model'
           ? page.getByRole('searchbox', { name: '搜索模型…' })
-          : page.locator('[role="menuitemradio"][aria-checked="true"]')
+          : page.getByRole('slider', { name: '推理等级' })
         await expect.poll(() => focused.evaluate(element => element === element.ownerDocument.activeElement)).toBe(true)
       }
       await trigger.click()
@@ -210,11 +203,19 @@ describe.skipIf(MODE === 'record').each([
 
     await trigger.click()
     await page.getByRole('menuitem', { name: /推理等级/ }).click()
-    await page.getByRole('menuitemradio', { name: 'Max', exact: true }).click()
-    await menu.waitFor({ state: 'detached' })
-    expect(selections).toBe(2)
+    const slider = page.getByRole('slider', { name: '推理等级' })
+    await slider.waitFor()
+    const rail = await slider.boundingBox()
+    if (rail === null) throw new Error('Reasoning slider is not visible')
+    await slider.click({ position: { x: Math.floor(rail.width) - 1, y: Math.floor(rail.height / 2) } })
+    await expect.poll(() => slider.getAttribute('aria-valuetext', { timeout: 1_000 })).toBe('最高')
+    expect(await slider.evaluate(element => element === document.activeElement)).toBe(true)
     await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection().reasoningEffort, { timeout: 10_000 })
       .toBe('max')
+    expect(selections).toBe(2)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await menu.waitFor({ state: 'detached' })
 
     await page.route('**/api/session/selectModel', async (route) => {
       const envelope = route.request().postDataJSON() as { rpcId: string }
