@@ -16,8 +16,8 @@ const PRO = {
   input_modalities: ['text'], output_modalities: ['text'],
   api_capabilities: { anthropic_messages: { system_prompt_update: 'leading-only' } },
 }
-const requires = (version: unknown) => ({ client_requirements: { 'verboo-code': { min_version: version } } })
-const shows = (badge: unknown) => ({ client_metadata: { 'verboo-code': { badge } } })
+const requires = (version: unknown) => ({ client_requirements: { 'deepseek-harness': { min_version: version } } })
+const shows = (badge: unknown) => ({ client_metadata: { 'deepseek-harness': { badge } } })
 const resolve = (rows: object[] | undefined, overrides: Record<string, ModelOverride> = {}) => resolveListedCatalog({
   listing: rows === undefined ? undefined : parseModelListing({ data: rows }).entries,
   supported: resolveAdapterOptions({}).models,
@@ -151,7 +151,7 @@ describe('with a listing', () => {
     expect([...catalog.badges]).toEqual([['deepseek-flash', badge]])
     expect(catalog.offered[0]).not.toHaveProperty('badge')
     expect(catalog.problems).toEqual([
-      expect.stringMatching(/^model "deepseek-v4-pro" shows no badge: client_metadata\["verboo-code"\]\.badge\.text is not a string/),
+      expect.stringMatching(/^model "deepseek-v4-pro" shows no badge: client_metadata\["deepseek-harness"\]\.badge\.text is not a string/),
     ])
   })
 

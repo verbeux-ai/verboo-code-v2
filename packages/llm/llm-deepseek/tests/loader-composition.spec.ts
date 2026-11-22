@@ -183,7 +183,7 @@ describe('llm-deepseek real dynamic composition', () => {
       keys.push(request.headers.get('x-api-key'))
       return Promise.resolve(new Response(JSON.stringify({ data: [
         { id: 'deepseek-flash', ...messages },
-        { id: 'deepseek-v5', ...messages, client_requirements: { 'verboo-code': { min_version: '0.0.1' } } },
+        { id: 'deepseek-v5', ...messages, client_requirements: { 'deepseek-harness': { min_version: '0.0.1' } } },
       ] })))
     })
     const { ctx } = await loadComposition({ withDynamic: true, baseURL: 'https://api.deepseek.com/anthropic' })
@@ -205,8 +205,8 @@ describe('llm-deepseek real dynamic composition', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const messages = { api_capabilities: { anthropic_messages: {} } }
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: [
-      { id: 'deepseek-flash', ...messages, client_metadata: { 'verboo-code': { badge: { text: { en: 'New', zh: '新' }, tone: 'info' } } } },
-      { id: 'deepseek-v4-pro', ...messages, client_metadata: { 'verboo-code': { badge: { text: 'far too long a badge' } } } },
+      { id: 'deepseek-flash', ...messages, client_metadata: { 'deepseek-harness': { badge: { text: { en: 'New', zh: '新' }, tone: 'info' } } } },
+      { id: 'deepseek-v4-pro', ...messages, client_metadata: { 'deepseek-harness': { badge: { text: 'far too long a badge' } } } },
     ] }))))
     const { ctx } = await loadComposition({ withDynamic: true, baseURL: 'https://api.deepseek.com/anthropic' })
     const badges = async () => (await ctx.llm.listModels('deepseek-official')).map(model => [model.id, model.badge])
