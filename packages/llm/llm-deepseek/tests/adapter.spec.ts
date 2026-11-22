@@ -440,7 +440,7 @@ describe('Cordis provider composition', () => {
       },
       {
         id: 'deepseek-v5', name: 'DeepSeek-V5', api_capabilities: { anthropic_messages: {} },
-        client_requirements: { 'deepseek-harness': { min_version: '99.0.0' } },
+        client_requirements: { 'verboo-code': { min_version: '99.0.0' } },
       },
     ] })
     ctx.provide('deepseekAccount', { resolveToken: async (_url: string): Promise<string | undefined> => 'fixture-token',

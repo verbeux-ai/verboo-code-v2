@@ -16,7 +16,7 @@ const FLASH = {
   api_capabilities: { anthropic_messages: { system_prompt_update: 'in-history' } },
 }
 const PRO = { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', context_window: 1_048_576, max_output_tokens: 393_216, input_modalities: ['text'], ...MESSAGES }
-const requires = (version: string) => ({ client_requirements: { 'deepseek-harness': { min_version: version } } })
+const requires = (version: string) => ({ client_requirements: { 'verboo-code': { min_version: version } } })
 
 const contexts: Context[] = []
 const servers: Server[] = []
@@ -95,12 +95,12 @@ it('resolves listed capabilities with this build\'s model knowledge', async () =
   })
   await expect(ctx.llm.resolveModelInfo('deepseek-account', 'deepseek-v4-pro')).resolves.not.toHaveProperty('systemPromptUpdate')
   expect(server.requests).toHaveLength(1)
-  expect(server.requests[0]?.headers['user-agent']).toMatch(/^deepseek-harness\//)
+  expect(server.requests[0]?.headers['user-agent']).toMatch(/^verboo-code\//)
 })
 
 it('advertises the badges its listing declares', async () => {
   const badge = { text: { en: 'New', zh: '新' }, tone: 'success' }
-  const server = await listing(json({ data: [{ ...FLASH, client_metadata: { 'deepseek-harness': { badge } } }, PRO] }))
+  const server = await listing(json({ data: [{ ...FLASH, client_metadata: { 'verboo-code': { badge } } }, PRO] }))
   const ctx = await host(server.origin)
   await ctx.plugin(Account, { baseURL: server.baseURL })
   expect((await ctx.llm.listModels('deepseek-account')).map(row => [row.id, row.badge])).toEqual([
@@ -111,7 +111,7 @@ it('advertises the badges its listing declares', async () => {
 it('publishes an account badge removal after the default idle refresh interval', async () => {
   let badge: { text: string } | undefined = { text: 'New' }
   const server = await listing((request, response) => {
-    json({ data: [{ ...FLASH, client_metadata: { 'deepseek-harness': { badge } } }] })(request, response)
+    json({ data: [{ ...FLASH, client_metadata: { 'verboo-code': { badge } } }] })(request, response)
   })
   const ctx = await host(server.origin)
   const refreshed = Promise.withResolvers<undefined>()

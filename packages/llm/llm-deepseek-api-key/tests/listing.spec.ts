@@ -13,7 +13,7 @@ const FLASH = {
   api_capabilities: { anthropic_messages: { system_prompt_update: 'in-history' } },
 }
 const PRO = { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', context_window: 1_048_576, input_modalities: ['text'], ...MESSAGES }
-const requires = (version: string) => ({ client_requirements: { 'deepseek-harness': { min_version: version } } })
+const requires = (version: string) => ({ client_requirements: { 'verboo-code': { min_version: version } } })
 const BUILT_IN = ['deepseek-flash', 'deepseek-v4-pro']
 
 const contexts: Context[] = []
@@ -62,7 +62,7 @@ it('follows the official listing while the catalog is the built-in one', async (
 
 it('advertises listed badges only while it follows the listing', async () => {
   const badge = { text: '1017', tone: 'info' }
-  officialListing(listing({ ...FLASH, client_metadata: { 'deepseek-harness': { badge } } }, PRO))
+  officialListing(listing({ ...FLASH, client_metadata: { 'verboo-code': { badge } } }, PRO))
   const { ctx } = await host()
   await ctx.plugin(ApiKey, {})
   const listed = await ctx.llm.listModels('deepseek-official')
@@ -178,7 +178,7 @@ it('keeps following the listing across an update the adapter rejects', async () 
 it.each([undefined, null])('notifies an idle client when a badge is replaced and cleared with %s', async (clear) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   let badge: { text: string; tone: string } | null | undefined = { text: 'New', tone: 'info' }
-  officialListing(() => listing({ ...FLASH, client_metadata: { 'deepseek-harness': { badge } } })())
+  officialListing(() => listing({ ...FLASH, client_metadata: { 'verboo-code': { badge } } })())
   const { ctx } = await host()
   await ctx.plugin(ApiKey, {})
   const changed = vi.fn()
