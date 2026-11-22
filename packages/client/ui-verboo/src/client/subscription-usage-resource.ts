@@ -5,12 +5,13 @@
  */
 import type { ProductError } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
+import type { ResourceProtocolMap, ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProductSnapshot } from './model.ts'
 import type {} from './contracts.ts'
 import type { SubscriptionUsage } from '@deepseek-ai/dsh-api-remotes/client'
+import { pollAccountResource } from './polled-resource.ts'
 export type { SubscriptionUsage } from '@deepseek-ai/dsh-api-remotes/client'
 
 /**
@@ -26,6 +27,8 @@ const WARN_PERCENT = 80
 export type SubscriptionUsageState = 'normal' | 'warn' | 'exhausted' | 'unlimited' | 'unavailable'
 
 type UsageAccount = Pick<ProductSnapshot, 'view' | 'profile'>
+/** One frame a subscription-usage provider yields. */
+type UsageFrame = RemoteResult<ResourceProtocolMap['verboo-subscription-usage']>
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
@@ -88,93 +91,33 @@ export function createSubscriptionUsageResource(
     },
     provider: {
       protocol: 'verboo-subscription-usage',
-      async *open(address, { signal }) {
-        let pending: AbortController | undefined
-        let resume: (() => void) | undefined
-        let dirty = false
-        const aborted = () => signal.aborted
-        const owned = () => address !== '' && subscriptionUsageAddress(account.getSnapshot()) === address
-        const visible = () => document.visibilityState === 'visible'
-        const online = () => navigator.onLine
-        const notify = () => {
-          dirty = true
-          resume?.()
-        }
-        const environmentChanged = () => {
-          if (aborted() || !visible() || !online() || !owned()) pending?.abort()
-          notify()
-        }
-        const identityChanged = () => {
-          if (!owned()) environmentChanged()
-        }
-        const wait = async (delay?: number): Promise<void> => {
-          if (aborted() || dirty) {
-            dirty = false
-            return
+      open: (address, { signal }) => pollAccountResource(read, {
+        signal,
+        intervalMs,
+        refreshers,
+        owned: () => address !== '' && subscriptionUsageAddress(account.getSnapshot()) === address,
+        subscribe: onChange => account.subscribe(onChange),
+        offline: () => ({
+          ok: false,
+          error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage refresh is paused while offline.', { reason: 'offline' }),
+        }),
+        failed: () => ({
+          ok: false,
+          error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage refresh is unavailable.', { reason: 'contract_error' }),
+        }),
+        interpret: (result): readonly UsageFrame[] => {
+          if (!result.ok) return [result]
+          if (result.value === undefined) {
+            // No reading is display data, not a failure: the control stays
+            // absent rather than painting a number the provider never gave.
+            return [{
+              ok: false,
+              error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage is unavailable.', { reason: 'unreported' }),
+            }]
           }
-          await new Promise<void>((resolve) => {
-            let timer: ReturnType<typeof setTimeout> | undefined
-            const done = () => {
-              clearTimeout(timer)
-              resume = undefined
-              dirty = false
-              resolve()
-            }
-            resume = done
-            if (delay !== undefined) timer = setTimeout(done, delay)
-          })
-        }
-        const stopAccount = account.subscribe(identityChanged)
-        signal.addEventListener('abort', environmentChanged)
-        window.addEventListener('focus', environmentChanged)
-        window.addEventListener('online', environmentChanged)
-        window.addEventListener('offline', environmentChanged)
-        document.addEventListener('visibilitychange', environmentChanged)
-        refreshers.add(notify)
-        try {
-          while (!aborted() && owned()) {
-            if (!visible()) {
-              await wait()
-              continue
-            }
-            if (!online()) {
-              yield { ok: false, error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage refresh is paused while offline.', { reason: 'offline' }) }
-              await wait()
-              continue
-            }
-            dirty = false
-            pending = new AbortController()
-            try {
-              const result = await read(AbortSignal.any([signal, pending.signal]))
-              if (aborted() || !owned()) return
-              if (!visible() || !online()) continue
-              if (!result.ok) yield result
-              else if (result.value === undefined) {
-                // No reading is display data, not a failure: the control stays
-                // absent rather than painting a number the provider never gave.
-                yield { ok: false, error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage is unavailable.', { reason: 'unreported' }) }
-              } else yield { ok: true, value: result.value }
-            } catch (_error) {
-              if (aborted() || !owned()) return
-              if (!visible() || !online()) continue
-              yield { ok: false, error: new RemoteError('verboo/subscription-usage-unavailable', 'Subscription usage refresh is unavailable.', { reason: 'contract_error' }) }
-            } finally {
-              pending = undefined
-            }
-            await wait(intervalMs)
-          }
-        } finally {
-          pending?.abort()
-          refreshers.delete(notify)
-          stopAccount()
-          signal.removeEventListener('abort', environmentChanged)
-          window.removeEventListener('focus', environmentChanged)
-          window.removeEventListener('online', environmentChanged)
-          window.removeEventListener('offline', environmentChanged)
-          document.removeEventListener('visibilitychange', environmentChanged)
-          resume?.()
-        }
-      },
+          return [{ ok: true, value: result.value }]
+        },
+      }),
     },
   }
 }

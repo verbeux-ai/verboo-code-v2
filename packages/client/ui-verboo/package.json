@@ -24,6 +24,7 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
     "./assets/*": "./lib/assets/*"
   },
   "dsh": {
@@ -102,15 +103,14 @@
     "react-dom": "^18.2.0"
   },
   "files": [
+    "locale/*.json",
     "lib/index.js",
     "lib/client.js",
     "lib/assets",
-    "lib/types/**/*.d.ts",
-    "LICENSES.md"
+    "lib/types/**/*.d.ts"
   ],
   "private": true,
   "dependencies": {
-    "@deepseek-ai/dsh-openai-account": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
   }
 }

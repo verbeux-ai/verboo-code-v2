@@ -44,6 +44,41 @@ const card = z.object({
   brand: z.string().min(1).max(32),
   last4: z.string().regex(/^\d{4}$/),
 })
+/** The plan an offer converts to, as the caller already passes it. */
+type OfferPlan = { id: PlanId; name: string; interval: string }
+
+/** One conversion result as the endpoint states it. */
+type ConversionResult = z.infer<typeof conversion>['data']
+
+/**
+ * The offer fields one conversion result describes. A field the result omits
+ * keeps the offer usable: currency falls back to USD and the interval to a
+ * month, because the confirmation step cannot express an offer without them.
+ * @param result - the provider's conversion result.
+ * @param plan - the plan being converted to.
+ * @returns the offer fields both call sites share.
+ */
+function offerFields(
+  result: ConversionResult,
+  plan: OfferPlan,
+): Omit<TrialOffer, 'card' | 'methods' | 'pending'> {
+  return {
+    id: randomUUID() as TrialOfferId,
+    paymentMethod: 'card',
+    pixAvailable: false,
+    planId: plan.id,
+    name: plan.name,
+    ...(result.attemptId ? { attemptId: result.attemptId } : {}),
+    amountMinor: result.amountCents,
+    renewalAmountMinor: result.baseAmountCents === undefined
+      ? result.amountCents
+      : result.baseAmountCents + (result.tierAmountCents ?? 0),
+    currency: result.currency?.toUpperCase() ?? 'USD',
+    interval: result.billingInterval ?? 'month',
+    expiresAt: result.expiresAt ?? new Date(Date.now() + 300000).toISOString(),
+  }
+}
+
 const conversion = z.object({
   data: z.object({
     contractVersion: z.literal(2),
@@ -267,22 +302,8 @@ export class TrialCommerce {
             : null,
         }
         const view: TrialOffer = {
-          id: randomUUID() as TrialOfferId,
+          ...offerFields(result, plan),
           pending,
-          paymentMethod: 'card',
-          pixAvailable: false,
-          planId: plan.id,
-          name: plan.name,
-          ...(result.attemptId ? { attemptId: result.attemptId } : {}),
-          amountMinor: result.amountCents,
-          renewalAmountMinor:
-            result.baseAmountCents === undefined
-              ? result.amountCents
-              : result.baseAmountCents + (result.tierAmountCents ?? 0),
-          currency: result.currency?.toUpperCase() ?? 'USD',
-          interval: result.billingInterval ?? 'month',
-          expiresAt:
-            result.expiresAt ?? new Date(Date.now() + 300000).toISOString(),
           card: result.card ?? null,
           methods: [],
         }
@@ -304,20 +325,7 @@ export class TrialCommerce {
         token: result.conversionToken,
         subscription: trial.id,
         view: {
-          id: randomUUID() as TrialOfferId,
-          paymentMethod: 'card',
-          pixAvailable: false,
-          planId: plan.id,
-          name: plan.name,
-          ...(result.attemptId ? { attemptId: result.attemptId } : {}),
-          amountMinor: result.amountCents,
-          renewalAmountMinor:
-            result.baseAmountCents === undefined
-              ? result.amountCents
-              : result.baseAmountCents + (result.tierAmountCents ?? 0),
-          currency: result.currency.toUpperCase(),
-          interval: result.billingInterval,
-          expiresAt: result.expiresAt,
+          ...offerFields(result, plan),
           card: result.card ?? null,
           methods: ['card'],
         },

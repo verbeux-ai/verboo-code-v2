@@ -2,12 +2,16 @@
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ProductError } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
+import type { ResourceProtocolMap, ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProductSnapshot } from './model.ts'
+import { pollAccountResource } from './polled-resource.ts'
 import type {} from './contracts.ts'
 
 type StaminaAccount = Pick<ProductSnapshot, 'view' | 'profile'>
+/** One frame a stamina provider yields. */
+type StaminaFrame = RemoteResult<ResourceProtocolMap['verboo-stamina']>
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
@@ -47,91 +51,31 @@ export function createStaminaResource(
     },
     provider: {
       protocol: 'verboo-stamina',
-      async *open(address, { signal }) {
-        let pending: AbortController | undefined
-        let resume: (() => void) | undefined
-        let dirty = false
-        const aborted = () => signal.aborted
-        const owned = () => address !== '' && staminaAddress(account.getSnapshot()) === address
-        const visible = () => document.visibilityState === 'visible'
-        const online = () => navigator.onLine
-        const notify = () => {
-          dirty = true
-          resume?.()
-        }
-        const environmentChanged = () => {
-          if (aborted() || !visible() || !online() || !owned()) pending?.abort()
-          notify()
-        }
-        const identityChanged = () => {
-          if (!owned()) environmentChanged()
-        }
-        const wait = async (delay?: number): Promise<void> => {
-          if (aborted() || dirty) {
-            dirty = false
-            return
+      open: (address, { signal }) => pollAccountResource(read, {
+        signal,
+        intervalMs,
+        refreshers,
+        owned: () => address !== '' && staminaAddress(account.getSnapshot()) === address,
+        subscribe: onChange => account.subscribe(onChange),
+        offline: () => ({
+          ok: false,
+          error: new RemoteError('verboo/stamina-unavailable', 'Stamina refresh is paused while offline.', { reason: 'offline' }),
+        }),
+        failed: () => ({
+          ok: false,
+          error: new RemoteError('verboo/stamina-unavailable', 'Stamina refresh is unavailable.', { reason: 'contract_error' }),
+        }),
+        interpret: (result): readonly StaminaFrame[] => {
+          if (!result.ok) return [result]
+          if (!result.value.ok) {
+            return [{
+              ok: false,
+              error: new RemoteError('verboo/stamina-unavailable', 'Stamina could not be refreshed.', { reason: result.value.code }),
+            }]
           }
-          await new Promise<void>((resolve) => {
-            let timer: ReturnType<typeof setTimeout> | undefined
-            const done = () => {
-              clearTimeout(timer)
-              resume = undefined
-              dirty = false
-              resolve()
-            }
-            resume = done
-            if (delay !== undefined) timer = setTimeout(done, delay)
-          })
-        }
-        const stopAccount = account.subscribe(identityChanged)
-        signal.addEventListener('abort', environmentChanged)
-        window.addEventListener('focus', environmentChanged)
-        window.addEventListener('online', environmentChanged)
-        window.addEventListener('offline', environmentChanged)
-        document.addEventListener('visibilitychange', environmentChanged)
-        refreshers.add(notify)
-        try {
-          while (!aborted() && owned()) {
-            if (!visible()) {
-              await wait()
-              continue
-            }
-            if (!online()) {
-              yield { ok: false, error: new RemoteError('verboo/stamina-unavailable', 'Stamina refresh is paused while offline.', { reason: 'offline' }) }
-              await wait()
-              continue
-            }
-            dirty = false
-            pending = new AbortController()
-            try {
-              const result = await read(AbortSignal.any([signal, pending.signal]))
-              if (aborted() || !owned()) return
-              if (!visible() || !online()) continue
-              if (!result.ok) yield result
-              else if (!result.value.ok) {
-                yield { ok: false, error: new RemoteError('verboo/stamina-unavailable', 'Stamina could not be refreshed.', { reason: result.value.code }) }
-              } else yield { ok: true, value: result.value.data }
-            } catch (_error) {
-              if (aborted() || !owned()) return
-              if (!visible() || !online()) continue
-              yield { ok: false, error: new RemoteError('verboo/stamina-unavailable', 'Stamina refresh is unavailable.', { reason: 'contract_error' }) }
-            } finally {
-              pending = undefined
-            }
-            await wait(intervalMs)
-          }
-        } finally {
-          pending?.abort()
-          refreshers.delete(notify)
-          stopAccount()
-          signal.removeEventListener('abort', environmentChanged)
-          window.removeEventListener('focus', environmentChanged)
-          window.removeEventListener('online', environmentChanged)
-          window.removeEventListener('offline', environmentChanged)
-          document.removeEventListener('visibilitychange', environmentChanged)
-          resume?.()
-        }
-      },
+          return [{ ok: true, value: result.value.data }]
+        },
+      }),
     },
   }
 }

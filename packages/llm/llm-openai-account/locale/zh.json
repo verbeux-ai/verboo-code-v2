@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "通过 Codex responses 协议调用 ChatGPT 模型，并分类处理速率限制和用量信息。"
+  }
+}

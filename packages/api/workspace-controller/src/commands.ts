@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   WorkspaceActiveSessionError,
   WorkspaceArchivedSessionPinError,
@@ -36,6 +37,29 @@ import type {
 } from './types.ts'
 
 /** Implements Workspace mutations against the authoritative registry. */
+/**
+ * Translate the two registry refusals every Session mutation shares into their
+ * wire errors. Anything else propagates unchanged, so a caller keeps its own
+ * classification.
+ * @param error - the caught failure.
+ * @param sessionId - the Session the request named.
+ * @throws the wire error for a known refusal; returns for an unrelated failure.
+ */
+function translateSessionError(error: unknown, sessionId: SessionId): void {
+  if (error instanceof WorkspaceUnknownSessionError) {
+    throw new RemoteError('session/not-found', error.message, { sessionId }, { cause: error })
+  }
+  if (error instanceof WorkspaceActiveSessionError) {
+    throw new RemoteError(
+      'workspace/session-active',
+      error.message,
+      { sessionId, activity: error.activity },
+      { cause: error },
+    )
+  }
+}
+
+/** Workspace mutations over the Host registry, each mapped to its wire failure. */
 export class WorkspaceCommands {
   private operationTail = Promise.resolve()
 
@@ -190,17 +214,7 @@ export class WorkspaceCommands {
         workspace: workspaceView(workspace),
       }
     } catch (error) {
-      if (error instanceof WorkspaceUnknownSessionError) {
-        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
-      }
-      if (error instanceof WorkspaceActiveSessionError) {
-        throw new RemoteError(
-          'workspace/session-active',
-          error.message,
-          { sessionId: request.sessionId, activity: error.activity },
-          { cause: error },
-        )
-      }
+      translateSessionError(error, request.sessionId)
       if (error instanceof WorkspaceMoveTargetInvalidError) {
         throw new RemoteError(
           'workspace/move-invalid',
@@ -228,17 +242,7 @@ export class WorkspaceCommands {
         request.stopActivity === true ? { stopActivity: true } : {},
       )
     } catch (error) {
-      if (error instanceof WorkspaceUnknownSessionError) {
-        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
-      }
-      if (error instanceof WorkspaceActiveSessionError) {
-        throw new RemoteError(
-          'workspace/session-active',
-          error.message,
-          { sessionId: request.sessionId, activity: error.activity },
-          { cause: error },
-        )
-      }
+      translateSessionError(error, request.sessionId)
       throw error
     }
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }

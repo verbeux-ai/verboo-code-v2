@@ -66,9 +66,10 @@ function fixture(overrides: Partial<ProductApi> = {}) {
     saveMcpServer: vi.fn(async () => ({ ok: true as const, data: server() })),
     deleteMcpServer: vi.fn(async () => ({ ok: true as const, data: null })),
     setMcpEnabled: vi.fn(async () => ({ ok: true as const, data: server() })),
-signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
+    signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
     setMcpToken: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),
-    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probeData })),
+    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: {} as CustomMcpServerView })),
+    probeMcpServer: vi.fn(async () => ({ ok: true as const, data: probeData })),
     ...overrides,
   }
   return { api, model: new ProductModel(api, 30000) }

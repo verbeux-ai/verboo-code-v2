@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Direciona modelos ChatGPT pelo protocolo responses do Codex e classifica limites de frequência e uso."
+  }
+}

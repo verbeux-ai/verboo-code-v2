@@ -824,7 +824,11 @@ class FaceAnalyzer {
       if (moduleSymbol === undefined) continue
       for (const exported of this.checker.getExportsOfModule(moduleSymbol)) {
         const symbol = this.resolveSymbol(exported)
-        const declaration = preferredDeclaration(symbol) as ts.Declaration
+        // A symbol the program never resolved from a source file (a module whose
+        // built entry is absent on a clean checkout) has no declaration, so it
+        // publishes nothing this face can document.
+        const declaration = preferredDeclaration(symbol)
+        if (declaration === undefined) continue
         const aliases = exported === symbol || exported.name === symbol.name
           ? [exported.name]
           : [exported.name, symbol.name]
@@ -2740,8 +2744,25 @@ class FaceAnalyzer {
     const target = packageExportTargets(registration.manifest)
       .find(([subpath]) => subpath === module.subpath)?.[1]
     if (target === undefined) return undefined
-    const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target))) as ts.SourceFile
-    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile) as ts.Symbol
+    // A subpath resolves to the file the program indexed. A client program often
+    // holds the built declaration (`lib/types/*.d.ts`) rather than the source it
+    // came from, so the declaration itself is a valid entry.
+    const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target)))
+      ?? this.sourceFiles.get(realPath(resolve(registration.root, target)))
+    if (sourceFile === undefined) {
+      // A clean checkout has no built `lib/`, and a subpath export resolves
+      // through package.json rather than the bare-name tsconfig alias, so the
+      // program never loads that module. The declaration still exists at its
+      // source: answer the requested name when that file declares it, and no
+      // name for a target that is not a TypeScript module at all (a locale JSON,
+      // a stylesheet).
+      const sourcePath = sourcePathForExport(registration.root, target)
+      if (!existsSync(sourcePath)) return undefined
+      const parsed = ts.createSourceFile(sourcePath, readFileSync(sourcePath, 'utf8'), ts.ScriptTarget.Latest, true)
+      return declaresExport(parsed, requestedName) ? requestedName : undefined
+    }
+    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile)
+    if (moduleSymbol === undefined) return undefined
     const exported = this.checker.getExportsOfModule(moduleSymbol)
       .find(candidate => candidate.name === requestedName && this.resolveSymbol(candidate) === symbol)
     return exported?.name
@@ -3465,4 +3486,33 @@ function compareCrossFaceLinks(left: CrossFaceLink, right: CrossFaceLink): numbe
     || left.toPackage.localeCompare(right.toPackage)
     || left.subpath.localeCompare(right.subpath)
     || left.name.localeCompare(right.name)
+}
+
+/**
+ * Whether a parsed module declares the named export, in any of the three forms a
+ * re-export can target: a declaration with `export`, an export list, or a
+ * star re-export (which makes every name potentially present).
+ * @param sourceFile - the parsed module source.
+ * @param name - the export name the re-export asked for.
+ * @returns true when the module exports that name.
+ */
+function declaresExport(sourceFile: ts.SourceFile, name: string): boolean {
+  for (const statement of sourceFile.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.exportClause === undefined) return true
+      if (ts.isNamedExports(statement.exportClause)
+        && statement.exportClause.elements.some(element => element.name.text === name)) return true
+      continue
+    }
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined
+    if (modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword) !== true) continue
+    if (ts.isVariableStatement(statement)) {
+      if (statement.declarationList.declarations.some(declaration =>
+        ts.isIdentifier(declaration.name) && declaration.name.text === name)) return true
+      continue
+    }
+    const declared = statement as ts.Statement & { name?: ts.Node }
+    if (declared.name !== undefined && ts.isIdentifier(declared.name) && declared.name.text === name) return true
+  }
+  return false
 }

@@ -59,7 +59,7 @@ async function harness(handler: (url: string, init: RequestInit) => Response): P
   const ctx = new Context()
   contexts.push(ctx)
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
-    handler(String(input), init ?? {})))
+    handler(input instanceof URL ? input.href : input instanceof Request ? input.url : input, init ?? {})))
   // Not prepared here: the service must create the key on its first write, as a
   // fresh installation does.
   const vault = new GrantVault('https://auth.openai.com/oauth/token', `/tmp/openai-account-test-${String(counter++)}`, memoryStore())
@@ -175,7 +175,7 @@ describe('token renewal', () => {
     })
     const service = await harness((_url, init) => {
       exchange += 1
-      bodies.push(String(init.body))
+      bodies.push(init.body instanceof URLSearchParams ? init.body.toString() : typeof init.body === 'string' ? init.body : '')
       return new Response(JSON.stringify(expired(`access-${exchange}`, `refresh-${exchange}`)), { status: 200 })
     })
     await service.complete('code', 'verifier', 'http://127.0.0.1/cb', new AbortController().signal)

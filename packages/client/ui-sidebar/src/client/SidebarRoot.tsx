@@ -22,7 +22,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   FishLogo, IconAppsAddOutlineRegular, IconNewChatOutlineMedium, IconNewChatOutlineRegular,
-  IconPanelLeftOutlineRegular, IconPinFillRegular, focusWithoutRing, isBehindModal, isDarwinDesktop, Menu, ShortcutKeys, Toast,
+  IconPanelLeftOutlineRegular, IconPinFillRegular, useCollapseSettled, focusWithoutRing, isBehindModal,
+  isDarwinDesktop, Menu, ShortcutKeys, Toast,
   Tooltip, useModalLayer, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderFactories, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,7 +36,6 @@ import { createScrollHandoff } from './scroll-handoff.ts'
 import css from './SidebarRoot.module.css'
 
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
-const COLLAPSE_SETTLE_MS = 150
 
 /**
  * How long the column's scrollbars stay drawn after the pointer leaves it.
@@ -179,12 +179,7 @@ export function SidebarRoot({
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   // A closed drawer retains its content with the rail phase already settled.
-  const [settled, setSettled] = useState(collapsed)
-  useEffect(() => {
-    if (drawer || !collapsed) { setSettled(collapsed); return }
-    const timer = window.setTimeout(() => { setSettled(true) }, COLLAPSE_SETTLE_MS)
-    return () => { window.clearTimeout(timer) }
-  }, [collapsed, drawer])
+  const settled = useCollapseSettled(collapsed, drawer)
   const windowsTitlebar = document.documentElement.hasAttribute('data-windows-titlebar')
   const wide = drawer || (windowsTitlebar ? !collapsed : !collapsed || !settled)
   const [scrollHandoff] = useState(createScrollHandoff)

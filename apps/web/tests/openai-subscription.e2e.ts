@@ -48,7 +48,7 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
         return
       }
       let body = ''
-      request.on('data', chunk => { body += String(chunk) })
+      request.on('data', (chunk) => { body += String(chunk) })
       request.on('end', () => {
         const form = new URLSearchParams(body)
         const code = form.get('code') ?? ''
@@ -67,7 +67,7 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
         }))
       })
     })
-    await new Promise<void>(resolve => { double.listen(0, '127.0.0.1', resolve) })
+    await new Promise<void>((resolve) => { double.listen(0, '127.0.0.1', resolve) })
     const address = double.address()
     const origin = typeof address === 'object' && address !== null
       ? `http://127.0.0.1:${String(address.port)}`
@@ -92,7 +92,7 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
   afterAll(async () => {
     await browser?.close()
     await scaffold?.close()
-    await new Promise<void>(resolve => { double?.close(() => { resolve() }) })
+    await new Promise<void>((resolve) => { double?.close(() => { resolve() }) })
     if (home !== undefined) await rm(home, { recursive: true, force: true })
   })
 

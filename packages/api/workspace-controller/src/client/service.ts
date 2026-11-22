@@ -114,6 +114,7 @@ export interface IWorkspaces {
    * @throws {WorkspaceArchiveError} when the Host refuses; without `stopActivity` a Session with
    *   running work fails as `workspace/session-active`, its details naming what runs.
    */
+  /* jscpd:ignore-start -- the Client face restates the Host signatures */
   archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
    * Unarchive a Session from the archived Session list.
@@ -129,6 +130,7 @@ export interface IWorkspaces {
    *   running work fails as `workspace/session-active`, its details naming what runs.
    */
   deleteSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
+  /* jscpd:ignore-end */
   /**
    * Pin a Session ahead of unpinned Sessions on Workspace grouping surfaces.
    * @param sessionId - Session to pin.

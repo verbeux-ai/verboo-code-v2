@@ -7,9 +7,13 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_openai_account["openai-account"]
+  svc_openaiAccount["ctx.openaiAccount<br/>[OI] ChatGPT account"]
+  pkg_client_ui_verboo["client-ui-verboo"]
+  pkg_llm_openai_account["llm-openai-account"]
+  svc_llmOpenaiAccount["ctx.llmOpenaiAccount<br/>[OI] subscription routing"]
   pkg_api_verboo_mcp["api-verboo-mcp"]
   svc_verbooMcp["ctx.verbooMcp<br/>Verboo account MCP servers"]
-  pkg_client_ui_verboo["client-ui-verboo"]
   pkg_verboo_connections["verboo-connections"]
   pkg_api_verboo_product["api-verboo-product"]
   svc_verbooProduct["ctx.verbooProduct<br/>Verboo account product API"]
@@ -405,6 +409,7 @@ flowchart LR
   pkg_jobs_local --> svc_jobs
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
+  pkg_llm_openai_account --> svc_llmOpenaiAccount
   pkg_llm_pi_ai --> svc_llm
   pkg_llm_replay --> svc_llm
   pkg_lsp --> svc_lsp
@@ -414,6 +419,7 @@ flowchart LR
   pkg_mcp_resources --> svc_mcpResources
   pkg_message_feedback --> svc_messageFeedback
   pkg_office_to_pdf --> svc_officeToPdf
+  pkg_openai_account --> svc_openaiAccount
   pkg_otel --> svc_otel
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -543,9 +549,11 @@ flowchart LR
   svc_jobs --> pkg_tool_terminal
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_llmOpenaiAccount --> pkg_client_ui_verboo
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
+  svc_openaiAccount --> pkg_client_ui_verboo
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
   svc_pluginManager --> pkg_plugin_manager
@@ -661,6 +669,8 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.openaiAccount` | `service` | [`openai-account`](../packages/credentials/openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Stores the [OI] subscription grant and reports the plan facts product surfaces show. |
+| `ctx.llmOpenaiAccount` | `service` | [`llm-openai-account`](../packages/llm/llm-openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Routes the subscription models and reports the usage and limit readings the composer shows. |
 | `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Stores account-owned server definitions and reconciles their credential-backed MCP registrations. |
 | `ctx.verbooProduct` | `service` | [`api-verboo-product`](../packages/api/verboo-product) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Reads account-owned plans and connections and delegates connected tool actions to the central Verboo API. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
