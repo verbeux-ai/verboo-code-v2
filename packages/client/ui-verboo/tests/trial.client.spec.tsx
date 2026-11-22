@@ -2,9 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import type { TrialId, TrialOfferId, TrialAttemptId } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type { PlanId, TrialId, TrialOfferId, TrialAttemptId } from '@deepseek-ai/dsh-api-verboo-product/types'
 import { TrialModal, TrialDock } from '../src/client/Trial.tsx'
 import type { TrialSnapshot } from '../src/client/trial-model.ts'
+import type { OpenAiStatus, PreferenceSnapshot } from '../src/client/contracts.ts'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { ProductSnapshot } from '../src/client/model.ts'
+import type { AccountProfile } from '@deepseek-ai/dsh-deepseek-account/types'
 import { en, pt, zh } from '../src/client/locales.ts'
 afterEach(cleanup)
 function fixture(locale = 'pt') {
@@ -33,12 +37,40 @@ function fixture(locale = 'pt') {
     },
   }
   const dictionary = locale === 'pt' ? pt : locale === 'zh' ? zh : en
-  const product = {
-    profile: { id: 'owner' },
+  const product: ProductSnapshot = {
+    view: null,
+    profile: { id: 'owner' } as AccountProfile,
+    profilePreviouslyVerified: true,
+    initialized: true,
+    accountFailed: false,
+    actionFailed: null,
+    starting: false,
+    connections: null,
+    plansFailed: false,
+    connectionsFailed: false,
+    loadingPlans: false,
+    loadingConnections: false,
+    busy: null,
+    handoff: null,
+    handoffUntil: 0,
+    connectedTarget: null,
+    feedback: null,
+    modelFailed: false,
+    initializingModel: false,
+    browserBlocked: false,
+    navigationFailed: false,
+    authorizationIds: [],
+    mcpServers: null,
+    loadingMcp: false,
+    mcpFailed: false,
+    mcpProbe: null,
+    probingMcp: false,
+    mcpError: null,
     plans: {
+      subscriptions: [],
       catalog: [
         {
-          id: 'max',
+          id: 'max' as PlanId,
           slug: 'max',
           name: 'Max',
           description: 'More parallel projects',
@@ -47,7 +79,7 @@ function fixture(locale = 'pt') {
           interval: 'month',
         },
         {
-          id: 'pro',
+          id: 'pro' as PlanId,
           slug: 'pro',
           name: 'Pro',
           description: 'Daily coding projects',
@@ -58,15 +90,61 @@ function fixture(locale = 'pt') {
       ],
     },
   }
-  const props = {
-    useTrial: (select: (s: TrialSnapshot) => unknown) => select(state),
-    useProduct: (select: (s: typeof product) => unknown) => select(product),
-    usePreferences: (select: (s: { locale: string }) => unknown) => select({ locale }),
-    t: (key: string, params: Record<string, string> = {}) =>
+  type TrialFixture = ComponentProps<typeof TrialModal> & Pick<ComponentProps<typeof TrialDock>, 'useStaminaModel'>
+  const props: TrialFixture = {
+    useTrial: <T,>(select: (s: TrialSnapshot) => T): T => select(state),
+    useProduct: <T,>(select: (s: typeof product) => T): T => select(product),
+    useStaminaModel: <T,>(select: (s: { current: null }) => T): T => select({ current: null }),
+    useNavigation: <T,>(select: (s: readonly { id: MainPanelId; label: string }[]) => T): T =>
+      select([]),
+    useExternalStatus: <T,>(select: (s: OpenAiStatus) => T): T => select({ signedIn: false }),
+    usePreferences: <T,>(select: (s: PreferenceSnapshot) => T): T =>
+      select({ theme: 'system', locale, languages: [] }),
+    t: ((key: string, params: Record<string, string> = {}) =>
       (dictionary as Record<string, string>)[key]?.replace(/\{(\w+)\}/g, (_, name: string) => params[name] ?? name) ??
-      key,
-    useStaminaModel: (select: (s: { current: null }) => unknown) => select({ current: null }),
+      key) as TrialFixture['t'],
     selectTrialGroup: vi.fn(),
+    start: vi.fn(),
+    reopen: vi.fn(),
+    cancel: vi.fn(),
+    retryAccount: vi.fn(),
+    signOut: vi.fn(async () => true),
+    startSession: vi.fn(),
+    openSession: vi.fn(),
+    openWorkspace: vi.fn(),
+    addProject: vi.fn(async () => undefined),
+    renameProject: vi.fn(async () => undefined),
+    removeProject: vi.fn(async () => undefined),
+    sessionMenu: vi.fn(),
+    selectPanel: vi.fn(),
+    toggleSidebar: vi.fn(),
+    loadConnections: vi.fn(),
+    beginOpenAiSignIn: vi.fn(async () => undefined),
+    completeOpenAiSignIn: vi.fn(async () => false),
+    openAiStatus: vi.fn(async () => ({ signedIn: false })),
+    signOutOpenAi: vi.fn(async () => undefined),
+    refreshSubscriptionUsage: vi.fn(),
+    openOpenAiDialog: vi.fn(),
+    closeOpenAiDialog: vi.fn(),
+    refreshStamina: vi.fn(),
+    connect: vi.fn(async () => true),
+    reopenConnection: vi.fn(),
+    disconnect: vi.fn(async () => true),
+    loadMcpServers: vi.fn(),
+    saveMcpServer: vi.fn(async () => true),
+    deleteMcpServer: vi.fn(async () => true),
+    setMcpEnabled: vi.fn(async () => true),
+    probeMcpServer: vi.fn(async () => true),
+    signInMcpServer: vi.fn(async () => true),
+    setMcpToken: vi.fn(async () => true),
+    signOutMcpServer: vi.fn(async () => true),
+    clearMcpProbe: vi.fn(),
+    billing: vi.fn(),
+    dismiss: vi.fn(),
+    setTheme: vi.fn(),
+    setLocale: vi.fn(),
+    retryModel: vi.fn(),
+    help: vi.fn(),
     loadPlans: vi.fn(),
     showTrial: vi.fn(),
     closeTrial: vi.fn(),
@@ -74,7 +152,7 @@ function fixture(locale = 'pt') {
     confirmTrial: vi.fn(),
     refreshTrial: vi.fn(),
     reopenTrial: vi.fn(),
-  } satisfies Partial<ComponentProps<typeof TrialModal>> as ComponentProps<typeof TrialModal>
+  }
   return { state, props }
 }
 describe('trial conversion interface', () => {
@@ -123,7 +201,7 @@ describe('trial conversion interface', () => {
     const f = fixture()
     f.state.open = false
     f.state.notices[0]!.tokensRemaining = 800000
-    render(<TrialDock {...(f.props as ComponentProps<typeof TrialDock>)} />)
+    render(<TrialDock {...(f.props as unknown as ComponentProps<typeof TrialDock>)} />)
     expect(screen.getByText(/800.000 tokens restantes/)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Fazer upgrade' }))

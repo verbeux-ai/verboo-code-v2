@@ -119,14 +119,14 @@ export function apply(ctx: ClientContext): void {
       openExternalLink: (url) => { void ctx.get('externalLinks')?.open(url) },
       // A file mentioned in the plan opens in the right Sidebar under this
       // Session, the same destination a Chat file link uses.
-/* jscpd:ignore-start -- Each plugin owns its own slot inject and its own copy of the two-line openResource call; the address itself is shared through util-workspace-path. */
+      /* jscpd:ignore-start -- each surface owns its slot inject */
       openFile: (path, options) => {
         const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
         const target = fileResourceTarget(sessionId, cwd, path, options)
         if (target.params === undefined) ctx.sidebarRight.openResource(target.address)
         else ctx.sidebarRight.openResource(target.address, { params: target.params })
       },
-/* jscpd:ignore-end */
+    /* jscpd:ignore-end */
     }),
   }, PlanPreview))
   ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({

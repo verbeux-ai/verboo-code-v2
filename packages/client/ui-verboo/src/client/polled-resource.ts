@@ -51,7 +51,12 @@ export async function* pollAccountResource<R, T>(
   read: (signal: AbortSignal) => Promise<R>,
   options: PolledAccountRead<R, T>,
 ): AsyncGenerator<T> {
-  const { signal, intervalMs, owned, interpret, offline, failed, subscribe, refreshers } = options
+  const { signal, intervalMs, refreshers } = options
+  const owned = () => options.owned()
+  const interpret = (result: R): readonly T[] => options.interpret(result)
+  const offline = (): T => options.offline()
+  const failed = (): T => options.failed()
+  const subscribe = (onChange: () => void): (() => void) => options.subscribe(onChange)
   let pending: AbortController | undefined
   let resume: (() => void) | undefined
   let dirty = false
