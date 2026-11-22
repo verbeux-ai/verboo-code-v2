@@ -201,7 +201,7 @@ describe('trial conversion interface', () => {
     const f = fixture()
     f.state.open = false
     f.state.notices[0]!.tokensRemaining = 800000
-    render(<TrialDock {...(f.props as unknown as ComponentProps<typeof TrialDock>)} />)
+    render(<TrialDock {...(f.props as ComponentProps<typeof TrialDock>)} />)
     expect(screen.getByText(/800.000 tokens restantes/)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Fazer upgrade' }))
