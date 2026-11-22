@@ -319,7 +319,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       // the background and never holds the dialog open.
       void ctx.remote.llmOpenaiAccount.discoverModels().then(() => {
         // A finished sweep changes the menu, so the model directory re-reads it.
-        void ctx.remote.session.initializeDefaultModel?.()
+        void ctx.remote.session.initializeDefaultModel()
       }).catch(() => {
         // Discovery is an enhancement; a failed sweep leaves the catalog intact.
       })
@@ -627,10 +627,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             ...product,
             hooks: { ...product.hooks, externalDialogOpen },
             openAiSignIn: {
-              begin: product.beginOpenAiSignIn,
-              complete: product.completeOpenAiSignIn,
-              signOut: product.signOutOpenAi,
-              close: product.closeOpenAiDialog,
+              begin: product.beginOpenAiSignIn.bind(product),
+              complete: product.completeOpenAiSignIn.bind(product),
+              signOut: product.signOutOpenAi.bind(product),
+              close: product.closeOpenAiDialog.bind(product),
             },
           }
         },

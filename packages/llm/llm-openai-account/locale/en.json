@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Route ChatGPT models through the Codex responses protocol and classify rate limits and usage."
+  }
+}

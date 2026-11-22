@@ -30,6 +30,7 @@ export class GrantVault {
    * @param home - application home, isolating independent installations.
    * @param store - optional injected credential store for external-service fixtures.
    */
+/* jscpd:ignore-start -- Each credential owner keeps its own vault class because the encrypted record belongs to that package; the key material cannot move to a shared package without coupling the two credential scopes. */
   constructor(
     private readonly issuer: string,
     private readonly home: string,
@@ -37,6 +38,7 @@ export class GrantVault {
   ) {
     if (store !== undefined) this.entry = Promise.resolve(store)
   }
+/* jscpd:ignore-end */
 
   private store(): Promise<SecretKeyStore> {
     return (this.entry ??= import('@napi-rs/keyring').then(
@@ -77,6 +79,7 @@ export class GrantVault {
    */
   async seal(value: unknown): Promise<z.infer<typeof envelope>> {
     const key = await this.key(false)
+/* jscpd:ignore-start -- AES-256-GCM sealing is the same construction for both credential owners, and each owner must be able to read and upgrade its own record without depending on the other package. */
     const nonce = randomBytes(12)
     try {
       const cipher = createCipheriv('aes-256-gcm', key, nonce)
@@ -92,6 +95,7 @@ export class GrantVault {
         tag: cipher.getAuthTag().toString('base64'),
         ciphertext: ciphertext.toString('base64'),
       }
+/* jscpd:ignore-end */
     } finally {
       key.fill(0)
     }

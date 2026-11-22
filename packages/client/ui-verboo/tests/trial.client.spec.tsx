@@ -74,7 +74,7 @@ function fixture(locale = 'pt') {
     confirmTrial: vi.fn(),
     refreshTrial: vi.fn(),
     reopenTrial: vi.fn(),
-  } as unknown as ComponentProps<typeof TrialModal>
+  } satisfies Partial<ComponentProps<typeof TrialModal>> as ComponentProps<typeof TrialModal>
   return { state, props }
 }
 describe('trial conversion interface', () => {

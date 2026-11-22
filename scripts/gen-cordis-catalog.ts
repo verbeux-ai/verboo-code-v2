@@ -50,6 +50,8 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  openaiAccount: 'credentials.md',
+  llmOpenaiAccount: 'llm-streaming.md',
   headlessStartup: 'boot.md',
   translator: 'translation.md',
   cotTranslation: 'translation.md',
@@ -235,6 +237,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  * {@link EVENT_WALK_EXEMPTIONS} names each one with its documentation owner.
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
+  'openai-account': 'credentials.md',
   'app-boot': 'boot.md',
   hmr: 'boot.md',
   'plugin-manager': 'boot.md',
@@ -1008,6 +1011,9 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TrialStatus: 'Trial attention is documented in packages/api/verboo-product/README.md and src/types.ts',
   TrialOffer: 'Trial authorization is documented in packages/api/verboo-product/README.md and src/types.ts',
   TrialPayment: 'Payment recovery is documented in packages/api/verboo-product/README.md and src/types.ts',
+  SweepResult: 'Model availability sweeps are documented in packages/llm/llm-openai-account/README.md and src/availability.ts',
+  SubscriptionUsage: 'Subscription readings are documented in packages/llm/llm-openai-account/README.md and src/usage.ts',
+  OpenAiAccountStatus: '[OI] account status is documented in packages/credentials/openai-account/README.md and src/types.ts',
 
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',

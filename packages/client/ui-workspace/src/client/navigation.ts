@@ -94,6 +94,7 @@ export interface UiWorkspace {
    * @param sessionId - Session to archive.
    * @param options - `stopActivity` asks the Host to stop the Session's running work instead of refusing.
    */
+/* jscpd:ignore-start -- These are interface declarations: the Client navigation face restates the Host method signatures it consumes, with its own documentation of what the Client must do afterwards. Sharing one declaration would publish the Host interface through the Client package. */
   archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
    * Unarchive a Session, restoring it to its recorded Workspace position.
@@ -109,6 +110,7 @@ export interface UiWorkspace {
    * @param options - `stopActivity` asks the Host to stop the Session's running work instead of refusing.
    */
   deleteSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
+/* jscpd:ignore-end */
   /**
    * Pin a Session on the Host, then lead it in its accounts' saved orders
    * (its Workspace group or Ungrouped, and the flat list). The order write

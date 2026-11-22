@@ -122,3 +122,33 @@ export function fileMediaUrl(base: string, path: string): string | undefined {
     || /^[/\\]{2}/u.test(path) || /[\u0000-\u001f\u007f]/u.test(path)) return undefined
   return new URL(`api/file?path=${encodeURIComponent(path)}`, base).href
 }
+
+/** The right-Sidebar target for a file a surface mentions, without that surface reading Session state. */
+export interface FileResourceTarget {
+  /** The `dsh-resource://file/…` address to open. */
+  readonly address: string
+  /** Query parameters to open it with, or `undefined` when the whole file is the target. */
+  readonly params: { readonly line: number } | undefined
+}
+
+/**
+ * Resolve one mentioned path into the right-Sidebar resource target. Plans and
+ * previewed documents both link files, and both must land on the same address
+ * for the same path, so the mapping lives here rather than in each surface.
+ * @param sessionId - the Session the path is read in.
+ * @param cwd - that Session's workspace root, when known.
+ * @param path - absolute or workspace-relative path, in either separator spelling.
+ * @param options - a line to reveal, when the mention names one.
+ * @returns the address and the parameters to open it with.
+ */
+export function fileResourceTarget(
+  sessionId: string,
+  cwd: string | undefined,
+  path: string,
+  options?: { readonly line?: number },
+): FileResourceTarget {
+  return {
+    address: fileAddressFor(sessionId, cwd, resolveWorkspacePath(undefined, path)),
+    params: options?.line === undefined ? undefined : { line: options.line },
+  }
+}

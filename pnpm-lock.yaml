@@ -7256,9 +7256,6 @@ importers:
 
   packages/client/ui-verboo:
     dependencies:
-      '@deepseek-ai/dsh-openai-account':
-        specifier: workspace:*
-        version: link:../../credentials/openai-account
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -7353,6 +7350,9 @@ importers:
       '@deepseek-ai/dsh-deepseek-account':
         specifier: workspace:*
         version: link:../../credentials/deepseek-account
+      '@deepseek-ai/dsh-openai-account':
+        specifier: workspace:*
+        version: link:../../credentials/openai-account
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
@@ -8517,6 +8517,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol

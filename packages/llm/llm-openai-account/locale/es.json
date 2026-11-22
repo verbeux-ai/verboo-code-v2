@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Enruta modelos de ChatGPT mediante el protocolo responses de Codex y clasifica los límites de frecuencia y el uso."
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Access Verboo Code plan details and per-user connections without exposing secrets to API clients."
+  }
+}

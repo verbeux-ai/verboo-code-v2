@@ -345,7 +345,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-verboo-mcp`
 
 - `inject`: `credentials` · `mcpManager` · `storageDomain`
-- `source`: [`packages/api/verboo-mcp/src/index.ts:59`](../packages/api/verboo-mcp/src/index.ts)
+- `source`: [`packages/api/verboo-mcp/src/index.ts:65`](../packages/api/verboo-mcp/src/index.ts)
 
 ```ts config-catalog
 /** Resolved user-defined MCP server configuration. */
@@ -1993,6 +1993,23 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-api-key -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-openai-account -->
+<a id="deepseek-aidsh-llm-openai-account"></a>
+
+## `@deepseek-ai/dsh-llm-openai-account`
+
+- `inject`: `llm`
+- `source`: [`packages/llm/llm-openai-account/src/config.ts:34`](../packages/llm/llm-openai-account/src/config.ts)
+
+```ts config-catalog
+/** Configuration accepted by this plugin. */
+export interface Config {
+  /** Deadline in milliseconds of one usage read; a read that exceeds it yields no reading. */
+  usageTimeoutMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-openai-account -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-pi-ai -->
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2426,7 +2443,7 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:138`](../packages/mcp/mcp-client/src/index.ts)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:146`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -2629,6 +2646,39 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-office-to-pdf -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-openai-account -->
+<a id="deepseek-aidsh-openai-account"></a>
+
+## `@deepseek-ai/dsh-openai-account`
+
+- `inject`: `credentials`
+- `source`: [`packages/credentials/openai-account/src/config.ts:5`](../packages/credentials/openai-account/src/config.ts)
+
+```ts config-catalog
+/** Public endpoints, client identity, and bounded lifetimes for one login. */
+export interface Config {
+  /** Authorization endpoint the browser is sent to. */
+  authorizeUrl?: string
+  /** Token endpoint for the authorization-code exchange and refresh rotation. */
+  tokenUrl?: string
+  /** Revocation endpoint called when a stored grant is removed. */
+  revokeUrl?: string
+  /** Public OAuth client identifier. */
+  clientId?: string
+  /** Scopes requested for the login; `openid` and `offline_access` are required. */
+  scopes?: string[]
+  /** Allow cleartext loopback endpoints for local integration fixtures. */
+  allowLoopbackHttp?: boolean
+  /** Maximum duration in milliseconds of one account HTTP request. */
+  requestTimeoutMs?: number
+  /** Maximum duration in milliseconds of one browser login attempt. */
+  attemptTimeoutMs?: number
+  /** Remaining access-token lifetime in milliseconds that forces a refresh. */
+  refreshLeewayMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-openai-account -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-permission-presets -->
 <a id="deepseek-aidsh-permission-presets"></a>

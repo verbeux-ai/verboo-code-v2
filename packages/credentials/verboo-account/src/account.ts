@@ -445,6 +445,7 @@ export class VerbooAccount extends DeepSeekAccount {
     }
   }
 
+/* jscpd:ignore-start -- Two account providers implement the same cancellation contract independently; the shared shape is the base-class contract, and hoisting it would put one provider's attempt bookkeeping inside the other. */
   override async cancelSignIn(id: SignInAttemptId): Promise<AccountView> {
     const attempt = this.attempt
     if (attempt?.view.id === id) {
@@ -456,18 +457,26 @@ export class VerbooAccount extends DeepSeekAccount {
     }
     return this.getState()
   }
+/* jscpd:ignore-end */
 
-  override async resolveToken(url: string): Promise<string | undefined> {
+  /**
+   * Whether one URL belongs to this deployment's router, which is the only
+   * destination this account hands a token to.
+   * @param url - the requesting URL.
+   * @returns true when the router owns the origin and path prefix.
+   */
+  private routesToRouter(url: string): boolean {
     const target = new URL(url)
     const router = new URL(this.deployment.routerBaseURL)
     const prefix = router.pathname.replace(/\/$/, '')
-    if (
-      target.origin !== router.origin ||
-      target.username ||
-      target.password ||
-      !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))
-    )
-      return undefined
+    return target.origin === router.origin
+      && !target.username
+      && !target.password
+      && (target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))
+  }
+
+  override async resolveToken(url: string): Promise<string | undefined> {
+    if (!this.routesToRouter(url)) return undefined
     const current = await this.readGrant()
     if (current === null) return undefined
     if (current.expiresAt > Date.now() + 60_000) return current.accessToken
@@ -479,16 +488,7 @@ export class VerbooAccount extends DeepSeekAccount {
     rejectedToken: string,
     signal?: AbortSignal,
   ): Promise<string | undefined> {
-    const target = new URL(url)
-    const router = new URL(this.deployment.routerBaseURL)
-    const prefix = router.pathname.replace(/\/$/, '')
-    if (
-      target.origin !== router.origin ||
-      target.username ||
-      target.password ||
-      !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))
-    )
-      return undefined
+    if (!this.routesToRouter(url)) return undefined
     const resultState = { rejected: false }
     const lifetime = this.lifetime
     const result = await this.ctx.credentials.modifyRecord(

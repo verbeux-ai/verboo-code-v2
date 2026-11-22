@@ -447,6 +447,7 @@ export class PlatformAccount extends DeepSeekAccount {
     return this.getState()
   }
 
+/* jscpd:ignore-start -- Two account providers implement the same cancellation contract independently; the shared shape is the base-class contract, and hoisting it would put one provider's attempt bookkeeping inside the other. */
   override async cancelSignIn(id: SignInAttemptId): Promise<AccountView> {
     const attempt = this.attempt
     if (attempt?.view.id === id) {
@@ -458,6 +459,7 @@ export class PlatformAccount extends DeepSeekAccount {
     }
     return this.getState()
   }
+/* jscpd:ignore-end */
 
   override signOut(client: AccountClientMetadata): Promise<AccountView> {
     this.removing ??= (async () => {

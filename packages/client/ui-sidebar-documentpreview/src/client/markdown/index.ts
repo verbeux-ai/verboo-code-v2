@@ -1,7 +1,7 @@
 /** Builtin Markdown metadata and keyed document-body registration. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileResourceTarget } from '@deepseek-ai/dsh-util-workspace-path'
 import type {} from '../index.ts'
 import type { DocumentPreviewDefinition } from '../document/registry.ts'
 import { MarkdownBody, type MarkdownBodyInjected } from './MarkdownBody.tsx'
@@ -39,9 +39,9 @@ export function apply(ctx: Context): void {
         // A relative Markdown link opens beside the document, in this Session.
         openFile: (path, options) => {
           const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-          const address = fileAddressFor(sessionId, cwd, resolveWorkspacePath(undefined, path))
-          if (options?.line === undefined) ctx.sidebarRight.openResource(address)
-          else ctx.sidebarRight.openResource(address, { params: { line: options.line } })
+          const target = fileResourceTarget(sessionId, cwd, path, options)
+          if (target.params === undefined) ctx.sidebarRight.openResource(target.address)
+          else ctx.sidebarRight.openResource(target.address, { params: target.params })
         },
       }),
     }, MarkdownBody,
