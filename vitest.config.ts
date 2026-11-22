@@ -194,7 +194,16 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
 const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
   '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
 }
-const testingAliases = { ...claudeCodeTestingAliases, ...generatedRemoteAliases }
+// The vendored packages publish from built `lib/`, which a clean checkout does
+// not have. The tsconfig path aliases point at their `src`, but Vite resolves a
+// directory through the package's own exports, so a bare import of a vendored
+// name reaches a `lib/` entry that was never built. `cosmokit` is the one every
+// other vendor package and the LLM retry policy import, so it is pinned to its
+// source entry; the rest resolve through the path aliases.
+const vendorSourceAliases = {
+  '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
+}
+const testingAliases = { ...claudeCodeTestingAliases, ...generatedRemoteAliases, ...vendorSourceAliases }
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
