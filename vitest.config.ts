@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -192,7 +192,26 @@ const claudeCodeTestingAliases = {
 // only in built `lib/` output. On a clean checkout Vite resolves that import while transforming the
 // entry, before `vi.mock` can answer it, so the jsdom assembly suites need a resolvable stand-in.
 const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/liveshare/lib/typert.remote-client.js', import.meta.url))
-const generatedRemoteStub = fileURLToPath(new URL('./scripts/generated-remote-stub.ts', import.meta.url))
+
+/**
+ * Write one stand-in contribution for a package whose built `./remote` is
+ * absent, named after that package so the typert registry sees distinct remote
+ * packages. A registry rejects a second registration of one remote package
+ * name, so aliases sharing a single module would collide the moment two absent
+ * contributions loaded in one process.
+ * @param packageName - the package the stand-in stands in for.
+ * @returns the stand-in module's file path.
+ */
+function remoteStubFor(packageName: string): string {
+  const file = fileURLToPath(new URL(`./scripts/generated-remote-stubs/${packageName.slice('@deepseek-ai/'.length)}.ts`, import.meta.url))
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
+import { z } from 'zod'
+
+export default createTypertRemoteInfo({ package: '${packageName}', methods: {} }, z)
+`)
+  return file
+}
 
 /**
  * Every workspace package that publishes a generated `./remote` contribution
@@ -212,7 +231,7 @@ function absentRemoteAliases(): Record<string, string> {
     const target = typeof remote === 'string' ? remote : (remote as { default?: unknown } | undefined)?.default
     if (typeof target !== 'string') continue
     if (existsSync(join(dirname(manifestPath), target))) continue
-    aliases[`${name}/remote`] = generatedRemoteStub
+    aliases[`${name}/remote`] = remoteStubFor(name)
   }
   return aliases
 }
