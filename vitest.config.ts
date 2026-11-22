@@ -193,6 +193,10 @@ const claudeCodeTestingAliases = {
 // entry, before `vi.mock` can answer it, so the jsdom assembly suites need a resolvable stand-in.
 const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/liveshare/lib/typert.remote-client.js', import.meta.url))
 
+// One map of every generated Host-for-Client endpoint to its access class; the
+// absent-remote stand-ins draw their method surface from it.
+import { VIEWER_ENDPOINT_CLASSES } from './packages/experimental/liveshare/src/endpoint-classification.ts'
+
 /**
  * Write one stand-in contribution for a package whose built `./remote` is
  * absent, named after that package so the typert registry sees distinct remote
@@ -205,10 +209,26 @@ const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/live
 function remoteStubFor(packageName: string): string {
   const file = fileURLToPath(new URL(`./scripts/generated-remote-stubs/${packageName.slice('@deepseek-ai/'.length)}.ts`, import.meta.url))
   mkdirSync(dirname(file), { recursive: true })
+  // Methods come from the endpoint classification the repo already maintains, so
+  // an assembled Client exposes the same namespace.method surface the real build
+  // would. A registry validates descriptors, so each entry carries the minimal
+  // well-formed descriptor: one request per endpoint, answered by the suite's
+  // own connection mock.
+  const namespace = packageName.slice('@deepseek-ai/dsh-'.length)
+  const methods = Object.keys(VIEWER_ENDPOINT_CLASSES)
+    .filter(endpoint => endpoint.startsWith(`${namespace}/`))
+    .map(endpoint => `${namespace}/${endpoint.slice(namespace.length + 1)}`)
+    .map(endpoint => `${endpoint}: { invocation: { kind: 'direct' }, parameters: [] }`)
+  const methodEntries = methods.length === 0 ? '' : methods.join(',\n    ') + ','
   writeFileSync(file, `import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import { z } from 'zod'
 
-export default createTypertRemoteInfo({ package: '${packageName}', methods: {} }, z)
+export default createTypertRemoteInfo({
+  package: '${packageName}',
+  methods: {
+    ${methodEntries}
+  },
+}, z)
 `)
   return file
 }

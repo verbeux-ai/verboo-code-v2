@@ -514,7 +514,10 @@ describe('gate graph validation', () => {
   it('keeps native Windows coverage blocking and behind the complete build', () => {
     const complete = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
     const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational-ready'))
-      .filter(gate => gate.id !== 'docs-site-build' && gate.id !== 'electron-install')
+      // Infrastructure predecessors (the site build, the Electron binary, and
+      // the Typert contracts pass the coverage lane runs first) are not
+      // diagnostics: the complete lane runs them as blocking predecessors.
+      .filter(gate => gate.id !== 'docs-site-build' && gate.id !== 'electron-install' && gate.id !== 'typert-contracts')
     const byId = new Map(complete.map(subject => [subject.id, subject]))
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
@@ -528,7 +531,7 @@ describe('gate graph validation', () => {
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)
-      expect(completeGate?.allowFailure).toBe(true)
+      expect(completeGate?.allowFailure, gate.id).toBe(true)
       expect(completeGate?.after).toEqual(expect.arrayContaining([
         'coverage',
         'coverage-exempt-heavy',
