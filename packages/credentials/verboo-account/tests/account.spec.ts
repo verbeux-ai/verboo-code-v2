@@ -440,6 +440,30 @@ it('distinguishes explicit denial from a technical authorization expiry', async 
   expect(app.state.exchanges).toBe(0)
 })
 
+it('shares one working login when concurrent retries wait for the same finished attempt', async () => {
+  const app = await fixture()
+  const account = app.ctx.deepseekAccount
+  const initial = await app.begin()
+  await account.cancelSignIn(initial.view.attempt!.id)
+
+  const [first, second] = await Promise.all([
+    account.startSignIn(metadata, app.callbackOrigin, 'desktop'),
+    account.startSignIn(metadata, app.callbackOrigin, 'desktop'),
+  ])
+  expect(first.attempt?.id).toBe(second.attempt?.id)
+  await until(async () => {
+    const phase = (await account.getState()).attempt?.phase
+    return phase === 'waiting-browser' || phase === 'failed'
+  })
+  expect((await account.getState()).attempt).toMatchObject({
+    id: first.attempt?.id,
+    phase: 'waiting-browser',
+  })
+  const retry = await app.login()
+  expect(retry.view.attempt?.id).toBe(first.attempt?.id)
+  expect(app.state.exchanges).toBe(1)
+})
+
 it('serializes refresh rotation and refuses credentials outside the configured gateway', async () => {
   const app = await fixture({ expiresIn: 30 })
   await app.login()
