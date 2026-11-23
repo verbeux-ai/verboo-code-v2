@@ -1,6 +1,5 @@
 /** Plan stamina exposes reserves and recovery while keeping inference rates private. */
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PageProps, ProductProps } from './contracts.ts'
+import type { PageProps } from './contracts.ts'
 import type { StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
 import { staminaAddress } from './stamina-resource.ts'
 import css from './Stamina.module.css'
@@ -13,7 +12,7 @@ export function StaminaPanel(props: StaminaProps) {
 }
 
 /** Account stamina below the active composer, including on narrow viewports. */
-export function StaminaDock(props: PropsRuntime<'conversation.composer.dock'> & ProductProps) {
+export function StaminaDock(props: StaminaProps) {
   return <Stamina {...props} compact />
 }
 
