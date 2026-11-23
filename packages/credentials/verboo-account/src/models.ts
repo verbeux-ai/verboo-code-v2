@@ -26,7 +26,7 @@ export const name = 'llm-verboo-account'
 export const inject = ['llm', 'deepseekAccount']
 
 // Preserve the account route of saved sessions while changing its provider and display identity.
-const PROVIDER = 'deepseek-account'
+export const PROVIDER = 'deepseek-account'
 const number = z.number().positive().optional()
 const listing = z.object({
   data: z
