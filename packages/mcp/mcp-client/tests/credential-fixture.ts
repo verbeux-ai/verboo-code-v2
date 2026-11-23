@@ -9,7 +9,22 @@ import type {
 export class TestCredentials extends CredentialProvider {
   values = new Map<string, string>()
 
+  /** Publish a rotation of one reference to every listener. */
+  rotate(ref: CredentialRef | string): void { this.notifyUpdated(ref as CredentialRef) }
+
+  /** When set, resolve rejects with this error instead of consulting the map. */
+  failingResolve: Error | undefined
+  /** When set, resolve delays this long before answering. */
+  resolveDelayMs = 0
+
   resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+    if (this.failingResolve !== undefined) return Promise.reject(this.failingResolve)
+    if (this.resolveDelayMs > 0) {
+      return new Promise(resolve => setTimeout(() => {
+        const value = this.values.get(ref)
+        resolve(value === undefined ? undefined : { value, source: 'fixture' })
+      }, this.resolveDelayMs))
+    }
     const value = this.values.get(ref)
     return Promise.resolve(value === undefined ? undefined : { value, source: 'fixture' })
   }

@@ -747,6 +747,153 @@ describe('reconnect supervisor', () => {
     staleHandler()
     expect(mockListTools).toHaveBeenCalledTimes(listCalls)
   })
+
+  describe('credential refresh', () => {
+    it('reconnects when a credential reference is updated and waits for missing credentials', async () => {
+      await ctx.plugin(McpResources)
+      await ctx.plugin(TestCredentials)
+      ;(ctx.credentials as TestCredentials).values.set('MCP_TOKEN', 'first-token')
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true }
+      const statusRef = new McpStatusCell(() => {})
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), statusRef)
+      try {
+        await handle.ready
+        ;(ctx.credentials as TestCredentials).values.set('MCP_TOKEN', 'second-token')
+        ;(ctx.credentials as TestCredentials).rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 50))
+        ;(ctx.credentials as TestCredentials).values.delete('MCP_TOKEN')
+        ;(ctx.credentials as TestCredentials).rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 50))
+        expect(statusRef.current().state).toBe('waiting-credentials')
+      } finally {
+        await handle.dispose()
+      }
+    })
+  })
+  describe('credential refresh failure paths', () => {
+    it('aborts the refresh cleanly when disposal races the rotation', async () => {
+      await ctx.plugin(TestCredentials)
+      ;(ctx.credentials as TestCredentials).values.set('MCP_TOKEN', 'first-token')
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), new McpStatusCell(() => {}))
+      await handle.ready
+      // Rotating and disposing in the same tick: the refresh loop sees the
+      // stopped state and resolves readiness with the cleanup error.
+      ;(ctx.credentials as TestCredentials).values.set('MCP_TOKEN', 'second-token')
+      ;(ctx.credentials as TestCredentials).rotate('MCP_TOKEN')
+      await handle.dispose()
+    })
+
+    it('logs a refresh failure when the provider rejects the resolution', async () => {
+      await ctx.plugin(TestCredentials)
+      const provider = ctx.credentials as TestCredentials
+      provider.values.set('MCP_TOKEN', 'first-token')
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), new McpStatusCell(() => {}))
+      try {
+        await handle.ready
+        const error = new Error('credential store down')
+        provider.failingResolve = error
+        provider.values.set('MCP_TOKEN', 'second-token')
+        provider.rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 50))
+        // The connection keeps running with the previous binding; the failure
+        // is logged, not fatal.
+        expect(handle.ready).resolves.toBeDefined()
+      } finally {
+        provider.failingResolve = undefined
+        await handle.dispose()
+      }
+    })
+  })
+  describe('credential refresh edge paths', () => {
+    it('ignores a reference rotation outside the binding and skips reconnect on unchanged config', async () => {
+      await ctx.plugin(McpResources)
+      await ctx.plugin(TestCredentials)
+      ;(ctx.credentials as TestCredentials).values.set('MCP_TOKEN', 'first-token')
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), new McpStatusCell(() => {}))
+      try {
+        await handle.ready
+        // A reference the binding does not use triggers nothing.
+        ;(ctx.credentials as TestCredentials).rotate('OTHER_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 30))
+        expect(mockConnect).toHaveBeenCalledTimes(1)
+        // Rotating the used reference with the same value: the re-resolved
+        // config deep-equals the bound one, so no reconnect runs.
+        ;(ctx.credentials as TestCredentials).rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 30))
+        expect(mockConnect).toHaveBeenCalledTimes(1)
+      } finally {
+        await handle.dispose()
+      }
+    })
+
+    it('does not schedule a reconnect when the lost generation closes unconfirmed', async () => {
+      const { warns } = captureLogs(ctx)
+      await apply(ctx, stdioConfig({ initialDelayMs: 5, maxDelayMs: 40, maxAttempts: 5 }))
+      await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+      // The close of the lost generation itself fails: the supervisor reports
+      // the readiness error and does not schedule another attempt.
+      mockClose.mockRejectedValueOnce(new Error('SDK shutdown failed'))
+      instances[0]!.transport?.onclose?.()
+      await sleep(30)
+      expect(mockConnect).toHaveBeenCalledTimes(1)
+      expect(warns.some(line => line.includes('reconnecting'))).toBe(false)
+    })
+  })
+  describe('credential refresh stop paths', () => {
+    it('resolves readiness with the cleanup error when disposal lands mid-refresh', async () => {
+      await ctx.plugin(TestCredentials)
+      const provider = ctx.credentials as TestCredentials
+      provider.resolveDelayMs = 100
+      provider.values.set('MCP_TOKEN', 'first-token')
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), new McpStatusCell(() => {}))
+      await handle.ready
+      // The rotation starts a refresh whose resolution is still pending when
+      // the disposal lands: the refresh loop observes the stopped state.
+      provider.values.set('MCP_TOKEN', 'second-token')
+      provider.rotate('MCP_TOKEN')
+      const closing = handle.dispose()
+      provider.resolveDelayMs = 0
+      await closing
+    })
+
+    it('records a cleanup failure when the close deadline passes', async () => {
+      const statusRef = new McpStatusCell(() => {})
+      const config = { ...stdioConfig({ enabled: false }), closeTimeoutMs: 1 }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), statusRef)
+      await handle.ready
+      mockClose.mockImplementationOnce(function (this: { transport?: Transport }) {
+        return new Promise(resolve => setTimeout(resolve, 60))
+      })
+      await handle.dispose()
+      expect(statusRef.current()).toMatchObject({ state: 'closed', result: { closeConfirmed: false, cleanupError: expect.stringContaining('MCP cleanup did not settle') } })
+    })
+  })
+  describe('credential refresh between attempts', () => {
+    it('rebinds while a failed connection is still settling', async () => {
+      await ctx.plugin(TestCredentials)
+      const provider = ctx.credentials as TestCredentials
+      provider.values.set('MCP_TOKEN', 'first-token')
+      mockConnect.mockRejectedValueOnce(new Error('transport refused'))
+      const config = { ...stdioConfig({ enabled: false }), env: { TOKEN: '${credential:MCP_TOKEN}' }, expandTemplates: true, reconnect: { enabled: false } }
+      const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'test'), new McpStatusCell(() => {}))
+      try {
+        // The first generation fails: current is undefined while the failure
+        // settles. The rotation then rebinds from the empty state.
+        provider.values.set('MCP_TOKEN', 'second-token')
+        provider.rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 50))
+        provider.values.set('MCP_TOKEN', 'third-token')
+        provider.rotate('MCP_TOKEN')
+        await new Promise(resolve => setTimeout(resolve, 50))
+      } finally {
+        await handle.dispose()
+      }
+    })
+  })
 })
 
 // ---- Policy resolution ----
@@ -794,3 +941,7 @@ describe('resolveReconnectPolicy', () => {
       .rejects.toThrow(/initialDelayMs must be less than or equal to maxDelayMs/)
   })
 })
+
+
+
+

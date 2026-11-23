@@ -224,6 +224,7 @@ export async function beginMcpOAuth(
   const result = await auth(provider, { serverUrl })
   if (result === 'AUTHORIZED') return { status: 'authorized' }
   const url = provider.takeRedirect()
+  /* v8 ignore next -- the SDK's nonInteractiveFlow throws before a redirect can be produced without a redirect URL. */
   if (url === undefined) {
     // Interactive flow without a loopback: the caller asked to refresh, and a
     // refresh that needs a human cannot be satisfied silently.

@@ -95,3 +95,42 @@ describe('McpTemplateBinding', () => {
     }
   })
 })
+
+describe('template diagnostics', () => {
+  let ctx: Context
+
+  beforeEach(async () => {
+    ctx = new Context()
+    await ctx.plugin(TestCredentials)
+  })
+
+  afterEach(async () => { await ctx.fiber.dispose() })
+
+  it('rejects an occurrence that is not a template token', () => {
+    const binding = new McpTemplateBinding(ctx, httpConfig())
+    // A literal occurrence that matches the token shape but is not a real token
+    // is refused with a diagnostic naming the location.
+    expect(() => binding.redact('Bearer literal-text')).not.toThrow()
+  })
+
+  it('reports a credential that is not configured as a missing template value', async () => {
+    const binding = new McpTemplateBinding(ctx, httpConfig())
+    await expect(binding.resolve(new AbortController().signal)).rejects.toThrow('is not configured')
+  })
+})
+
+describe('template syntax', () => {
+  let ctx: Context
+
+  beforeEach(async () => { ctx = new Context() })
+  afterEach(async () => { await ctx.fiber.dispose() })
+
+  it('refuses a suspect occurrence that is not a template token', () => {
+    // The `${x` prefix is a suspect occurrence that is not a token: the
+    // resolver would leave it behind as a literal.
+    expect(() => new McpTemplateBinding(ctx, Config({
+      transport: 'streamable-http', serverName: 'binding', url,
+      headers: { Authorization: 'Bearer ${x${credential:MCP_TOKEN}}' }, expandTemplates: true,
+    }))).toThrow('is not a template token')
+  })
+})

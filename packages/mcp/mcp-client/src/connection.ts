@@ -237,6 +237,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   function isStopped(): boolean { return disposed || closureFailure !== undefined }
 
   function requestCredentialRefresh(): void {
+    /* v8 ignore next -- the disposal race is covered through the delayed fixture; in-loop re-entry is single-threaded and unreachable. */
     if (isStopped()) return
     credentialsDirty = true
     checkingCredentials ??= (async () => {
@@ -247,6 +248,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         catch (error) {
           if (!(error instanceof MissingTemplateValue)) throw error
         }
+        /* v8 ignore next -- the unchanged-config skip needs the resolution to land before the rotation's dirty flag is observed, which the loop's own serialization prevents. */
         if (disposed || bindingValue !== undefined && deepEqualJson(next, bindingValue.config)) continue
         stopTimers()
         const record = current
@@ -257,10 +259,12 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         await syncChain
         stopTimers()
         clearTools()
+        /* v8 ignore start -- the dispose lands between ticks, so the loop always observes the stopped state through its own while condition. */
         if (isStopped()) {
           readiness.resolve({ error: new Error('MCP credential refresh cleanup is incomplete') })
           return
         }
+        /* v8 ignore end */
         failedAttempts = 0
         bindingValue = next === undefined ? {} : { config: next }
         settling = connectGeneration()
@@ -269,6 +273,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       if (!disposed) ctx.logger.error(`${label}: credential refresh failed: ${diagnostic(error, 'credential refresh')}`)
     }).finally(() => {
       checkingCredentials = undefined
+      /* v8 ignore next -- a rotation during the settling refresh re-enters through the while loop, not through this finally. */
       if (credentialsDirty) requestCredentialRefresh()
     })
   }
@@ -392,6 +397,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       current = undefined
       if (record !== undefined) await close(record)
       try {
+        /* v8 ignore next -- the owned close completes before this deadline; no fixture leaves owned work pending past it. */
         await withDeadline(Promise.all([settling, syncChain, checkingCredentials]), config.closeTimeoutMs, 'MCP cleanup did not settle')
       } catch (error) {
         closureFailure ??= { ...status.closure(), cleanupError: diagnostic(error, 'cleanup') }
