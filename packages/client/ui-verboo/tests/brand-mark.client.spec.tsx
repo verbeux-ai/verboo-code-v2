@@ -1,9 +1,34 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { AssistantMark, BrandMark } from '../src/client/Brand.tsx'
+import { AssistantMark, Brand, BrandMark } from '../src/client/Brand.tsx'
+import { Hero, RunningIndicator } from '../src/client/Hero.tsx'
+import type { HeroProps } from '../src/client/contracts.ts'
+import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+
+it('keeps the default sidebar wordmark compact and names it for assistive technology', () => {
+  const view = render(<Brand t={key => en[key]} />)
+  const wordmark = view.getByRole('img', { name: 'Verboo Code' })
+  expect(wordmark.hasAttribute('data-large')).toBe(false)
+  const icon = wordmark.querySelector('img')!
+  expect(icon.width).toBe(26)
+  expect(icon.height).toBe(26)
+  expect(icon.alt).toBe('')
+})
+
+it('renders one opening question and a silent running indicator', () => {
+  const props: Pick<HeroProps, 't'> = { t: key => en[key] }
+  const { getByRole, container } = render(<>
+    <Hero {...props as HeroProps} />
+    <RunningIndicator />
+  </>)
+  expect(getByRole('heading', { level: 1 }).textContent).toBe(en.homeTitle)
+  const indicator = container.querySelector('[data-verboo-running]')
+  expect(indicator?.getAttribute('aria-hidden')).toBe('true')
+  expect(indicator?.textContent).toBe('')
+})
 
 describe('assistant mark', () => {
   it('draws the mascot on the reply that closes the Turn', () => {

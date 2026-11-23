@@ -6,6 +6,7 @@ import { ResourceRegistry } from '@deepseek-ai/dsh-client-resources/src/client/r
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { StaminaStatus, PlanId } from '@deepseek-ai/dsh-api-verboo-product/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createStaminaResource, staminaAddress } from '../src/client/stamina-resource.ts'
 
 const reading: StaminaStatus = {
@@ -89,6 +90,24 @@ describe('account-scoped stamina resource', () => {
     f.hold()
     await vi.advanceTimersByTimeAsync(0)
     expect(f.source.getSnapshot()).toMatchObject({ status: 'live', value: [] })
+  })
+  it('retains stamina through a typed transport refusal and sanitizes a thrown error', async () => {
+    const f = fixture()
+    f.hold()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const failure = new RemoteError('verboo/stamina-unavailable', 'Stamina reading unavailable', { reason: 'unavailable' })
+    f.read.mockResolvedValueOnce({ ok: false, error: failure })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.source.getSnapshot()).toEqual({ status: 'failed', value: [reading], failure })
+
+    f.read.mockRejectedValueOnce(new Error('internal transport diagnostic'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.source.getSnapshot()).toMatchObject({
+      status: 'failed',
+      value: [reading],
+      failure: { message: 'Stamina refresh is unavailable.', details: { reason: 'contract_error' } },
+    })
   })
   it('stops reads while hidden or offline and resumes when visible and online', async () => {
     const f = fixture()
