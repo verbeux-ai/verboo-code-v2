@@ -11,9 +11,57 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenAiAccount, claimsOf, pkcePair } from '../src/account.ts'
-import { AccountRequestError } from '../src/http.ts'
+import { AccountHttp, AccountRequestError, operation } from '../src/http.ts'
 import { GrantVault } from '../src/vault.ts'
 import * as AccountPlugin from '../src/index.ts'
+
+describe('account deployment and HTTP evidence', () => {
+  it.each([
+    [{ tokenUrl: 'relative' }, /not an absolute URL/],
+    [{ tokenUrl: 'http://127.0.0.1:1/token' }, /not an allowed OAuth endpoint/],
+    [{ tokenUrl: 'https://fixture.test/token?debug=1' }, /not an allowed OAuth endpoint/],
+    [{ scopes: [] }, /non-empty list/],
+    [{ scopes: ['openid', ' '] }, /non-empty list/],
+    [{ scopes: ['openid'] }, /include offline_access/],
+    [{ clientId: ' ' }, /clientId must not be blank/],
+  ] satisfies Array<[AccountPlugin.Config, RegExp]>)('rejects an invalid OAuth deployment (%j)', (candidate, message) => {
+    expect(() => AccountPlugin.deploymentOf(candidate)).toThrow(message)
+  })
+
+  it('accepts HTTP only when loopback fixtures opt in', () => {
+    const tokenUrl = 'http://127.0.0.1:1/token'
+    expect(AccountPlugin.deploymentOf({ tokenUrl, allowLoopbackHttp: true }).tokenUrl).toBe(tokenUrl)
+  })
+
+  it.each(['request_cancelled', 'request_timeout'] as const)('reports a bounded request as %s', async (code) => {
+    const caller = new AbortController()
+    const deadline = new AbortController()
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+    if (code === 'request_cancelled') caller.abort()
+    else deadline.abort()
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      init.signal!.throwIfAborted()
+      return new Response('{}')
+    })
+    vi.stubGlobal('fetch', fetch)
+    await expect(new AccountHttp(100).json('https://fixture.test/token', { method: 'POST' }, operation(caller.signal)))
+      .rejects.toMatchObject({ code })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('accepts an empty response and classifies a malformed response', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response('invalid json', { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const http = new AccountHttp(1000)
+    const request = operation(new AbortController().signal)
+    await expect(http.json('https://fixture.test/revoke', { method: 'POST' }, request))
+      .resolves.toEqual({ status: 204, body: undefined })
+    await expect(http.json('https://fixture.test/token', { method: 'POST' }, request))
+      .rejects.toMatchObject({ code: 'invalid_response' })
+  })
+})
 
 /** Build one unsigned JWT whose payload carries the given claims. */
 function jwt(payload: Record<string, unknown>): string {
