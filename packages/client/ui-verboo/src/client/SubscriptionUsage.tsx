@@ -9,16 +9,16 @@
  */
 import { Fragment, useState } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { ProductProps } from './contracts.ts'
-import type { SubscriptionUsage as Reading, SubscriptionUsageState } from './subscription-usage-resource.ts'
-import { CODEX_PROVIDER, subscriptionUsageAddress, subscriptionUsageVisible } from './subscription-usage-resource.ts'
+import { CODEX_PROVIDER, subscriptionUsageAddress, subscriptionUsageState, subscriptionUsageVisible } from './subscription-usage-resource.ts'
 import type { StaminaModelProps } from './stamina-selection.ts'
 import css from './SubscriptionUsage.module.css'
 
 /** The account identity the reading is addressed by, plus the accepted route. */
-export type SubscriptionUsageProps = ProductProps & StaminaModelProps & {
+export type SubscriptionUsageProps = Pick<ProductProps, 't' | 'usePreferences'> & StaminaModelProps & {
   /** Product snapshot hook carrying the credential revision the address is built from. */
-  readonly useSubscriptionUsageAddress: ProductProps['useProduct']
+  readonly useSubscriptionUsageAddress: SnapshotSelectorHook<Parameters<typeof subscriptionUsageAddress>[0]>
 }
 
 /**
@@ -46,20 +46,22 @@ function resetText(seconds: number | undefined, locale: string): string | undefi
  * @param props - the reading, its freshness, the accepted provider, and the locale seat.
  * @returns the pill and its panel, or null while the reading is not worth showing.
  */
-export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.dock'> & SubscriptionUsageProps) {
+export function SubscriptionUsage(props: Pick<PropsRuntime<'conversation.composer.dock'>, 'useResource'> & SubscriptionUsageProps) {
   const [open, setOpen] = useState(false)
   const address = props.useSubscriptionUsageAddress(subscriptionUsageAddress)
   const model = props.useStaminaModel(state => state.current)
-  const resource = props.useResource<'verboo-subscription-usage'>(address)
-  const usage: Reading | undefined = resource.value
+  const locale = props.usePreferences(state => state.locale)
+  const active = model?.provider === CODEX_PROVIDER
+  const resource = props.useResource<'verboo-subscription-usage'>(active ? address : '')
+  const usage = resource.value
   // Only the external subscription's own route carries this reading; a Verboo
   // model leaves the dock untouched rather than showing a borrowed number.
-  if (model?.provider !== CODEX_PROVIDER || usage === undefined) return null
+  if (!active || usage === undefined) return null
   const stale = resource.status === 'failed'
-  const state = stateOf(usage)
+  const state = subscriptionUsageState(usage)
   if (!subscriptionUsageVisible(state)) return null
   const plan = usage.planType == null ? props.t('subscription.plan') : props.t('subscription.planNamed', { plan: usage.planType })
-  const reset = resetText(usage.resetAfterSeconds, props.usePreferences(state => state.locale))
+  const reset = resetText(usage.resetAfterSeconds, locale)
   const label = state === 'unlimited'
     ? props.t('subscription.unlimited', { plan })
     : state === 'exhausted'
@@ -104,15 +106,4 @@ export function SubscriptionUsage(props: PropsRuntime<'conversation.composer.doc
       )}
     </span>
   )
-}
-
-/**
- * Classify one reading for the control's own presentation.
- * @param usage - a confirmed reading.
- * @returns the state the pill paints.
- */
-function stateOf(usage: Reading): SubscriptionUsageState {
-  if (usage.unlimited) return 'unlimited'
-  if (usage.reachedType != null || usage.usedPercent >= 100) return 'exhausted'
-  return usage.usedPercent >= 80 ? 'warn' : 'normal'
 }

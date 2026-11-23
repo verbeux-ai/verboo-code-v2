@@ -4,7 +4,8 @@
  * reading matters, and it never presents a number the provider did not state.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
+import { useState } from 'react'
 import { Context } from '@deepseek-ai/cordis'
 import { ResourceRegistry } from '@deepseek-ai/dsh-client-resources/src/client/resources.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -14,6 +15,7 @@ import {
   createSubscriptionUsageResource, subscriptionUsageAddress, subscriptionUsageState, subscriptionUsageVisible,
 } from '../src/client/subscription-usage-resource.ts'
 import type { SubscriptionUsage as Reading } from '../src/client/subscription-usage-resource.ts'
+import { SubscriptionUsage } from '../src/client/SubscriptionUsage.tsx'
 
 afterEach(cleanup)
 
@@ -42,6 +44,94 @@ function usageOwner(id: string, revision: string): Parameters<typeof subscriptio
     profile: { id: id as AccountUserId, name: null, contact: null },
   }
 }
+
+function dock() {
+  let selected: { provider: string; model: string } | null = { provider: 'openai-codex', model: 'workspace-model' }
+  const useResource = vi.fn().mockReturnValue({ status: 'idle', value: undefined })
+  type Props = Parameters<typeof SubscriptionUsage>[0]
+  const props: Pick<Props, 'useResource' | 'usePreferences' | 'useStaminaModel' | 'useSubscriptionUsageAddress' | 't'> = {
+    useResource,
+    usePreferences: (select) => {
+      const [preferences] = useState({ locale: 'en', theme: 'system' as const, languages: [] })
+      return select(preferences)
+    },
+    useStaminaModel: select => select({ current: selected }),
+    useSubscriptionUsageAddress: select => select(usageOwner('account-a', '1')),
+    t: (key, values) => [key, ...Object.values(values ?? {})].join(' '),
+  }
+  const element = () => <SubscriptionUsage {...props} />
+  return {
+    element, useResource,
+    select(provider: string | undefined) {
+      selected = provider === undefined ? null : { provider, model: 'workspace-model' }
+    },
+    report(value: Reading | undefined, status = 'live') {
+      useResource.mockReturnValue({ status, value })
+    },
+  }
+}
+
+it('keeps React hooks stable while usage becomes visible and stale', () => {
+  const d = dock()
+  const view = render(d.element())
+  expect(view.queryByRole('button')).toBeNull()
+  d.report(reading({ usedPercent: 87, resetAfterSeconds: 3660 }), 'failed')
+  view.rerender(d.element())
+  const button = view.getByRole('button')
+  expect(button.textContent).toContain('87')
+  expect(button.textContent).toContain('1 hr 1 min')
+  fireEvent.click(button)
+  const panel = view.getByRole('dialog')
+  expect(panel.textContent).toContain('subscription.stale')
+  expect(panel.textContent).toContain('12480')
+  fireEvent.click(view.getByRole('presentation'))
+  expect(view.queryByRole('dialog')).toBeNull()
+  d.report(reading({ usedPercent: 30 }))
+  view.rerender(d.element())
+  expect(view.queryByRole('button')).toBeNull()
+})
+
+it('leaves the subscription resource idle when the selected provider changes', () => {
+  const d = dock()
+  d.select('deepseek-account')
+  const view = render(d.element())
+  expect(d.useResource).toHaveBeenLastCalledWith('')
+  expect(view.queryByRole('button')).toBeNull()
+  d.select(undefined)
+  view.rerender(d.element())
+  expect(d.useResource).toHaveBeenLastCalledWith('')
+  d.select('openai-codex')
+  view.rerender(d.element())
+  expect(d.useResource).toHaveBeenLastCalledWith('dsh-resource://verboo-subscription-usage/1/account-a')
+})
+
+it.each([[1800, '30 min'], [3600, '1 hr']] as const)('shows a localized reset for %is', (seconds, reset) => {
+  const d = dock()
+  d.report(reading({ usedPercent: 80, resetAfterSeconds: seconds }))
+  const view = render(d.element())
+  expect(view.getByRole('button').textContent).toContain(reset)
+  expect(view.container.querySelector('[data-verboo-subscription-usage]')?.hasAttribute('data-stale')).toBe(false)
+})
+
+it('shows the provider’s exhausted and unlimited states without inventing credits or reset times', () => {
+  const d = dock()
+  const availableFields: Reading = { usedPercent: 100, unlimited: false, asOf: '2026-11-13T02:00:00.000Z' }
+  d.report({ ...availableFields, resetAfterSeconds: 0 })
+  const view = render(d.element())
+  const button = view.getByRole('button')
+  expect(button.textContent).toBe('subscription.exhausted subscription.plan')
+  fireEvent.click(button)
+  const panel = view.getByRole('dialog')
+  expect(panel.textContent).toContain('subscription.unknown')
+  expect(panel.textContent).not.toContain('subscription.credits')
+  d.report({ ...availableFields, unlimited: true })
+  view.rerender(d.element())
+  expect(button.textContent).toBe('subscription.unlimited subscription.plan')
+  expect(panel.textContent).not.toContain('subscription.resetsIn')
+  expect(panel.textContent).not.toContain('subscription.stale')
+  fireEvent.click(button)
+  expect(view.queryByRole('dialog')).toBeNull()
+})
 
 it('binds a polling address to the accepted revision and profile', () => {
   const owner = usageOwner('account / a', 'rev / 1')
