@@ -56,7 +56,10 @@ export class GrantVault {
           KEYRING_SERVICE,
           createHash('sha256').update(`${this.issuer}\n${this.home}`).digest('hex'),
           // Linux reaches the keyring through Secret Service; macOS and
-          // Windows use their own stores without a hint.
+          // Windows use their own stores without a hint. The other branch is
+          // unreachable on a Linux runner (vitest.config.ts documents the same
+          // platform asymmetry for the pwsh suites).
+          /* v8 ignore next -- the non-Linux hint only runs on a non-Linux runner. */
           process.platform === 'linux' ? { linux: { store: 'secret-service' } } : undefined,
         ),
     ))
