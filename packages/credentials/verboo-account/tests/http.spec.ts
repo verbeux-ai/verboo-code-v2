@@ -10,7 +10,7 @@ function deployment(requestTimeoutMs = 10_000): Deployment {
 
 /** Response helpers. */
 const json = (body: unknown, status = 200, headers?: Record<string, string>): Response =>
-  new Response(JSON.stringify(body), { status, headers })
+  new Response(JSON.stringify(body), { status, ...(headers === undefined ? {} : { headers }) })
 const empty = (status = 200): Response => new Response(null, { status })
 
 /** Stub fetch with an instrumented handler. */
