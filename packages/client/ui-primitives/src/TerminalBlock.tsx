@@ -236,7 +236,14 @@ export function TerminalBlock({
       data-running={running ? '' : undefined}
       data-body={body ? '' : undefined}
     >
-      <div className={css.header}>
+      <div className={css.header} onKeyDown={(event) => {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+        if (event.key !== 'Home' && event.key !== 'End') return
+        const header = event.currentTarget
+        if (header.scrollHeight <= header.clientHeight) return
+        event.preventDefault()
+        header.scrollTop = event.key === 'Home' ? 0 : header.scrollHeight
+      }}>
         <div className={css.prompt}>
           {showState && <span className={css.runStateLabel}>{state.label}</span>}
           {commandLines.map((line, index) => (
