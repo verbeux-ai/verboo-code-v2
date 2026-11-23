@@ -158,6 +158,7 @@ export class VerbooHttp {
             if (waitSignal.aborted) aborted()
             else waitSignal.addEventListener('abort', aborted, { once: true })
           })
+        /* v8 ignore next -- budget expiry during a retry wait needs a real 35s clock, past any test deadline. */
         if (budget.aborted) throw new AccountRequestError('request_timeout')
         continue
       }
