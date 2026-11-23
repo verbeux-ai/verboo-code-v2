@@ -213,14 +213,14 @@ describe('retry projection', () => {
 })
 
 describe('provider-routed retry policy', () => {
-  it('records the scheduled delay before retrying the request', async () => {
+  it('records the scheduled delay and canonical policy before retrying the request', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
       new LlmError('busy', 'RATE_LIMIT', { status: 429 }),
       textResponse('done'),
     ])
     ;({ ctx: context } = await harness(adapter, {
-      mock: normalConfig({ retryableCodes: ['SERVER', 'RATE_LIMIT'] }),
+      mock: normalConfig({ retryableCodes: ['SERVER', 'RATE_LIMIT'], maxRetriesByCode: { SERVER: 1, RATE_LIMIT: 2 } }),
     }, undefined, { random: () => 0.5 }))
     const agent = await context.agentLoop.create(SessionId('retry-success'), {
       provider: 'mock',
@@ -238,7 +238,7 @@ describe('provider-routed retry policy', () => {
       step: 1,
       provider: 'mock',
       mode: 'normal',
-      policyKey: '["normal",2,["RATE_LIMIT","SERVER"],[],500,10000,0]',
+      policyKey: '["normal",2,["RATE_LIMIT","SERVER"],[["RATE_LIMIT",2],["SERVER",1]],500,10000,0]',
       retry: 1,
       maxRetries: 2,
       delayMs: 500,
