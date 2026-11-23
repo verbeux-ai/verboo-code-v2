@@ -3,10 +3,10 @@ name: E2E (Verboo Code)
 # Run the built profile against the public Verboo Code Router. The live test
 # uses a dedicated Verboo Code API key and the shared Router model patch.
 #
-# pull_request IS a trigger, but GitHub withholds repo secrets from BOTH forked
-# PRs and Dependabot PRs (the latter are same-repo, fork==false, but still
-# keyless). The job-level `if:` below skips the whole job for those untrusted
-# PRs. The Dependabot test keys on the PR AUTHOR (pull_request.user.login), not
+# GitHub withholds repository secrets from pull requests from other repositories
+# and Dependabot PRs. Compare repository identity because Verboo Code is itself
+# an upstream fork, including on its own branches. The job-level guard
+# skips untrusted PRs. The Dependabot test keys on the PR AUTHOR (pull_request.user.login), not
 # github.actor (the run trigger) — a maintainer reopening a Dependabot PR would
 # make github.actor human while the PR is still keyless. When the job runs, the
 # secret is expected, so the preflight hard-fails if it's missing (a missing
@@ -58,7 +58,8 @@ jobs:
     # the secret is withheld — they would otherwise hard-fail the preflight.
     if: >-
       github.event_name != 'pull_request'
-      || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.event.pull_request.user.login != 'dependabot[bot]')
     # Profile e2e files can each own several complete dsh subprocess trees, so
     # four file workers preserve process/PTY headroom. Tests retain 120s/test
     # and retry 2; 45m still bounds retry storms against a slow API.

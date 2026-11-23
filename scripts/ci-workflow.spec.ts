@@ -1153,8 +1153,9 @@ describe('Verboo Code e2e workflow', () => {
       steps.findIndex(step => step.name === 'E2E tests (authenticated Verboo Code Router)'),
     )
     expect(JSON.stringify(steps)).not.toContain('secrets.DEEPSEEK_API_KEY_EXTERNAL')
-    expect(String(e2e.if)).toContain('head.repo.fork')
-    expect(String(e2e.if)).toContain('dependabot[bot]')
+    expect(String(e2e.if)).toContain('github.event.pull_request.head.repo.full_name == github.repository')
+    expect(String(e2e.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
+    expect(String(e2e.if)).not.toContain('head.repo.fork')
     expect(yaml.load(readFileSync(resolve(root, 'scripts/verboo-live-model.patch.yml'), 'utf8'))).toEqual([
       { id: 'llm-deepseek', disabled: true },
       {
@@ -1329,16 +1330,17 @@ describe('Python release workflows', () => {
     expect(realApiPreflightPosix).toMatchObject({
       env: { VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}' },
     })
-    expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
-    expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
-    expect(String(realApiPreflightPosix.if)).toContain('dependabot[bot]')
     expect(realApiPreflightWindows).toMatchObject({ shell: 'pwsh' })
-    for (const step of [installedRealApiPosix, installedRealApiWindows]) {
+    for (const step of [realApiPreflightPosix, realApiPreflightWindows, installedRealApiPosix, installedRealApiWindows]) {
       expect(step).toMatchObject({
         env: {
           VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}',
         },
       })
+      expect(String(step.if)).toContain('inputs.ci')
+      expect(String(step.if)).toContain('github.event.pull_request.head.repo.full_name == github.repository')
+      expect(String(step.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
+      expect(String(step.if)).not.toContain('head.repo.fork')
     }
     expect(JSON.stringify(installedRealApiPosix)).toContain('--scenario sdk-live')
     expect(JSON.stringify(installedRealApiPosix)).toContain('-u DSH_RUNTIME_MODE')
