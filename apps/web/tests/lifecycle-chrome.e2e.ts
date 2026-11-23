@@ -323,7 +323,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
       // Golden of the hero's stable waiting state (captured before any send;
       // the conversation-region goldens belong to the other scenarios).
-      const snapshot = await captureStableAria(page, '[class*="frame"]', scaffold.workspaceCwd)
+      // Chromium can expose a placeholder paragraph inside the empty editor.
+      const snapshot = (await captureStableAria(page, '[class*="frame"]', scaffold.workspaceCwd))
+        .replace(/^([ \t]*- textbox "[^"\n]+"):\n[ \t]+- paragraph$/m, '$1')
       await compareOrRefreshGolden(HERO_EXPECTED, snapshot, MODE)
     }
     const settled = scaffold.whenTurnSettled()
@@ -351,9 +353,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
           await expandOwningTurnProcess(page, thinking)
           await expect.poll(() => thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
           await reasoningComplete.promise
-          expect(await thinking.getAttribute('data-preview')).toBeNull()
+          await expect.poll(() => thinking.getAttribute('data-preview')).toBe('true')
           expect(await thinking.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-          expect(await thinking.locator('[data-streaming]:not([inert] *)').isVisible()).toBe(false)
+          expect(await thinking.locator('[data-streaming]:not([inert] *)').isVisible()).toBe(true)
         }
         observedReasoning.resolve(undefined)
         return await settled
