@@ -111,8 +111,9 @@ it('ends a silent proxy connection and its Git child at the connection deadline'
   await transport.connected
   const result = await running
   expect(result?.kind).toBe('timeout')
-  // The result records the status the terminated Git is read as; only the streamed run reports no exit code.
-  expect(result).toMatchObject({ exitCode: 1, timedOut: true, argv: checkArgv('https://github.com/acme/plugin.git') })
+  // Git can return its own failure code as process termination closes the transport.
+  expect(result).toMatchObject({ timedOut: true, argv: checkArgv('https://github.com/acme/plugin.git') })
+  expect(result!.exitCode).toBeGreaterThan(0)
   expect(result!.output).toContain('connection to github.com timed out after 3000ms')
   await transport.disconnected
   expect(transport.sockets.size).toBe(0)
