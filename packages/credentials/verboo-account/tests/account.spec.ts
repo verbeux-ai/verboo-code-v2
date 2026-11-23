@@ -779,3 +779,55 @@ it('authenticates ciphertext and keeps issuer or installation keys separate', as
     deploymentOf({ apiOrigin: 'http://remote.example.invalid' }),
   ).toThrow()
 })
+
+// The authorization flow and the token rejection guards.
+
+it('refuses to start the flow without an in-flight attempt and validates the callback origin', async () => {
+    const app = await fixture()
+    // The flow runs through the authorization registry: the browser method
+    // mounts the attempt. Calling refreshRejectedToken with a token the account
+    // never issued is a no-op, and an unknown origin is refused outright.
+    await expect(app.ctx.deepseekAccount.refreshRejectedToken(
+      'https://code.verboo.ai/router/v1',
+      'token-the-account-never-issued',
+    )).resolves.toBeUndefined()
+    await expect(app.ctx.deepseekAccount.startSignIn(metadata, 'https://remote.example.invalid/callback', 'desktop'))
+      .rejects.toMatchObject({ code: 'contract_error' })
+  })
+
+it('rejects a renewal whose presented token differs from the stored one', async () => {
+    const app = await fixture()
+    await app.login()
+    // The stored token is 'fixture-access' (the fixture exchange). Presenting a
+    // different rejected token leaves the stored grant untouched.
+    await expect(app.ctx.deepseekAccount.refreshRejectedToken(
+      'https://code.verboo.ai/router/v1',
+      'a-token-from-another-life',
+    )).resolves.toBeUndefined()
+    await expect((await app.ctx.deepseekAccount.getState()).status).toBe('credential-stored')
+  })
+
+it('signs out when the presented token matches the stored grant', async () => {
+    const app = await fixture()
+    await app.login()
+    await app.ctx.deepseekAccount.rejectToken('fixture-access-1-0')
+    await expect((await app.ctx.deepseekAccount.getState()).status).toBe('signed-out')
+  })
+
+it('surfaces state changes through watch until the caller stops listening', async () => {
+    const app = await fixture()
+    const aborter = new AbortController()
+    const views: Array<{ status?: string }> = []
+    const streaming = (async () => {
+      for await (const view of app.ctx.deepseekAccount.watch(aborter.signal, true)) {
+        views.push({ status: view.status })
+        if (view.status === 'credential-stored') aborter.abort()
+      }
+    })()
+    await app.login()
+    await until(async () => (await app.ctx.deepseekAccount.getState()).status === 'credential-stored')
+    await streaming
+    // Whichever states the iteration caught, the last one observed is the
+    // credential-stored transition the login produced.
+    expect(views.at(-1)?.status).toBe('credential-stored')
+  })
