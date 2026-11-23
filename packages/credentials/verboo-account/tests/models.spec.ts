@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { parseModels } from '../src/models.ts'
+import { AccountRequestError } from '../src/http.ts'
 import type { Deployment } from '../src/config.ts'
 
 /** Conservative defaults a legacy listing without capability metadata receives. */
@@ -154,3 +155,41 @@ describe('a parsed listing survives the pi-ai adapter', () => {
     await expect(servedLevels(true)).resolves.toEqual([])
   })
 }, 30_000)
+
+describe('parseModels rejections', () => {
+  it('refuses a listing that is not the wire shape', () => {
+    expect(() => parseModels({ nope: true }, deployment)).toThrow(AccountRequestError)
+    expect(() => parseModels({ data: 'not-a-list' }, deployment)).toThrow(AccountRequestError)
+  })
+
+  it('refuses a listing that repeats a model id', () => {
+    expect(() => parseModels({
+      data: [
+        { id: 'verboo/flash' },
+        { id: 'verboo/flash' },
+      ],
+    }, deployment)).toThrow(AccountRequestError)
+  })
+})
+
+describe('the remaining level and modality shapes', () => {
+  it('pins the offered off level to null while the others keep their names', () => {
+    const profile = parse({ effort_levels: ['off', 'high'] })
+    expect(profile.reasoningEfforts).toEqual({ off: null, high: 'high' })
+  })
+
+  it('offers images when the router flags the model as vision-capable', () => {
+    expect(parse({ effort_levels: ['high'] }).input).toEqual(['text'])
+    const vision = parseModels({
+      data: [{
+        id: 'verboo/vision',
+        display_name: 'Verboo Vision',
+        context_window: 128_000,
+        max_output_tokens: 8_192,
+        vision: true,
+        reasoning: { effort_levels: ['high'] },
+      }],
+    }, deployment)[0]!
+    expect(vision.input).toEqual(['text', 'image'])
+  })
+})

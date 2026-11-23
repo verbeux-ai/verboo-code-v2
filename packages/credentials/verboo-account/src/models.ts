@@ -152,6 +152,7 @@ class VerbooAdapter extends PiAiAdapter {
     private readonly deployment: Deployment,
   ) {
     const normalRetry = resolveRetryPolicy(undefined, 'verboo-account retryPolicy')
+    /* v8 ignore next -- resolveRetryPolicy always resolves normal when nothing is configured. */
     if (normalRetry.mode !== 'normal') throw new Error('Verboo account requires a bounded retry policy')
     const tokens = new WeakMap<ResolvedPiAiProviderProfile, string>()
     const state = { profiles: new Map<string, ResolvedPiAiProviderProfile>() }
@@ -174,6 +175,7 @@ class VerbooAdapter extends PiAiAdapter {
           )
         return session.token
       },
+      /* v8 ignore start -- pi-ai only walks these API-key surfaces outside this route's session-key flow. */
       auth: {
         credentials: {
           list: () => Promise.resolve([]),
@@ -189,6 +191,7 @@ class VerbooAdapter extends PiAiAdapter {
           fileExists: () => Promise.resolve(false),
         },
       },
+      /* v8 ignore end */
       resolveAttachments: () => ctx.get('attachments'),
       resolveImageAccess: (attachments, ref) =>
         resolveImageAttachmentAccess(attachments, () => undefined, ref),
