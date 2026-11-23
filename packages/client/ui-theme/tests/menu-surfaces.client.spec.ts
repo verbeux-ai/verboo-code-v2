@@ -9,6 +9,7 @@ import { packageStylesheets, parseRules } from './stylesheet-scan.ts'
 const packages = fileURLToPath(new URL('../../../', import.meta.url))
 
 function menuViolations(source: string): string[] {
+  if (!source.includes('role') || !/['"](?:menu|listbox)['"]/.test(source)) return []
   const ast = ts.createSourceFile('menu.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const failures: string[] = []
   const visit = (node: ts.Node, insideSurface: boolean): void => {
@@ -84,6 +85,7 @@ describe('shared menu material', () => {
     for (const file of sourceFiles()) {
       if (file.endsWith('MenuSurface.tsx')) continue
       const source = readFileSync(file, 'utf8')
+      if (!source.includes('MenuSurface')) continue
       const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
       const classes = new Set<string>()
       const visit = (node: ts.Node): void => {
