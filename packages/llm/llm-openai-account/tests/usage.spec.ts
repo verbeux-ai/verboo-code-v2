@@ -114,6 +114,25 @@ it('ignores a credit balance header that is not a number', () => {
   })).not.toHaveProperty('credits')
 })
 
+it.each([
+  { balance: 0, credits: { credits: 0 } },
+  { balance: 'unavailable', credits: {} },
+])('preserves a secondary percentage when the provider omits its duration ($balance)', ({ balance, credits }) => {
+  const asOf = '2026-11-13T00:00:00.000Z'
+  expect(usageOf({
+    asOf,
+    body: {
+      used_percent: 10,
+      rate_limit: { secondary_window: { used_percent: 32 } },
+      credits: { balance },
+    },
+  })).toEqual({
+    asOf, usedPercent: 10, unlimited: false,
+    ...credits,
+    additionalLimits: [{ id: 'secondary', usedPercent: 32 }],
+  })
+})
+
 it('numbers an additional limit the provider left unidentified and skips one with no window', () => {
   expect(usageOf({
     asOf: '2026-11-13T00:00:00.000Z',
