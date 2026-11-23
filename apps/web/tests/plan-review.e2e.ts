@@ -224,12 +224,12 @@ describe('web e2e: plan review takeover round trip', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plan-review-panel-return'))
     const agent = scaffold.ctx.agents.get(reviewedSession)
     if (agent === undefined) throw new Error('The reviewed Session has no active agent')
-    // The Plugins panel replaces the Conversation and its right Sidebar. The
-    // review arrives while neither is mounted; returning mounts both in one
-    // commit, and the review's automatic open runs before the Sidebar's own
-    // effects. A crash there retires the opener for the rest of the page.
+    // Submit the review while Plugins is visible and the conversation is hidden.
+    // Returning must open the review even if Sidebar and review effects run in
+    // the same commit. A slot crash would disable the opener until reload.
     await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-    await expect.poll(() => page.locator('[data-composer-input]').count()).toBe(0)
+    await page.locator('[data-plugin-panel]').waitFor()
+    await page.locator('[data-composer-input]').first().waitFor({ state: 'hidden' })
     const crashes: string[] = []
     const onConsole = (message: ConsoleMessage): void => {
       if (message.type() === 'error' && /slot entry crashed/i.test(message.text())) crashes.push(message.text())
@@ -309,7 +309,8 @@ describe.skipIf(MODE === 'record')('web e2e: pending plan review across Sidebar 
 
   async function showPlugins(): Promise<void> {
     await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-    await expect.poll(() => page.locator('[data-composer-input]').count(), { timeout: 10_000 }).toBe(0)
+    await page.locator('[data-plugin-panel]').waitFor()
+    await page.locator('[data-composer-input]').first().waitFor({ state: 'hidden', timeout: 10_000 })
   }
 
   /** Deliver a plan review to one Session, run the scenario, and withdraw the review. */
