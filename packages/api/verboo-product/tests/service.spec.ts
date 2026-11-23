@@ -72,6 +72,24 @@ describe('trial purchase recovery', () => {
   const pending = () => Response.json({ data: { status: 'requires_action' } })
   const conflict = () => new Response(null, { status: 409 })
   const handoff = (attemptId = attempt) => Response.json({ data: { mode: 'stripe', attemptId, url: checkout } })
+  const group = plan.id as PlanId
+  const trialId = `tokens:${group}` as TrialId
+
+  function checkoutFixture(response: Response) {
+    return fixture(
+      Response.json({ data: [] }),
+      Response.json({ data: [{ ...plan, slug: 'pro', currency: 'USD' }] }),
+      Response.json({ data: { asOf: new Date().toISOString(), trials: [{
+        id: trialId, groupId: group, source: 'free_tokens', state: 'ended', tokensRemaining: 0,
+      }] } }),
+      Response.json({ data: {
+        available: true, quoteId: 'fixture-quote', expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        initialAmountMinor: 1000, renewalAmountMinor: 1000, currency: 'USD',
+        paymentMethods: ['card'], pixAvailable: false, billingInterval: 'month',
+      } }),
+      response,
+    )
+  }
 
   it('reads the exact persisted purchase status', async () => {
     const f = fixture(pending())
@@ -149,6 +167,72 @@ describe('trial purchase recovery', () => {
     })
     await expect(f.product.resumeTrialPayment(attempt)).resolves.toEqual({ ok: false, code: 'account_changed' })
     expect(f.fetch).toHaveBeenCalledOnce()
+  })
+
+  it('stops quoting when the login changes after reading the catalog', async () => {
+    const f = checkoutFixture(handoff())
+    const fetch = f.fetch.getMockImplementation()!
+    const subscriptionsRead = Promise.withResolvers<undefined>()
+    let current = { ...session('account-a'), token: 'fixture-account-a' }
+    let parsed: 'subscriptions' | 'catalog' | undefined
+    f.account.getPlatformSession.mockImplementation(async () => {
+      const captured = current
+      if (parsed === 'subscriptions') subscriptionsRead.resolve(undefined)
+      if (parsed === 'catalog') current = { ...session('account-b'), token: 'fixture-account-b' }
+      parsed = undefined
+      return captured
+    })
+    f.account.resolveToken.mockImplementation(async () => current.token)
+    f.fetch.mockImplementation(async (url, init) => {
+      const response = await fetch(url, init)
+      const path = new URL(String(url)).pathname
+      const source = path === '/api/me/subscriptions' ? 'subscriptions'
+        : path === '/api/marketplace' ? 'catalog' : undefined
+      if (source === undefined) return response
+      const json = response.json.bind(response)
+      response.json = async () => {
+        if (source === 'catalog') await subscriptionsRead.promise
+        const value = await json()
+        parsed = source
+        return value
+      }
+      return response
+    })
+    await expect(f.product.trialOffer(trialId, group)).resolves.toEqual({ ok: false, code: 'account_changed' })
+    expect(f.fetch.mock.calls.map(([url, init]) => [new URL(String(url)).pathname, new Headers(init?.headers).get('authorization')]))
+      .toEqual([
+        ['/api/me/subscriptions', 'Bearer fixture-account-a'],
+        ['/api/marketplace', 'Bearer fixture-account-a'],
+      ])
+  })
+
+  it('keeps confirmation bound to the account that obtained the quote', async () => {
+    const f = checkoutFixture(handoff())
+    const offer = await f.product.trialOffer(trialId, group)
+    if (!offer.ok) throw new Error('The fixture did not return a card offer')
+    expect(offer.data.paymentMethod).toBe('card')
+    let current = { ...session('account-a'), token: 'fixture-account-a' }
+    f.account.getPlatformSession.mockImplementation(async () => current)
+    f.account.getPlatformSession.mockImplementationOnce(async () => {
+      const captured = current
+      current = { ...session('account-b'), token: 'fixture-account-b' }
+      return captured
+    })
+    f.account.resolveToken.mockImplementation(async () => current.token)
+    await expect(f.product.confirmTrialOffer(offer.data.id, 'card', attempt)).resolves.toEqual({
+      ok: false, code: 'account_changed',
+    })
+    expect(f.fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('reports a rejected quote without opening a replacement checkout', async () => {
+    const f = checkoutFixture(new Response(null, { status: 409, headers: { 'x-verboo-quote-rejected': 'true' } }))
+    const offer = await f.product.trialOffer(trialId, group)
+    if (!offer.ok) throw new Error('The fixture did not return a card offer')
+    await expect(f.product.confirmTrialOffer(offer.data.id, 'card', attempt)).resolves.toEqual({
+      ok: false, code: 'quote_changed',
+    })
+    expect(f.fetch).toHaveBeenCalledTimes(5)
   })
 })
 

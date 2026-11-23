@@ -46,7 +46,7 @@ function fixture() {
       throw new Error('unexpected fixture request')
     },
   )
-  const commerce = new TrialCommerce(request, async () => owner)
+  const commerce = new TrialCommerce(() => request, async () => owner)
   return {
     request,
     commerce,

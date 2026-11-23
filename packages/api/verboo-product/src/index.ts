@@ -147,13 +147,18 @@ export class VerbooProduct extends TypertRemoteService {
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
     this.trialCommerce = new TrialCommerce(
-      (path, method, body, correlationId) => this.request(path, method, body, undefined, { correlationId }),
-      async () => {
-        const session = await this.ctx.deepseekAccount.getPlatformSession()
-        if (session?.sessionId === undefined) throw new AccountRequestError('authentication_invalid')
-        return session.sessionId
-      },
+      accountSessionId => this.requestForAccount(accountSessionId),
+      () => this.requireAccountSessionId(),
     )
+  }
+  private async requireAccountSessionId() {
+    const session = await this.ctx.deepseekAccount.getPlatformSession()
+    if (session?.sessionId === undefined) throw new AccountRequestError('authentication_invalid')
+    return session.sessionId
+  }
+  private requestForAccount(accountSessionId: string) {
+    return (path: string, method?: string, body?: unknown, correlationId?: string) =>
+      this.request(path, method, body, undefined, { accountSessionId, correlationId })
   }
   private async request(
     path: string,
@@ -344,51 +349,53 @@ export class VerbooProduct extends TypertRemoteService {
  */
   @Remote
   getPlans(): Promise<Result<Plans>> {
-    return this.result(async () => {
-      const [owned, available] = await Promise.all([
-        this.request('/api/me/subscriptions'),
-        this.request('/api/marketplace?includeMetrics=false'),
-      ])
-      return {
-        subscriptions: subscriptions
-          .parse(owned)
-          .data.map(s => ({
-            id: s.id,
-            planId: s.groupId,
-            name: s.group?.name ?? s.groupId,
-            ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
-            status: s.status,
-            renewsAt: s.currentPeriodEnd ?? null,
-            cancelAtEnd: s.cancelAtPeriodEnd,
-            canUpgrade: s.management.changePlan,
-            billing: s.billing
-              ? {
-                amountMinor: s.billing.amountMinor,
-                currency: s.billing.currency,
-                interval: s.billing.billingInterval,
-              }
-              : null,
-          })),
-        catalog: catalog
-          .parse(available)
-          .data.filter(
-            p =>
-              p.newAcquisitionEnabled &&
-              !p.apiOnly &&
-              p.billingMode !== 'token' &&
-              p.billingMode !== 'pay_as_you_go',
-          )
-          .map(p => ({
-            id: p.id,
-            name: p.name,
-            ...(p.slug === undefined ? {} : { slug: p.slug }),
-            description: p.description,
-            priceCents: p.priceCents,
-            currency: p.currency,
-            interval: p.billingInterval,
-          })),
-      }
-    })
+    return this.result(async () => this.readPlans(await this.requireAccountSessionId()))
+  }
+  private async readPlans(accountSessionId: string): Promise<Plans> {
+    const read = this.requestForAccount(accountSessionId)
+    const [owned, available] = await Promise.all([
+      read('/api/me/subscriptions'),
+      read('/api/marketplace?includeMetrics=false'),
+    ])
+    return {
+      subscriptions: subscriptions
+        .parse(owned)
+        .data.map(s => ({
+          id: s.id,
+          planId: s.groupId,
+          name: s.group?.name ?? s.groupId,
+          ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
+          status: s.status,
+          renewsAt: s.currentPeriodEnd ?? null,
+          cancelAtEnd: s.cancelAtPeriodEnd,
+          canUpgrade: s.management.changePlan,
+          billing: s.billing
+            ? {
+              amountMinor: s.billing.amountMinor,
+              currency: s.billing.currency,
+              interval: s.billing.billingInterval,
+            }
+            : null,
+        })),
+      catalog: catalog
+        .parse(available)
+        .data.filter(
+          p =>
+            p.newAcquisitionEnabled &&
+            !p.apiOnly &&
+            p.billingMode !== 'token' &&
+            p.billingMode !== 'pay_as_you_go',
+        )
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          ...(p.slug === undefined ? {} : { slug: p.slug }),
+          description: p.description,
+          priceCents: p.priceCents,
+          currency: p.currency,
+          interval: p.billingInterval,
+        })),
+    }
   }
   /**
    * Read stamina only for plans where the server has enrolled this account.
@@ -425,11 +432,12 @@ export class VerbooProduct extends TypertRemoteService {
   @Remote
   trialOffer(trialId: TrialId, planId: PlanId, method?: 'card' | 'pix'): Promise<Result<TrialOffer>> {
     return this.result(async () => {
-      const plans = await this.getPlans()
-      if (!plans.ok) throw new AccountRequestError('contract_error')
+      const owner = await this.requireAccountSessionId()
+      const plans = await this.result(() => this.readPlans(owner))
+      if (!plans.ok) throw new AccountRequestError(plans.code === 'account_changed' ? 'request_cancelled' : 'contract_error')
       const selected = plans.data.catalog.find(plan => plan.id === id.parse(planId))
       if (!selected || selected.currency.toUpperCase() !== 'USD') throw new AccountRequestError('contract_error')
-      return this.trialCommerce.offer(trialId, selected, z.enum(['card', 'pix']).parse(method ?? 'card'))
+      return this.trialCommerce.offer(trialId, selected, z.enum(['card', 'pix']).parse(method ?? 'card'), owner)
     })
   }
   /**
@@ -465,9 +473,8 @@ export class VerbooProduct extends TypertRemoteService {
   resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>> {
     return this.result(async () => {
       const attempt = z.uuid().parse(attemptId) as TrialAttemptId
-      const accountSessionId = (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
-      if (accountSessionId === undefined) throw new AccountRequestError('authentication_invalid')
-      const read = (path: string) => this.request(path, 'GET', undefined, undefined, { accountSessionId })
+      const accountSessionId = await this.requireAccountSessionId()
+      const read = this.requestForAccount(accountSessionId)
       const original = z.object({ data: z.object({ status: z.string() }) })
         .parse(await read('/api/me/purchase-attempts/' + attempt)).data
       if (original.status === 'succeeded') return { status: 'completed', attemptId: attempt, url: null }
