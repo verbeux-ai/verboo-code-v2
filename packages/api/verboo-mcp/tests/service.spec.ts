@@ -19,6 +19,7 @@ import type {
   CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordEntry, CredentialRecordInfo,
   CredentialRef, ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
+import { authModeOf } from '../src/store.ts'
 
 const { mockConnect, mockListTools, MockClient, instances, transportConfigs, identity } = vi.hoisted(() => {
   const identity: { value: { name: string; version: string } | undefined } = {
@@ -185,6 +186,15 @@ async function settled(
   const states = listed.ok ? listed.data.map(entry => entry.status.state) : listed
   throw new Error(`${name} never reached ${state}: ${JSON.stringify(states)}`)
 }
+
+describe('stored authentication modes', () => {
+  it('reads legacy headers while honoring an explicit mode', () => {
+    const headers = { Authorization: '${credential:FIXTURE_HEADERS}' }
+    expect(authModeOf({ headers })).toBe('headers')
+    expect(authModeOf({ headers: {} })).toBe('none')
+    expect(authModeOf({ auth: 'oauth', headers })).toBe('oauth')
+  })
+})
 
 describe('definition writes', () => {
   it('stores keys and credential references, never a secret value', async () => {
