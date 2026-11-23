@@ -851,6 +851,14 @@ describe('workspaces action face', () => {
     await ws.insertBefore('w1' as WorkspaceId, 'w2' as WorkspaceId)
     const moved = await ws.insertSessionBefore('w1' as WorkspaceId, 's1' as SessionId, 's2' as SessionId)
     expect(moved.sessionIds).toEqual(['s1'])
+    const sessionId = 's1' as SessionId
+    const missing = 'missing-project' as WorkspaceId
+    await ws.update((draft) => { draft.items = [created] })
+    const move = await ws.moveSession(sessionId, created.workspaceId)
+    expect(move).toEqual({ sessionId, workspaceId: created.workspaceId, projectPath: created.path, workspace: created })
+    expect(await ws.moveSession(sessionId, missing)).toMatchObject({
+      sessionId, workspaceId: missing, projectPath: '', workspace: { workspaceId: missing, sessionIds: [sessionId] },
+    })
     // Default archive mirrors the production effect: the id joins the list
     // state's archive set (features render against the same snapshot).
     await ws.archiveSession('s1' as SessionId)
@@ -861,6 +869,7 @@ describe('workspaces action face', () => {
     expect(ws.list.getSnapshot().archivedSessionIds).toEqual(['s1'])
     expect(ws.calls.map(c => c.method)).toEqual(
       ['create', 'create', 'rename', 'delete', 'insertBefore', 'insertSessionBefore',
+        'moveSession', 'moveSession',
         'archiveSession', 'archiveSession', 'unarchiveSession'])
 
     ws.stub('create', () => Promise.resolve({ workspaceId: 'ws-x', title: 'X', path: '/x', sessionIds: [] } as never))
@@ -869,6 +878,8 @@ describe('workspaces action face', () => {
     const insertBefore = vi.fn(() => Promise.resolve())
     ws.stub('insertBefore', insertBefore)
     ws.stub('insertSessionBefore', () => Promise.resolve({ workspaceId: 'w1', title: '', path: '', sessionIds: [] } as never))
+    const moveSession = vi.fn(async () => move)
+    ws.stub('moveSession', moveSession)
     ws.stub('archiveSession', () => Promise.resolve())
     ws.stub('unarchiveSession', () => Promise.resolve())
     expect((await ws.create({ path: '/y' })).title).toBe('X')
@@ -877,6 +888,8 @@ describe('workspaces action face', () => {
     await ws.insertBefore('w2' as WorkspaceId)
     expect(insertBefore).toHaveBeenCalledWith('w2', undefined)
     expect((await ws.insertSessionBefore('w1' as WorkspaceId, 's1' as SessionId)).sessionIds).toEqual([])
+    expect(await ws.moveSession(sessionId, created.workspaceId, { stopActivity: true })).toBe(move)
+    expect(moveSession).toHaveBeenCalledExactlyOnceWith(sessionId, created.workspaceId, { stopActivity: true })
     // The stub replaces the default set mutation: the set stays as-is.
     await ws.archiveSession('s2' as SessionId)
     expect(ws.list.getSnapshot().archivedSessionIds).toEqual(['s1'])
