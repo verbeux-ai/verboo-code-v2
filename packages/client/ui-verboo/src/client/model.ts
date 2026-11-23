@@ -675,10 +675,18 @@ export class ProductModel {
    * @returns whether the Host accepted the request; a refreshable grant opens nothing.
    */
   async signInMcpServer(name: string): Promise<boolean> {
+    const generation = this.generation
     const opened = await this.runMcpGrant(name, () => this.api.signInMcpServer(name))
+    if (opened === null || generation !== this.generation) return false
     // A refreshed grant needs no human step, so an empty page opens nothing.
-    if (opened !== null && opened !== '') await this.api.open(opened)
-    return opened !== null
+    if (opened === '') return true
+    try {
+      await this.api.open(opened)
+      return generation === this.generation
+    } catch (_error) {
+      if (generation === this.generation) this.patch({ actionFailed: 'mcp-signin' })
+      return false
+    }
   }
 
   /**
@@ -723,9 +731,12 @@ export class ProductModel {
       }
       this.patch({ mcpError: null })
       await this.reloadMcpServers()
-      return result.data
+      return generation === this.generation ? result.data : null
+    } catch (_error) {
+      if (generation === this.generation) this.patch({ actionFailed: 'mcp-signin' })
+      return null
     } finally {
-      this.patch({ busy: null })
+      if (generation === this.generation) this.patch({ busy: null })
     }
   }
 
