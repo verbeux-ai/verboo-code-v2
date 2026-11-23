@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { QuitHold, QUIT_CONFIRM_MS } from '../src/client/QuitHold.tsx'
+import { DesktopQuitHold, QuitHold, QUIT_CONFIRM_MS } from '../src/client/QuitHold.tsx'
 import { pt } from '../src/client/locales.ts'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+const copy: Readonly<Record<string, string>> = pt
+const translate = (key: string, values?: Record<string, unknown>) =>
+  (copy[key] ?? key).replace('{shortcut}', typeof values?.shortcut === 'string' ? values.shortcut : '')
+
 function setup(mac = true) {
   vi.useFakeTimers()
   const quit = vi.fn().mockResolvedValue(undefined)
-  const copy: Readonly<Record<string, string>> = pt
-  render(<QuitHold mac={mac} quit={quit} t={(key, values) =>
-    (copy[key] ?? key).replace('{shortcut}', typeof values?.shortcut === 'string' ? values.shortcut : '')} />)
+  render(<QuitHold mac={mac} quit={quit} t={translate} />)
   return { quit, modifier: mac ? { metaKey: true } : { ctrlKey: true } }
 }
 
@@ -49,6 +51,47 @@ it('ignores unrelated combinations and key repeats', () => {
   fireEvent.keyDown(window, { code: 'KeyQ', metaKey: true, repeat: true })
   expect(quit).not.toHaveBeenCalled()
   expect(screen.queryByRole('status')).toBeNull()
+})
+
+it.each([true, false])('releases the second press when only the modifier is released with mac=%s', (mac) => {
+  const { quit, modifier } = setup(mac)
+  fireEvent.keyDown(window, { code: 'KeyQ', ...modifier })
+  fireEvent.keyUp(window, { key: 'A', code: 'KeyA' })
+  fireEvent.keyDown(window, { code: 'KeyQ', ...modifier })
+  expect(quit).not.toHaveBeenCalled()
+  fireEvent.keyUp(window, { key: mac ? 'Meta' : 'Control' })
+  fireEvent.keyDown(window, { code: 'KeyQ', ...modifier })
+  expect(quit).toHaveBeenCalledOnce()
+})
+
+it('cancels the confirmation when the window becomes hidden', () => {
+  const { quit, modifier } = setup()
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+  fireEvent.keyDown(window, { code: 'KeyQ', ...modifier })
+  fireEvent.keyUp(window, { code: 'KeyQ' })
+  fireEvent(document, new Event('visibilitychange'))
+  expect(screen.getByRole('status')).toBeTruthy()
+  hidden.mockReturnValue(true)
+  fireEvent(document, new Event('visibilitychange'))
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.keyDown(window, { code: 'KeyQ', ...modifier })
+  expect(quit).not.toHaveBeenCalled()
+})
+
+it('binds the quit shortcut only when the desktop provides it', () => {
+  vi.stubGlobal('__VERBOO_DESKTOP__', undefined)
+  const { rerender } = render(<DesktopQuitHold t={translate} />)
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+  fireEvent.keyDown(window, { code: 'KeyQ', metaKey: true })
+  expect(screen.queryByRole('status')).toBeNull()
+  const quit = vi.fn().mockResolvedValue(undefined)
+  vi.stubGlobal('__VERBOO_DESKTOP__', { quit })
+  rerender(<DesktopQuitHold t={translate} />)
+  fireEvent.keyDown(window, { code: 'KeyQ', metaKey: true })
+  expect(screen.getByRole('status').textContent).toContain('⌘Q')
+  fireEvent.keyUp(window, { code: 'KeyQ' })
+  fireEvent.keyDown(window, { code: 'KeyQ', metaKey: true })
+  expect(quit).toHaveBeenCalledOnce()
 })
 
 it('shows an error and allows retry after quit fails', async () => {
