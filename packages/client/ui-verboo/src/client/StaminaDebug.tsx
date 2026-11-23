@@ -23,13 +23,14 @@ export interface StaminaDebugInjected {
 export type StaminaDebugProps = PropsLocale<'verboo'> & InjectFace<StaminaDebugInjected>
 
 /** Account-owned readings remain reactive while a response is running. */
-export function StaminaDebug(props: PropsRuntime<'conversation.composer.dock'> & ProductProps & StaminaDebugProps & StaminaModelProps) {
+export function StaminaDebug(props: Pick<PropsRuntime<'conversation.composer.dock'>, 'useResource'>
+  & Pick<ProductProps, 'useProduct' | 'usePreferences'> & StaminaDebugProps & StaminaModelProps) {
   const address = props.useProduct(staminaAddress)
   const plans = props.useProduct(state => state.plans)
   const model = props.useStaminaModel(state => state.current)
-  const resource = props.useResource<'verboo-stamina'>(address)
-  const locale = props.usePreferences(state => state.locale)
   const enabled = props.useStaminaDebug(state => state.value?.staminaDebug === true)
+  const resource = props.useResource<'verboo-stamina'>(enabled ? address : '')
+  const locale = props.usePreferences(state => state.locale)
   if (!enabled) return null
   const selected = selectStaminaForModel(plans, model, resource.value)
   return <StaminaDebugReading {...selected} failed={resource.status === 'failed'} locale={locale} t={props.t} refresh={props.refreshStamina} />
