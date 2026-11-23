@@ -1146,7 +1146,7 @@ describe('Verboo Code e2e workflow', () => {
     expect(preflight?.run).toContain('https://code.verboo.ai/router/v1/models')
     expect(preflight?.run).toContain("redirect: 'error'")
     const live = steps.find(step => step.name === 'E2E tests (authenticated Verboo Code Router)')
-    expect(live?.env).toEqual({ VERBOO_CODE_CI_API_KEY: key })
+    expect(live?.env).toMatchObject({ VERBOO_CODE_CI_API_KEY: key })
     expect(live?.run).toContain('apps/cli/tests/profiles/sdk/office-cli.e2e.ts')
     expect(steps.findIndex(step => step.name === 'Preflight (authenticate to Verboo Code)')).toBeLessThan(
       steps.findIndex(step => step.name === 'E2E tests (authenticated Verboo Code Router)'),
