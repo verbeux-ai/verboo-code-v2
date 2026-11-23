@@ -263,10 +263,11 @@ it('uses normalized attachment bytes without exposing the host file path', async
   const request = inferenceRequest()
   fixture.fetch.mockResolvedValueOnce(Response.json({ data: [{ id: request.model, vision: true }] }))
   await fixture.list()
-  const attachment = {
-    attachmentId: brandString(`sha256:${'a'.repeat(64)}`),
+  type ImageRef = Extract<GenerateOptions['messages'][number]['content'][number], { type: 'image' }>['attachment']
+  const attachment: ImageRef = {
+    attachmentId: brandString<ImageRef['attachmentId']>(`sha256:${'a'.repeat(64)}`),
     mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
-  } satisfies Extract<GenerateOptions['messages'][number]['content'][number], { type: 'image' }>['attachment']
+  }
   const imageHostPath = vi.fn(() => '/fixture/private.png')
   const readImageRequest = vi.fn(async () => ({
     ...attachment, attachment, variantId: `sha256:${'b'.repeat(64)}`, data: Uint8Array.of(1),
