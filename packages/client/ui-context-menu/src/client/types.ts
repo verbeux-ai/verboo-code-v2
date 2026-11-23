@@ -73,6 +73,18 @@ export interface MenuAction extends Omit<MenuActionView, 'children'> {
   /** Execute against the captured target. Reject for a visible failure; cancellation resolves normally. */
   readonly run?: () => void | Promise<void>
 }
+
+/** Reads shared by providers preparing actions for one captured menu target. */
+export interface MenuPreparation {
+  /**
+   * Reuse the same read and result type under the service's unique key.
+   * @param key - identity of the read within this target.
+   * @param read - work owned by the menu occurrence, bounded by its preparation budget.
+   * @returns the original result for this menu only.
+   */
+  share<T>(key: string, read: (signal: AbortSignal) => Promise<T>): Promise<T>
+}
+
 /** A namespaced contribution, ordered within its target family. */
 export interface MenuContribution<K extends keyof ContextMenuTargetMap> {
   readonly id: string
@@ -87,9 +99,12 @@ export interface MenuContribution<K extends keyof ContextMenuTargetMap> {
   /**
    * @param target - clicked object.
    * @param signal - aborted on dismissal, plugin unload, or a newer observed preparation.
+   * @param preparation - shared reads for the captured target.
    * @returns available actions.
    */
-  resolve(target: ContextMenuTargetMap[K], signal: AbortSignal): readonly MenuAction[] | Promise<readonly MenuAction[]>
+  resolve(
+    target: ContextMenuTargetMap[K], signal: AbortSignal, preparation?: MenuPreparation,
+  ): readonly MenuAction[] | Promise<readonly MenuAction[]>
 }
 /** Independent menu occurrence used by custom renderers and embedded menus. */
 export interface MenuResolution {

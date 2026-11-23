@@ -67,6 +67,48 @@ describe('menu contribution lifecycle', () => {
     expect(() => registry.resolve(target)).toThrow('disposed')
   })
 
+  it('shares pending reads within a menu and aborts them on dismissal', async () => {
+    const registry = new MenuRegistry(vi.fn())
+    const waiting = deferred<string>()
+    const signals: AbortSignal[] = []
+    const read = vi.fn((signal: AbortSignal) => {
+      signals.push(signal)
+      return waiting.promise
+    })
+    for (const id of ['preview', 'download']) {
+      registry.register({ id, target: 'extension', order: 0, resolve: async (_target, _signal, context) => [
+        { id: 'file', label: await context!.share('file.stat', read) },
+      ] })
+    }
+    const first = registry.resolve(target)
+    const second = registry.resolve(target)
+    expect(read).toHaveBeenCalledTimes(2)
+    first.dispose()
+    expect(signals.map(signal => signal.aborted)).toEqual([true, false])
+    waiting.resolve('Report')
+    await second.ready
+    expect(first.source.getSnapshot()).toEqual([])
+    expect(second.source.getSnapshot().map(item => item.label)).toEqual(['Report', 'Report'])
+    registry.dispose()
+    expect(signals[1]?.aborted).toBe(true)
+  })
+
+  it('removes synchronous action callbacks when an observed contribution changes', () => {
+    const registry = new MenuRegistry(vi.fn())
+    const input = createSnapshotStore('before')
+    const run = vi.fn()
+    registry.register({ id: 'current', target: 'extension', order: 0, observe: () => [input],
+      resolve: () => [{ id: input.getSnapshot(), label: 'Current', run }],
+    })
+    const menu = registry.resolve(target)
+    input.set('after')
+    menu.select('current/before')
+    expect(run).not.toHaveBeenCalled()
+    menu.select('current/after')
+    expect(run).toHaveBeenCalledOnce()
+    registry.dispose()
+  })
+
   it('contains provider failure and rejects duplicate contributions without corrupting other actions', async () => {
     const failed = vi.fn(), run = vi.fn(), registry = new MenuRegistry(failed)
     const definition = { id: 'good', target: 'extension' as const, order: 0, resolve: () => [{ id: 'a', label: 'A', run }] }
