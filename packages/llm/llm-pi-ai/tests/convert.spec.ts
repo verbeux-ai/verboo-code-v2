@@ -8,7 +8,7 @@ import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { toPiContext } from '../src/context.ts'
 import { toPiReplayState } from '../src/replay.ts'
-import { mapStopReason, mapUsage, toStreamChunks } from '../src/stream.ts'
+import { OpenAiToolCallIdInspection, mapStopReason, mapUsage, toStreamChunks } from '../src/stream.ts'
 
 function usage(input = 0, output = 0, cacheRead = 0, cacheWrite = 0): Usage {
   return {
@@ -34,6 +34,21 @@ function assistant(overrides: Partial<AssistantMessage> = {}): AssistantMessage 
     ...overrides,
   }
 }
+
+it('retains only usable correlation data from provider wire events', () => {
+  const inspection = new OpenAiToolCallIdInspection()
+  for (const value of [
+    null, {}, { choices: [null] }, { choices: [{ delta: { tool_calls: [null, {}, { index: 1 }] } }] },
+  ]) inspection.observe(value)
+  expect(inspection.responseId).toBeUndefined()
+  expect(inspection.duplicate).toBe(false)
+  inspection.observe({ id: 'response-first', choices: [{ delta: { tool_calls: [{ index: 0, id: 'fixture' }] } }] })
+  inspection.observe({ id: 'response-later', choices: [{ delta: { tool_calls: [{ index: 0, id: 'fixture' }] } }] })
+  expect(inspection.responseId).toBe('response-first')
+  expect(inspection.duplicate).toBe(false)
+  inspection.observe({ choices: [{ delta: { tool_calls: [{ index: 1, id: 'fixture' }] } }] })
+  expect(inspection.duplicate).toBe(true)
+})
 
 async function* feed(...events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
   for (const event of events) yield event
@@ -828,6 +843,23 @@ describe('toStreamChunks', () => {
       code: 'MALFORMED_RESPONSE',
       message: 'Tool call did not complete',
     })
+  })
+
+  it('identifies duplicate start, missing start and duplicate completion in normalized SDK events', async () => {
+    const toolCall = { type: 'toolCall', id: 'fixture', name: 'count', arguments: {} } as const
+    const partial = assistant({ content: [toolCall, toolCall], stopReason: 'toolUse' })
+    const start = (contentIndex: number): AssistantMessageEvent => ({ type: 'toolcall_start', contentIndex, partial })
+    const end = (contentIndex: number): AssistantMessageEvent => ({ type: 'toolcall_end', contentIndex, toolCall, partial })
+    const done: AssistantMessageEvent = { type: 'done', reason: 'toolUse', message: partial }
+    for (const [events, message] of [
+      [[start(0), start(0), end(0)], 'Tool call started twice before completion'],
+      [[end(0)], 'Tool call ended without a start'],
+      [[start(0), end(0), start(1), end(1)], 'Tool calls reused an id'],
+    ] as const) {
+      await expect(collect(toStreamChunks(feed(...events, done)))).rejects.toMatchObject({
+        code: 'MALFORMED_RESPONSE', message,
+      })
+    }
   })
 
   it('tolerates toolcall_start with a missing partial entry', async () => {
