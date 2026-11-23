@@ -2,6 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Deployment } from './config.ts'
 
+const READ_BUDGET_MS = 35_000
+
 /** Sanitized HTTP or OAuth failure; server response text is never retained. */
 export class AccountRequestError extends Error {
   /**
@@ -93,12 +95,15 @@ export class VerbooHttp {
   ): Promise<unknown> {
     const safe =
       init.method === undefined || ['GET', 'HEAD'].includes(init.method)
-    const budget = AbortSignal.timeout(35_000)
+    const budget = AbortSignal.timeout(READ_BUDGET_MS)
+    const interruption = (status?: number): AccountRequestError =>
+      new AccountRequestError(init.signal?.aborted ? 'request_cancelled' : 'request_timeout', status)
     const headers = new Headers(init.headers)
     headers.set('X-Verboo-Journey-Id', context.journeyId)
     headers.set('X-Verboo-Operation-Id', context.operationId)
     headers.set('X-Request-Id', context.requestId)
     for (let attempt = 0; ; attempt++) {
+      const canRetry = (): boolean => safe && attempt < 2 && !init.signal?.aborted && !budget.aborted
       const signal = AbortSignal.any([
         ...(init.signal === undefined || init.signal === null
           ? []
@@ -115,15 +120,7 @@ export class VerbooHttp {
           redirect: 'error',
         })
       } catch {
-        const error = new AccountRequestError(
-          init.signal?.aborted
-            ? 'request_cancelled'
-            : signal.aborted
-              ? 'request_timeout'
-              : 'network_error',
-        )
-        if (!safe || attempt === 2 || init.signal?.aborted || budget.aborted)
-          throw error
+        if (!canRetry()) throw signal.aborted ? interruption() : new AccountRequestError('network_error')
         continue
       }
       if (
@@ -145,11 +142,11 @@ export class VerbooHttp {
               budget,
               ...(init.signal ? [init.signal] : []),
             ])
-            const timer = setTimeout(done, delay)
+            const timer = setTimeout(done, Math.min(delay, READ_BUDGET_MS))
             const aborted = () => {
               clearTimeout(timer)
               waitSignal.removeEventListener('abort', aborted)
-              reject(new AccountRequestError('request_cancelled'))
+              reject(interruption())
             }
             function done() {
               waitSignal.removeEventListener('abort', aborted)
@@ -158,7 +155,7 @@ export class VerbooHttp {
             if (waitSignal.aborted) aborted()
             else waitSignal.addEventListener('abort', aborted, { once: true })
           })
-        if (budget.aborted) throw new AccountRequestError('request_timeout')
+        if (budget.aborted || init.signal?.aborted) throw interruption()
         continue
       }
       if (!response.ok) {
@@ -201,6 +198,10 @@ export class VerbooHttp {
       try {
         return await response.json()
       } catch {
+        if (signal.aborted) {
+          if (canRetry()) continue
+          throw interruption(response.status)
+        }
         throw new AccountRequestError('contract_error', response.status)
       }
     }
