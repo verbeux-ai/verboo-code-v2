@@ -59,6 +59,7 @@ async function fixture(
     inferenceMalformed: false,
     inferenceStatus: 200,
     inferenceStatuses: [] as number[],
+    loginExchangeGate: null as Promise<undefined> | null,
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
@@ -85,6 +86,7 @@ async function fixture(
       const refresh = form.get('grant_type') === 'refresh_token'
       if (refresh) state.refreshes++
       else state.exchanges++
+      if (!refresh && state.loginExchangeGate !== null) await state.loginExchangeGate
       if (refresh && options.refreshDelayMs !== undefined)
         await delay(options.refreshDelayMs)
       if (refresh ? state.rejectRefresh : state.rejectLogin) {
@@ -447,6 +449,33 @@ it('rejects forged callbacks and removes only the cancelled attempt route', asyn
   expect((await app.ctx.deepseekAccount.getState()).status).toBe('signed-out')
 })
 
+it('exchanges an accepted Verboo callback once while a repeated tab receives a generic response', async () => {
+  const app = await fixture()
+  const release = Promise.withResolvers<undefined>()
+  cleanups.push(async () => { release.resolve(undefined) })
+  app.state.loginExchangeGate = release.promise
+  const { authorize } = await app.begin()
+  const callback = new URL('/callback', app.callbackOrigin)
+  callback.searchParams.set('state', authorize.searchParams.get('state') ?? '')
+  callback.searchParams.set('code', 'fixture-first-code')
+  const accepted = fetch(callback)
+  await until(async () => app.state.exchanges === 1)
+
+  const repeated = new URL(callback)
+  repeated.searchParams.set('code', 'fixture-repeated-code')
+  const duplicate = await fetch(repeated)
+  expect(duplicate.status).toBe(410)
+  expect(duplicate.headers.get('cache-control')).toBe('no-store')
+  expect(await duplicate.text()).toBe('')
+
+  release.resolve(undefined)
+  const response = await accepted
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('no-store')
+  expect(await response.text()).not.toContain('fixture-first-code')
+  expect(app.state.exchanges).toBe(1)
+})
+
 it('distinguishes explicit denial from a technical authorization expiry', async () => {
   const app = await fixture({ attemptTimeoutMs: 300 })
   const { authorize } = await app.begin()
@@ -578,6 +607,35 @@ it('never associates an old profile response with a replacement login', async ()
   expect(await profile).toBeNull()
   expect((await app.ctx.deepseekAccount.getPlatformSession())?.userId).toBeNull()
   expect((await app.ctx.deepseekAccount.getDeviceIdentity()).userId).toBeUndefined()
+})
+
+it('notifies only opt-in account observers when a profile verifies the current identity', async () => {
+  const app = await fixture()
+  await app.login()
+  const account = app.ctx.deepseekAccount
+  const controller = new AbortController()
+  cleanups.push(async () => { controller.abort() })
+  const normal = account.watch(controller.signal)[Symbol.asyncIterator]()
+  const identity = account.watch(controller.signal, true)[Symbol.asyncIterator]()
+  const initial = await account.getState()
+  await expect(normal.next()).resolves.toEqual({ value: initial, done: false })
+  await expect(identity.next()).resolves.toEqual({ value: initial, done: false })
+
+  const nextNormal = normal.next()
+  const nextIdentity = identity.next()
+  expect((await account.getProfile(metadata))?.status).toBe('ready')
+  await expect(nextIdentity).resolves.toEqual({ value: initial, done: false })
+
+  await account.signOut(metadata)
+  await expect(nextNormal).resolves.toMatchObject({ value: { status: 'signed-out' }, done: false })
+  await expect(identity.next()).resolves.toMatchObject({ value: { status: 'signed-out' }, done: false })
+
+  const waiting = [normal.next(), identity.next()]
+  controller.abort()
+  await expect(Promise.all(waiting)).resolves.toEqual([
+    { value: undefined, done: true },
+    { value: undefined, done: true },
+  ])
 })
 
 it('removes verified identity when the server rejects the refresh grant', async () => {
