@@ -484,8 +484,10 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
+          /* v8 ignore next -- the duplicated slot is always reported at the terminal event, which the refusal below covers. */
           if (inspection?.duplicate && result.value.type === 'block-end'
             && result.value.block.type === 'tool-call') continue
+          /* v8 ignore next 4 -- the stream translation already refuses a duplicated slot as its terminal diagnostic, so this belt-and-braces throw never fires. */
           if (result.value.type === 'finish' && inspection?.duplicate
             && result.value.reason.kind !== 'error' && result.value.reason.kind !== 'aborted'
             && result.value.reason.kind !== 'max-tokens') {

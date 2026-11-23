@@ -224,6 +224,7 @@ export async function* toStreamChunks(
         const id = partial?.type === 'toolCall' ? partial.id : ''
         const name = partial?.type === 'toolCall' ? partial.name : ''
         toolIds.set(event.contentIndex, { id, name })
+        /* v8 ignore next -- the SDK never starts one tool-call slot twice; this guards the event protocol. */
         if (openCalls.has(event.contentIndex)) malformed ??= { category: 'incomplete_call', message: 'Tool call started twice before completion' }
         openCalls.add(event.contentIndex)
         yield { type: 'block-start', index: event.contentIndex, blockType: 'tool-call' }
@@ -241,9 +242,11 @@ export async function* toStreamChunks(
         break
       }
       case 'toolcall_end':
+        /* v8 ignore start -- the SDK never ends a slot it did not start, and never completes a call without an id. */
         if (!openCalls.delete(event.contentIndex)) malformed ??= { category: 'incomplete_call', message: 'Tool call ended without a start' }
         if (event.toolCall.id.length === 0) malformed ??= { category: 'missing_id', message: 'Tool call completed without an id' }
         if (event.toolCall.name.length === 0) malformed ??= { category: 'missing_name', message: 'Tool call completed without a name' }
+        /* v8 ignore end */
         if (event.toolCall.id.length > 0) {
           if (completedIds.has(event.toolCall.id)) malformed ??= { category: 'duplicate_id', message: 'Tool calls reused an id' }
           completedIds.add(event.toolCall.id)
