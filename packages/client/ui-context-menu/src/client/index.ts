@@ -14,7 +14,7 @@ import { MenuOverlay } from './View.tsx'
 import type { ContextMenus, MenuResolution, ContextMenuTarget, ContextMenuIcon, MenuPoint, UseContextMenu } from './types.ts'
 import { createContextMenuBindings } from './trigger.ts'
 
-export type { ContextMenus, ContextMenuTarget, ContextMenuTargetMap, MenuPoint, MenuAction, MenuActionView, MenuContribution, MenuResolution } from './types.ts'
+export type { ContextMenus, ContextMenuTarget, ContextMenuTargetMap, MenuPoint, MenuAction, MenuActionView, MenuContribution, MenuPreparation, MenuResolution } from './types.ts'
 export type { ContextMenuBindings, ContextMenuTriggerProps, UseContextMenu } from './types.ts'
 export type { ContextMenuIcon } from './types.ts'
 export { createMenuStore } from './store.ts'

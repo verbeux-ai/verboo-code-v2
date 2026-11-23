@@ -4,9 +4,8 @@
  *
  * The ID token is a JWT whose payload names the ChatGPT plan and the end of its
  * paid window, so a successful login reports the subscription without a second
- * request. The access token is renewed through the refresh grant, which rotates
- * the refresh token: the new grant is persisted before it is used, so a crash
- * between the exchange and the write cannot leave a spent token stored.
+ * request. Concurrent callers share one renewal for the current grant. The
+ * rotated grant is persisted before its access token is returned.
  *
  * No token, and no provider response body, ever reaches a log or an error
  * message. Every failure becomes a fixed code from `types.ts`.
@@ -141,6 +140,13 @@ export class OpenAiAccount extends Service {
   private readonly vault: GrantVault
   private grant: StoredGrant | undefined
   private reading: Promise<StoredGrant | undefined> | undefined
+  private grantRevision = 0
+  private grantWrites = Promise.resolve()
+  private renewal: {
+    readonly grant: StoredGrant
+    readonly controller: AbortController
+    readonly result: Promise<StoredGrant | undefined>
+  } | undefined
   private readonly grantFile: string
   /** Whether the OS credential store is expected to answer. */
   private readonly vaultUsable: boolean
@@ -252,6 +258,7 @@ export class OpenAiAccount extends Service {
    * @throws AccountRequestError when the exchange fails.
    */
   async complete(code: string, verifier: string, redirectUri: string, signal: AbortSignal): Promise<OpenAiAccountStatus> {
+    const revision = this.grantRevision
     const response = await this.http.json(this.deployment.tokenUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -263,8 +270,14 @@ export class OpenAiAccount extends Service {
         code_verifier: verifier,
       }),
     }, { signal })
-    this.grant = await this.persist(response.status, response.body, signal)
-    return this.statusOf()
+    return this.writeAccount(async () => {
+      if (revision !== this.grantRevision || signal.aborted) throw new AccountRequestError('request_cancelled')
+      const grant = await this.persist(response.status, response.body)
+      if (revision !== this.grantRevision) throw new AccountRequestError('request_cancelled')
+      this.invalidateGrant()
+      this.grant = grant
+      return this.statusOf()
+    })
   }
 
   /**
@@ -284,25 +297,59 @@ export class OpenAiAccount extends Service {
    */
   async accessToken(signal: AbortSignal): Promise<string | undefined> {
     if (!this.vaultUsable) return undefined
+    const revision = this.grantRevision
     const grant = await this.stored()
-    if (grant === undefined) return undefined
+    if (grant === undefined || revision !== this.grantRevision) return undefined
+    if (signal.aborted) throw new AccountRequestError('request_cancelled')
     if (grant.expiresAt - this.deployment.refreshLeewayMs > Date.now()) return grant.accessToken
-    return (await this.renew(grant, signal))?.accessToken
+    const next = await waitForRenewal(() => this.sharedRenewal(grant, revision), signal)
+    return revision === this.grantRevision && next === this.grant ? next?.accessToken : undefined
+  }
+
+  private sharedRenewal(grant: StoredGrant, revision: number): Promise<StoredGrant | undefined> {
+    if (this.renewal?.grant === grant) return this.renewal.result
+    const controller = new AbortController()
+    const result = this.renew(grant, revision, controller.signal).finally(() => {
+      if (this.renewal?.controller === controller) this.renewal = undefined
+    })
+    this.renewal = { grant, controller, result }
+    return result
   }
 
   /** Remove the stored grant and tell the tree no session remains. */
   async signOut(): Promise<void> {
+    this.invalidateGrant()
+    await this.writeAccount(() => this.removeGrant())
+  }
+
+  private invalidateGrant(): void {
+    this.grantRevision++
     this.grant = undefined
     this.reading = undefined
+    const previous = this.renewal
+    this.renewal = undefined
+    previous?.controller.abort()
+  }
+
+  private async removeGrant(): Promise<void> {
     await rm(this.grantFile, { force: true })
     this.ctx.emit('openai-account/signed-out')
   }
 
+  /** Serialize writes and removals of the encrypted grant. */
+  private writeAccount<T>(write: () => Promise<T>): Promise<T> {
+    const result = this.grantWrites.then(write)
+    this.grantWrites = result.then(() => undefined, () => undefined)
+    return result
+  }
+
   /** Read the grant once per process, from the vault. */
   private async stored(): Promise<StoredGrant | undefined> {
+    await this.grantWrites
     if (this.grant !== undefined) return this.grant
-    this.reading ??= this.readGrant()
-    this.grant = await this.reading
+    const reading = this.reading ??= this.readGrant()
+    const grant = await reading
+    if (this.reading === reading) this.grant ??= grant
     return this.grant
   }
 
@@ -319,7 +366,7 @@ export class OpenAiAccount extends Service {
   }
 
   /** Validate one token response and persist it before it is used. */
-  private async persist(status: number, body: unknown, signal: AbortSignal): Promise<StoredGrant> {
+  private async persist(status: number, body: unknown): Promise<StoredGrant> {
     if (status === 400 || status === 401) throw new AccountRequestError('session_expired')
     if (status >= 400) throw new AccountRequestError('invalid_response')
     const record = asRecord(body)
@@ -339,7 +386,6 @@ export class OpenAiAccount extends Service {
       ...claims.activeUntil === undefined ? {} : { activeUntil: claims.activeUntil },
     }
     await this.writeGrant(grant)
-    void signal
     return grant
   }
 
@@ -350,7 +396,7 @@ export class OpenAiAccount extends Service {
    * no longer produce a token; the tree is told once so the Client can ask for a
    * new sign-in instead of retrying a dead grant.
    */
-  private async renew(grant: StoredGrant, signal: AbortSignal): Promise<StoredGrant | undefined> {
+  private async renew(grant: StoredGrant, revision: number, signal: AbortSignal): Promise<StoredGrant | undefined> {
     let response
     try {
       response = await this.http.json(this.deployment.tokenUrl, {
@@ -362,23 +408,40 @@ export class OpenAiAccount extends Service {
           client_id: this.deployment.clientId,
         }),
       }, { signal })
-    } catch (error) {
-      if (error instanceof AccountRequestError && error.code === 'request_cancelled') throw error
-      return undefined
-    }
-    if (response.status === 400 || response.status === 401) {
-      await this.signOut()
-      this.ctx.emit('openai-account/sign-in-required')
-      return undefined
-    }
-    try {
-      // Rotation: the exchange spent the presented refresh token, so the
-      // replacement becomes the stored grant before it is used again.
-      this.grant = await this.persist(response.status, response.body, signal)
-      return this.grant
     } catch {
       return undefined
     }
+    return this.writeAccount(async () => {
+      if (revision !== this.grantRevision || this.grant !== grant) return undefined
+      if (response.status === 400 || response.status === 401) {
+        this.invalidateGrant()
+        await this.removeGrant()
+        this.ctx.emit('openai-account/sign-in-required')
+        return undefined
+      }
+      try {
+        const replacement = await this.persist(response.status, response.body)
+        if (revision !== this.grantRevision) return undefined
+        this.grant = replacement
+        return replacement
+      } catch {
+        return undefined
+      }
+    })
+  }
+}
+
+/** Each caller can stop waiting while the account still persists its rotation. */
+async function waitForRenewal(
+  renew: () => Promise<StoredGrant | undefined>, signal: AbortSignal,
+): Promise<StoredGrant | undefined> {
+  const cancelled = Promise.withResolvers<never>()
+  const abort = (): void => { cancelled.reject(new AccountRequestError('request_cancelled')) }
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    return await Promise.race([renew(), cancelled.promise])
+  } finally {
+    signal.removeEventListener('abort', abort)
   }
 }
 

@@ -1,7 +1,7 @@
 /** Ordered menu resolution with cancellation and contribution-owned action lifetimes. */
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { MenuAction, MenuActionView, MenuContribution, MenuResolution, ContextMenuTarget, ContextMenuTargetMap } from './types.ts'
+import type { MenuAction, MenuActionView, MenuContribution, MenuPreparation, MenuResolution, ContextMenuTarget, ContextMenuTargetMap } from './types.ts'
 
 interface Provider {
   readonly id: string
@@ -9,7 +9,9 @@ interface Provider {
   readonly kind: keyof ContextMenuTargetMap
   readonly lifetime: AbortController
   observe(target: ContextMenuTarget): readonly ObservableSnapshot<unknown>[]
-  resolve(target: ContextMenuTarget, signal: AbortSignal): readonly MenuAction[] | Promise<readonly MenuAction[]>
+  resolve(
+    target: ContextMenuTarget, signal: AbortSignal, preparation: MenuPreparation,
+  ): readonly MenuAction[] | Promise<readonly MenuAction[]>
 }
 
 /** React-free registry; each occurrence captures the providers registered at opening. */
@@ -31,7 +33,7 @@ export class MenuRegistry {
     const provider: Provider = {
       id: input.id, kind: input.target, order: input.order, lifetime: new AbortController(),
       observe: target => input.observe?.(target.value as ContextMenuTargetMap[K]) ?? [],
-      resolve: (target, signal) => input.resolve(target.value as ContextMenuTargetMap[K], signal),
+      resolve: (target, signal, preparation) => input.resolve(target.value as ContextMenuTargetMap[K], signal, preparation),
     }
     this.providers.set(key, provider)
     return () => {
@@ -49,6 +51,19 @@ export class MenuRegistry {
   resolve(target: ContextMenuTarget): MenuResolution {
     if (this.disposed) throw new Error('Menu registry is disposed')
     const lifetime = new AbortController()
+    const sharedReads = new Map<string, Promise<unknown>>()
+    const sharedPreparation: MenuPreparation = {
+      share: <T>(key: string, read: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+        const existing = sharedReads.get(key) as Promise<T> | undefined
+        if (existing !== undefined) return existing
+        const signal = this.timeoutMs === undefined
+          ? lifetime.signal
+          : AbortSignal.any([lifetime.signal, AbortSignal.timeout(this.timeoutMs)])
+        const pending = read(signal)
+        sharedReads.set(key, pending)
+        return pending
+      },
+    }
     const source = createSnapshotStore<readonly MenuActionView[]>([])
     const resolved = new Map<Provider, readonly MenuActionView[]>()
     const callbacks = new Map<string, { provider: Provider; action: MenuAction }>()
@@ -64,6 +79,7 @@ export class MenuRegistry {
       lifetime.abort()
       for (const detach of cleanup) detach()
       callbacks.clear()
+      sharedReads.clear()
       this.occurrences.delete(dispose)
     }
     this.occurrences.add(dispose)
@@ -102,7 +118,7 @@ export class MenuRegistry {
         }
         preparing = undefined
         try {
-          const result = provider.resolve(target, signal)
+          const result = provider.resolve(target, signal, sharedPreparation)
           if (result instanceof Promise) clear()
           preparing = result instanceof Promise ? new Promise<void>((settle) => {
             const timer = this.timeoutMs === undefined ? undefined : setTimeout(() => {

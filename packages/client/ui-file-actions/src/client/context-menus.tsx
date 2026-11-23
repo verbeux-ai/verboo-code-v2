@@ -47,10 +47,11 @@ export function registerFileMenus(ctx: Context, actions: FileActions, t: (key: F
   }
   ctx.effect(() => ctx.contextMenus.register({
     id: 'file-actions.file', target: 'file', order: 200,
-    resolve: async ({ sessionId, path }, signal) => {
+    resolve: async ({ sessionId, path }, signal, preparation) => {
       let absolutePath: string | undefined
       try {
-        const result = await ctx.remote.workspaceFiles.stat(sessionId, path, signal)
+        const readFile = (readSignal: AbortSignal) => ctx.remote.workspaceFiles.stat(sessionId, path, readSignal)
+        const result = await (preparation?.share('workspaceFiles.stat', readFile) ?? readFile(signal))
         absolutePath = result.ok ? result.value.absolutePath : undefined
       } catch (_error) {
         // Failed metadata disables operations that require the source file.
