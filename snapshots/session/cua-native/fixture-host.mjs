@@ -50,13 +50,18 @@ export async function startFixtureHost(helperPath) {
     socket.on('error', () => {})
     socket.once('close', () => { sockets.delete(socket) })
     const input = createInterface({ input: socket })
+    input.on('error', (error) => {
+      if (error.code !== 'EPIPE' && error.code !== 'ECONNRESET') throw error
+      input.close()
+    })
     input.once('line', (line) => {
       const reply = async () => {
+        let response = 'ready\n'
         try {
           if (closing) throw new Error('Fixture host is closing')
           await ensureService(Number(line))
-          socket.end('ready\n')
-        } catch (error) { socket.end(`error: ${error.message}\n`) }
+        } catch (error) { response = `error: ${error.message}\n` }
+        if (!socket.destroyed && socket.writable) socket.end(response)
       }
       void reply()
     })
