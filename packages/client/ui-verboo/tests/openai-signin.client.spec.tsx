@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { OpenAiSignIn } from '../src/client/OpenAiSignIn.tsx'
+import { OpenAiSignIn, OpenAiSignInOverlay } from '../src/client/OpenAiSignIn.tsx'
 import type { OpenAiSignInActions } from '../src/client/OpenAiSignIn.tsx'
 import { en, pt } from '../src/client/locales.ts'
 
@@ -54,6 +54,39 @@ describe('[OI] sign-in dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign in with ChatGPT/ }))
     await vi.waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
     expect(screen.queryByText(/Finish signing in on the page/)).toBeNull()
+  })
+
+  it('reports a thrown start error and clears it when a later attempt succeeds', async () => {
+    const driven = actions({
+      begin: vi.fn()
+        .mockRejectedValueOnce(new Error('The browser did not open'))
+        .mockResolvedValueOnce({ url: 'https://auth.openai.com/oauth/authorize?x=1', handle: 'handle-2' }),
+    })
+    render(<OpenAiSignIn status={{ signedIn: false }} actions={driven} open t={copy(en)} />)
+    const begin = screen.getByRole('button', { name: /Sign in with ChatGPT/ })
+    fireEvent.click(begin)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    fireEvent.click(begin)
+    expect(await screen.findByText(/Finish signing in on the page/)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('uses the saved status and open flag in the frame overlay', () => {
+    const driven = actions()
+    const { rerender } = render(<OpenAiSignInOverlay
+      t={copy(en)} openAiSignIn={driven}
+      useExternalStatus={selector => selector({ signedIn: true })}
+      useExternalDialogOpen={selector => selector({ open: false })}
+    />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    rerender(<OpenAiSignInOverlay
+      t={copy(en)} openAiSignIn={driven}
+      useExternalStatus={selector => selector({ signedIn: true })}
+      useExternalDialogOpen={selector => selector({ open: true })}
+    />)
+    expect(screen.getByText(en.openAiPlan)).toBeTruthy()
+    fireEvent.click(screen.getByText(en.close))
+    expect(driven.close).toHaveBeenCalledOnce()
   })
 
   it('finishes with the handle the start returned, and closes on success', async () => {

@@ -38,9 +38,9 @@ function fixture(locale = 'pt') {
     // dialog; these fixtures start signed out with the dialog closed.
     useExternalStatus: selector => selector({ signedIn: false }),
     openOpenAiDialog: vi.fn(),
-    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match: string, name: string) => {
+    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (match: string, name: string) => {
       const value = values?.[name]
-      return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+      return typeof value === 'string' || typeof value === 'number' ? String(value) : match
     }),
   }
   return { props, state }
@@ -94,6 +94,44 @@ describe('subscription comparison', () => {
     expect(props.billing).toHaveBeenLastCalledWith(unpriced.id, true)
     expect(screen.queryByText(/^R\$\s*0,00/)).toBeNull()
     expect(screen.queryByText(/Grátis|Gratuito/)).toBeNull()
+  })
+
+  it('shows an expired annual subscription in history and manages a current unpriced plan', () => {
+    const { props, state } = fixture('en')
+    state.plans = {
+      subscriptions: [
+        subscription('active', 'Custom'),
+        {
+          ...subscription('incomplete_expired', annual.name),
+          billing: { amountMinor: 249000, currency: 'BRL', interval: 'year' },
+        },
+      ],
+      catalog: [plan('Custom', 0)],
+    }
+    const { container } = render(<PlanPage {...props} />)
+    const history = within(container.querySelector('details')!)
+    expect(history.getByText('Expired')).toBeTruthy()
+    expect(history.getByText(/Access until/)).toBeTruthy()
+    expect(history.getByText('/ year')).toBeTruthy()
+    const catalog = screen.getByRole('region', { name: en.availablePlans })
+    fireEvent.click(within(catalog).getByRole('button', { name: 'Manage subscription: Custom' }))
+    expect(props.billing).toHaveBeenCalledExactlyOnceWith('Custom', false)
+  })
+
+  it('shows the connected ChatGPT plan and opens its own management dialog', () => {
+    const { props } = fixture('en')
+    const activeUntil = '2027-03-12T12:00:00Z'
+    render(<PlanPage {...props} useExternalStatus={selector => selector({
+      signedIn: true, planType: 'Team', activeUntil,
+    })} />)
+    const section = within(screen.getByRole('region', { name: en.openAiExternalTitle }))
+    expect(section.getByRole('heading', { name: 'ChatGPT Team' })).toBeTruthy()
+    expect(section.getByText(en.openAiConnected)).toBeTruthy()
+    const date = new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(activeUntil))
+    expect(section.getByText(en.openAiActiveUntil.replace('{date}', date))).toBeTruthy()
+    fireEvent.click(section.getByRole('button', { name: en.openAiManage }))
+    expect(props.openOpenAiDialog).toHaveBeenCalledOnce()
+    expect(props.billing).not.toHaveBeenCalled()
   })
 
   it('compares only real billing periods and supports keyboard selection without changing annual prices', () => {

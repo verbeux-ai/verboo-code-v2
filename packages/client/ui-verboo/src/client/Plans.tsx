@@ -79,7 +79,7 @@ export function PlanPage(props: PlanPageProps) {
   const external = props.useExternalStatus(s => s)
   const [selectedInterval, setSelectedInterval] = useState('month')
   const intervals = [...new Set(plans?.catalog.map(plan => plan.interval))]
-  const interval = intervals.includes(selectedInterval) ? selectedInterval : intervals[0]
+  const interval = intervals.includes(selectedInterval) ? selectedInterval : intervals[0] ?? 'month'
   const catalog = plans?.catalog.filter(plan => plan.interval === interval) ?? []
   const currencyOrder = [...new Set(catalog.map(plan => plan.currency.toUpperCase()))]
   const priced = catalog.filter(plan => plan.priceCents > 0).sort((a, b) =>
@@ -129,7 +129,7 @@ export function PlanPage(props: PlanPageProps) {
       <section className={plansCss.catalog} aria-labelledby="verboo-plans-heading">
         <div className={plansCss.catalogHead}>
           <h2 id="verboo-plans-heading">{props.t('availablePlans')}</h2>
-          {intervals.length > 1 && <SegmentedControl id="verboo-billing" value={interval ?? 'month'}
+          {intervals.length > 1 && <SegmentedControl id="verboo-billing" value={interval}
             label={props.t('billingInterval')} className={plansCss.interval}
             options={intervals.map(value => ({ value, label: props.t(value === 'year' ? 'annualBilling' : 'monthlyBilling') }))}
             onChange={setSelectedInterval} />}
