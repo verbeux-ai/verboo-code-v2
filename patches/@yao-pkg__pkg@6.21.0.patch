@@ -1,17 +1,16 @@
 diff --git a/lib-es5/sea-assets.js b/lib-es5/sea-assets.js
-index a0cb0de8491d4eff37aba7eaaeeec5934f5a9985..cb13631bebaef62ca4421466c42de56bdc715a39 100644
+index a0cb0de8491d4eff37aba7eaaeeec5934f5a9985..b736e7b984951b5f5b09f12b37e7c8acba6e6704 100644
 --- a/lib-es5/sea-assets.js
 +++ b/lib-es5/sea-assets.js
-@@ -69,7 +69,12 @@ function resolveCompressor(type) {
+@@ -69,7 +69,11 @@ function resolveCompressor(type) {
          case compress_type_1.CompressType.GZip:
              return zlib.gzipSync;
          case compress_type_1.CompressType.Brotli:
 -            return zlib.brotliCompressSync;
-+            // DSH patch: quality 9 leaves more room in the Python runtime
-+            // wheel while keeping build time below Brotli's default quality 11.
-+            // Every target still uses the standard Brotli archive format.
++            // Keep the compressed runtime below the PyPI single-file limit.
++            // Quality 9 still exceeded the limit on Linux ARM64.
 +            return (buf) => zlib.brotliCompressSync(buf, {
-+                params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 },
++                params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 },
 +            });
          case compress_type_1.CompressType.Zstd:
              return (0, compress_type_1.getZstdCompressSync)();
