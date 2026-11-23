@@ -5,7 +5,7 @@
  * itself is simulated — the callback travels through the same handler the
  * Host's web server mounts.
  */
-import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -24,7 +24,8 @@ import type {
 } from '@deepseek-ai/dsh-credentials'
 import McpServerManager from '@deepseek-ai/dsh-mcp-manager'
 import VerbooMcpServers from '../src/index.ts'
-import { answerCallback, OAUTH_CALLBACK_PATH } from '../src/oauth.ts'
+import { answerCallback, authorizationHeader, oauthProvider, OAUTH_CALLBACK_PATH } from '../src/oauth.ts'
+import { mcpCredentialRef, mcpOAuthSlotRef } from '../src/store.ts'
 import type { McpServerInput } from '../src/types.ts'
 
 const roots: string[] = []
@@ -90,6 +91,8 @@ interface Authority {
   verifier: string
   /** How many times each well-known document was fetched. */
   reads: { resource: number; server: number }
+  /** Grant types submitted to the fixture token endpoint. */
+  exchanges: string[]
 }
 
 /**
@@ -101,7 +104,7 @@ interface Authority {
 async function authority(): Promise<Authority> {
   const issued: Authority = {
     origin: '', challenge: '', state: '', redirectUri: '', token: 'tok-abc-123', verifier: '',
-    reads: { resource: 0, server: 0 },
+    reads: { resource: 0, server: 0 }, exchanges: [],
   }
   let clientId = ''
   let code = ''
@@ -166,6 +169,7 @@ async function authority(): Promise<Authority> {
         return
       case 'POST /token':
         void body(request).then((params) => {
+          issued.exchanges.push(params.get('grant_type') ?? '')
           issued.verifier = params.get('code_verifier') ?? ''
           json(response, {
             access_token: issued.token,
@@ -301,5 +305,78 @@ describe('browser sign-in against a real authorization server', () => {
     const replay = await answerCallback(ctx, callback.searchParams)
     expect(replay.status).toBe(400)
     expect(replay.body).toContain('no sign-in is waiting')
+  })
+
+  it('renews a valid stored refresh grant without another browser page', async () => {
+    const issued = await authority()
+    const { ctx, service, credentials } = await mount(issued.origin)
+    await service.saveFromClient(oauthInput(issued.origin))
+    const started = await service.signInFromClient('remote')
+    if (!started.ok) throw new Error(started.message)
+    const authorized = await fetch(started.data, { redirect: 'manual' })
+    const callback = new URL(authorized.headers.get('location') ?? '')
+    expect((await answerCallback(ctx, callback.searchParams)).status).toBe(200)
+    expect(await service.signInFromClient('remote')).toMatchObject({ ok: true, data: '' })
+    expect(issued.exchanges).toEqual(['authorization_code', 'refresh_token'])
+    expect([...credentials.values.values()]).toContain(`Bearer ${issued.token}`)
+  })
+
+  it('drops only the pending attempt for the signed-out server', async () => {
+    const issued = await authority()
+    const { ctx, service } = await mount(issued.origin)
+    await service.saveFromClient(oauthInput(issued.origin))
+    await service.saveFromClient({ ...oauthInput(issued.origin), name: 'other' })
+    const first = await service.signInFromClient('remote')
+    const second = await service.signInFromClient('other')
+    if (!first.ok || !second.ok) throw new Error('Fixture sign-in was unavailable')
+    const callback = async (url: string) => {
+      const response = await fetch(url, { redirect: 'manual' })
+      return new URL(response.headers.get('location') ?? '').searchParams
+    }
+    const firstParams = await callback(first.data)
+    const secondParams = await callback(second.data)
+    expect((await service.signOutFromClient('remote')).ok).toBe(true)
+    expect(await answerCallback(ctx, firstParams)).toMatchObject({ status: 400 })
+    expect(await answerCallback(ctx, secondParams)).toMatchObject({ status: 200, body: expect.stringContaining('"other"') })
+  })
+
+  it('uses the previously read grant when a token read is temporarily unavailable after refresh', async () => {
+    const issued = await authority()
+    const { ctx, credentials } = await mount(issued.origin)
+    const serverUrl = `${issued.origin}/mcp`
+    await expect(authorizationHeader(ctx, 'remote', serverUrl)).rejects.toThrow('no stored OAuth grant')
+    await oauthProvider(ctx, 'remote').saveTokens({ access_token: 'fixture-stored', token_type: '' })
+    const tokenSlot = mcpOAuthSlotRef('remote', 'tokens')
+    const resolve = credentials.resolve.bind(credentials)
+    let reads = 0
+    vi.spyOn(credentials, 'resolve').mockImplementation((ref) => {
+      if (String(ref) === tokenSlot && ++reads > 1) return Promise.resolve(undefined)
+      return resolve(ref)
+    })
+    try {
+      await expect(authorizationHeader(ctx, 'remote', serverUrl)).resolves.toBe('Bearer fixture-stored')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('reports an untyped credential-store failure without returning its value', async () => {
+    const issued = await authority()
+    const { ctx, service, credentials } = await mount(issued.origin)
+    await service.saveFromClient(oauthInput(issued.origin))
+    const started = await service.signInFromClient('remote')
+    if (!started.ok) throw new Error(started.message)
+    const authorized = await fetch(started.data, { redirect: 'manual' })
+    const callback = new URL(authorized.headers.get('location') ?? '')
+    const set = credentials.set.bind(credentials)
+    vi.spyOn(credentials, 'set').mockImplementation((ref, value) => String(ref) === mcpCredentialRef('remote', 'Authorization')
+      ? Promise.reject('fixture error containing a private value') : set(ref, value))
+    try {
+      expect(await answerCallback(ctx, callback.searchParams)).toEqual({
+        status: 400, body: 'The sign-in could not be completed: unknown error',
+      })
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })
