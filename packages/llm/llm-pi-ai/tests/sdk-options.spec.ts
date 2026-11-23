@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai'
 
 const streamSimple = vi.hoisted(() => vi.fn())
 
@@ -32,8 +33,7 @@ function gatewayAdapter(): PiAiAdapter {
   })
 }
 
-async function drain(adapter: PiAiAdapter): Promise<StreamChunk[]> {
-  const chunks: StreamChunk[] = []
+async function drain(adapter: PiAiAdapter, chunks: StreamChunk[] = []): Promise<StreamChunk[]> {
   for await (const chunk of adapter.stream({
     provider: 'local-gateway',
     model: 'local-model',
@@ -71,5 +71,42 @@ describe('pi-ai SDK retry boundary', () => {
       contextWindow: 8192,
       maxTokens: 1024,
     })
+  })
+})
+
+describe('provider stream identity validation after SDK normalization', () => {
+  it.each([
+    ['toolUse', undefined],
+    ['length', { kind: 'max-tokens' }],
+    ['error', { kind: 'error', failure: { code: 'SERVER' } }],
+    ['aborted', { kind: 'aborted' }],
+  ] as const)('blocks conflicting completed calls and preserves %s', async (stopReason, expected) => {
+    const toolCall = { type: 'toolCall', id: 'fixture-call', name: 'count', arguments: {} } as const
+    const message: AssistantMessage = {
+      role: 'assistant', api: 'openai-completions', provider: 'local-gateway', model: 'local-model',
+      content: [toolCall], timestamp: 0, stopReason,
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    }
+    streamSimple.mockImplementation(async function* (
+      _model, _context, options: { onProviderStreamEvent: (chunk: unknown) => void },
+    ): AsyncGenerator<AssistantMessageEvent> {
+      options.onProviderStreamEvent({ choices: [{ delta: { tool_calls: [
+        { index: 0, id: 'fixture-call' }, { index: 1, id: 'fixture-call' },
+      ] } }] })
+      // The SDK consolidated the conflicting wire entries into one valid call.
+      yield { type: 'toolcall_start', contentIndex: 0, partial: message }
+      yield { type: 'toolcall_end', contentIndex: 0, toolCall, partial: message }
+      if (stopReason === 'error' || stopReason === 'aborted') {
+        yield { type: 'error', reason: stopReason, error: { ...message, errorMessage: '502 provider unavailable' } }
+      } else {
+        yield { type: 'done', reason: stopReason, message }
+      }
+    })
+    const chunks: StreamChunk[] = []
+    const result = drain(gatewayAdapter(), chunks)
+    if (expected === undefined) await expect(result).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' })
+    else expect((await result).at(-1)).toMatchObject({ type: 'finish', reason: expected })
+    expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(false)
   })
 })

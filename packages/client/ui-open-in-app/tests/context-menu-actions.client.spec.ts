@@ -17,13 +17,13 @@ import type { OpenInAppToastSource } from '../src/client/open-toast.tsx'
 const sessionId = SessionId('menu-actions')
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function boot() {
+async function boot(preparationDeadlineMs?: number) {
   vi.stubGlobal('Blob', NodeBlob)
   const ctx = new Context()
   const notify = vi.fn<ContextMenus['notify']>(), failure = vi.fn(), writeText = vi.fn(async () => {})
   const report = vi.fn<OpenInAppToastSource['report']>()
   vi.stubGlobal('navigator', { clipboard: { writeText } })
-  const registry = new MenuRegistry(failure)
+  const registry = new MenuRegistry(failure, preparationDeadlineMs)
   const remote = {
     session: {
       canOpenWorkspacePath: vi.fn(async () => ({ ok: true as const, value: true })),
@@ -80,6 +80,68 @@ async function boot() {
     sidebar, browserTab, externalLinks, notify, failure, writeText, report }
 }
 
+it('prepares the file preview and copy actions while native availability is still unknown', async () => {
+  const pendingDesktop = Promise.withResolvers<{ ok: true; value: boolean }>()
+  const h = await boot(25)
+  h.remote.session.canOpenWorkspacePath.mockReturnValueOnce(pendingDesktop.promise)
+  try {
+    const target = { kind: 'file', value: { sessionId, path: 'file.svg', line: 24 } } as const
+    const menu = await h.resolve(target)
+    const actions = menu.source.getSnapshot()
+    expect(actions).toContainEqual(expect.objectContaining({ label: 'menu.openInSidebar', disabled: false }))
+    expect(actions).toContainEqual(expect.objectContaining({ label: 'menu.openInFloat', disabled: false }))
+    expect(actions).toContainEqual(expect.objectContaining({ label: 'menu.copyPath' }))
+    expect(actions).toContainEqual(expect.objectContaining({ label: 'menu.defaultApp', disabled: true }))
+    expect(h.failure).not.toHaveBeenCalled()
+    pendingDesktop.resolve({ ok: true, value: true })
+    await vi.waitFor(() => {
+      expect(menu.source.getSnapshot()).toContainEqual(expect.objectContaining({ label: 'open.title', disabled: false }))
+    })
+  } finally {
+    pendingDesktop.resolve({ ok: true, value: false })
+  }
+})
+
+it('uses one metadata read for the file preview and original-byte actions in each menu', async () => {
+  const h = await boot()
+  await h.paths.load()
+  const target = { kind: 'file', value: { sessionId, path: 'file.svg' } } as const
+  const first = await h.resolve(target)
+  expect(h.remote.workspaceFiles.stat).toHaveBeenCalledOnce()
+  expect(first.source.getSnapshot()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ label: 'menu.openInSidebar', disabled: false }),
+    expect.objectContaining({ label: 'menu.download', disabled: false }),
+  ]))
+  first.dispose()
+  const second = await h.resolve(target)
+  expect(h.remote.workspaceFiles.stat).toHaveBeenCalledTimes(2)
+  second.dispose()
+})
+
+it('keeps file previews and copy available when native applications miss the menu deadline', async () => {
+  const h = await boot(25)
+  await h.paths.load()
+  const lookup = Promise.withResolvers<Awaited<ReturnType<typeof h.remote.session.workspacePathApplications>>>()
+  h.remote.session.workspacePathApplications.mockReturnValueOnce(lookup.promise)
+  const target = { kind: 'file', value: { sessionId, path: 'file.svg', line: 24 } } as const
+  const menu = h.registry.resolve(target)
+  try {
+    await menu.ready
+    expect(h.remote.session.workspacePathApplications).toHaveBeenCalledOnce()
+    expect(menu.source.getSnapshot()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'menu.openInSidebar', disabled: false }),
+      expect.objectContaining({ label: 'menu.openInFloat', disabled: false }),
+      expect.objectContaining({ label: 'menu.copyPath' }),
+      expect.objectContaining({ label: 'menu.defaultApp', disabled: true }),
+      expect.objectContaining({ label: 'menu.download', disabled: false }),
+    ]))
+    expect(h.failure).not.toHaveBeenCalled()
+  } finally {
+    menu.dispose()
+    lookup.resolve({ ok: true, value: [] })
+  }
+})
+
 it('routes file actions through an explicit host, the line, native association and original bytes', async () => {
   const h = await boot()
   // A menu raised inside a floating panel names that panel; the open names a host instead, never a pane.
@@ -130,13 +192,15 @@ it('routes file actions through an explicit host, the line, native association a
 
 it('keeps copy-path available on failed metadata and reports native action failures', async () => {
   const h = await boot()
+  await h.paths.load()
   const file = { kind: 'file', value: { sessionId, path: 'file.svg' } } as const
-  h.remote.workspaceFiles.stat.mockResolvedValueOnce({ ok: false } as never).mockResolvedValueOnce({ ok: false } as never)
+  h.remote.workspaceFiles.stat.mockResolvedValueOnce({ ok: false } as never)
   const menu = await h.resolve(file)
+  expect(menu.source.getSnapshot().find(item => item.id.endsWith('/sidebar'))?.disabled).toBe(true)
   expect(menu.source.getSnapshot().find(item => item.id.endsWith('/saveAs'))?.disabled).toBe(true)
   menu.select('open-in-app.file/copyPath')
   expect(h.writeText).toHaveBeenCalledWith('/workspace/file.svg')
-  h.remote.workspaceFiles.stat.mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'))
+  h.remote.workspaceFiles.stat.mockRejectedValueOnce(new Error('offline'))
   expect((await h.resolve(file)).source.getSnapshot().find(item => item.id.endsWith('/sidebar'))?.disabled).toBe(true)
   h.remote.session.openWorkspacePath.mockResolvedValueOnce({ ok: false } as never)
   await h.choose(file, 'open-in-app.file/reveal')

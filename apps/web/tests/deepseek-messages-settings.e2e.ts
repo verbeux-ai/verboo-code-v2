@@ -123,10 +123,14 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages sett
       await captureStableAria(page, '[role="group"][aria-label="模型与推理等级"]', scaffold.workspaceCwd), webSnapshotMode())
     await page.keyboard.press('Escape')
     await page.getByRole('menuitem', { name: /推理等级/ }).click()
-    const effortWeights = await page.getByRole('menuitemradio').evaluateAll(rows => rows.map(row =>
-      getComputedStyle(row.querySelector('span span')!).fontWeight,
-    ))
-    expect(new Set(effortWeights)).toEqual(new Set(['400']))
+    const slider = page.getByRole('slider', { name: '推理等级' })
+    await slider.waitFor()
+    const selected = Number(await slider.inputValue())
+    const labels = page.locator('[class*="effortScaleLabel"]')
+    const effortWeights = await labels.evaluateAll(rows => rows.map(row => getComputedStyle(row).fontWeight))
+    expect(effortWeights.length).toBeGreaterThan(1)
+    expect(await labels.nth(selected).textContent()).toBe(await slider.getAttribute('aria-valuetext'))
+    expect(effortWeights).toEqual(effortWeights.map((_, index) => index === selected ? '600' : '400'))
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

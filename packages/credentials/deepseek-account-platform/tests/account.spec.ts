@@ -301,6 +301,8 @@ it('allows real account credentials only on the exact official HTTPS origin', as
     kind: 'grant', payload: { version: 1, issuer: 'https://platform.deepseek.com', token: 'test-account-token' },
   }))
   expect(await f.account.resolveToken('https://api.deepseek.com/v1')).toBe('test-account-token')
+  await expect(f.account.refreshRejectedToken('https://api.deepseek.com/v1', 'test-account-token')).resolves.toBeUndefined()
+  expect(await f.account.resolveToken('https://api.deepseek.com/v1')).toBe('test-account-token')
   for (const url of ['http://api.deepseek.com', 'https://api.deepseek.com.evil.test', 'https://api.deepseek.com:8443', 'https://user@api.deepseek.com']) {
     expect(await f.account.resolveToken(url)).toBeUndefined()
   }

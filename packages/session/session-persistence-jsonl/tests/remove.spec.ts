@@ -5,9 +5,9 @@
  * cases stay here rather than in the shared contract because the layout is
  * this backend's own.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { chmod, mkdtemp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -19,6 +19,21 @@ import { meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
+const removalFailure = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  error: Object.assign(new Error('session directory permission denied'), { code: 'EACCES' }),
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    rm: async (...args: Parameters<typeof fs.rm>) => {
+      if (args[0] === removalFailure.path) throw removalFailure.error
+      return fs.rm(...args)
+    },
+  }
+})
 
 async function mount(compression: 'none' | 'zstd' = 'none'): Promise<{ persistence: SessionPersistence; root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-jsonl-remove-'))
@@ -141,23 +156,21 @@ describe('JsonlSessionPersistence.remove', () => {
     const header = meta('stubborn', '/projects/zeta')
     await writeLog(persistence, header)
     const dir = sessionDir(root, header.cwd, header.id)
-    // A read-only directory makes rm fail with EACCES, the same shape as a
-    // permission fault on a shared or locked volume.
-    await chmod(dir, 0o500)
+    removalFailure.path = dir
     try {
-      await expect(persistence.remove(header.id)).rejects.toMatchObject({ code: 'EACCES' })
+      await expect(persistence.remove(header.id)).rejects.toBe(removalFailure.error)
       // The failure is visible as the session still being there: no silent
       // orphan and no reported success over surviving artifacts.
       await expect(stat(dir)).resolves.toBeDefined()
       expect(await listIds(persistence)).toEqual(['stubborn'])
 
       // Removing is safe to repeat once the fault clears.
-      await chmod(dir, 0o700)
+      removalFailure.path = undefined
       await persistence.remove(header.id)
       expect(await listIds(persistence)).toEqual([])
       await expect(stat(dir)).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
-      await chmod(dir, 0o700).catch(() => {})
+      removalFailure.path = undefined
     }
   })
 

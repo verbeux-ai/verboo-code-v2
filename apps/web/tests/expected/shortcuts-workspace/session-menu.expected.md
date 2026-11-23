@@ -8,3 +8,5 @@
   - menuitem "Show in Finder"
   - separator
   - menuitem "Archive session"
+  - separator
+  - menuitem "Delete conversation"

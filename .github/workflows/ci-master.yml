@@ -48,7 +48,7 @@ jobs:
       targets: node24-linux-arm64,node24-macos-arm64,node24-macos-x64
       ci: true
     secrets:
-      DEEPSEEK_API_KEY_EXTERNAL: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+      VERBOO_CODE_CI_API_KEY: ${{ secrets.VERBOO_CODE_CI_API_KEY }}
 
   # Wine runs on master pushes or an explicit suite=wine dispatch, independently of native standbys.
   windows:
@@ -140,7 +140,10 @@ jobs:
   # persistent pnpm store and tool caches make them redundant (and saving here
   # would poison the hosted cache namespace with self-hosted paths).
   serial-linux-selfhosted:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+      && (github.repository == 'deepseek-harness/deepseek-harness'
+        || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted')
     name: serial / linux (self-hosted standby)
     runs-on: [self-hosted, linux, x64, vm-backup]
     steps:
@@ -234,7 +237,10 @@ jobs:
   # (and saving here would poison the hosted cache namespace with self-hosted
   # paths).
   serial-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+      && (github.repository == 'deepseek-harness/deepseek-harness'
+        || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted')
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
     timeout-minutes: 120

@@ -6,8 +6,11 @@ import { staminaAddress } from './stamina-resource.ts'
 import { selectStaminaForModel, type StaminaModelProps } from './stamina-selection.ts'
 import css from './StaminaLiquid.module.css'
 
+type StaminaButtonProps = Pick<PropsRuntime<'conversation.input.primary.background'>, 'useResource'>
+  & Pick<ProductProps, 'useProduct'> & StaminaModelProps
+
 /** The primary-action slot keeps the host button's actions and accessible name. */
-export function StaminaButtonFill(props: PropsRuntime<'conversation.input.primary.background'> & ProductProps & StaminaModelProps) {
+export function StaminaButtonFill(props: StaminaButtonProps) {
   const address = props.useProduct(staminaAddress)
   const plans = props.useProduct(state => state.plans)
   const model = props.useStaminaModel(state => state.current)

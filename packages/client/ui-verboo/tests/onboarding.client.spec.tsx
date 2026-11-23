@@ -95,10 +95,34 @@ it('keeps onboarding closed during a later profile refresh and preserves recover
   expect(screen.getByRole('alert').textContent).toContain('couldn’t verify it')
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(props.retryAccount).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: en.signOut }))
+  expect(props.signOut).toHaveBeenCalledOnce()
 
   // A signed-out account must still get the sign-in screen.
   setSnapshot({ view: accountView('revision-2', 'signed-out'), accountFailed: false })
   view.rerender(<Onboarding {...props} />)
   expect(screen.getByRole('dialog')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Continue with Verboo' })).toBeTruthy()
+})
+
+it('keeps signed-out recovery available through the sign-in attempt', () => {
+  const { props, setSnapshot } = fixture({ view: accountView('revision-1', 'signed-out'), accountFailed: true })
+  const view = render(<Onboarding {...props} />)
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByRole('alert').textContent).toContain(en.unavailable)
+  fireEvent.click(screen.getByRole('button', { name: en.retry }))
+  expect(props.retryAccount).toHaveBeenCalledOnce()
+
+  setSnapshot({ accountFailed: false, starting: true })
+  view.rerender(<Onboarding {...props} />)
+  expect(screen.getByRole('status').textContent).toContain(en.waiting)
+  fireEvent.click(screen.getByRole('button', { name: en.reopen }))
+  fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+  expect(props.reopen).toHaveBeenCalledOnce()
+  expect(props.cancel).toHaveBeenCalledOnce()
+
+  setSnapshot({ starting: false, actionFailed: 'sign-in' })
+  view.rerender(<Onboarding {...props} />)
+  expect(screen.getByRole('alert').textContent).toContain(en.authFailed)
 })

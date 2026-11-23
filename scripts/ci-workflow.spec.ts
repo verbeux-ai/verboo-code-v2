@@ -139,7 +139,8 @@ describe('CI workflow', () => {
     }
     for (const [file, command] of [
       ['release-publish.yml', 'pnpm run build:official --serial'],
-      ['release-vendor-publish.yml', 'pnpm run build:lib:host'],
+      ['release-vendor.yml', 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'],
+      ['release-vendor-publish.yml', 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'],
     ] as const) {
       expect(workflowJob(loadWorkflow('.github/workflows/' + file), 'pack').steps)
         .toContainEqual(expect.objectContaining({ name: 'Build', run: command }))
@@ -155,10 +156,8 @@ describe('CI workflow', () => {
 
   it('selects artifact builds only for PR release and API rehearsals', () => {
     const official = "${{ github.event_name == 'pull_request' && 'pnpm run build:artifacts --profile official' || 'pnpm run build:official' }}"
-    const vendor = "${{ github.event_name == 'pull_request' && 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries' || 'pnpm run build:lib:host' }}"
     for (const [file, jobName, expected] of [
       ['release.yml', 'pack', official],
-      ['release-vendor.yml', 'pack', vendor],
       ['e2e.yml', 'e2e', official],
     ] as const) {
       const job = workflowJob(loadWorkflow('.github/workflows/' + file), jobName)
@@ -169,11 +168,7 @@ describe('CI workflow', () => {
       for (const event of ['pull_request', 'push', 'workflow_dispatch']) {
         const expression = expected.slice('${{ '.length, -' }}'.length)
         const selected: unknown = runInNewContext(expression, { github: { event_name: event } }, { timeout: 1000 })
-        expect(selected).toBe(event === 'pull_request'
-          ? file === 'release-vendor.yml'
-            ? 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'
-            : 'pnpm run build:artifacts --profile official'
-          : file === 'release-vendor.yml' ? 'pnpm run build:lib:host' : 'pnpm run build:official')
+        expect(selected).toBe(event === 'pull_request' ? 'pnpm run build:artifacts --profile official' : 'pnpm run build:official')
       }
     }
   })
@@ -511,7 +506,7 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toContain("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -655,6 +650,12 @@ describe('CI workflow', () => {
   it('gates standalone keyless blacksmith jobs and benchmark tiers on the failover variables', () => {
     const expectedFilenames = workflowJob(loadWorkflow('.github/workflows/expected-filenames.yml'), 'expected-filenames')
     const sandbox = workflowJob(loadWorkflow('.github/workflows/sandbox.yml'), 'sandbox-e2e')
+    if (!Array.isArray(sandbox.steps)) throw new TypeError('sandbox-e2e must define steps')
+    const sandboxSteps = sandbox.steps.filter(isRecord)
+    const build = sandboxSteps.findIndex(step => step.run === 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries')
+    const tests = sandboxSteps.findIndex(step => step.name === 'Sandbox e2e (real kernel confinement, world-verified)')
+    expect(build).toBeGreaterThanOrEqual(0)
+    expect(tests).toBeGreaterThan(build)
     expect(expectedFilenames['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(expectedFilenames['runs-on']).toContain("== 'blacksmith'")
     expect(expectedFilenames['runs-on']).toContain('blacksmith-4vcpu-ubuntu-2404')
@@ -841,12 +842,20 @@ describe('CI workflow', () => {
     expect(pythonWorkflow.env).toEqual(prWorkflow.env)
 
     // Drills share the parent run’s supersession policy.
-    for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
+    for (const [name, platform] of [['serial-linux-selfhosted', 'LINUX'], ['serial-windows', 'WINDOWS']] as const) {
       const job = workflow.jobs[name]
-      if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
+      if (!isRecord(job) || typeof job.if !== 'string') throw new TypeError(`${name} must define its trigger`)
       expect(job.concurrency).toBeUndefined()
-      // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      const condition = job.if
+      const enabled = (repository: string, failover: string, ref = 'refs/heads/master'): unknown =>
+        runInNewContext(condition, {
+          github: { event_name: 'push', ref, repository },
+          vars: { [`DSH_CI_FAILOVER_${platform}`]: failover },
+        }, { timeout: 1000 })
+      expect(enabled('deepseek-harness/deepseek-harness', 'blacksmith')).toBe(true)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'blacksmith')).toBe(false)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'selfhosted')).toBe(true)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'selfhosted', 'refs/heads/topic')).toBe(false)
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
@@ -930,7 +939,7 @@ describe('CI workflow', () => {
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: { targets: 'node24-linux-x64,node24-win-x64', ci: true },
       secrets: {
-        DEEPSEEK_API_KEY_EXTERNAL: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
+        VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}',
       },
     })
     expect(aggregate.needs).toEqual(['python-sdk', 'python-runtime'])
@@ -1058,7 +1067,7 @@ describe('CI workflow', () => {
 })
 
 describe('Runtime and LLM e2e Blacksmith routing', () => {
-  it('routes DeepSeek e2e only through the Linux Blacksmith switch', () => {
+  it('routes Verboo Code e2e only through the Linux Blacksmith switch', () => {
     const job = workflowJob(loadWorkflow('.github/workflows/e2e.yml'), 'e2e')
     for (const mode of ['', 'selfhosted', 'unexpected', 'blacksmith']) {
       expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_LINUX: mode, DSH_CI_FAILOVER_WINDOWS: 'blacksmith' } }))
@@ -1114,11 +1123,11 @@ describe('bubblewrap preparation script', () => {
   })
 })
 
-describe('DeepSeek e2e workflow', () => {
+describe('Verboo Code e2e workflow', () => {
   it('prepares bubblewrap from the pinned payload without a package transaction', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
 
     const steps = e2e.steps.filter(isRecord)
     expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
@@ -1130,10 +1139,40 @@ describe('DeepSeek e2e workflow', () => {
   it('bounds profile subprocess fan-out to the tested e2e default', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
 
-    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E tests (real DeepSeek API)')
+    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E profiles without provider credentials')
     expect(step).toMatchObject({ env: { DSH_E2E_MAX_WORKERS: 6 } })
+  })
+
+  it('authenticates the shared live model through the Verboo Code Router', () => {
+    const e2e = workflowJob(loadWorkflow('.github/workflows/e2e.yml'), 'e2e')
+    const key = '${{ secrets.VERBOO_CODE_CI_API_KEY }}'
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
+    const steps = e2e.steps.filter(isRecord)
+    const preflight = steps.find(step => step.name === 'Preflight (authenticate to Verboo Code)')
+    expect(preflight).toMatchObject({ env: { VERBOO_CODE_CI_API_KEY: key } })
+    expect(preflight?.run).toContain('https://code.verboo.ai/router/v1/models')
+    expect(preflight?.run).toContain("redirect: 'error'")
+    expect(steps.find(step => step.name === 'E2E tests (authenticated Verboo Code Router)')).toMatchObject({
+      env: { VERBOO_CODE_CI_API_KEY: key },
+      run: expect.stringContaining('apps/cli/tests/profiles/sdk/office-cli.e2e.ts'),
+    })
+    expect(steps.findIndex(step => step.name === 'Preflight (authenticate to Verboo Code)')).toBeLessThan(
+      steps.findIndex(step => step.name === 'E2E tests (authenticated Verboo Code Router)'),
+    )
+    expect(JSON.stringify(steps)).not.toContain('secrets.DEEPSEEK_API_KEY_EXTERNAL')
+    expect(String(e2e.if)).toContain('head.repo.fork')
+    expect(String(e2e.if)).toContain('dependabot[bot]')
+    expect(yaml.load(readFileSync(resolve(root, 'scripts/verboo-live-model.patch.yml'), 'utf8'))).toEqual([
+      { id: 'llm-deepseek', disabled: true },
+      {
+        id: 'llm-pi-ai', config: { providers: { 'verboo-live': expect.objectContaining({
+          api: 'openai-completions', apiKeyEnv: 'VERBOO_CODE_CI_API_KEY', baseURL: 'https://code.verboo.ai/router/v1',
+          models: [expect.objectContaining({ id: 'qwen3.8-27b' })],
+        }) } },
+      },
+    ])
   })
 })
 
@@ -1253,7 +1292,7 @@ describe('Python release workflows', () => {
       release: { type: 'boolean', default: false },
     })
     expect(call.secrets).toMatchObject({
-      DEEPSEEK_API_KEY_EXTERNAL: { required: false },
+      VERBOO_CODE_CI_API_KEY: { required: false },
     })
     expect(workflow.concurrency).toMatchObject({
       group: 'build-single-exe-${{ github.workflow }}-${{ github.ref }}',
@@ -1297,7 +1336,7 @@ describe('Python release workflows', () => {
     expect(cleanVenvWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(JSON.stringify(cleanVenvWindows)).toContain('Scripts\\\\python.exe')
     expect(realApiPreflightPosix).toMatchObject({
-      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
+      env: { VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}' },
     })
     expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
     expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
@@ -1306,8 +1345,7 @@ describe('Python release workflows', () => {
     for (const step of [installedRealApiPosix, installedRealApiWindows]) {
       expect(step).toMatchObject({
         env: {
-          DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
-          DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic',
+          VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}',
         },
       })
     }

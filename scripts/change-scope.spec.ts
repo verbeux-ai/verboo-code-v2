@@ -207,10 +207,10 @@ describe('change-scope', () => {
   it('rejects missing, ambiguous, and non-commit refs', () => {
     const { root } = fixture()
     git(root, ['branch', 'collision'])
-    git(root, ['tag', 'collision'])
+    git(root, ['tag', '--no-sign', 'collision'])
     write(join(root, 'blob.txt'), 'blob\n')
     const blobSha = git(root, ['hash-object', '-w', 'blob.txt'])
-    git(root, ['tag', 'blob-ref', blobSha])
+    git(root, ['tag', '--no-sign', 'blob-ref', blobSha])
 
     for (const { args, message } of [
       { args: ['--base', 'missing'], message: /base ref .* does not resolve to a commit/u },

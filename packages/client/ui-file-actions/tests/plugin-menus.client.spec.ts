@@ -9,7 +9,7 @@ import type { FileActionSource } from '../src/types.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
-it('contributes file and image operations without open-in-app and withdraws them on unload', async () => {
+it.each([true, false])('owns file and image actions with shared menu preparation %s', async (shared) => {
   const runtime = await SlotTestRuntime.create()
   onTestFinished(() => runtime.dispose())
   const { ctx } = runtime
@@ -18,7 +18,10 @@ it('contributes file and image operations without open-in-app and withdraws them
   })
   const failure = vi.fn(), notify = vi.fn()
   const registry = new MenuRegistry(failure)
-  ctx.provide('contextMenus', { register: registry.register.bind(registry), notify } as never)
+  const register: MenuRegistry['register'] = input => registry.register(shared
+    ? input
+    : { ...input, resolve: (target, signal) => input.resolve(target, signal) })
+  ctx.provide('contextMenus', { register, notify } as never)
   const registerLocale = vi.fn(() => () => {})
   ctx.provide('locale', { register: registerLocale, bind: () => (key: string) => key } as never)
   const readBytes = vi.fn(async () => ({ ok: true as const, value: { data: [1, 2, 3] } }))

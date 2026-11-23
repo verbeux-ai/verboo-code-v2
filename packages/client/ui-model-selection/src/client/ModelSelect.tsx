@@ -82,6 +82,7 @@ export function ModelSelect(
   // the committed one.
   const [draggedEffort, setDraggedEffort] = useState<number | null>(null)
   const effortInputRef = useRef<HTMLInputElement>(null)
+  const effortPointer = useRef<number | null>(null)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -377,6 +378,8 @@ export function ModelSelect(
   }
 
   const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    // WebKit can drop native range focus during a drag before sending pointerup.
+    if (event.relatedTarget === null && event.target === effortInputRef.current && effortPointer.current !== null) return
     if (event.relatedTarget instanceof Node && (
       rootRef.current?.contains(event.relatedTarget) === true
       || menuRef.current?.contains(event.relatedTarget) === true
@@ -714,12 +717,27 @@ export function ModelSelect(
                         aria-label={t('effort.levelLabel')}
                         aria-valuetext={effortChoices[shownEffort]?.label}
                         onChange={(event) => { setDraggedEffort(Number(event.target.value)) }}
-                        onPointerUp={settleEffort}
+                        onPointerDown={(event) => {
+                          if (!event.isPrimary || event.button !== 0) return
+                          effortPointer.current = event.pointerId
+                          event.currentTarget.setPointerCapture(event.pointerId)
+                        }}
+                        onPointerUp={(event) => {
+                          if (effortPointer.current !== null && effortPointer.current !== event.pointerId) return
+                          effortPointer.current = null
+                          settleEffort()
+                          event.currentTarget.focus({ preventScroll: true })
+                        }}
+                        onLostPointerCapture={(event) => {
+                          if (effortPointer.current !== event.pointerId) return
+                          effortPointer.current = null
+                          setDraggedEffort(null)
+                        }}
                         onKeyUp={(event) => {
                           if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End'
                             || event.key === 'PageUp' || event.key === 'PageDown') settleEffort()
                         }}
-                        onBlur={settleEffort}
+                        onBlur={() => { if (effortPointer.current === null) settleEffort() }}
                       />
                     </div>
                     <div

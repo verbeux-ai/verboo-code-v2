@@ -186,13 +186,16 @@ async function assertMaskFade(frame: Locator, from: number, to: number): Promise
 
 /** Sample both width transitions on the same clock to detect detached sidebar controls. */
 async function assertFoldResize(toggle: Locator, from: number, to: number): Promise<void> {
-  await expect.poll(() => toggle.evaluate((button, target) => {
-    const frame = button.closest<HTMLElement>('[data-animating]')
-    return frame !== null && parseFloat(frame.style.gridTemplateColumns) === target && frame.getAnimations().some(animation =>
+  const sample = await toggle.evaluate(async (button, target) => {
+    const frame = button.closest<HTMLElement>('[data-rightbar-collapsed]')
+    if (frame === null) throw new Error('Fold frame is missing')
+    const trackReady = () => parseFloat(frame.style.gridTemplateColumns) === target && frame.getAnimations().some(animation =>
       animation instanceof CSSTransition && animation.transitionProperty === 'grid-template-columns')
-  }, to)).toBe(true)
-  const sample = await toggle.evaluate((button) => {
-    const frame = button.closest<HTMLElement>('[data-animating]')!
+    const deadline = performance.now() + 2_000
+    while (!trackReady() && performance.now() < deadline) {
+      await new Promise(requestAnimationFrame)
+    }
+    if (!trackReady()) throw new Error('Fold did not start the expected width transition')
     const transitions = frame.getAnimations({ subtree: true }).filter((animation): animation is CSSTransition =>
       animation instanceof CSSTransition && ['grid-template-columns', 'width'].includes(animation.transitionProperty))
     const grid = transitions.find(animation => animation.transitionProperty === 'grid-template-columns')
@@ -211,7 +214,7 @@ async function assertFoldResize(toggle: Locator, from: number, to: number): Prom
     for (const transition of transitions) transition.finish()
     frame.style.removeProperty('--ds-transition-duration-slow')
     return { endpoints: [start.width, end.width], start, middle }
-  })
+  }, to)
   expect(sample.endpoints).toEqual([from, to])
   expect(sample.middle.width).toBeGreaterThan(Math.min(from, to))
   expect(sample.middle.width).toBeLessThan(Math.max(from, to))
@@ -242,7 +245,7 @@ it('overlays the conversation and closes after navigation without losing its sid
       await expect.poll(() => frame.getAttribute('data-sidebar-collapsed')).toBe('true')
       const sidebar = page.locator('[data-slot="sidebar"]')
       const original = await sidebar.elementHandle()
-      const main = page.locator('[data-slot="main"]').locator('..')
+      const main = page.locator('[data-slot="main"]:visible').locator('..')
       const closed = await main.boundingBox()
       // A long test-owned duration keeps the transition available until its
       // animation clock is sampled and finished explicitly.

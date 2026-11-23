@@ -298,8 +298,8 @@ export class OpenAiAccountAdapter extends LlmAdapter {
     try {
       for await (const chunk of translatedChunks(chunks)) {
         if (chunk.type === 'finish') {
-          const failure = chunk.reason.kind === 'error' ? chunk.reason.failure.message : undefined
-          verdict = failure === undefined ? 'supported' : isUnsupportedModel(failure) ? 'unsupported' : undefined
+          const failure = chunk.reason.kind === 'error' ? chunk.reason.failure : undefined
+          verdict = failure === undefined ? 'supported' : failure.code === 'UNSUPPORTED_MODEL' ? 'unsupported' : undefined
         }
         yield chunk
       }

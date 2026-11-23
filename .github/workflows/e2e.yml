@@ -1,10 +1,7 @@
-name: E2E (real DeepSeek API)
+name: E2E (Verboo Code)
 
-# Real-API end-to-end suite (`pnpm run test:e2e`). Unlike ci.yml this job
-# consumes the DEEPSEEK_API_KEY_EXTERNAL secret (mapped to the env var
-# DEEPSEEK_API_KEY the tests read) and hits the external API at
-# https://api.deepseek.com/anthropic (DEEPSEEK_BASE_URL is pinned explicitly so a
-# stray repo-root .env can't redirect the run).
+# Run the built profile against the public Verboo Code Router. The live test
+# uses a dedicated Verboo Code API key and the shared Router model patch.
 #
 # pull_request IS a trigger, but GitHub withholds repo secrets from BOTH forked
 # PRs and Dependabot PRs (the latter are same-repo, fork==false, but still
@@ -89,19 +86,23 @@ jobs:
       # absent, so a missing/misconfigured secret would otherwise pass as
       # "all skipped". This job only runs on trusted events (the `if:` above
       # excludes keyless PRs), so the secret MUST be present — fail loudly if not.
-      - name: Preflight (require DEEPSEEK_API_KEY)
+      - name: Preflight (authenticate to Verboo Code)
         env:
-          # Repo secret DEEPSEEK_API_KEY_EXTERNAL holds the external-API key;
-          # the tests read process.env.DEEPSEEK_API_KEY, so map it across here.
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+          VERBOO_CODE_CI_API_KEY: ${{ secrets.VERBOO_CODE_CI_API_KEY }}
         run: |
-          set -euo pipefail
-          if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-            echo "::error::DEEPSEEK_API_KEY is empty. The e2e suite would self-skip and"
-            echo "::error::report a false green. Configure the repo secret DEEPSEEK_API_KEY_EXTERNAL."
-            exit 1
-          fi
-          echo "DEEPSEEK_API_KEY present."
+          node --input-type=module <<'NODE'
+          const key = process.env.VERBOO_CODE_CI_API_KEY?.trim()
+          if (!key) throw new Error('Configure the GitHub secret VERBOO_CODE_CI_API_KEY')
+          const response = await fetch('https://code.verboo.ai/router/v1/models', {
+            headers: { authorization: `Bearer ${key}` }, redirect: 'error', signal: AbortSignal.timeout(10_000),
+          })
+          if (!response.ok) throw new Error(`Verboo Code model catalog returned HTTP ${response.status}`)
+          const catalog = await response.json()
+          if (!Array.isArray(catalog.data) || !catalog.data.some(model => model.id === 'qwen3.8-27b')) {
+            throw new Error('The Verboo Code CI identity cannot access the integration model')
+          }
+          console.log('Authenticated Verboo Code model catalog verified.')
+          NODE
 
       # The e2e suites boot the example bins in `lib` mode (DSH_EXAMPLE_MODE=lib):
       # the built artifact under plain Node, resolving plugins through real package
@@ -112,16 +113,16 @@ jobs:
       - name: Prepare Office runtime
         run: pnpm run prepare:primary-runtime --target linux-x64 --output .cache/e2e-office
 
-      # Real-API end-to-end tests only. The keyless gates (lint/typecheck/
-      # coverage/snapshot/etc.) already run in ci.yml (pull requests) and
-      # ci-master.yml (master push standby).
-      # DEEPSEEK_BASE_URL is pinned to the external API; the secret is scoped to
-      # this step (and preflight) only — never exposed to checkout/setup/install.
-      - name: E2E tests (real DeepSeek API)
+      - name: E2E profiles without provider credentials
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
-          DEEPSEEK_BASE_URL: https://api.deepseek.com/anthropic
           DSH_PRIMARY_RUNTIME: ${{ github.workspace }}/.cache/e2e-office/primary-runtime
           DSH_E2E_MAX_WORKERS: 6
           DSH_EXAMPLE_MODE: lib
         run: pnpm run test:e2e
+
+      - name: E2E tests (authenticated Verboo Code Router)
+        env:
+          VERBOO_CODE_CI_API_KEY: ${{ secrets.VERBOO_CODE_CI_API_KEY }}
+          DSH_PRIMARY_RUNTIME: ${{ github.workspace }}/.cache/e2e-office/primary-runtime
+          DSH_EXAMPLE_MODE: lib
+        run: pnpm exec vitest run --config vitest.e2e.config.ts apps/cli/tests/profiles/sdk/office-cli.e2e.ts

@@ -6,6 +6,7 @@ import { ResourceRegistry } from '@deepseek-ai/dsh-client-resources/src/client/r
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { StaminaStatus, PlanId } from '@deepseek-ai/dsh-api-verboo-product/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createStaminaResource, staminaAddress } from '../src/client/stamina-resource.ts'
 
 const reading: StaminaStatus = {
@@ -90,6 +91,24 @@ describe('account-scoped stamina resource', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(f.source.getSnapshot()).toMatchObject({ status: 'live', value: [] })
   })
+  it('retains stamina through a typed transport refusal and sanitizes a thrown error', async () => {
+    const f = fixture()
+    f.hold()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const failure = new RemoteError('verboo/stamina-unavailable', 'Stamina reading unavailable', { reason: 'unavailable' })
+    f.read.mockResolvedValueOnce({ ok: false, error: failure })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.source.getSnapshot()).toEqual({ status: 'failed', value: [reading], failure })
+
+    f.read.mockRejectedValueOnce(new Error('internal transport diagnostic'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.source.getSnapshot()).toMatchObject({
+      status: 'failed',
+      value: [reading],
+      failure: { message: 'Stamina refresh is unavailable.', details: { reason: 'contract_error' } },
+    })
+  })
   it('stops reads while hidden or offline and resumes when visible and online', async () => {
     const f = fixture()
     visible = 'hidden'
@@ -111,18 +130,52 @@ describe('account-scoped stamina resource', () => {
     expect(f.read).toHaveBeenCalledTimes(2)
     expect(f.source.getSnapshot().status).toBe('live')
   })
-  it('aborts and discards an earlier account response before opening the next account', async () => {
+  it.each(['value', 'failure'] as const)('ignores a late %s after visibility aborts the read', async (late) => {
+    const f = fixture()
+    f.hold()
+    await vi.advanceTimersByTimeAsync(0)
+    const observed: ReturnType<typeof f.source.getSnapshot>[] = []
+    releases.push(f.source.subscribe(() => { observed.push(f.source.getSnapshot()) }))
+    const pending = Promise.withResolvers<Awaited<ReturnType<ClientRemote['verboo']['getStamina']>>>()
+    const fresh = { ...reading, remainingPercent: 62 }
+    f.read.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true, value: { ok: true, data: [fresh] } })
+    f.stamina.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.read).toHaveBeenCalledTimes(2)
+    visible = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(f.read.mock.calls[1]![0]?.aborted).toBe(true)
+    visible = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    if (late === 'value') {
+      pending.resolve({ ok: true, value: { ok: true, data: [{ ...reading, remainingPercent: 14 }] } })
+    } else {
+      pending.reject(new Error('The original read finished after cancellation'))
+    }
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.read).toHaveBeenCalledTimes(3)
+    expect(observed).not.toContainEqual(expect.objectContaining({ status: 'failed' }))
+    expect(observed).not.toContainEqual(expect.objectContaining({
+      value: [expect.objectContaining({ remainingPercent: 14 })],
+    }))
+    expect(f.source.getSnapshot()).toMatchObject({ status: 'live', value: [fresh] })
+  })
+  it.each(['value', 'failure'] as const)('discards an earlier account %s before opening the next account', async (late) => {
     const f = fixture()
     const pending = Promise.withResolvers<Awaited<ReturnType<ClientRemote['verboo']['getStamina']>>>()
     f.read.mockReturnValueOnce(pending.promise)
     f.hold()
     await vi.advanceTimersByTimeAsync(0)
     const oldSignal = f.read.mock.calls[0]![0]
+    f.account.set(owner('account-a'))
+    expect(oldSignal!.aborted).toBe(false)
+    expect(f.read).toHaveBeenCalledOnce()
     f.account.set(owner('account-b'))
     expect(oldSignal!.aborted).toBe(true)
     const next = f.registry.source(staminaAddress(f.account.getSnapshot()))
     expect(next.getSnapshot().value).toBeUndefined()
-    pending.resolve({ ok: true, value: { ok: true, data: [reading] } })
+    if (late === 'value') pending.resolve({ ok: true, value: { ok: true, data: [reading] } })
+    else pending.reject(new Error('The replaced account read failed'))
     await vi.advanceTimersByTimeAsync(0)
     expect(f.source.getSnapshot().value).toBeUndefined()
     releases.push(next.subscribe(() => {}))

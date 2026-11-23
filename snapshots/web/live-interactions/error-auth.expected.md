@@ -12,7 +12,7 @@
 - status: Failed
 - button "Failed" [disabled]
 - status:
-  - text: This turn failedAPI key is invalid
+  - text: This turn failedThe provider rejected the configured credential.
   - code: AUTH
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"

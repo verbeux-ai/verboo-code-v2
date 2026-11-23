@@ -79,6 +79,9 @@ describe('conversation execution state', () => {
     reading.session = { ...reading.session, awaitingFirstTurn: false, openState: 'loading' }
     view.rerender(<ExecutionStatus {...props} />)
     expect(screen.getByRole('status').textContent).toBe(pt.loading)
+    reading.session = { ...reading.session, openState: 'error' }
+    view.rerender(<ExecutionStatus {...props} />)
+    expect(screen.getByRole('status').textContent).toBe('Requer atenção')
     reading.session = { ...reading.session, openState: 'open', running: false, lastAgentError: 'not exposed to UI' }
     view.rerender(<ExecutionStatus {...props} />)
     expect(screen.getByRole('status').textContent).toBe('Requer atenção')

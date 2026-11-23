@@ -1262,15 +1262,12 @@ def assert_installed_wheel_environment() -> Path:
 
 
 def smoke_sdk_live() -> None:
-    """Run a real-model, tool-using two-turn task through installed wheels."""
+    """Run a Verboo Code Router task through the installed wheels."""
     from deepseek_harness import DeepSeekHarness
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    base_url = os.environ.get("DEEPSEEK_BASE_URL")
-    if not api_key:
-        raise AssertionError("sdk-live requires DEEPSEEK_API_KEY")
-    if not base_url:
-        raise AssertionError("sdk-live requires an explicit DEEPSEEK_BASE_URL")
+    if not os.environ.get("VERBOO_CODE_CI_API_KEY", "").strip():
+        raise AssertionError("sdk-live requires VERBOO_CODE_CI_API_KEY")
+    route_patch = Path(__file__).resolve().with_name("verboo-live-model.patch.yml")
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-live-") as temporary:
         root = Path(temporary).resolve()
@@ -1285,16 +1282,15 @@ def smoke_sdk_live() -> None:
             f"Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         with DeepSeekHarness(
-            provider="deepseek-official",
-            model="deepseek-v4-flash",
+            provider="verboo-live",
+            model="qwen3.8-27b",
             cwd=str(root),
             dsh_home=str(dsh_home),
+            patches=(str(route_patch),),
             env={
                 "DSH_PERMISSION_MODE": "danger-full-access",
                 "DSH_TELEMETRY_DISABLED": "1",
             },
-            api_key=api_key,
-            base_url=base_url,
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)

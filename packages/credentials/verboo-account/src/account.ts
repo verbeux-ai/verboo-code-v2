@@ -195,7 +195,7 @@ export class VerbooAccount extends DeepSeekAccount {
   }
 
   /**
-   * Begin a PKCE authorization owned by the current installation.
+   * Begin or join a PKCE authorization owned by the current installation.
    * @param client - locale and release metadata for the operation.
    * @param callbackOrigin - authenticated Client origin initiating the login.
    * @param _source - Client surface initiating the authorization.
@@ -206,16 +206,24 @@ export class VerbooAccount extends DeepSeekAccount {
     callbackOrigin: string,
     _source: 'web' | 'desktop',
   ): Promise<AccountView> {
-    if (this.removing !== undefined) await this.removing
-    if (this.closed) throw new AccountRequestError('request_cancelled')
-    if (
-      this.attempt &&
-      ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(
-        this.attempt.view.phase,
+    let completed: Attempt | undefined
+    for (;;) {
+      if (this.closed) throw new AccountRequestError('request_cancelled')
+      if (this.removing !== undefined) {
+        await this.removing
+        continue
+      }
+      const existing = this.attempt
+      if (existing === undefined || existing === completed) break
+      if (
+        ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(
+          existing.view.phase,
+        )
       )
-    )
-      return this.getState()
-    if (this.attempt) await this.attempt.done
+        return this.getState()
+      await existing.done
+      completed = existing
+    }
     const origin = new URL(callbackOrigin)
     if (
       origin.protocol !== 'http:' ||

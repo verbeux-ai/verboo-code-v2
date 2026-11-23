@@ -28,11 +28,15 @@
    JS-measured --dsl-virtual-list-width. `--dsh-table-spare` clamps to zero
    when the transcript is narrower than the message column, so narrow
    viewports keep the plain in-column scroll with no sideways shift.
-   Percentages resolve against the wrapper's containing block, so a table
-   indented inside a list still reaches the same transcript edges. */
+   The lead grows with the spare width so the assistant mark or a list indent
+   cannot create a breakout on a narrow transcript. */
 .body :global(.md-table-wide) {
   --dsh-table-spare: max(0px, calc((100cqw - var(--dsh-chat-content-width)) / 2));
-  --dsh-table-lead: calc(var(--dsh-table-spare) + min(var(--dsh-chat-content-width), 100cqw) - 100%);
+  --dsh-table-lead: clamp(
+    0px,
+    calc(var(--dsh-table-spare) + min(var(--dsh-chat-content-width), 100cqw) - 100%),
+    calc(var(--dsh-table-spare) * 2)
+  );
   box-sizing: border-box;
   width: calc(100% + var(--dsh-table-lead) + var(--dsh-table-spare));
   /* The base .tableScroll caps at the column (max-width: 100%); the breakout

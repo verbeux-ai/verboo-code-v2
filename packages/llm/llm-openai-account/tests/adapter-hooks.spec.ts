@@ -134,6 +134,64 @@ it('serves prepareCall with the route key and the same translation', async () =>
   expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
 })
 
+it.each(['accepted', 'unsupported', 'transient'] as const)(
+  'records availability only from a settled account model result (%s)', async (outcome) => {
+    const model = 'gpt-5.5'
+    const item = { id: 'fixture-message', type: 'message', role: 'assistant',
+      content: [{ type: 'output_text', text: 'Ready.', annotations: [] }] }
+    const completion = [
+      { type: 'response.created', response: { id: 'fixture-response' } },
+      { type: 'response.output_item.added', output_index: 0, item: { ...item, content: [] } },
+      { type: 'response.content_part.added', output_index: 0, content_index: 0,
+        part: { type: 'output_text', text: '', annotations: [] } },
+      { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'Ready.' },
+      { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: {
+        id: 'fixture-response', status: 'completed', output: [item],
+        usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+      } },
+    ].map(event => `data: ${JSON.stringify(event)}\n\n`).join('')
+    const reply = outcome === 'accepted'
+      ? new Response(completion, { headers: { 'content-type': 'text/event-stream' } })
+      : new Response(JSON.stringify({ error: { message: outcome === 'unsupported'
+        ? "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account." : 'temporary server error' } }),
+      { status: outcome === 'unsupported' ? 400 : 500 })
+    const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply)
+    const record = vi.fn()
+    try {
+      const adapter = new OpenAiAccountAdapter({
+        profiles: () => resolveProfiles({ [CATALOG_PROVIDER]: { apiKeyEnv: TOKEN_REF, displayName: 'ChatGPT' } }),
+        accessToken: async () => tokenFor('fixture-account'),
+        accountId: async () => 'fixture-account',
+        record,
+      })
+      const chunks = await drain(adapter.stream({ provider: PROVIDER, model, messages: [] }))
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: outcome === 'accepted' ? 'stop' : 'error' } })
+      if (outcome === 'unsupported') expect(chunks.at(-1))
+        .toMatchObject({ reason: { failure: { code: 'UNSUPPORTED_MODEL' } } })
+      expect(record.mock.calls).toEqual(outcome === 'transient' ? [] : [
+        ['fixture-account', model, outcome === 'accepted' ? 'supported' : 'unsupported'],
+      ])
+    } finally {
+      mockFetch.mockRestore()
+    }
+  },
+)
+
+it('omits a model removed from the active provider catalog while assembling the picker', async () => {
+  const resolved = profiles().get(CATALOG_PROVIDER)!
+  const provider = resolved.piProvider!
+  const changing = Object.create(provider) as typeof provider
+  const models = vi.fn().mockReturnValueOnce(provider.getModels()).mockReturnValueOnce([])
+  Object.defineProperty(changing, 'getModels', { value: models })
+  const adapter = new OpenAiAccountAdapter({
+    profiles: () => new Map([[CATALOG_PROVIDER, { ...resolved, piProvider: changing }]]),
+    accessToken: async () => tokenFor('fixture-account'),
+  })
+  await expect(adapter.listModels(PROVIDER)).resolves.toEqual([])
+  expect(models).toHaveBeenCalledTimes(2)
+})
+
 it('delivers the unsupported-model code in the finish chunk the loop records', async () => {
   // The turn's recorded failure comes from this chunk, so the code must survive
   // the translation rather than only existing in a helper.

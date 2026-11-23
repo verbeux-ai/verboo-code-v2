@@ -28,6 +28,9 @@ describe('ThemeRuntime', () => {
     const original = theme.getTheme().active.icons?.[key]
     const first = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M1 1h2"/></svg>'
     const second = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h3"/></svg>'
+    const empty = theme.overrideIcons('empty', undefined as never)
+    expect(theme.getTheme().active.icons?.[key]).toBe(original)
+    const defaults = theme.overrideIcons('defaults', { [key]: first })
     const stale = theme.overrideIcons('product', { [key]: first })
     const dispose = theme.overrideIcons('product', { [key]: second })
     stale()
@@ -35,7 +38,10 @@ describe('ThemeRuntime', () => {
     theme.setTheme('dark')
     expect(theme.getTheme().active.icons?.[key]).toBe(second)
     dispose()
+    expect(theme.getTheme().active.icons?.[key]).toBe(first)
+    defaults()
     expect(theme.getTheme().active.icons?.[key]).toBe(original)
+    empty()
   })
 
   it('defaults to the system preference resolved against prefers-color-scheme', () => {

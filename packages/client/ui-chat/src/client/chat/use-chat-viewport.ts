@@ -282,7 +282,8 @@ export class ChatViewport {
         const input = this.tailInput
         this.tailRequested = false
         this.tailInput = false
-        viewportTop = elements.scroller.getBoundingClientRect().top
+        const viewport = elements.scroller.getBoundingClientRect()
+        viewportTop = viewport.top
         start = elements.scroller.scrollTop
         const originalRoom = this.spacerHeight()
         initialHeight = Math.max(elements.column.offsetHeight, elements.scroller.scrollHeight - originalRoom)
@@ -308,6 +309,8 @@ export class ChatViewport {
           if (box.closing) {
             removed += amount
             above += Math.max(0, Math.min(amount, viewportTop - top))
+            // Rows in the reader's view keep painting while their occupied space shrinks.
+            if (!tail && top < viewport.bottom && top + amount > viewportTop) travelling.add(box.element)
             if (top >= viewportTop) below.push(box.element)
             closing.push(box)
           } else {

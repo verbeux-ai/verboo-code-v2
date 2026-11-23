@@ -48,10 +48,10 @@ describe('SessionPersistence.remove', () => {
     await expect(persistence.remove(SessionId('nowhere'))).rejects.toBeInstanceOf(SessionRemoveUnsupportedError)
   })
 
-  it('rejects an aborted request without reaching the refusal', async () => {
+  it.each([new Error('caller cancelled'), 'caller cancelled'])('rejects an aborted request without reaching the refusal (%s)', async (reason) => {
     const persistence = await mount()
     const controller = new AbortController()
-    controller.abort(new Error('caller cancelled'))
+    controller.abort(reason)
     await expect(persistence.remove(SessionId('nowhere'), { signal: controller.signal }))
       .rejects.toThrow('caller cancelled')
   })

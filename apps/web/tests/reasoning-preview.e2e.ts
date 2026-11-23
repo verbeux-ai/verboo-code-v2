@@ -9,8 +9,8 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, writeComposerDraft } from './support.ts'
 
-const SUMMARY = `Next paragraph: ${'inspect the loaded context and pending tools '.repeat(8).trim()}`
-const DELTAS = ['First paragraph', `\nDetails\n\n\n${SUMMARY}`, '\nMore detail', '\n\nExpanded update']
+const OPENING_LINE = `First paragraph: ${'inspect the loaded context and pending tools '.repeat(8).trim()}`
+const DELTAS = [OPENING_LINE, '\nDetails\n\n\nNext paragraph', '\nMore detail', '\n\nExpanded update']
 const UI_EXPECTED = fileURLToPath(new URL('./expected/reasoning-preview/running.expected.md', import.meta.url))
 /** Computed mask of the animated whale: the ui-chat package asset URL, whose `@` is percent-encoded. */
 const WHALE_MASK = /^url\("([^"]*\/plugins\/@deepseek-ai\/dsh-client-ui-chat\/assets\/running-whale%402x-[0-9a-f]{12}\.png)"\)$/
@@ -45,7 +45,7 @@ class PausedReasoningAdapter extends LlmAdapter {
   }
 }
 
-it.each(['plain', 'signature'])('shows completed paragraph first lines with a right-edge fade (%s)', async (format) => {
+it.each(['plain', 'signature'])('keeps the opening line visible with a right-edge fade (%s)', async (format) => {
   const scaffold = await launchWebScaffold()
   const adapter = new PausedReasoningAdapter(format === 'signature' ? '<signature>metadata.payload</signature>\n\n' : '')
   try {
@@ -123,22 +123,23 @@ it.each(['plain', 'signature'])('shows completed paragraph first lines with a ri
       } finally {
         await page.emulateMedia({ reducedMotion: null, forcedColors: null })
       }
-      expect(await reasoning.getAttribute('data-preview')).toBeNull()
+      const preview = reasoning.locator('[data-streaming]:not([inert] *)')
+      await expect.poll(() => preview.textContent()).toBe(OPENING_LINE)
+      expect(await reasoning.getAttribute('data-preview')).toBe('true')
+      expect(await preview.isVisible()).toBe(true)
       expect(await reasoning.textContent()).not.toContain('metadata.payload')
+      await preview.evaluate((element) => { element.setAttribute('data-retained-preview', 'true') })
 
       first.proceed.resolve(undefined)
       await second.arrived.promise
-      const preview = reasoning.locator('[data-streaming]:not([inert] *)')
-      await expect.poll(() => preview.textContent()).toBe('First paragraph')
-      expect(await preview.isVisible()).toBe(true)
-      await preview.evaluate((element) => { element.setAttribute('data-retained-preview', 'true') })
+      expect(await preview.textContent()).toBe(OPENING_LINE)
 
       second.proceed.resolve(undefined)
       await third.arrived.promise
-      await expect.poll(() => preview.textContent()).toBe(SUMMARY)
+      expect(await preview.textContent()).toBe(OPENING_LINE)
       expect(await preview.getAttribute('data-retained-preview')).toBe('true')
       expect(await preview.evaluate(element => getComputedStyle(element).maskImage)).toContain('linear-gradient')
-      expect(await preview.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+      expect(await preview.locator(':scope > span').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
       expect(await reasoning.getByRole('button').getAttribute('aria-expanded')).toBe('false')
       await compareOrRefreshGolden(UI_EXPECTED,
         await captureStableAria(page, '[data-variant="think"]', scaffold.workspaceCwd), webSnapshotMode())

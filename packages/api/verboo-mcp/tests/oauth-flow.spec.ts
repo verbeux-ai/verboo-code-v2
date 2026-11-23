@@ -5,7 +5,7 @@
  * itself is simulated — the callback travels through the same handler the
  * Host's web server mounts.
  */
-import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -24,7 +24,8 @@ import type {
 } from '@deepseek-ai/dsh-credentials'
 import McpServerManager from '@deepseek-ai/dsh-mcp-manager'
 import VerbooMcpServers from '../src/index.ts'
-import { answerCallback, OAUTH_CALLBACK_PATH } from '../src/oauth.ts'
+import { answerCallback, authorizationHeader, oauthProvider, OAUTH_CALLBACK_PATH } from '../src/oauth.ts'
+import { mcpCredentialRef, mcpOAuthSlotRef } from '../src/store.ts'
 import type { McpServerInput } from '../src/types.ts'
 
 const roots: string[] = []
@@ -90,6 +91,8 @@ interface Authority {
   verifier: string
   /** How many times each well-known document was fetched. */
   reads: { resource: number; server: number }
+  /** Grant types submitted to the fixture token endpoint. */
+  exchanges: string[]
 }
 
 /**
@@ -101,7 +104,7 @@ interface Authority {
 async function authority(): Promise<Authority> {
   const issued: Authority = {
     origin: '', challenge: '', state: '', redirectUri: '', token: 'tok-abc-123', verifier: '',
-    reads: { resource: 0, server: 0 },
+    reads: { resource: 0, server: 0 }, exchanges: [],
   }
   let clientId = ''
   let code = ''
@@ -166,6 +169,7 @@ async function authority(): Promise<Authority> {
         return
       case 'POST /token':
         void body(request).then((params) => {
+          issued.exchanges.push(params.get('grant_type') ?? '')
           issued.verifier = params.get('code_verifier') ?? ''
           json(response, {
             access_token: issued.token,
@@ -193,16 +197,22 @@ async function authority(): Promise<Authority> {
         response.writeHead(404).end()
     }
   })
+  issued.origin = await listen(server)
+  return issued
+}
+
+async function listen(server: Server): Promise<string> {
   servers.push(server)
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('the fixture server did not bind a port')
-  issued.origin = `http://127.0.0.1:${String(address.port)}`
-  return issued
+  return `http://127.0.0.1:${String(address.port)}`
 }
 
-/** Mount the service against a fake Host web server sharing the authority origin. */
-async function mount(origin: string) {
+type CallbackRoute = { path: string; handler: (request: IncomingMessage, response: ServerResponse) => void }
+
+/** Mount the service and serve its registered callback on loopback. */
+async function mount(options: { omitRequestUrl?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-verboo-mcp-flow-'))
   roots.push(root)
   const ctx = new Context()
@@ -214,10 +224,25 @@ async function mount(origin: string) {
   await ctx.plugin(StorageJson, { root: join(root, 'storage') })
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await (await ctx.plugin(McpServerManager, {})).await()
-  ctx.provide('webServer', { getOrigin: () => origin, register: () => () => {} })
+  let callback: CallbackRoute | undefined
+  const origin = await listen(createServer((request, response) => {
+    if (callback === undefined || request.url?.split('?')[0] !== callback.path) {
+      response.writeHead(404).end()
+      return
+    }
+    if (options.omitRequestUrl) delete request.url
+    callback.handler(request, response)
+  }))
+  ctx.provide('webServer', {
+    getOrigin: () => origin,
+    register: (route: CallbackRoute) => {
+      callback = route
+      return () => { callback = undefined }
+    },
+  })
   await (await ctx.plugin(VerbooMcpServers, {})).await()
   onTestFinished(() => undefined)
-  return { ctx, service: ctx.verbooMcp, credentials: ctx.get('credentials') as MemoryCredentials }
+  return { ctx, origin, service: ctx.verbooMcp, credentials: ctx.get('credentials') as MemoryCredentials }
 }
 
 const oauthInput = (origin: string): McpServerInput => ({
@@ -235,7 +260,7 @@ const oauthInput = (origin: string): McpServerInput => ({
 describe('browser sign-in against a real authorization server', () => {
   it('discovers, registers, authorizes, exchanges the code and stores the header', async () => {
     const issued = await authority()
-    const { ctx, service, credentials } = await mount(issued.origin)
+    const { service, credentials } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
 
     const started = await service.signInFromClient('remote')
@@ -252,9 +277,13 @@ describe('browser sign-in against a real authorization server', () => {
     const callback = new URL(authorized.headers.get('location') ?? '')
     expect(callback.pathname).toBe(OAUTH_CALLBACK_PATH)
 
-    const answered = await answerCallback(ctx, callback.searchParams)
+    const rejectedMethod = await fetch(callback, { method: 'POST' })
+    expect(rejectedMethod.status).toBe(405)
+    expect(rejectedMethod.headers.get('cache-control')).toBe('no-store')
+    const answered = await fetch(callback)
     expect(answered.status).toBe(200)
-    expect(answered.body).toContain('remote')
+    expect(answered.headers.get('cache-control')).toBe('no-store')
+    expect(await answered.text()).toContain('remote')
 
     // The definition now presents the issued bearer, and the token itself never
     // reached the stored record.
@@ -277,7 +306,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('reuses the persisted discovery state instead of probing the well-known documents again', async () => {
     const issued = await authority()
-    const { service } = await mount(issued.origin)
+    const { service } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const first = await service.signInFromClient('remote')
     expect(first.ok).toBe(true)
@@ -291,7 +320,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('refuses a second response for the same state, so a replay cannot re-authorize', async () => {
     const issued = await authority()
-    const { ctx, service } = await mount(issued.origin)
+    const { ctx, service } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const started = await service.signInFromClient('remote')
     if (!started.ok) throw new Error(started.message)
@@ -301,5 +330,86 @@ describe('browser sign-in against a real authorization server', () => {
     const replay = await answerCallback(ctx, callback.searchParams)
     expect(replay.status).toBe(400)
     expect(replay.body).toContain('no sign-in is waiting')
+  })
+
+  it('renews a valid stored refresh grant without another browser page', async () => {
+    const issued = await authority()
+    const { ctx, service, credentials } = await mount()
+    await service.saveFromClient(oauthInput(issued.origin))
+    const started = await service.signInFromClient('remote')
+    if (!started.ok) throw new Error(started.message)
+    const authorized = await fetch(started.data, { redirect: 'manual' })
+    const callback = new URL(authorized.headers.get('location') ?? '')
+    expect((await answerCallback(ctx, callback.searchParams)).status).toBe(200)
+    expect(await service.signInFromClient('remote')).toMatchObject({ ok: true, data: '' })
+    expect(issued.exchanges).toEqual(['authorization_code', 'refresh_token'])
+    expect([...credentials.values.values()]).toContain(`Bearer ${issued.token}`)
+  })
+
+  it('drops only the pending attempt for the signed-out server', async () => {
+    const issued = await authority()
+    const { ctx, service } = await mount()
+    await service.saveFromClient(oauthInput(issued.origin))
+    await service.saveFromClient({ ...oauthInput(issued.origin), name: 'other' })
+    const first = await service.signInFromClient('remote')
+    const second = await service.signInFromClient('other')
+    if (!first.ok || !second.ok) throw new Error('Fixture sign-in was unavailable')
+    const callback = async (url: string) => {
+      const response = await fetch(url, { redirect: 'manual' })
+      return new URL(response.headers.get('location') ?? '').searchParams
+    }
+    const firstParams = await callback(first.data)
+    const secondParams = await callback(second.data)
+    expect((await service.signOutFromClient('remote')).ok).toBe(true)
+    expect(await answerCallback(ctx, firstParams)).toMatchObject({ status: 400 })
+    expect(await answerCallback(ctx, secondParams)).toMatchObject({ status: 200, body: expect.stringContaining('"other"') })
+  })
+
+  it('uses the previously read grant when a token read is temporarily unavailable after refresh', async () => {
+    const issued = await authority()
+    const { ctx, credentials } = await mount()
+    const serverUrl = `${issued.origin}/mcp`
+    await expect(authorizationHeader(ctx, 'remote', serverUrl)).rejects.toThrow('no stored OAuth grant')
+    await oauthProvider(ctx, 'remote').saveTokens({ access_token: 'fixture-stored', token_type: '' })
+    const tokenSlot = mcpOAuthSlotRef('remote', 'tokens')
+    const resolve = credentials.resolve.bind(credentials)
+    let reads = 0
+    vi.spyOn(credentials, 'resolve').mockImplementation((ref) => {
+      if (String(ref) === tokenSlot && ++reads > 1) return Promise.resolve(undefined)
+      return resolve(ref)
+    })
+    try {
+      await expect(authorizationHeader(ctx, 'remote', serverUrl)).resolves.toBe('Bearer fixture-stored')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('reports an untyped credential-store failure without returning its value', async () => {
+    const issued = await authority()
+    const { ctx, service, credentials } = await mount()
+    await service.saveFromClient(oauthInput(issued.origin))
+    const started = await service.signInFromClient('remote')
+    if (!started.ok) throw new Error(started.message)
+    const authorized = await fetch(started.data, { redirect: 'manual' })
+    const callback = new URL(authorized.headers.get('location') ?? '')
+    const set = credentials.set.bind(credentials)
+    vi.spyOn(credentials, 'set').mockImplementation((ref, value) => String(ref) === mcpCredentialRef('remote', 'Authorization')
+      ? Promise.reject('fixture error containing a private value') : set(ref, value))
+    try {
+      expect(await answerCallback(ctx, callback.searchParams)).toEqual({
+        status: 400, body: 'The sign-in could not be completed: unknown error',
+      })
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('reports an incomplete request URL and a missing definition without changing state', async () => {
+    const { origin, service } = await mount({ omitRequestUrl: true })
+    const callback = await fetch(`${origin}${OAUTH_CALLBACK_PATH}?code=fixture&state=fixture`)
+    expect(callback.status).toBe(400)
+    expect(await callback.text()).toContain('response is incomplete')
+    expect(await service.signOutFromClient('missing')).toMatchObject({ ok: false, code: 'not_found' })
   })
 })

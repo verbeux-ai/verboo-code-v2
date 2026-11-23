@@ -159,7 +159,7 @@ export function paymentURL(raw: string): string {
 export class TrialCommerce {
   private readonly offers = new Map<TrialOfferId, HeldOffer>()
   constructor(
-    private readonly request: Request,
+    private readonly requestForAccount: (accountSessionId: string) => Request,
     private readonly owner: () => Promise<string>,
   ) {}
   /**
@@ -167,16 +167,19 @@ export class TrialCommerce {
    * @param trialId - current server trial notice identifier.
    * @param plan - catalog plan and billing interval selected by the buyer.
    * @param method - requested payment method; absent selects card.
+   * @param accountSessionId - owning login captured before the catalog read.
    * @returns display data or the existing pending attempt, without signed tokens.
    */
   async offer(
     trialId: TrialId,
     plan: { id: PlanId; name: string; interval: string },
     method: 'card' | 'pix' = 'card',
+    accountSessionId?: string,
   ): Promise<TrialOffer> {
-    const owner = await this.owner()
+    const owner = accountSessionId ?? await this.owner()
+    const request = this.requestForAccount(owner)
     const notices = trialStatus.parse(
-      await this.request('/api/me/trial-status'),
+      await request('/api/me/trial-status'),
     ).data
     const trial = notices.trials.find(t => t.id === trialId)
     if (!trial) throw new AccountRequestError('contract_error')
@@ -228,7 +231,7 @@ export class TrialCommerce {
             card: card.nullish(),
           }),
         })
-        .parse(await this.request('/api/me/free-tokens/activation')).data
+        .parse(await request('/api/me/free-tokens/activation')).data
       if (
         !activation.card ||
         activation.groupId !== plan.id ||
@@ -236,7 +239,7 @@ export class TrialCommerce {
       )
         throw new AccountRequestError('contract_error')
       const acquisition = quote.parse(
-        await this.request('/api/me/checkout/quotes', 'POST', {
+        await request('/api/me/checkout/quotes', 'POST', {
           purchaseType: 'individual',
           offer: 'subscription',
           groupId: plan.id,
@@ -274,18 +277,18 @@ export class TrialCommerce {
       let result: z.infer<typeof conversion>['data']
       try {
         result = conversion.parse(
-          await this.request(
+          await request(
             `/api/me/subscriptions/${z.uuid().parse(trial.id)}/trial-conversion?billingInterval=${plan.interval}`,
           ),
         ).data
       } catch (error) {
         if (error instanceof AccountRequestError && error.status === 409) {
           const current = trialStatus
-            .parse(await this.request('/api/me/trial-status'))
+            .parse(await request('/api/me/trial-status'))
             .data.trials.find(item => item.id === trialId)
           // The provider read above may have authoritatively closed a stale local trial.
           if (current && !current.canConvert && (await this.owner()) === owner)
-            return this.offer(trialId, plan, method)
+            return this.offer(trialId, plan, method, owner)
         }
         throw error
       }
@@ -351,7 +354,7 @@ export class TrialCommerce {
           }),
         })
         .parse(
-          await this.request(
+          await request(
             `/api/me/subscriptions/${z.uuid().parse(trial.id)}/change-plan/preview`,
             'POST',
             {
@@ -388,7 +391,7 @@ export class TrialCommerce {
       }
     } else {
       const result = quote.parse(
-        await this.request('/api/me/checkout/quotes', 'POST', {
+        await request('/api/me/checkout/quotes', 'POST', {
           purchaseType: 'individual',
           offer: 'subscription',
           groupId: plan.id,
@@ -479,6 +482,7 @@ export class TrialCommerce {
     method: 'card' | 'pix',
     requestId: TrialAttemptId,
   ): Promise<TrialPayment> {
+    const request = this.requestForAccount(held.owner)
     let payment: TrialPayment
     if (held.changePreview) {
       const preview = held.changePreview
@@ -490,7 +494,7 @@ export class TrialCommerce {
           }),
         })
         .parse(
-          await this.request(
+          await request(
             `/api/me/subscriptions/${preview.subscription}/change-plan`,
             'POST',
             {
@@ -521,7 +525,7 @@ export class TrialCommerce {
           }),
         })
         .parse(
-          await this.request(
+          await request(
             '/api/me/free-tokens/activate',
             'POST',
             { token: held.token },
@@ -548,7 +552,7 @@ export class TrialCommerce {
         const response = z
           .object({ data: z.object({ url: z.string() }) })
           .parse(
-            await this.request(path + 'setup', 'POST', body, requestId),
+            await request(path + 'setup', 'POST', body, requestId),
           ).data
         payment = {
           status: 'setup_required',
@@ -565,7 +569,7 @@ export class TrialCommerce {
             }),
           })
           .parse(
-            await this.request(path + 'confirm', 'POST', body, requestId),
+            await request(path + 'confirm', 'POST', body, requestId),
           ).data
         payment = {
           status: response.status,
@@ -585,7 +589,7 @@ export class TrialCommerce {
           }),
         })
         .parse(
-          await this.request(
+          await request(
             `/api/me/groups/${held.view.planId}/checkout`,
             'POST',
             {

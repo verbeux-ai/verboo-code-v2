@@ -19,6 +19,9 @@ const CLIENT_ARTIFACT_PATTERNS = [
   'packages/*/*/lib/client.js.map',
   'packages/*/*/lib/client.*.js',
   'packages/*/*/lib/client.*.js.map',
+  'packages/*/*/lib/assets/**/*',
+  'packages/client/ui-conversation/lib/types/client/locales.*',
+  'packages/client/ui-conversation/lib/tsconfig.client.tsbuildinfo',
 ]
 
 /** Return every artifact that `pnpm run dev:web` can rewrite. */
@@ -85,7 +88,6 @@ async function stopTree(child: SubprocessHandle): Promise<void> {
 }
 
 it('hot-reloads a real client-plugin source edit without refreshing the page', async () => {
-  const world = await mkdtemp(join(tmpdir(), 'dsh-web-hmr-world-'))
   const sourcePath = join(REPO_ROOT, 'packages/client/ui-conversation/src/client/locales.ts')
   const binPath = join(REPO_ROOT, 'apps/cli/lib/bin.js')
   if (!existsSync(binPath)) throw new Error('HMR browser test needs the built dsh bin; run pnpm run build first')
@@ -97,9 +99,13 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   const oldText = 'Into the Unknown'
   const sourceNeedle = "'hero.headline': 'Into the Unknown'"
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
+  if (originalClientArtifacts.some(([, content]) => content.includes(newText))) {
+    throw new Error('HMR browser test needs a clean client build without an earlier test edit')
+  }
   const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.headline': '${newText}'`)
   if (updatedSource === originalSource.toString()) throw new Error(`HMR source lacks ${JSON.stringify(sourceNeedle)}`)
 
+  const world = await mkdtemp(join(tmpdir(), 'dsh-web-hmr-world-'))
   const subprocessCtx = new Context()
   let subprocessFiber: Fiber | undefined
   let watcher: SubprocessHandle | undefined
@@ -147,11 +153,11 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   } catch (error) {
     failures.push(error)
   } finally {
-    await writeFile(sourcePath, originalSource).catch((error: unknown) => failures.push(error))
     if (watcher !== undefined) await stopTree(watcher).catch((error: unknown) => failures.push(error))
     if (host !== undefined) await stopTree(host).catch((error: unknown) => failures.push(error))
     await browser?.close().catch((error: unknown) => failures.push(error))
     await subprocessFiber?.dispose().catch((error: unknown) => failures.push(error))
+    await writeFile(sourcePath, originalSource).catch((error: unknown) => failures.push(error))
     await Promise.all(clientArtifactPaths()
       .filter(path => !originalClientArtifactPaths.has(path))
       .map(async (path) => { await rm(path, { force: true }) }))

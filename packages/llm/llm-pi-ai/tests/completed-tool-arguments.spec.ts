@@ -1,6 +1,6 @@
 /** Completed provider arguments fail before a malformed call can enter successful history or dispatch. */
 
-import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -62,11 +62,15 @@ function responsesEvents(raw: string, prefix?: string, priorValid = false, prior
   ]
 }
 
-function registerAdapter(ctx: Context, api: Api, baseURL: string): void {
+function registerAdapter(
+  ctx: Context, api: Api, baseURL: string,
+  onMalformedResponse?: ConstructorParameters<typeof PiAiAdapter>[0]['onMalformedResponse'],
+): void {
   ctx.effect(() => ctx.llm.registerAdapter(['fixture'], new PiAiAdapter({
     profiles: () => resolveProfiles({ fixture: { api, baseURL, models: [{ id: 'm' }], transport: 'sse' } }),
     resolveApiKey: () => Promise.resolve('fixture-key'),
     auth: memoryAuth(),
+    ...onMalformedResponse === undefined ? {} : { onMalformedResponse },
   })))
 }
 
@@ -75,14 +79,15 @@ async function collect(api: Api, events: WireEvent[]) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(LlmRuntime)
-  registerAdapter(ctx, api, server.url)
+  const diagnostics = vi.fn()
+  registerAdapter(ctx, api, server.url, diagnostics)
   const chunks: StreamChunk[] = []
   const assembler = new BlockAssembler()
   for await (const chunk of ctx.llm.stream({ provider: 'fixture', model: 'm', messages: [] })) {
     chunks.push(chunk)
     assembler.push(chunk)
   }
-  return { chunks, assembler, server }
+  return { chunks, assembler, server, diagnostics }
 }
 
 describe('completed tool-call arguments through the public runtime', () => {
@@ -118,11 +123,34 @@ describe('completed tool-call arguments through the public runtime', () => {
       JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 3, completion_tokens: 2 } }),
       '[DONE]',
     ]
-    const { assembler } = await collect('openai-completions', events)
+    const { assembler, diagnostics } = await collect('openai-completions', events)
     expect(assembler.finish).toEqual({ kind: 'error', failure: {
       code: 'MALFORMED_RESPONSE', message: 'OpenAI-compatible response reused a tool-call id', requestId: 'response_duplicate',
     } })
+    expect(diagnostics).toHaveBeenCalledExactlyOnceWith({
+      provider: 'fixture', model: 'm', category: 'duplicate_id', responseId: 'response_duplicate',
+    })
     expect(assembler.replayState).toBeUndefined()
+  })
+
+  it.each(['tool_calls', 'length'] as const)('does not complete either conflicting call when the provider ends with %s', async (stop) => {
+    const call = (id: string) => JSON.stringify({ choices: [{ index: 0, delta: {
+      tool_calls: [{ index: 0, id, type: 'function', function: { name: 'count', arguments: '{}' } }],
+    }, finish_reason: null }] })
+    const events = [
+      call('call-first'), call('call-second'),
+      JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: stop }] }),
+      '[DONE]',
+    ]
+    const { chunks, assembler } = await collect('openai-completions', events)
+    expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(false)
+    if (stop === 'length') {
+      expect(assembler.finish).toMatchObject({ kind: 'max-tokens' })
+    } else {
+      expect(assembler.finish).toEqual({ kind: 'error', failure: {
+        code: 'MALFORMED_RESPONSE', message: 'OpenAI-compatible response reused a tool-call id',
+      } })
+    }
   })
 
   it.each([

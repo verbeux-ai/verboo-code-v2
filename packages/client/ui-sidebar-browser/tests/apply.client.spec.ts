@@ -32,7 +32,8 @@ interface Recorded {
   component: unknown
 }
 
-async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | 'web' = 'desktop') {
+async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | 'web' = 'desktop',
+  externalLinks?: Context['externalLinks']) {
   const ctx = new Context()
   contexts.push(ctx)
   const tabs = new SidebarRightTabRegistry(ctx)
@@ -64,12 +65,25 @@ async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | '
   ctx.provide('workspaces', { list: createSnapshotStore({ phase: 'ready', items: [] }) } as never)
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
+  if (externalLinks !== undefined) ctx.provide('externalLinks', externalLinks)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return { tabs, registered, dictionaries, fiber, openTabs, registry, sidebar, target }
 }
 
 describe('ui-sidebar-browser apply', () => {
+  it.each([true, false])('uses only the configured external destination policy (available: %s)', async (available) => {
+    const open = vi.fn<Context['externalLinks']['open']>(async () => 'blocked')
+    const { registered } = await boot('macos', 'web',
+      available ? { open, begin: vi.fn(), end: vi.fn(), setPreference: vi.fn() } : undefined)
+    const injectFace = registered.find(entry => entry.name === 'sidebar.right.pane.tab')!.inject as
+      (sessionId: string, actions: Parameters<BrowserInjected['rebind']>[0]) => BrowserInjected
+    const controller = injectFace('session', createBrowserStore().create('open-external-policy').actions)
+
+    controller.openExternal('https://example.test/page')
+    expect(open.mock.calls).toEqual(available ? [['https://example.test/page']] : [])
+  })
+
   it.each([0, 1])('binds and rebinds session controllers under desktop protocol %s', async (protocolVersion) => {
     const acquire = vi.fn(async () => ({ lease: 'test-lease' as DesktopBrowserLeaseId, partition: 'test-partition' }))
     const bridge: DesktopBrowserBridge = {

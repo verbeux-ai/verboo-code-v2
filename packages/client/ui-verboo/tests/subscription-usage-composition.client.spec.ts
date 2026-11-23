@@ -11,11 +11,29 @@ import type { ClientRemote, RemoteResult } from '@deepseek-ai/dsh-api-remotes/cl
 import type { SubscriptionUsage } from '../src/client/subscription-usage-resource.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { inject } from '../src/client/index.ts'
+import * as ProductHostSettings from '../src/index.ts'
 
 const read = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 describe('subscription usage composition', () => {
+  it('loads the Host settings with distinct account and stamina polling budgets', async () => {
+    const ctx = new Context()
+    try {
+      const fiber = ctx.plugin(ProductHostSettings, {
+        refreshIntervalMs: 6000, staminaRefreshIntervalMs: 2400, staminaDebug: true,
+      })
+      await fiber.await()
+      const settings = fiber.effectiveConfig as ProductHostSettings.Config
+      expect(settings).toMatchObject({ refreshIntervalMs: 6000, staminaRefreshIntervalMs: 2400 })
+      expect(settings.staminaDebug.get()).toBe(true)
+      expect(settings.paneLayout.get()).toBe('')
+      expect(settings.minimalist.get()).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('allows the product consumer to read login and usage services through Cordis injection', async () => {
     const ctx = new Context()
     const login = { purpose: 'login' }

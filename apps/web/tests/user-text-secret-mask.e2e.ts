@@ -60,11 +60,18 @@ describe('web e2e: credential mask in user text', () => {
       return { mask: middle(value!.lastElementChild!), control: middle(control!) }
     })
     expect(Math.abs(centers.control - centers.mask)).toBeLessThanOrEqual(1)
-    const masked = { run: await run.boundingBox(), bubble: await text.boundingBox() }
+    const masked = [await run.boundingBox(), await text.boundingBox()]
     await page.getByRole('button', { name: 'Show secret', exact: true }).click()
     await expect.poll(() => text.textContent()).toBe(PROMPT)
-    // The monospace run keeps one mask character per original character, so revealing does not move the line.
-    expect({ run: await run.boundingBox(), bubble: await text.boundingBox() }).toEqual(masked)
+    // The monospace run preserves the line through reveal. Allow subpixel font rounding.
+    const revealed = [await run.boundingBox(), await text.boundingBox()]
+    for (const [index, box] of revealed.entries()) {
+      expect(box).not.toBeNull()
+      expect(masked[index]).not.toBeNull()
+      for (const dimension of ['x', 'y', 'width', 'height'] as const) {
+        expect(box![dimension]).toBeCloseTo(masked[index]![dimension], 1)
+      }
+    }
     await page.getByRole('button', { name: 'Hide secret', exact: true }).click()
     await expect.poll(() => text.textContent()).not.toContain(KEY)
     expect(tripwire.pageErrors).toEqual([])

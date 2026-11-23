@@ -496,6 +496,8 @@ describe('OAuth for a custom MCP server', () => {
     const field = screen.getByLabelText('Ou cole um token')
     const submit = screen.getByRole('button', { name: 'Usar token' })
     expect((submit as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.submit(submit.closest('form')!)
+    expect(props.setMcpToken).not.toHaveBeenCalled()
     fireEvent.change(field, { target: { value: '  abc123  ' } })
     expect((submit as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(submit)

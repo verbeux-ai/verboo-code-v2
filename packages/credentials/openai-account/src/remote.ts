@@ -31,14 +31,17 @@ interface PendingSignIn {
   readonly state: string
   /** Epoch milliseconds after which the attempt is abandoned. */
   readonly expiresAt: number
-  /** Settles when the browser reaches the callback, or when the attempt expires. */
-  readonly settled: Promise<SignInStart & { readonly code: string } | undefined>
+  /** Delivers the code to callers waiting for the browser. */
+  readonly callback: Promise<string>
   /** Resolves the attempt with the code the callback received. */
   readonly accept: (code: string) => void
+  /** Whether a callback already supplied this attempt's code. */
+  received: boolean
 }
 
 /** Path the provider redirects to; the Host's own webserver answers it. */
 const CALLBACK_PATH = '/auth/callback'
+const CALLBACK_HEADERS = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
 
 /**
  * The sign-in surface the account dialog addresses.
@@ -63,6 +66,11 @@ export class OpenAiAccountLogin extends TypertRemoteService {
       const server = ctx.get('webServer')
       if (server === undefined) return () => undefined
       return server.register({ kind: 'exact', path: CALLBACK_PATH, handler: (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') {
+          res.writeHead(405, { allow: 'GET', 'cache-control': 'no-store' })
+          res.end()
+          return
+        }
         this.answerCallback(new URL(req.url ?? '/', 'http://127.0.0.1'), res)
       } })
     }, 'OpenAI account: sign-in callback')
@@ -72,12 +80,12 @@ export class OpenAiAccountLogin extends TypertRemoteService {
   private answerCallback(url: URL, res: ServerResponse): void {
     const state = url.searchParams.get('state') ?? ''
     const code = url.searchParams.get('code')
-    const denied = url.searchParams.get('error_description') ?? url.searchParams.get('error')
     const accepted = code !== null && this.acceptCallback(state, code)
-    res.writeHead(accepted ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' })
-    res.end(accepted
-      ? '<!doctype html><meta charset="utf-8"><title>Signed in</title><body style="font-family:system-ui;padding:48px"><h2>Signed in</h2><p>You can close this tab and return to Verboo Code.</p></body>'
-      : `<!doctype html><meta charset="utf-8"><title>Sign-in failed</title><body style="font-family:system-ui;padding:48px"><h2>Sign-in failed</h2><p>${denied === null ? 'This response did not belong to a sign-in this app started.' : denied}</p></body>`)
+    res.writeHead(accepted ? 200 : 400, CALLBACK_HEADERS)
+    const title = accepted ? 'Signed in' : 'Sign-in failed'
+    const message = accepted ? 'You can close this tab and return to Verboo Code.' : 'Return to Verboo Code to try again.'
+    res.end(`<!doctype html><meta charset="utf-8"><title>${title}</title>`
+      + `<body style="font-family:system-ui;padding:48px"><h2>${title}</h2><p>${message}</p></body>`)
   }
 
   /**
@@ -110,17 +118,15 @@ export class OpenAiAccountLogin extends TypertRemoteService {
     }
     const handle = randomHandle()
     const started = this.account.begin(redirectUri, signal)
-    let accept: (code: string) => void = () => undefined
-    const settled = new Promise<SignInStart & { readonly code: string } | undefined>((resolve) => {
-      accept = (code) => { resolve({ url: started.url, handle, code }) }
-    })
+    const code = Promise.withResolvers<string>()
     this.pending.set(handle, {
       verifier: started.verifier,
       redirectUri,
       state: started.state,
       expiresAt: now + this.attemptTimeoutMs,
-      settled,
-      accept,
+      callback: code.promise,
+      accept: code.resolve,
+      received: false,
     })
     return { url: started.url, handle }
   }
@@ -136,9 +142,11 @@ export class OpenAiAccountLogin extends TypertRemoteService {
    * @returns true when an in-flight attempt accepted the code.
    */
   acceptCallback(state: string, code: string): boolean {
+    if (code === '') return false
     for (const attempt of this.pending.values()) {
-      if (attempt.expiresAt <= Date.now()) continue
+      if (attempt.received || attempt.expiresAt <= Date.now()) continue
       if (!OpenAiAccount.stateMatches(attempt.state, state)) continue
+      attempt.received = true
       attempt.accept(code)
       return true
     }
@@ -157,13 +165,26 @@ export class OpenAiAccountLogin extends TypertRemoteService {
    */
   @Remote('awaitLogin')
   async awaitLogin(handle: string, signal: AbortSignal): Promise<OpenAiAccountStatus> {
+    signal.throwIfAborted()
     const pending = this.pending.get(handle)
-    if (pending === undefined || pending.expiresAt <= Date.now())
+    const now = Date.now()
+    if (pending === undefined || pending.expiresAt <= now)
       throw new Error('[OI] account: unknown or expired sign-in attempt')
-    const delivered = await pending.settled
-    if (delivered === undefined) throw new Error('[OI] account: the sign-in attempt expired')
-    this.pending.delete(handle)
-    return this.account.complete(delivered.code, pending.verifier, pending.redirectUri, signal)
+    const interrupted = Promise.withResolvers<never>()
+    const abort = (): void => { interrupted.reject(signal.reason) }
+    const timer = setTimeout(() => {
+      this.pending.delete(handle)
+      interrupted.reject(new Error('[OI] account: the sign-in attempt expired'))
+    }, pending.expiresAt - now)
+    timer.unref()
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      const code = await Promise.race([pending.callback, interrupted.promise])
+      return this.completeLogin(handle, code, signal)
+    } finally {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+    }
   }
 
   /**
@@ -176,12 +197,14 @@ export class OpenAiAccountLogin extends TypertRemoteService {
    */
   @Remote('completeLogin')
   async completeLogin(handle: string, code: string, signal: AbortSignal): Promise<OpenAiAccountStatus> {
+    signal.throwIfAborted()
     const pending = this.pending.get(handle)
     // A handle this service did not issue cannot carry a verifier it never
     // created, so an unknown one is refused rather than retried.
     if (pending === undefined || pending.expiresAt <= Date.now())
       throw new Error('[OI] account: unknown or expired sign-in attempt')
     this.pending.delete(handle)
+    pending.accept(code)
     return this.account.complete(code, pending.verifier, pending.redirectUri, signal)
   }
 

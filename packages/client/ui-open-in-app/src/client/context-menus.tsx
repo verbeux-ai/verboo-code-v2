@@ -2,12 +2,13 @@
 import { IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
+import type { MenuAction, MenuPreparation } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionWorkspacePathApplication } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { OpenInAppController } from './controller.ts'
 import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { OpenInAppPathController } from './open-path.ts'
@@ -33,9 +34,12 @@ export function registerContextMenus(
   const open = async (path: string, action: 'open' | 'reveal', application?: string): Promise<void> => {
     report(await paths.openPath(path, action, application))
   }
-  const resolvePath = async (sessionId: SessionId, path: string, signal: AbortSignal): Promise<string | undefined> => {
+  const resolvePath = async (
+    sessionId: SessionId, path: string, signal: AbortSignal, preparation?: MenuPreparation,
+  ): Promise<string | undefined> => {
     try {
-      const result = await ctx.remote.workspaceFiles.stat(sessionId, path, signal)
+      const read = (readSignal: AbortSignal) => ctx.remote.workspaceFiles.stat(sessionId, path, readSignal)
+      const result = await (preparation?.share('workspaceFiles.stat', read) ?? read(signal))
       return result.ok ? result.value.absolutePath : undefined
     }
     catch (_error) {
@@ -77,15 +81,14 @@ export function registerContextMenus(
   }), 'open-in-app: directory context menu')
   ctx.effect(() => ctx.contextMenus.register({
     id: 'open-in-app.file', target: 'file', order: 100,
-    resolve: async (target, signal) => {
+    observe: () => [paths.desktop],
+    resolve: async (target, signal, preparation, publish) => {
       const { sessionId, path, line } = target
-      await paths.load()
-      const absolutePath = await resolvePath(sessionId, path, signal)
+      void paths.load()
+      const absolutePath = await resolvePath(sessionId, path, signal, preparation)
       const available = absolutePath !== undefined
       const desktop = paths.desktop.getSnapshot() === true && available
-      const apps = desktop ? await paths.applications(absolutePath, signal) : []
       signal.throwIfAborted()
-      const application = apps?.find(app => app.default)
       // The menu names a host, not the pane it was raised in: a floating pane is never a docked landing place.
       const openIn = (destination: 'sidebar' | 'float') => () => {
         const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
@@ -93,7 +96,7 @@ export function registerContextMenus(
           destination, ...(line === undefined ? {} : { params: { line } }),
         })
       }
-      return [
+      const actions = (application?: SessionWorkspacePathApplication): readonly MenuAction[] => [
         { id: 'sidebar', icon: { key: 'open-in-app.sidebar' }, label: t('menu.openInSidebar'), disabled: !available, run: openIn('sidebar') },
         { id: 'float', icon: { key: 'open-in-app.float' }, label: t('menu.openInFloat'), disabled: !available, run: openIn('float') },
         { id: 'reveal', icon: { key: 'open-in-app.reveal' }, label: fileManager(), disabled: !desktop,
@@ -109,6 +112,11 @@ export function registerContextMenus(
             ctx.contextMenus.notify(t('menu.copied'), true)
           } },
       ]
+      if (!desktop) return actions()
+      publish?.(actions())
+      const apps = await paths.applications(absolutePath, signal)
+      signal.throwIfAborted()
+      return actions(apps?.find(app => app.default))
     },
   }), 'open-in-app: file context menu')
   ctx.effect(() => ctx.contextMenus.register({
