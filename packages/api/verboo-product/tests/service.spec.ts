@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import type { AccountSessionId } from '@deepseek-ai/dsh-deepseek-account/types'
-import type { ConnectionId, PlanId } from '../src/types.ts'
+import type { ConnectionId, PlanId, TrialAttemptId, TrialId } from '../src/types.ts'
 import { VerbooProduct } from '../src/index.ts'
 
 class FixtureAccount extends DeepSeekAccount {
@@ -52,7 +52,7 @@ function fixture(...responses: Response[]) {
   })
   vi.stubGlobal('fetch', fetch)
   const product = new VerbooProduct(ctx, {})
-  return { product, fetch, signal: new AbortController().signal }
+  return { product, fetch, account, signal: new AbortController().signal }
 }
 
 const link = (url: string, id: string | null = null): Response => Response.json({
@@ -63,6 +63,94 @@ const plan = {
   id: '00000000-0000-4000-8000-000000000001', name: 'Pro', description: 'Pro',
   priceCents: 1000, currency: 'BRL', billingInterval: 'month',
 }
+
+describe('trial purchase recovery', () => {
+  const attempt = '00000000-0000-4000-8000-000000000002' as TrialAttemptId
+  const subscription = '00000000-0000-4000-8000-000000000003' as TrialId
+  const attemptURL = `https://code.verboo.ai/api/me/purchase-attempts/${attempt}`
+  const checkout = 'https://checkout.stripe.com/original'
+  const pending = () => Response.json({ data: { status: 'requires_action' } })
+  const conflict = () => new Response(null, { status: 409 })
+  const handoff = (attemptId = attempt) => Response.json({ data: { mode: 'stripe', attemptId, url: checkout } })
+
+  it('reads the exact persisted purchase status', async () => {
+    const f = fixture(pending())
+    await expect(f.product.trialPaymentStatus(attempt)).resolves.toEqual({
+      ok: true, data: { status: 'requires_action' },
+    })
+    expect(f.fetch).toHaveBeenCalledExactlyOnceWith(attemptURL, expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('reports an already completed attempt without opening another checkout', async () => {
+    const f = fixture(Response.json({ data: { status: 'succeeded' } }))
+    await expect(f.product.resumeTrialPayment(attempt)).resolves.toMatchObject({
+      ok: true, data: { status: 'completed', attemptId: attempt, url: null },
+    })
+    expect(f.fetch).toHaveBeenCalledExactlyOnceWith(attemptURL, expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('returns only the original authorized checkout for the attempt', async () => {
+    const f = fixture(pending(), handoff())
+    await expect(f.product.resumeTrialPayment(attempt)).resolves.toMatchObject({
+      ok: true, data: { status: 'requires_action', attemptId: attempt, url: checkout },
+    })
+    expect(f.fetch.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      [attemptURL, 'GET'], [attemptURL + '/resume', 'GET'],
+    ])
+    const wrong = fixture(pending(), handoff('00000000-0000-4000-8000-000000000004' as TrialAttemptId))
+    await expect(wrong.product.resumeTrialPayment(attempt)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
+  })
+
+  it.each([undefined, 'https://invoice.stripe.com/fixture'])('recovers a matching legacy invoice (%s)', async (invoice) => {
+    const f = fixture(pending(), conflict(), Response.json({
+      data: { state: 'requires_action', attemptId: attempt, ...(invoice === undefined ? {} : { hostedInvoiceUrl: invoice }) },
+    }))
+    await expect(f.product.resumeTrialPayment(attempt, subscription)).resolves.toMatchObject({
+      ok: true, data: {
+        status: 'requires_action', attemptId: attempt,
+        url: invoice ?? `https://code.verboo.ai/pt/settings/billing?subscription=${subscription}&action=convert`,
+      },
+    })
+    expect(f.fetch.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      [attemptURL, 'GET'],
+      [attemptURL + '/resume', 'GET'],
+      [`https://code.verboo.ai/api/me/subscriptions/${subscription}/trial-conversion?billingInterval=month`, 'GET'],
+    ])
+  })
+
+  it('does not resume a different legacy invoice or use a token trial as a subscription', async () => {
+    const f = fixture(pending(), conflict(), Response.json({ data: {
+      state: 'pix_pending', attemptId: '00000000-0000-4000-8000-000000000004',
+    } }))
+    await expect(f.product.resumeTrialPayment(attempt, subscription)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
+    const tokenTrial = fixture(pending(), conflict())
+    await expect(tokenTrial.product.resumeTrialPayment(attempt, `tokens:${subscription}` as TrialId))
+      .resolves.toMatchObject({ ok: false, code: 'request_failed' })
+    expect(tokenTrial.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops the recovery when the login changes after reading the original status', async () => {
+    const f = fixture(handoff())
+    let current = { ...session('account-a'), token: 'fixture-account-a' }
+    let switchAfterStatus = false
+    f.account.getPlatformSession.mockImplementation(async () => {
+      const captured = current
+      if (switchAfterStatus) {
+        current = { ...session('account-b'), token: 'fixture-account-b' }
+        switchAfterStatus = false
+      }
+      return captured
+    })
+    f.account.resolveToken.mockImplementation(async () => current.token)
+    f.fetch.mockImplementationOnce(async (_url, init) => {
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-account-a')
+      switchAfterStatus = true
+      return pending()
+    })
+    await expect(f.product.resumeTrialPayment(attempt)).resolves.toEqual({ ok: false, code: 'account_changed' })
+    expect(f.fetch).toHaveBeenCalledOnce()
+  })
+})
 
 describe('connection authorization handoff', () => {
   it('returns a trusted Composio link and names the created account', async () => {

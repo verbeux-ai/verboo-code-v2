@@ -131,6 +131,11 @@ const connections = z.object({
   }),
 })
 
+interface ProductRequestContext {
+  readonly correlationId?: string | undefined
+  readonly accountSessionId?: string
+}
+
 /** Every request captures its owning login before I/O and fences its response. */
 export class VerbooProduct extends TypertRemoteService {
   static inject = ['deepseekAccount']
@@ -142,7 +147,7 @@ export class VerbooProduct extends TypertRemoteService {
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
     this.trialCommerce = new TrialCommerce(
-      (path, method, body, correlationId) => this.request(path, method, body, undefined, correlationId),
+      (path, method, body, correlationId) => this.request(path, method, body, undefined, { correlationId }),
       async () => {
         const session = await this.ctx.deepseekAccount.getPlatformSession()
         if (session?.sessionId === undefined) throw new AccountRequestError('authentication_invalid')
@@ -155,9 +160,11 @@ export class VerbooProduct extends TypertRemoteService {
     method = 'GET',
     body?: unknown,
     signal?: AbortSignal,
-    correlationId?: string,
+    context?: ProductRequestContext,
   ): Promise<unknown> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
+    if (context?.accountSessionId !== undefined && session?.sessionId !== context.accountSessionId)
+      throw new AccountRequestError('request_cancelled')
     if (session?.sessionId === undefined)
       throw new AccountRequestError('authentication_invalid')
     const token = await this.ctx.deepseekAccount.resolveToken(
@@ -168,6 +175,7 @@ export class VerbooProduct extends TypertRemoteService {
     if ((await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId)
       throw new AccountRequestError('request_cancelled')
     const identity = operation()
+    const correlationId = context?.correlationId
     if (correlationId) { identity.journeyId = correlationId; identity.operationId = correlationId }
     const stage = productRequestStage(path, method)
     const record = (outcome: 'started' | 'succeeded' | 'failed', error?: AccountRequestError) => {
@@ -457,12 +465,15 @@ export class VerbooProduct extends TypertRemoteService {
   resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>> {
     return this.result(async () => {
       const attempt = z.uuid().parse(attemptId) as TrialAttemptId
+      const accountSessionId = (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+      if (accountSessionId === undefined) throw new AccountRequestError('authentication_invalid')
+      const read = (path: string) => this.request(path, 'GET', undefined, undefined, { accountSessionId })
       const original = z.object({ data: z.object({ status: z.string() }) })
-        .parse(await this.request('/api/me/purchase-attempts/' + attempt)).data
+        .parse(await read('/api/me/purchase-attempts/' + attempt)).data
       if (original.status === 'succeeded') return { status: 'completed', attemptId: attempt, url: null }
       try {
         const response = z.object({ data: z.object({ mode: z.literal('stripe'), attemptId: z.uuid(), url: z.string() }) })
-          .parse(await this.request('/api/me/purchase-attempts/' + attempt + '/resume')).data
+          .parse(await read('/api/me/purchase-attempts/' + attempt + '/resume')).data
         if (response.attemptId !== attempt) throw new AccountRequestError('contract_error')
         return { status: 'requires_action', attemptId: attempt, url: paymentURL(response.url) }
       } catch (error) {
@@ -472,7 +483,7 @@ export class VerbooProduct extends TypertRemoteService {
         const pending = z.object({ data: z.object({
           state: z.string(), attemptId: z.uuid().optional(), hostedInvoiceUrl: z.string().optional(),
         }) })
-          .parse(await this.request('/api/me/subscriptions/' + subscription + '/trial-conversion?billingInterval=month')).data
+          .parse(await read('/api/me/subscriptions/' + subscription + '/trial-conversion?billingInterval=month')).data
         if (pending.attemptId !== attempt || !['requires_action', 'pix_pending'].includes(pending.state)) throw error
         const url = pending.hostedInvoiceUrl
           ? paymentURL(pending.hostedInvoiceUrl)
