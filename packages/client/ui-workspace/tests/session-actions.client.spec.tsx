@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { WorkspaceMoveSessionError } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -593,7 +594,12 @@ describe('SessionMoveDialog', () => {
   })
 
   it('reports the running-work refusal in place, naming what would have to stop', async () => {
-    const activity = [{ kind: 'turn' as const }]
+    const activity = [
+      { kind: 'turn' as const },
+      { kind: 'subagent' as const, items: [{ id: 'agent-1', label: 'Analysis' }] },
+      { kind: 'job' as const, items: [{ id: 'job-1', label: 'Index files' }, { id: 'job-2' }] },
+      { kind: 'schedule' as const, items: [{ id: 'daily', label: 'Daily reminder' }] },
+    ]
     const refusal = Object.assign(new Error('workspace session move failed: workspace/session-active: active'), {
       name: 'WorkspaceMoveSessionError',
       rpcError: new RemoteError('workspace/session-active', 'active', { sessionId: sid('one'), activity }),
@@ -605,6 +611,9 @@ describe('SessionMoveDialog', () => {
     await waitFor(() => { expect(screen.getByRole('alert')).toBeTruthy() })
     expect(screen.getByRole('alert').textContent).toContain('This conversation is still running')
     expect(screen.getByRole('alert').textContent).toContain('The turn in progress')
+    expect(screen.getByText('1 running subagent: Analysis')).toBeTruthy()
+    expect(screen.getByText('2 background jobs: Index files, job-2')).toBeTruthy()
+    expect(screen.getByText('1 scheduled reminder: Daily reminder')).toBeTruthy()
     // The dialog stays open so the operator can choose another destination later.
     expect(settleSessionMove).not.toHaveBeenCalled()
   })
@@ -637,11 +646,30 @@ describe('SessionMoveDialog', () => {
     const moveSession = vi.fn<SessionMoveDialogInjected['moveSession']>().mockReturnValueOnce(pending.promise)
     const { settleSessionMove, ask } = moveDialog(moveSession)
     ask()
-    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    const confirm = screen.getByRole('button', { name: 'Move' })
+    fireEvent.click(confirm)
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(confirm)
+    expect(moveSession).toHaveBeenCalledOnce()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(settleSessionMove).not.toHaveBeenCalled()
     await act(async () => { pending.resolve(undefined) })
     await waitFor(() => { expect(settleSessionMove).toHaveBeenCalledOnce() })
+  })
+
+  it('reports a regular failure and closes after the move is no longer pending', async () => {
+    const refusal = new WorkspaceMoveSessionError(new RemoteError('workspace/move-invalid', 'The destination is unavailable', {
+      sessionId: sid('one'), workspaceId: 'beta' as WorkspaceId,
+    }))
+    const moveSession = vi.fn<SessionMoveDialogInjected['moveSession']>()
+      .mockRejectedValueOnce(refusal)
+    const { settleSessionMove, ask } = moveDialog(moveSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    expect((await screen.findByRole('alert')).textContent).toBe(refusal.message)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(settleSessionMove).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('does not offer the current project and preselects nothing when the Session has no owner', () => {
