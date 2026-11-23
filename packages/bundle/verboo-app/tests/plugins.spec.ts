@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { Context, FiberState } from '@deepseek-ai/cordis'
+import * as VerbooBundle from '../src/index.ts'
 
 const read = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../${name}`, import.meta.url)), 'utf8')
@@ -19,6 +21,17 @@ const inserted = ((): Set<string> => {
 })()
 
 describe('product roster', () => {
+  it('can load the declarative profile layer as a Cordis plugin', async () => {
+    const ctx = new Context()
+    try {
+      const layer = ctx.plugin(VerbooBundle)
+      await layer.await()
+      expect(layer.state).toBe(FiberState.ACTIVE)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('mounts the [OI] account and its route', () => {
     for (const pkg of ['@deepseek-ai/dsh-openai-account', '@deepseek-ai/dsh-llm-openai-account']) {
       expect(inserted).toContain(pkg)
