@@ -151,6 +151,14 @@ function resolveBackoff(config: BackoffConfig | undefined, path: string): Resolv
  * @returns an immutable policy safe to capture in provider registration state.
  */
 export function resolveRetryPolicy(
+  config: NormalRetryPolicyConfig | undefined,
+  path: string,
+): ResolvedNormalRetryPolicy
+export function resolveRetryPolicy(
+  config: RetryPolicyConfig | undefined,
+  path: string,
+): ResolvedRetryPolicy
+export function resolveRetryPolicy(
   config: RetryPolicyConfig | undefined,
   path: string,
 ): ResolvedRetryPolicy {

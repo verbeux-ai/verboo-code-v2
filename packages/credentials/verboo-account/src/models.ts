@@ -11,7 +11,7 @@ import type {
   GenerateOptions,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-deepseek-account'
+import type { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import { PiAiAdapter, resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
 import type {
   PiAiModelProfile,
@@ -136,6 +136,25 @@ export function parseModels(
   })
 }
 
+/** Keep transport credential fallback closed for the account-owned model route. */
+export function verbooModelAuth() {
+  return {
+    credentials: {
+      list: () => Promise.resolve([]),
+      read: () => Promise.resolve(undefined),
+      modify: () => Promise.reject(new LlmError(
+        'A sessão é gerenciada pelo Verboo Code.',
+        'ACCOUNT_SIGN_IN_REQUIRED',
+      )),
+      delete: () => Promise.resolve(undefined),
+    },
+    authContext: {
+      env: () => Promise.resolve(undefined),
+      fileExists: () => Promise.resolve(false),
+    },
+  }
+}
+
 /** The shared transport with discovery and each prepared request bound to one account credential. */
 class VerbooAdapter extends PiAiAdapter {
   private loaded: { sessionId: string; at: number } | undefined
@@ -151,8 +170,7 @@ class VerbooAdapter extends PiAiAdapter {
     private readonly ctx: Context,
     private readonly deployment: Deployment,
   ) {
-    const normalRetry = resolveRetryPolicy(undefined, 'verboo-account retryPolicy')
-    if (normalRetry.mode !== 'normal') throw new Error('Verboo account requires a bounded retry policy')
+    const normalRetry = resolveRetryPolicy({ mode: 'normal' }, 'verboo-account retryPolicy')
     const tokens = new WeakMap<ResolvedPiAiProviderProfile, string>()
     const state = { profiles: new Map<string, ResolvedPiAiProviderProfile>() }
     super({
@@ -174,21 +192,7 @@ class VerbooAdapter extends PiAiAdapter {
           )
         return session.token
       },
-      auth: {
-        credentials: {
-          list: () => Promise.resolve([]),
-          read: () => Promise.resolve(undefined),
-          modify: () => Promise.reject(new LlmError(
-            'A sessão é gerenciada pelo Verboo Code.',
-            'ACCOUNT_SIGN_IN_REQUIRED',
-          )),
-          delete: () => Promise.resolve(undefined),
-        },
-        authContext: {
-          env: () => Promise.resolve(undefined),
-          fileExists: () => Promise.resolve(false),
-        },
-      },
+      auth: verbooModelAuth(),
       resolveAttachments: () => ctx.get('attachments'),
       resolveImageAccess: (attachments, ref) =>
         resolveImageAttachmentAccess(attachments, () => undefined, ref),
@@ -363,7 +367,9 @@ class VerbooAdapter extends PiAiAdapter {
     const prepared = await super.prepareCall(provider, model, signal)
     return {
       ...prepared,
-      stream: options => this.observeAuthentication(() => prepared.stream(options), options),
+      stream: options => streamWithVerbooAuthentication(
+        this.ctx.deepseekAccount, this.deployment.routerBaseURL, () => prepared.stream(options), options.signal,
+      ),
     }
   }
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -372,85 +378,97 @@ class VerbooAdapter extends PiAiAdapter {
         'Entre na sua conta Verboo para continuar.',
         'ACCOUNT_SIGN_IN_REQUIRED',
       )
-    yield* this.observeAuthentication(() => super.stream(options), options)
-  }
-
-  private async *observeAuthentication(
-    stream: () => AsyncIterable<StreamChunk>,
-    options: Pick<GenerateOptions, 'signal'>,
-  ): AsyncIterable<StreamChunk> {
-    const session = await this.ctx.deepseekAccount.getPlatformSession()
-    const pending: StreamChunk[] = []
-    let outputStarted = false
-    try {
-      for await (const chunk of stream()) {
-        if (chunk.type !== 'usage' && chunk.type !== 'finish') {
-          outputStarted = true
-          for (const buffered of pending) yield buffered
-          pending.length = 0
-          yield chunk
-          continue
-        }
-        if (chunk.type === 'usage') {
-          pending.push(chunk)
-          continue
-        }
-        if (
-          chunk.reason.kind === 'error' &&
-          chunk.reason.failure.code === 'AUTH' &&
-          !outputStarted &&
-          session !== null &&
-          session.sessionId === (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
-        ) {
-          let refreshed: string | undefined
-          try {
-            refreshed = await this.ctx.deepseekAccount.refreshRejectedToken(
-              this.deployment.routerBaseURL,
-              session.token,
-              options.signal,
-            )
-          } catch (error: unknown) {
-            if (error instanceof AccountRequestError && error.code === 'request_cancelled')
-              throw new LlmError('Account token refresh was cancelled', 'ABORTED', { cause: error })
-            throw new LlmError(
-              'Could not refresh the account session. Your sign-in was kept; try the request again.',
-              'ACCOUNT_REFRESH_FAILED',
-              { cause: error },
-            )
-          }
-          if (options.signal?.aborted)
-            throw new LlmError('Account token refresh was cancelled', 'ABORTED')
-          if (refreshed !== undefined) {
-            const current = await this.ctx.deepseekAccount.getPlatformSession()
-            if (current?.sessionId === session.sessionId) {
-              yield* stream()
-              return
-            }
-          }
-          if (await this.ctx.deepseekAccount.getPlatformSession() === null)
-            throw new LlmError('Your Verboo sign-in expired. Sign in again.', 'ACCOUNT_SIGN_IN_REQUIRED')
-        }
-        for (const buffered of pending) yield buffered
-        pending.length = 0
-        yield chunk
-        return
-      }
-      for (const buffered of pending) yield buffered
-    } catch (error: unknown) {
-      for (const buffered of pending) yield buffered
-      pending.length = 0
-      if (error instanceof LlmError && error.code === 'MALFORMED_RESPONSE') {
-        throw new LlmError(
-          'O modelo retornou uma chamada de ferramenta inválida. Tente novamente.',
-          'MALFORMED_RESPONSE',
-          error.failure.requestId === undefined ? undefined : { requestId: error.failure.requestId },
-        )
-      }
-      throw error
-    }
+    yield* streamWithVerbooAuthentication(
+      this.ctx.deepseekAccount, this.deployment.routerBaseURL, () => super.stream(options), options.signal,
+    )
   }
 }
 
+
+/**
+ * Reauthorize an untouched inference stream only for the captured login.
+ * @param account - the account service that can resolve or renew its own grant.
+ * @param routerBaseURL - approved endpoint for account token resolution.
+ * @param stream - factory for an exact prepared inference request.
+ * @param signal - lifetime of that request.
+ * @returns the original stream or one authorized replay before any output.
+ */
+export async function* streamWithVerbooAuthentication(
+  account: Pick<DeepSeekAccount, 'getPlatformSession' | 'refreshRejectedToken'>,
+  routerBaseURL: string,
+  stream: () => AsyncIterable<StreamChunk>,
+  signal?: AbortSignal,
+): AsyncIterable<StreamChunk> {
+  const session = await account.getPlatformSession()
+  const pending: StreamChunk[] = []
+  let outputStarted = false
+  try {
+    for await (const chunk of stream()) {
+      if (chunk.type !== 'usage' && chunk.type !== 'finish') {
+        outputStarted = true
+        for (const buffered of pending) yield buffered
+        pending.length = 0
+        yield chunk
+        continue
+      }
+      if (chunk.type === 'usage') {
+        pending.push(chunk)
+        continue
+      }
+      if (
+        chunk.reason.kind === 'error' &&
+        chunk.reason.failure.code === 'AUTH' &&
+        !outputStarted &&
+        session?.sessionId !== undefined &&
+        session.sessionId === (await account.getPlatformSession())?.sessionId
+      ) {
+        let refreshed: string | undefined
+        try {
+          refreshed = await account.refreshRejectedToken(
+            routerBaseURL,
+            session.token,
+            signal,
+          )
+        } catch (error: unknown) {
+          if (error instanceof AccountRequestError && error.code === 'request_cancelled')
+            throw new LlmError('Account token refresh was cancelled', 'ABORTED', { cause: error })
+          throw new LlmError(
+            'Could not refresh the account session. Your sign-in was kept; try the request again.',
+            'ACCOUNT_REFRESH_FAILED',
+            { cause: error },
+          )
+        }
+        if (signal?.aborted)
+          throw new LlmError('Account token refresh was cancelled', 'ABORTED')
+        if (refreshed !== undefined) {
+          const current = await account.getPlatformSession()
+          if (current?.sessionId === session.sessionId) {
+            yield* stream()
+            return
+          }
+        }
+        if (await account.getPlatformSession() === null)
+          throw new LlmError('Your Verboo sign-in expired. Sign in again.', 'ACCOUNT_SIGN_IN_REQUIRED')
+      }
+      for (const buffered of pending) yield buffered
+      pending.length = 0
+      yield chunk
+      return
+    }
+    for (const buffered of pending) yield buffered
+  } catch (error: unknown) {
+    for (const buffered of pending) yield buffered
+    pending.length = 0
+    if (error instanceof LlmError && error.code === 'MALFORMED_RESPONSE') {
+      throw new LlmError(
+        'O modelo retornou uma chamada de ferramenta inválida. Tente novamente.',
+        'MALFORMED_RESPONSE',
+        error.failure.requestId === undefined ? undefined : { requestId: error.failure.requestId },
+      )
+    }
+    throw error
+  }
+}
 /**
  * Register the account catalog without a second model engine or ambient provider credentials.
  * @param ctx - plugin context with account and LLM services.
