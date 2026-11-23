@@ -88,6 +88,36 @@ describe('TerminalBlock prompt label', () => {
   })
 })
 
+describe('TerminalBlock command scroll', () => {
+  it('moves from the beginning to the end and back when the command overflows', () => {
+    const { container } = render(<TerminalBlock command={body(20)} copyText="command" />)
+    const header = container.querySelector<HTMLElement>('[class^="_header_"]')!
+    const copy = header.querySelector('button')!
+    Object.defineProperties(header, { scrollHeight: { value: 400 }, clientHeight: { value: 150 } })
+
+    expect(fireEvent.keyDown(copy, { key: 'End' })).toBe(false)
+    expect(header.scrollTop).toBe(400)
+    expect(fireEvent.keyDown(copy, { key: 'Home' })).toBe(false)
+    expect(header.scrollTop).toBe(0)
+  })
+
+  it('leaves native navigation available when the command fits or the key is modified', () => {
+    const { container } = render(<TerminalBlock command="echo ready" />)
+    const header = container.querySelector<HTMLElement>('[class^="_header_"]')!
+    expect(fireEvent.keyDown(header, { key: 'Home' })).toBe(true)
+
+    Object.defineProperties(header, { scrollHeight: { value: 400 }, clientHeight: { value: 150 } })
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+      expect(fireEvent.keyDown(header, { key: 'End', [modifier]: true })).toBe(true)
+    }
+    expect(fireEvent.keyDown(header, { key: 'PageDown' })).toBe(true)
+    const consumed = new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true })
+    consumed.preventDefault()
+    fireEvent(header, consumed)
+    expect(header.scrollTop).toBe(0)
+  })
+})
+
 describe('TerminalBlock states', () => {
   it.each([
     { output: undefined, running: false, exitCode: undefined },
