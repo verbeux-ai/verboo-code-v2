@@ -113,7 +113,7 @@ describe('LoginJourney', () => {
         data: { receipts: [{ eventId: crypto.randomUUID(), journeyId: crypto.randomUUID(), clientApp: '', payloadSha256: '0'.repeat(64) }] },
       }), { status: 200 })
     }))
-    collector.record(context, 'failed', new (await import('../src/http.ts')).AccountRequestError('network_error'))
+    collector.record(context, 'failed', new (await import('../src/http.ts')).AccountRequestError('authentication_invalid', 401))
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(requests.length).toBeGreaterThan(0)
   })

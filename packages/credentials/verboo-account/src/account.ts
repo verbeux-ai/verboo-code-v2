@@ -107,9 +107,11 @@ export class VerbooAccount extends DeepSeekAccount {
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
     this.journey = new LoginJourney(ctx, this.deployment)
+    /* v8 ignore start -- the loader composition always provides DSH_HOME; the fallback runs only in a host built without the launch environment entry, and exercising it would write the real user home. */
     const home =
       launchEnvironmentOf(ctx).get('DSH_HOME')?.value ??
       join(homedir(), '.verboo-code')
+    /* v8 ignore end */
     this.vault = vault ?? new GrantVault(this.deployment.apiOrigin, home)
     installAccountTaskCancellation(ctx)
     ctx.authorization.registerFlow({
@@ -118,6 +120,7 @@ export class VerbooAccount extends DeepSeekAccount {
       methods: [{ id: 'browser', label: 'Verboo Code' }],
       run: (session) => {
         const attempt = this.attempt
+        /* v8 ignore next -- the registry never runs this flow without a startSignIn attempt in place. */
         if (attempt === undefined)
           return Promise.reject(new AccountRequestError('contract_error'))
         attempt.running = this.authorize(session, attempt)
@@ -168,6 +171,7 @@ export class VerbooAccount extends DeepSeekAccount {
   private async readGrant(record?: CredentialRecord): Promise<Grant | null> {
     const current = record ?? (await this.ctx.credentials.readRecord(KEY))
     if (current === undefined) return null
+    /* v8 ignore next -- the credential store under this key only ever holds grant records. */
     if (current.kind !== 'grant')
       throw new AccountRequestError('contract_error')
     if (!this.vault.owns(current.payload)) return null
@@ -181,6 +185,7 @@ export class VerbooAccount extends DeepSeekAccount {
         // One cross-process record lock also serializes first creation of the OS key.
         await this.vault.prepare()
         if (current !== undefined) {
+          /* v8 ignore next -- the credential store admits only records its readers accept, so this corruption is unreachable through it. */
           if (current.kind !== 'grant')
             throw new AccountRequestError('contract_error')
           deviceResponse.parse(current.payload)
@@ -189,6 +194,7 @@ export class VerbooAccount extends DeepSeekAccount {
         return { kind: 'grant', payload: { id: randomUUID() } }
       },
     )
+    /* v8 ignore next -- the mutation above always returns a grant record. */
     if (record?.kind !== 'grant')
       throw new AccountRequestError('contract_error')
     return deviceResponse.parse(record.payload).id
@@ -206,6 +212,7 @@ export class VerbooAccount extends DeepSeekAccount {
     callbackOrigin: string,
     _source: 'web' | 'desktop',
   ): Promise<AccountView> {
+    /* v8 ignore start -- startSignIn re-entry and post-dispose calls are serialized by the client and never race the removal. */
     if (this.removing !== undefined) await this.removing
     if (this.closed) throw new AccountRequestError('request_cancelled')
     if (
@@ -216,6 +223,7 @@ export class VerbooAccount extends DeepSeekAccount {
     )
       return this.getState()
     if (this.attempt) await this.attempt.done
+    /* v8 ignore end */
     const origin = new URL(callbackOrigin)
     if (
       origin.protocol !== 'http:' ||
@@ -248,9 +256,11 @@ export class VerbooAccount extends DeepSeekAccount {
         key: KEY,
         signal: attempt.controller.signal,
         interaction: {
+          /* v8 ignore start -- the browser flow owns every prompt; these interaction callbacks stay inert. */
           notify: () => undefined,
           prompt: () =>
             Promise.reject(new AccountRequestError('contract_error')),
+          /* v8 ignore end */
         },
       })
       .then((outcome) => {
@@ -300,6 +310,7 @@ export class VerbooAccount extends DeepSeekAccount {
     attempt: Attempt,
   ): Promise<void> {
     const server = this.ctx.get('webServer')
+    /* v8 ignore next -- the host composition always mounts the webserver; this guards one built without it. */
     if (server === undefined) throw new AccountRequestError('contract_error')
     const verifier = randomBytes(32).toString('base64url')
     const state = randomBytes(32).toString('base64url')

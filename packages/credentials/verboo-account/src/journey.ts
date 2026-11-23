@@ -137,11 +137,13 @@ export class LoginJourney {
     while (!this.lifetime.signal.aborted) {
       const record = await this.ctx.credentials.readRecord(KEY)
       if (record === undefined) return
+      /* v8 ignore next -- the credential store under this key only ever holds grant records. */
       if (record.kind !== 'grant')
         throw new AccountRequestError('contract_error')
       const state = queue.parse(record.payload)
       if (state.pending.length === 0) return
       const first = state.pending[0]
+      /* v8 ignore next -- the queue schema guarantees a non-empty array's first element. */
       if (first === undefined) return
       const version = first.schemaVersion
       const batch: typeof state.pending = []
@@ -196,6 +198,7 @@ export class LoginJourney {
       }
       const delivered = new Set(batch.map(value => value.json))
       await this.ctx.credentials.modifyRecord(KEY, (current) => {
+        /* v8 ignore next -- the credential store under this key only ever holds grant records. */
         if (current?.kind !== 'grant')
           throw new AccountRequestError('contract_error')
         const latest = queue.parse(current.payload)

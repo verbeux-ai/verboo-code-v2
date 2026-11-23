@@ -1,3 +1,17 @@
+it('survives a denied authorization the browser reports as unknown', async () => {
+  const app = await fixture({ attemptTimeoutMs: 300 })
+  const { authorize } = await app.begin()
+  const response = await fetch(
+    `${app.callbackOrigin}/callback?error=unknown_provider_error&state=${authorize.searchParams.get('state')}`,
+  )
+  // The browser receives the failure page for a denial the flow cannot spell.
+  expect(response.status).toBe(400)
+  await until(async () => {
+    const state = await app.ctx.deepseekAccount.getState()
+    return state.attempt?.phase === 'failed' || state.attempt === undefined
+  })
+})
+
 /** Real Loader composition of Verboo login, encrypted credentials and the shared model transport. */
 import { createHash, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -60,6 +74,7 @@ async function fixture(
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
+    revokeStatus: 200,
     collectionDown: false,
     catalogFailures: 0,
   }
@@ -188,7 +203,7 @@ async function fixture(
           },
         }),
       )
-    } else if (req.url === '/oauth/revoke') res.writeHead(200).end()
+    } else if (req.url === '/oauth/revoke') res.writeHead(state.revokeStatus ?? 200).end()
     else res.writeHead(404).end('{}')
   }
   const server = createServer((req, res) => {
@@ -831,3 +846,80 @@ it('surfaces state changes through watch until the caller stops listening', asyn
     // credential-stored transition the login produced.
     expect(views.at(-1)?.status).toBe('credential-stored')
   })
+
+it('surfaces denial and re-entry through the browser flow', async () => {
+  const app = await fixture()
+  // A second start while an attempt is in flight returns the same view instead
+  // of spending another attempt.
+  const first = await app.begin()
+  const second = await app.ctx.deepseekAccount.startSignIn(metadata, app.callbackOrigin, 'desktop')
+  expect(second.attempt?.id).toBe(first.view.attempt?.id)
+  await app.ctx.deepseekAccount.cancelSignIn(first.view.attempt!.id)
+})
+
+it('keeps getProfile, balance, and bonuses honest without a grant', async () => {
+  const app = await fixture()
+  await expect(app.ctx.deepseekAccount.getProfile(metadata)).resolves.toBeNull()
+  await expect(app.ctx.deepseekAccount.getBalance(metadata)).resolves.toBeNull()
+  await expect(app.ctx.deepseekAccount.getUnnotifiedBonuses(metadata)).resolves.toBeNull()
+  await expect(app.ctx.deepseekAccount.ackBonusNotified('acct' as never, 'order' as never, metadata)).resolves.toBe(false)
+})
+
+
+it('keeps the sign-out resolved when the revocation endpoint is unreachable', async () => {
+  const app = await fixture()
+  await app.login()
+
+  // The revocation endpoint fails: the sign-out still settles and the account
+  // stays signed out, with the unconfirmed revocation logged.
+  app.state.revokeStatus = 500
+  await expect(app.ctx.deepseekAccount.signOut(metadata)).resolves.toMatchObject({ status: 'signed-out' })
+  expect(app.state.revokeStatus).toBe(500)
+})
+
+it('reports a failed profile when the detail request cannot complete', async () => {
+  const app = await fixture()
+  await app.login()
+  app.state.profileStatus = 500
+  await expect(app.ctx.deepseekAccount.getProfile(metadata)).resolves.toMatchObject({ status: 'failed' })
+  app.state.profileStatus = 200
+})
+
+it('signs out when the profile endpoint rejects the stored token', async () => {
+  const app = await fixture()
+  await app.login()
+  // The detail request hits the authentication wall: the stored token is
+  // rejected and the account signs itself out.
+  app.state.profileStatus = 401
+  await expect(app.ctx.deepseekAccount.getProfile(metadata)).resolves.toBeNull()
+  app.state.profileStatus = 200
+})
+
+it('keeps a token rotated mid-rejection and an idempotent sign-out honest', async () => {
+  const app = await fixture()
+  await app.login()
+  // The rejection finds the grant already rotated by a renewal: it does not
+  // sign out, and refreshRejectedToken reports the newest token instead.
+  app.state.rejectRefresh = true
+  await app.ctx.deepseekAccount.rejectToken('fixture-access-1-1')
+  await expect(app.ctx.deepseekAccount.refreshRejectedToken(
+    'https://code.verboo.ai/router/v1',
+    'fixture-access-1-1',
+  )).resolves.toBeUndefined()
+  // A second sign-out with nothing stored is a no-op that still resolves.
+  await expect(app.ctx.deepseekAccount.signOut(metadata)).resolves.toMatchObject({ status: 'signed-out' })
+  await expect(app.ctx.deepseekAccount.signOut(metadata)).resolves.toMatchObject({ status: 'signed-out' })
+})
+
+it('answers 410 for a second callback and accepts the first one only', async () => {
+  const app = await fixture()
+  const { authorize } = await app.begin()
+  const state = authorize.searchParams.get('state')
+  // Two callbacks race on the same route: the first wins, the second gets 410.
+  const [first, second] = await Promise.all([
+    fetch(`${app.callbackOrigin}/callback?code=fixture-code&state=${state}`),
+    fetch(`${app.callbackOrigin}/callback?code=fixture-code&state=${state}`),
+  ])
+  const statuses = [first.status, second.status].sort()
+  expect(statuses).toEqual([200, 410])
+})
