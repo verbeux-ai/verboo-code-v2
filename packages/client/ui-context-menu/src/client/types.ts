@@ -100,10 +100,11 @@ export interface MenuContribution<K extends keyof ContextMenuTargetMap> {
    * @param target - clicked object.
    * @param signal - aborted on dismissal, plugin unload, or a newer observed preparation.
    * @param preparation - shared reads for the captured target.
+   * @param publish - show usable actions while optional metadata is still loading.
    * @returns available actions.
    */
   resolve(
-    target: ContextMenuTargetMap[K], signal: AbortSignal, preparation?: MenuPreparation,
+    target: ContextMenuTargetMap[K], signal: AbortSignal, preparation?: MenuPreparation, publish?: (actions: readonly MenuAction[]) => void,
   ): readonly MenuAction[] | Promise<readonly MenuAction[]>
 }
 /** Independent menu occurrence used by custom renderers and embedded menus. */

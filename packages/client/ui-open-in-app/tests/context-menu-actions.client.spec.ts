@@ -118,6 +118,30 @@ it('uses one metadata read for the file preview and original-byte actions in eac
   second.dispose()
 })
 
+it('keeps file previews and copy available when native applications miss the menu deadline', async () => {
+  const h = await boot(25)
+  await h.paths.load()
+  const lookup = Promise.withResolvers<Awaited<ReturnType<typeof h.remote.session.workspacePathApplications>>>()
+  h.remote.session.workspacePathApplications.mockReturnValueOnce(lookup.promise)
+  const target = { kind: 'file', value: { sessionId, path: 'file.svg', line: 24 } } as const
+  const menu = h.registry.resolve(target)
+  try {
+    await menu.ready
+    expect(h.remote.session.workspacePathApplications).toHaveBeenCalledOnce()
+    expect(menu.source.getSnapshot()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'menu.openInSidebar', disabled: false }),
+      expect.objectContaining({ label: 'menu.openInFloat', disabled: false }),
+      expect.objectContaining({ label: 'menu.copyPath' }),
+      expect.objectContaining({ label: 'menu.defaultApp', disabled: true }),
+      expect.objectContaining({ label: 'menu.download', disabled: false }),
+    ]))
+    expect(h.failure).not.toHaveBeenCalled()
+  } finally {
+    menu.dispose()
+    lookup.resolve({ ok: true, value: [] })
+  }
+})
+
 it('routes file actions through an explicit host, the line, native association and original bytes', async () => {
   const h = await boot()
   // A menu raised inside a floating panel names that panel; the open names a host instead, never a pane.

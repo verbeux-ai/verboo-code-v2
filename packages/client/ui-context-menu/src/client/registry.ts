@@ -11,6 +11,7 @@ interface Provider {
   observe(target: ContextMenuTarget): readonly ObservableSnapshot<unknown>[]
   resolve(
     target: ContextMenuTarget, signal: AbortSignal, preparation: MenuPreparation,
+    publish: (actions: readonly MenuAction[]) => void,
   ): readonly MenuAction[] | Promise<readonly MenuAction[]>
 }
 
@@ -33,7 +34,8 @@ export class MenuRegistry {
     const provider: Provider = {
       id: input.id, kind: input.target, order: input.order, lifetime: new AbortController(),
       observe: target => input.observe?.(target.value as ContextMenuTargetMap[K]) ?? [],
-      resolve: (target, signal, preparation) => input.resolve(target.value as ContextMenuTargetMap[K], signal, preparation),
+      resolve: (target, signal, preparation, publish) =>
+        input.resolve(target.value as ContextMenuTargetMap[K], signal, preparation, publish),
     }
     this.providers.set(key, provider)
     return () => {
@@ -116,13 +118,20 @@ export class MenuRegistry {
           resolved.set(provider, views)
           refresh()
         }
+        let published = false
+        const publish = (actions: readonly MenuAction[]): void => {
+          if (signal.aborted) return
+          accept(actions)
+          published = true
+        }
         preparing = undefined
         try {
-          const result = provider.resolve(target, signal, sharedPreparation)
-          if (result instanceof Promise) clear()
+          const result = provider.resolve(target, signal, sharedPreparation, publish)
+          if (result instanceof Promise && !published) clear()
           preparing = result instanceof Promise ? new Promise<void>((settle) => {
             const timer = this.timeoutMs === undefined ? undefined : setTimeout(() => {
-              deadline.abort(); this.failed()
+              deadline.abort()
+              if (!published) this.failed()
             }, this.timeoutMs)
             const finish = (): void => { clearTimeout(timer); signal.removeEventListener('abort', finish); settle() }
             signal.addEventListener('abort', finish, { once: true })
