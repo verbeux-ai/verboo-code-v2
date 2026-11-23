@@ -3,11 +3,17 @@
  * guarantees that keep a token out of every observable surface.
  */
 import { createHash } from 'node:crypto'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import WebServer from '@deepseek-ai/dsh-host-webserver'
+import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenAiAccount, claimsOf, pkcePair } from '../src/account.ts'
 import { AccountRequestError } from '../src/http.ts'
 import { GrantVault } from '../src/vault.ts'
+import * as AccountPlugin from '../src/index.ts'
 
 /** Build one unsigned JWT whose payload carries the given claims. */
 function jwt(payload: Record<string, unknown>): string {
@@ -67,6 +73,26 @@ async function harness(handler: (url: string, init: RequestInit) => Response): P
   await ctx.plugin({ apply: () => undefined })
   return service
 }
+
+it('mounts the default account and its login surface for an empty installation', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-openai-empty-'))
+  const ctx = new Context()
+  try {
+    ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([
+      { source: 'process', values: { DSH_HOME: home } },
+    ]))
+    ctx.provide('credentials', {} as never)
+    await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+    await ctx.plugin({ name: AccountPlugin.name, inject: AccountPlugin.inject, apply: AccountPlugin.apply })
+    const login = ctx.get('openaiAccountLogin') as AccountPlugin.OpenAiAccountLogin
+    expect(login).toBeInstanceOf(AccountPlugin.OpenAiAccountLogin)
+    expect(await login.status()).toEqual({ signedIn: false })
+    expect(await ctx.openaiAccount.status()).toEqual({ signedIn: false })
+  } finally {
+    await ctx.fiber.dispose()
+    await rm(home, { recursive: true, force: true })
+  }
+})
 
 describe('ID token claims', () => {
   it('reads the plan facts the login already carries, without a second request', () => {
