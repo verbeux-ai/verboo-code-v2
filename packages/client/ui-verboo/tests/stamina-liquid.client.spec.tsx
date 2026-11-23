@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PlanId, StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -8,6 +8,8 @@ import type { ProductSnapshot } from '../src/client/model.ts'
 import type { StaminaModelState } from '../src/client/stamina-selection.ts'
 import { StaminaButtonFill, StaminaButtonReading, StaminaLiquid } from '../src/client/StaminaLiquid.tsx'
 import { StaminaDock, StaminaPanel } from '../src/client/Stamina.tsx'
+import { StaminaDebug, StaminaDebugToggle, type StaminaDebugProps } from '../src/client/StaminaDebug.tsx'
+import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 afterEach(cleanup)
 const reading: StaminaStatus = {
@@ -31,6 +33,72 @@ const account: ProductSnapshot = {
   browserBlocked: false, navigationFailed: false, authorizationIds: [], mcpServers: null,
   loadingMcp: false, mcpFailed: false, mcpProbe: null, probingMcp: false, mcpError: null,
 }
+
+it('requests account diagnostics only while enabled and preserves the selected stale reading', () => {
+  let enabled = false
+  const useResource = vi.fn().mockReturnValue({
+    status: 'failed', value: [reading],
+    failure: new RemoteError('verboo/stamina-unavailable', 'Fixture unavailable', { reason: 'offline' }),
+  })
+  const props: Parameters<typeof StaminaDebug>[0] = {
+    useProduct: select => select(account),
+    useStaminaModel: select => select({ current: { provider: 'deepseek-account', model: 'unlimited/model' } }),
+    usePreferences: select => select({ locale: 'en', theme: 'system', languages: [] }),
+    useStaminaDebug: select => select({
+      status: 'ready', value: { staminaDebug: enabled }, writable: true, base: undefined, user: undefined, revision: 1,
+    }),
+    useResource, t: key => key, refreshStamina: vi.fn(), setStaminaDebug: vi.fn(),
+  }
+  const view = render(<StaminaDebug {...props} />)
+  expect(useResource).toHaveBeenLastCalledWith('')
+  expect(screen.queryByRole('status')).toBeNull()
+  enabled = true
+  view.rerender(<StaminaDebug {...props} />)
+  expect(useResource).toHaveBeenLastCalledWith('dsh-resource://verboo-stamina/revision-a/account-a')
+  expect(screen.getByRole('status').textContent).toContain('staminaDebugValue')
+  expect(screen.getByRole('status').textContent).toContain('staminaStale')
+  fireEvent.click(screen.getByRole('button', { name: 'refresh' }))
+  expect(props.refreshStamina).toHaveBeenCalledOnce()
+  useResource.mockReturnValue({ status: 'live', value: [reading] })
+  view.rerender(<StaminaDebug {...props} />)
+  expect(screen.getByRole('status').textContent).not.toContain('staminaStale')
+})
+
+it('keeps the last accepted diagnostics setting after a refused update', async () => {
+  const setting: ConfigFormSnapshot<{ staminaDebug: boolean }> = {
+    status: 'loading', value: undefined, writable: false, base: undefined, user: undefined, revision: undefined,
+  }
+  const refused = Promise.withResolvers<boolean>()
+  const accepted = Promise.withResolvers<boolean>()
+  const setStaminaDebug = vi.fn<(value: boolean) => Promise<boolean>>()
+    .mockReturnValueOnce(refused.promise).mockReturnValueOnce(accepted.promise)
+  const props: StaminaDebugProps = { useStaminaDebug: select => select(setting), setStaminaDebug,
+    t: key => key, refreshStamina: vi.fn(),
+  }
+  const view = render(<StaminaDebugToggle {...props} />)
+  const toggle = screen.getByRole('checkbox', { name: 'staminaDebugTitle' })
+  if (!(toggle instanceof HTMLInputElement)) throw new Error('Expected a native checkbox')
+  expect(toggle.disabled).toBe(true)
+  setting.status = 'ready'
+  setting.value = { staminaDebug: false }
+  view.rerender(<StaminaDebugToggle {...props} />)
+  expect(toggle.disabled).toBe(true)
+  setting.writable = true
+  view.rerender(<StaminaDebugToggle {...props} />)
+  fireEvent.click(toggle)
+  expect(setStaminaDebug).toHaveBeenNthCalledWith(1, true)
+  expect(toggle.disabled).toBe(true)
+  await act(() => refused.resolve(false))
+  expect(screen.getByRole('alert').textContent).toBe('staminaDebugSaveFailed')
+  expect(toggle.checked).toBe(false)
+  fireEvent.click(toggle)
+  expect(setStaminaDebug).toHaveBeenNthCalledWith(2, true)
+  expect(screen.queryByRole('alert')).toBeNull()
+  setting.value = { staminaDebug: true }
+  await act(() => accepted.resolve(true))
+  expect(toggle.checked).toBe(true)
+  expect(toggle.disabled).toBe(false)
+})
 
 describe('liquid stamina inside the primary action', () => {
   it('uses the current account resource and hides its reading for an unrelated model', () => {

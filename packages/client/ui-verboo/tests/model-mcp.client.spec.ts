@@ -151,6 +151,107 @@ describe('MCP server reads', () => {
   })
 })
 
+describe('MCP authorization', () => {
+  it('opens a new authorization once and refreshes definitions after each confirmed grant change', async () => {
+    const confirmation = server({ auth: 'oauth', oauthSignedIn: true })
+    const signInMcpServer = vi.fn<ProductApi['signInMcpServer']>()
+      .mockResolvedValueOnce({ ok: true, data: 'https://mcp.example.com/authorize' })
+      .mockResolvedValueOnce({ ok: true, data: '' })
+    const { model, api } = fixture({
+      signInMcpServer,
+      setMcpToken: vi.fn(async () => ({ ok: true as const, data: confirmation })),
+      signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: server({ auth: 'oauth' }) })),
+    })
+    expect(await model.signInMcpServer('docs')).toBe(true)
+    expect(await model.signInMcpServer('docs')).toBe(true)
+    expect(api.open).toHaveBeenCalledExactlyOnceWith('https://mcp.example.com/authorize')
+    expect(await model.setMcpToken('docs', 'fixture-token')).toBe(true)
+    expect(api.setMcpToken).toHaveBeenCalledExactlyOnceWith('docs', 'fixture-token')
+    expect(await model.signOutMcpServer('docs')).toBe(true)
+    expect(api.signOutMcpServer).toHaveBeenCalledExactlyOnceWith('docs')
+    expect(api.mcpServers).toHaveBeenCalledTimes(4)
+    expect(model.state.getSnapshot().busy).toBeNull()
+  })
+
+  it('reports both a typed refusal and a transport failure without leaking the exception', async () => {
+    const signInMcpServer = vi.fn<ProductApi['signInMcpServer']>()
+      .mockResolvedValueOnce({ ok: false, code: 'invalid_input', message: 'Authorization is disabled' })
+      .mockRejectedValueOnce(new Error('private transport detail'))
+    const { model, api } = fixture({ signInMcpServer })
+    await expect(model.signInMcpServer('docs')).resolves.toBe(false)
+    expect(model.state.getSnapshot()).toMatchObject({ actionFailed: 'mcp-signin', mcpError: 'Authorization is disabled' })
+    await expect(model.signInMcpServer('docs')).resolves.toBe(false)
+    expect(model.state.getSnapshot()).toMatchObject({ actionFailed: 'mcp-signin', mcpError: null, busy: null })
+    expect(api.open).not.toHaveBeenCalled()
+  })
+
+  it('reports when opening the authorization page fails', async () => {
+    const { model } = fixture({
+      signInMcpServer: vi.fn(async () => ({ ok: true as const, data: 'https://mcp.example.com/authorize' })),
+      open: vi.fn(async () => { throw new Error('private browser failure') }),
+    })
+    await expect(model.signInMcpServer('docs')).resolves.toBe(false)
+    expect(model.state.getSnapshot()).toMatchObject({ actionFailed: 'mcp-signin', busy: null })
+  })
+
+  it.each(['grant', 'browser'] as const)('ignores a stale %s failure after switching accounts', async (phase) => {
+    const entered = Promise.withResolvers<undefined>()
+    const response = Promise.withResolvers<never>()
+    const fail = () => {
+      entered.resolve(undefined)
+      return response.promise
+    }
+    const authorization = { ok: true, data: 'https://mcp.example.com/authorize' } as const
+    const { model } = fixture({
+      signInMcpServer: phase === 'grant' ? vi.fn(fail) : vi.fn(async () => authorization),
+      open: phase === 'browser' ? vi.fn(fail) : vi.fn(async () => {}),
+    })
+    model.adopt(view('a'))
+    const old = model.signInMcpServer('docs')
+    await entered.promise
+    model.adopt(view('b'))
+    response.reject(new Error('private diagnostic from the previous account'))
+    await expect(old).resolves.toBe(false)
+    expect(model.state.getSnapshot()).toMatchObject({ actionFailed: null, mcpError: null, busy: null })
+  })
+
+  it.each(['grant', 'refresh'] as const)('keeps the new account’s write active while an old %s settles', async (phase) => {
+    const grant = Promise.withResolvers<McpResult<string>>()
+    const refreshing = Promise.withResolvers<undefined>()
+    const list = Promise.withResolvers<McpResult<CustomMcpServerView[]>>()
+    const current = Promise.withResolvers<McpResult<CustomMcpServerView>>()
+    const mcpServers = vi.fn<ProductApi['mcpServers']>()
+      .mockImplementationOnce(() => {
+        refreshing.resolve(undefined)
+        return list.promise
+      })
+      .mockResolvedValue({ ok: true, data: [server()] })
+    const { model, api } = fixture({
+      mcpServers, signInMcpServer: vi.fn(() => grant.promise), setMcpToken: vi.fn(() => current.promise),
+    })
+    const authorization = { ok: true, data: 'https://mcp.example.com/authorize' } as const
+    model.adopt(view('a'))
+    const oldWrite = model.signInMcpServer('docs')
+    expect(await model.signOutMcpServer('docs')).toBe(false)
+    if (phase === 'refresh') {
+      grant.resolve(authorization)
+      await refreshing.promise
+    }
+    model.adopt(view('b'))
+    const newWrite = model.setMcpToken('docs', 'current-fixture-token')
+    if (phase === 'grant') grant.resolve(authorization)
+    else list.resolve({ ok: true, data: [server({ name: 'stale' })] })
+    expect(await oldWrite).toBe(false)
+    expect(api.open).not.toHaveBeenCalled()
+    expect(model.state.getSnapshot().busy).toBe('mcp:docs')
+    expect(model.state.getSnapshot().mcpServers).toBeNull()
+    list.resolve({ ok: true, data: [server()] })
+    current.resolve({ ok: true, data: server({ oauthSignedIn: true }) })
+    expect(await newWrite).toBe(true)
+    expect(model.state.getSnapshot().busy).toBeNull()
+  })
+})
+
 describe('MCP server writes', () => {
   it('saves a definition and reconciles the list', async () => {
     const { api, model } = fixture()

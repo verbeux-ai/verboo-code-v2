@@ -191,6 +191,29 @@ it('omits a provider that misses its deadline and ignores its late result', asyn
   } finally { registry.dispose(); vi.useRealTimers() }
 })
 
+it('keeps published actions after optional preparation expires and rejects late replacements', async () => {
+  vi.useFakeTimers()
+  const failed = vi.fn(), registry = new MenuRegistry(failed, 50)
+  const waiting = deferred<readonly MenuAction[]>()
+  let publishLate: (() => void) | undefined
+  registry.register({ id: 'file', target: 'extension', order: 0, resolve: (_target, _signal, _preparation, publish) => {
+    publish?.([{ id: 'preview', label: 'Preview' }])
+    publishLate = () => { publish?.([{ id: 'late', label: 'Late' }]) }
+    return waiting.promise
+  } })
+  const menu = registry.resolve(target)
+  try {
+    expect(menu.source.getSnapshot().map(item => item.label)).toEqual(['Preview'])
+    await vi.advanceTimersByTimeAsync(50)
+    await menu.ready
+    publishLate?.()
+    waiting.resolve([{ id: 'native', label: 'Native' }])
+    await waiting.promise
+    expect(menu.source.getSnapshot().map(item => item.label)).toEqual(['Preview'])
+    expect(failed).not.toHaveBeenCalled()
+  } finally { registry.dispose(); vi.useRealTimers() }
+})
+
 it('replaces observed actions and callbacks, cancels older preparation, and releases every subscription', async () => {
   const input = createSnapshotStore(0)
   const original = input.subscribe.bind(input)

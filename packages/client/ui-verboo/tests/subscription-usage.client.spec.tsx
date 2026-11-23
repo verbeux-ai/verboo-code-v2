@@ -3,9 +3,16 @@
  * The composer's external-subscription control: it stays absent until the
  * reading matters, and it never presents a number the provider did not state.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
-import { subscriptionUsageState, subscriptionUsageVisible } from '../src/client/subscription-usage-resource.ts'
+import { Context } from '@deepseek-ai/cordis'
+import { ResourceRegistry } from '@deepseek-ai/dsh-client-resources/src/client/resources.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  createSubscriptionUsageResource, subscriptionUsageAddress, subscriptionUsageState, subscriptionUsageVisible,
+} from '../src/client/subscription-usage-resource.ts'
 import type { SubscriptionUsage as Reading } from '../src/client/subscription-usage-resource.ts'
 
 afterEach(cleanup)
@@ -25,6 +32,86 @@ function reading(overrides: Partial<Reading> = {}): Reading {
     ...overrides,
   }
 }
+
+function usageOwner(id: string, revision: string): Parameters<typeof subscriptionUsageAddress>[0] {
+  return {
+    view: {
+      status: 'credential-stored', credentialRevision: revision as AccountCredentialRevision,
+      attempt: null, links: { usageUrl: '', topUpUrl: '' },
+    },
+    profile: { id: id as AccountUserId, name: null, contact: null },
+  }
+}
+
+it('binds a polling address to the accepted revision and profile', () => {
+  const owner = usageOwner('account / a', 'rev / 1')
+  expect(subscriptionUsageAddress(owner)).toBe('dsh-resource://verboo-subscription-usage/rev%20%2F%201/account%20%2F%20a')
+  expect(subscriptionUsageAddress({ ...owner, view: null })).toBe('')
+  expect(subscriptionUsageAddress({
+    ...owner, view: { status: 'credential-stored', attempt: null, links: owner.view!.links },
+  })).toBe('')
+  expect(subscriptionUsageAddress({ ...owner, profile: null })).toBe('')
+  expect(subscriptionUsageAddress({ ...owner, profile: { ...owner.profile!, id: null } })).toBe('')
+})
+
+it('recovers subscription readings after offline and transport failures without leaking them to a new account', async () => {
+  vi.useFakeTimers()
+  let online = false
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  vi.spyOn(navigator, 'onLine', 'get').mockImplementation(() => online)
+  const ctx = new Context()
+  const registry = new ResourceRegistry(ctx)
+  const account = createSnapshotStore(usageOwner('account-a', '1'))
+  const modelReading = reading({ usedPercent: 80 })
+  const read = vi.fn<Parameters<typeof createSubscriptionUsageResource>[0]>()
+    .mockResolvedValueOnce({ ok: true, value: undefined })
+    .mockResolvedValue({ ok: true, value: modelReading })
+  const usage = createSubscriptionUsageResource(read, account, 2000)
+  const unregister = registry.register(usage.provider)
+  const source = registry.source(subscriptionUsageAddress(account.getSnapshot()))
+  const releases = [source.subscribe(() => {})]
+  try {
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read).not.toHaveBeenCalled()
+    expect(source.getSnapshot()).toMatchObject({ status: 'failed', failure: { details: { reason: 'offline' } } })
+    online = true
+    window.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(source.getSnapshot()).toMatchObject({ status: 'failed', failure: { details: { reason: 'unreported' } } })
+    usage.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(source.getSnapshot()).toMatchObject({ status: 'live', value: modelReading })
+
+    const failure = new RemoteError('verboo/subscription-usage-unavailable', 'Fixture refusal', { reason: 'contract_error' })
+    read.mockResolvedValueOnce({ ok: false, error: failure })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(source.getSnapshot()).toEqual({ status: 'failed', value: modelReading, failure })
+    read.mockRejectedValueOnce(new Error('private transport detail'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(source.getSnapshot()).toMatchObject({
+      status: 'failed', value: modelReading,
+      failure: { message: 'Subscription usage refresh is unavailable.', details: { reason: 'contract_error' } },
+    })
+
+    read.mockResolvedValueOnce({ ok: true, value: reading({ usedPercent: 20 }) })
+    account.set(usageOwner('account-b', '2'))
+    const next = registry.source(subscriptionUsageAddress(account.getSnapshot()))
+    expect(next.getSnapshot()).toMatchObject({ value: undefined })
+    releases.push(next.subscribe(() => {}))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(next.getSnapshot()).toMatchObject({ status: 'live', value: { usedPercent: 20 } })
+    expect(source.getSnapshot()).toMatchObject({ status: 'failed', value: modelReading })
+    const empty = usage.provider.open('', { signal: new AbortController().signal })[Symbol.asyncIterator]()
+    expect(await empty.next()).toMatchObject({ done: true })
+  } finally {
+    for (const release of releases) release()
+    unregister()
+    await vi.advanceTimersByTimeAsync(0)
+    await ctx.fiber.dispose()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  }
+})
 
 describe('subscription usage classification', () => {
   it('reports unavailable when no reading was obtained, never zero percent', () => {
