@@ -139,7 +139,7 @@ export function parseModels(
 /** The shared transport with discovery and each prepared request bound to one account credential. */
 class VerbooAdapter extends PiAiAdapter {
   private loaded: { sessionId: string; at: number } | undefined
-  private pending: { sessionId: string; work: Promise<boolean> } | undefined
+  private pending: { sessionId: string; generation: AbortSignal; work: Promise<boolean> } | undefined
   private readonly lifetime = new AbortController()
   private generation = new AbortController()
 
@@ -262,22 +262,27 @@ class VerbooAdapter extends PiAiAdapter {
       this.replace([])
       return false
     }
-    const sessionId = (await this.ctx.deepseekAccount.getPlatformSession())
-      ?.sessionId
-    if (sessionId === undefined) return false
+    const generation = this.generation.signal
+    const session = await this.ctx.deepseekAccount.getPlatformSession()
+    if (generation.aborted || session?.sessionId === undefined || session.token !== token) return false
+    const sessionId = session.sessionId
     if (
       this.loaded?.sessionId === sessionId &&
       Date.now() - this.loaded.at < this.deployment.catalogMaxAgeMs
     )
       return true
-    if (this.pending?.sessionId === sessionId) return this.pending.work
+    if (this.pending?.sessionId === sessionId && this.pending.generation === generation) return this.pending.work
     if (this.loaded?.sessionId !== sessionId) {
       this.loaded = undefined
       this.replace([])
     }
     const context = operation()
+    const catalogSignal = AbortSignal.any([
+      this.lifetime.signal, generation, ...(signal === undefined ? [] : [signal]),
+    ])
     const pending = {
       sessionId,
+      generation,
       work: Promise.resolve()
         .then(async () => {
           observe(context, 'catalog', 'started')
@@ -286,19 +291,13 @@ class VerbooAdapter extends PiAiAdapter {
               `${this.deployment.routerBaseURL}/models`,
               {
                 headers: { authorization: `Bearer ${token}` },
-                signal: AbortSignal.any([
-                  this.lifetime.signal,
-                  this.generation.signal,
-                  ...(signal ? [signal] : []),
-                ]),
+                signal: catalogSignal,
               },
               context,
             )
             const models = parseModels(response, this.deployment)
-            if (
-              (await this.ctx.deepseekAccount.getPlatformSession())
-                ?.sessionId !== sessionId
-            ) {
+            const current = await this.ctx.deepseekAccount.getPlatformSession()
+            if (catalogSignal.aborted || current?.sessionId !== sessionId || current.token !== token) {
               observe(
                 context,
                 'catalog',

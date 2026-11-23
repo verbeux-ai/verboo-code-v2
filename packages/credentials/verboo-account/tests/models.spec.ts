@@ -6,11 +6,19 @@
  * them hides the control entirely on an account route.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
-import { parseModels } from '../src/models.ts'
+import type { DeepSeekAccount, PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import type { AccountSessionId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
+import * as VerbooModels from '../src/models.ts'
 import type { Deployment } from '../src/config.ts'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 /** Conservative defaults a legacy listing without capability metadata receives. */
 const deployment = {
@@ -24,7 +32,7 @@ const deployment = {
  * @returns the transport profile the adapter receives.
  */
 function parse(reasoning: unknown) {
-  return parseModels({
+  return VerbooModels.parseModels({
     data: [{
       id: 'pro/deepseek-v4.1-flash',
       display_name: 'deepseek-v4.1-flash',
@@ -154,3 +162,72 @@ describe('a parsed listing survives the pi-ai adapter', () => {
     await expect(servedLevels(true)).resolves.toEqual([])
   })
 }, 30_000)
+
+async function catalogFixture() {
+  const ctx = new Context()
+  onTestFinished(() => ctx.fiber.dispose())
+  let session: PlatformSession = {
+    origin: 'https://accounts.example.test', userId: null, sessionId: 'first-session' as AccountSessionId,
+    token: 'first-fixture-token',
+  }
+  const account = {
+    resolveToken: vi.fn(async () => session.token),
+    getPlatformSession: vi.fn(async () => session),
+  }
+  ctx.provide('deepseekAccount', account as unknown as DeepSeekAccount)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin({ name: VerbooModels.name, inject: VerbooModels.inject, apply: VerbooModels.apply }, {
+    routerBaseURL: 'https://router.example.test/v1', apiOrigin: session.origin,
+  })
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({
+    data: [{ id: 'current-group/current-model' }],
+  }))
+  vi.stubGlobal('fetch', fetch)
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  return {
+    ctx, account, fetch,
+    list: () => ctx.llm.listModels('deepseek-account'),
+    setSession(sessionId: string, token: string) {
+      session = { ...session, sessionId: sessionId as AccountSessionId, token }
+    },
+  }
+}
+
+it('never lists the previous account’s models with a stale token after a switch', async () => {
+  const fixture = await catalogFixture()
+  const started = Promise.withResolvers<undefined>()
+  const token = Promise.withResolvers<string>()
+  fixture.account.resolveToken.mockImplementationOnce(() => { started.resolve(undefined); return token.promise })
+  const listing = fixture.list()
+  await started.promise
+  fixture.setSession('second-session', 'second-fixture-token')
+  token.resolve('first-fixture-token')
+  expect(await listing).toEqual([])
+  expect(fixture.fetch).not.toHaveBeenCalled()
+  expect((await fixture.list()).map(model => model.id)).toEqual(['current-group/current-model'])
+  const [url, init] = fixture.fetch.mock.calls[0]!
+  expect(url).toBe('https://router.example.test/v1/models')
+  expect(new Headers(init?.headers).get('authorization')).toBe('Bearer second-fixture-token')
+})
+
+it('drops a model response from a retired credential generation', async () => {
+  const fixture = await catalogFixture()
+  const started = Promise.withResolvers<AbortSignal>()
+  const response = Promise.withResolvers<Response>()
+  fixture.fetch.mockImplementationOnce((_url, init) => { started.resolve(init!.signal!); return response.promise })
+  const listing = fixture.list()
+  const signal = await started.promise
+  fixture.setSession('first-session', 'refreshed-fixture-token')
+  fixture.ctx.emit('credentials/record-updated', 'verboo-account/default' as CredentialKey)
+  expect(signal.aborted).toBe(true)
+  const currentListing = fixture.list()
+  try {
+    await vi.waitFor(() => { expect(fixture.fetch).toHaveBeenCalledTimes(2) })
+    expect((await currentListing).map(model => model.id)).toEqual(['current-group/current-model'])
+  } finally {
+    response.resolve(Response.json({ data: [{ id: 'retired-group/old-model' }] }))
+  }
+  expect(await listing).toEqual([])
+  expect((await fixture.list()).map(model => model.id)).toEqual(['current-group/current-model'])
+  expect(fixture.fetch).toHaveBeenCalledTimes(2)
+})
