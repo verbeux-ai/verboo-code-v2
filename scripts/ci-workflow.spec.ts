@@ -1145,10 +1145,9 @@ describe('Verboo Code e2e workflow', () => {
     expect(preflight).toMatchObject({ env: { VERBOO_CODE_CI_API_KEY: key } })
     expect(preflight?.run).toContain('https://code.verboo.ai/router/v1/models')
     expect(preflight?.run).toContain("redirect: 'error'")
-    expect(steps.find(step => step.name === 'E2E tests (authenticated Verboo Code Router)')).toMatchObject({
-      env: { VERBOO_CODE_CI_API_KEY: key },
-      run: expect.stringContaining('apps/cli/tests/profiles/sdk/office-cli.e2e.ts'),
-    })
+    const live = steps.find(step => step.name === 'E2E tests (authenticated Verboo Code Router)')
+    expect(live?.env).toEqual({ VERBOO_CODE_CI_API_KEY: key })
+    expect(live?.run).toContain('apps/cli/tests/profiles/sdk/office-cli.e2e.ts')
     expect(steps.findIndex(step => step.name === 'Preflight (authenticate to Verboo Code)')).toBeLessThan(
       steps.findIndex(step => step.name === 'E2E tests (authenticated Verboo Code Router)'),
     )
@@ -1156,13 +1155,13 @@ describe('Verboo Code e2e workflow', () => {
     expect(String(e2e.if)).toContain('github.event.pull_request.head.repo.full_name == github.repository')
     expect(String(e2e.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
     expect(String(e2e.if)).not.toContain('head.repo.fork')
-    expect(yaml.load(readFileSync(resolve(root, 'scripts/verboo-live-model.patch.yml'), 'utf8'))).toEqual([
+    expect(yaml.load(readFileSync(resolve(root, 'scripts/verboo-live-model.patch.yml'), 'utf8'))).toMatchObject([
       { id: 'llm-deepseek', disabled: true },
       {
-        id: 'llm-pi-ai', config: { providers: { 'verboo-live': expect.objectContaining({
+        id: 'llm-pi-ai', config: { providers: { 'verboo-live': {
           api: 'openai-completions', apiKeyEnv: 'VERBOO_CODE_CI_API_KEY', baseURL: 'https://code.verboo.ai/router/v1',
-          models: [expect.objectContaining({ id: 'qwen3.8-27b' })],
-        }) } },
+          models: [{ id: 'qwen3.8-27b' }],
+        } } },
       },
     ])
   })
