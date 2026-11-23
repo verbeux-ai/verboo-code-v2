@@ -48,7 +48,7 @@ class CodeLimitedAdapter extends LlmAdapter {
   private readonly retryPolicy = resolveRetryPolicy({
     mode: 'normal', maxRetries: 5,
     retryableCodes: ['SERVER', 'MALFORMED_RESPONSE'],
-    maxRetriesByCode: { MALFORMED_RESPONSE: 1 },
+    maxRetriesByCode: { MALFORMED_RESPONSE: 1, SERVER: 5 },
     backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
   }, 'code-limited provider retryPolicy')
 
