@@ -304,19 +304,31 @@ describe('Definition-owned Chat process groups', () => {
     expect(source.getSnapshot()?.members.map(member => member.key)).toEqual(['earlier', 'a', 'b', 'c', 'later'])
   })
 
-  it.each(['reply', 'steering'] as const)('keeps a %s boundary between newly loaded work and an existing group', (boundary) => {
+  it('keeps a steering boundary between newly loaded work and an existing group', () => {
     const h = harness([tool('retained', 4)])
     const first = h.store.entries[0]!
     if (first.kind !== 'group') throw new Error('expected group')
     const source = h.store.groupSource(first.key)
     const previous = source.getSnapshot()
-    const upserts = boundary === 'reply' ? [assistant('older thought', 'older reply')]
-      : [assistant('older thought'), separator(3, true)]
-    h.builder.apply({ upserts, timeline })
+    h.builder.apply({ upserts: [assistant('older thought'), separator(3, true)], timeline })
     h.commit()
     expect(h.store.entries.map(entry => entry.kind)).toEqual(['group', 'node', 'group'])
     expect(h.store.entries[2]).toEqual(first)
     expect(source.getSnapshot()).toBe(previous)
+  })
+
+  it('extends the same group when an older reply loads ahead of it', () => {
+    // A reply renders outside the run without ending it, so newly loaded work
+    // joins the Turn's single group instead of opening a second one.
+    const h = harness([tool('retained', 4)])
+    const first = h.store.entries[0]!
+    if (first.kind !== 'group') throw new Error('expected group')
+    const source = h.store.groupSource(first.key)
+    h.builder.apply({ upserts: [assistant('older thought', 'older reply')], timeline })
+    h.commit()
+    expect(h.store.entries.map(entry => entry.kind)).toEqual(['group', 'node'])
+    expect(h.store.entries[0]).toEqual(first)
+    expect(source.getSnapshot()?.members.map(member => member.key)).toEqual(['assistant', 'retained'])
   })
 
   it('splits an extended group without reusing one identity for two groups', () => {
@@ -476,18 +488,18 @@ describe('Definition-owned Chat process groups', () => {
 
   it('splits reasoning from replies and starts later groups after tools and steering in one Step', () => {
     const { store } = harness([separator(0, true), assistant('think', 'progress'), tool('a', 3), separator(4, true), tool('b', 5)])
-    expect(store.entries.map(entry => entry.kind)).toEqual(['node', 'group', 'node', 'group', 'node', 'group'])
+    expect(store.entries.map(entry => entry.kind)).toEqual(['node', 'group', 'node', 'node', 'group'])
     const groups = store.entries.filter(entry => entry.kind === 'group')
-    expect(groups).toHaveLength(3)
+    expect(groups).toHaveLength(2)
     expect(store.groupSource(groups[0]!.key).getSnapshot()?.members).toEqual([
       { kind: 'node', key: 'assistant', groupPart: 'reasoning' },
+      { kind: 'node', key: 'a' },
     ])
     expect(store.entries[2]).toEqual({ kind: 'node', key: 'assistant', groupPart: 'response' })
-    expect(store.groupSource(groups[1]!.key).getSnapshot()?.members.map(member => member.key)).toEqual(['a'])
-    expect(store.groupSource(groups[2]!.key).getSnapshot()?.members.map(member => member.key)).toEqual(['b'])
+    expect(store.groupSource(groups[1]!.key).getSnapshot()?.members.map(member => member.key)).toEqual(['b'])
   })
 
-  it('updates live detail without replacing roots or members and closes on the first reply', () => {
+  it('updates live detail without replacing roots or members and stays open through a reply', () => {
     const h = harness([assistant('first thought')])
     const first = h.store.entries[0]!
     if (first.kind !== 'group') throw new Error('expected group')
@@ -502,13 +514,12 @@ describe('Definition-owned Chat process groups', () => {
     h.builder.apply({ upserts: [assistant('second thought', 'reply')], timeline })
     h.commit()
     expect(h.store.entries[0]).toEqual(first)
-    expect(source.getSnapshot()!.data.closed).toBe(true)
+    expect(source.getSnapshot()!.data.closed).toBe(false)
     expect(h.store.entries[1]).toMatchObject({ kind: 'node', groupPart: 'response' })
-    const closed = source.getSnapshot()
     const completed = assistant('second thought', 'settled reply')
     h.builder.apply({ upserts: [{ ...completed, data: { ...completed.data, status: 'settled' } }], timeline })
-    expect(h.commit()).toBeNull()
-    expect(source.getSnapshot()).toBe(closed)
+    h.commit()
+    expect(source.getSnapshot()!.data.closed).toBe(false)
   })
 
   it('keeps a no-Turn row between groups and repairs membership on replacement', () => {

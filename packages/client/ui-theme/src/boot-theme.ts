@@ -15,10 +15,15 @@ import {
 const LIGHT_BACKGROUND = '#fff'
 const DARK_BACKGROUND = '#151517'
 
-/** CSS that colors the document canvas before any script executes. */
+/**
+ * CSS that colors the document canvas before any script executes. The root
+ * element carries the colour too: a repaint that lands before the body rules
+ * apply (returning focus, a suspended WebProcess resuming, a reopen) would
+ * otherwise show the UA canvas — white — behind a dark document.
+ */
 function bootThemeStyle(preference: ThemePreference): string {
-  const light = `:root{color-scheme:light}body{background-color:${LIGHT_BACKGROUND};--dsh-boot-bg:${LIGHT_BACKGROUND}}`
-  const dark = `:root{color-scheme:dark}body{background-color:${DARK_BACKGROUND};--dsh-boot-bg:${DARK_BACKGROUND}}`
+  const light = `:root{color-scheme:light}html{background-color:${LIGHT_BACKGROUND}}body{background-color:${LIGHT_BACKGROUND};--dsh-boot-bg:${LIGHT_BACKGROUND}}`
+  const dark = `:root{color-scheme:dark}html{background-color:${DARK_BACKGROUND}}body{background-color:${DARK_BACKGROUND};--dsh-boot-bg:${DARK_BACKGROUND}}`
   if (preference === 'light') return light
   if (preference === 'dark') return dark
   return `${light}@media(prefers-color-scheme:dark){${dark}}`

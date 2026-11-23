@@ -242,6 +242,17 @@ fn main() {
                     .title("Verboo Code")
                     .inner_size(1320.0, 860.0)
                     .min_inner_size(900.0, 600.0)
+                    // The document canvas before the page paints: a native
+                    // window defaults to white, so a repaint that lands ahead
+                    // of the boot style (a reopened window, a resumed view)
+                    // flashed white behind the dark document. This matches the
+                    // dark boot colour in the theme sheet.
+                    .background_color(tauri::window::Color(21, 21, 23, 255))
+                    // Keep the view live while it is hidden: the default policy
+                    // unloads a backgrounded view, and bringing it forward then
+                    // repaints from scratch. Unsupported on Linux, where the
+                    // boot style alone owns the first frame.
+                    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
                     .initialization_script(include_str!("../../tauri/bridge.js"))
                     .disable_drag_drop_handler()
                     .on_page_load({
