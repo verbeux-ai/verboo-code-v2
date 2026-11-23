@@ -61,7 +61,7 @@ jobs:
       targets: node24-linux-x64,node24-win-x64
       ci: true
     secrets:
-      DEEPSEEK_API_KEY_EXTERNAL: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+      VERBOO_CODE_CI_API_KEY: ${{ secrets.VERBOO_CODE_CI_API_KEY }}
 
   # Stable required check for the Python lanes, with the same semantics as
   # ci.yml's "all checks passed": every blocking job in THIS workflow is
