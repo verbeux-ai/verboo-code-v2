@@ -8,8 +8,11 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+const copy: Readonly<Record<string, string>> = en
+const t: HeroProps['t'] = key => copy[key] ?? key
+
 it('keeps the default sidebar wordmark compact and names it for assistive technology', () => {
-  const view = render(<Brand t={key => en[key]} />)
+  const view = render(<Brand t={t} />)
   const wordmark = view.getByRole('img', { name: 'Verboo Code' })
   expect(wordmark.hasAttribute('data-large')).toBe(false)
   const icon = wordmark.querySelector('img')!
@@ -19,7 +22,7 @@ it('keeps the default sidebar wordmark compact and names it for assistive techno
 })
 
 it('renders one opening question and a silent running indicator', () => {
-  const props: Pick<HeroProps, 't'> = { t: key => en[key] }
+  const props: Pick<HeroProps, 't'> = { t }
   const { getByRole, container } = render(<>
     <Hero {...props as HeroProps} />
     <RunningIndicator />
