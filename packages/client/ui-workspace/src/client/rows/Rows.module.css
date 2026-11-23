@@ -153,12 +153,15 @@
 }
 
 
-/* Project leading slot: folder by default, expand arrow on row hover. */
-.projectRow .chevron { display: none; }
+/* Project leading slot: folder by default, expand arrow on row hover. Both
+   glyphs share the slot and crossfade instead of a display swap, so the
+   hover change reads as a transition rather than a pop. */
+.projectRow .chevron { display: none; opacity: 0; }
+.projectRow .folder { transition: var(--dsw-motion-fade); }
 @media (hover: hover) {
-  .projectRow:hover .chevron { display: inline-flex; }
+  .projectRow:hover .chevron { display: inline-flex; opacity: 1; }
 
-  .projectRow:hover .folder { display: none; }
+  .projectRow:hover .folder { opacity: 0; }
 }
 
 /* Expand arrow (filled triangle): points right closed, rotates to point down open. */
@@ -269,7 +272,10 @@
   flex: none;
 }
 
-/* The trailing strip keeps a shared gap between its fixed-size control boxes. */
+/* The trailing strip keeps a shared gap between its fixed-size control boxes.
+   The strip fades and slides in on hover instead of a display pop; the display
+   rule stays for the menu-open and keyboard states, which must appear
+   immediately. */
 .rowActions {
   flex: none;
   display: none;
@@ -278,9 +284,20 @@
 }
 
 @media (hover: hover) {
+  .projectRow .rowActions,
+  .searchResultRow .rowActions {
+    display: inline-flex;
+    opacity: 0;
+    transform: translateX(4px);
+    transition:
+      opacity var(--dsw-motion-fast) var(--dsw-ease-standard),
+      transform var(--dsw-motion-fast) var(--dsw-ease-standard);
+  }
+
   .projectRow:hover .rowActions,
   .searchResultRow:hover .rowActions {
-    display: inline-flex;
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -319,10 +336,21 @@
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 
+  .sessionRow .rowActions {
+    display: inline-flex;
+    opacity: 0;
+    transform: translateX(4px);
+    transition:
+      opacity var(--dsw-motion-fast) var(--dsw-ease-standard),
+      transform var(--dsw-motion-fast) var(--dsw-ease-standard);
+  }
+
   .sessionRow:hover .rowActions,
   .sessionRow.menuOpen .rowActions,
   :global(html[data-input-modality='keyboard']) .sessionRow:focus-within .rowActions {
     display: inline-flex;
+    opacity: 1;
+    transform: none;
   }
 
   .sessionRow:hover .rowResting,
@@ -484,7 +512,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .arrow {
+  .arrow,
+  .projectRow .folder,
+  .projectRow .chevron,
+  .projectRow .rowActions,
+  .searchResultRow .rowActions,
+  .sessionRow .rowActions {
     animation: none;
     transition: none;
   }

@@ -351,12 +351,17 @@
   background: var(--dsw-specific-selector);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: var(--dsw-motion-colors), transform var(--dsw-motion-instant) var(--dsw-ease-standard);
 }
 
 @media (hover: hover) {
   .add:hover:not(:disabled) {
     background: var(--dsw-alias-interactive-bg-hover-solid);
   }
+}
+
+.add:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .add:disabled {
@@ -385,6 +390,7 @@
   white-space: nowrap;
   cursor: pointer;
   appearance: none;
+  transition: var(--dsw-motion-colors);
 }
 
 @media (hover: hover) {
@@ -418,13 +424,19 @@
      fill in both themes (design 34:10465). */
   color: #fff;
   cursor: pointer;
-  transition: background-color 100ms ease;
+  /* The most repeated gesture in the app: the press pops through the spring
+     curve while the fill swap stays on the standard interaction timing. */
+  transition: var(--dsw-motion-colors), transform var(--dsw-motion-instant) var(--dsw-ease-spring);
 }
 
 @media (hover: hover) {
   .primary:hover:not(:disabled) {
     background: var(--dsw-alias-button-info-hover);
   }
+}
+
+.primary:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .primary:disabled {
@@ -469,6 +481,17 @@
 @media (prefers-reduced-motion: reduce) {
   .sendingSpinner {
     animation-duration: 2400ms;
+  }
+
+  .add,
+  .select,
+  .primary {
+    transition: none;
+  }
+
+  .add:active:not(:disabled),
+  .primary:active:not(:disabled) {
+    transform: none;
   }
 }
 
