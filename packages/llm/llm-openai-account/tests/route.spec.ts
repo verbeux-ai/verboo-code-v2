@@ -6,12 +6,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenAiAccountAdapter } from '../src/adapter.ts'
 import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CATALOG_PROVIDER } from '../src/index.ts'
 import OpenAiAccountRoute from '../src/index.ts'
-import type { OpenAiAccountService } from '../src/types.ts'
+import type { OpenAiAccountService, SweepResult } from '../src/types.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -26,18 +26,21 @@ function accessTokenFor(accountId: string): string {
 }
 
 /** A stored session double: one token and its account, no provider call. */
-function session(options: { accountId?: string; signedOut?: boolean; throws?: boolean } = {}): OpenAiAccountService {
+function session(options: { accountId?: string; signedOut?: boolean; throws?: boolean; statusThrows?: boolean } = {}): OpenAiAccountService {
   const accountId = options.accountId ?? 'acct-1'
   return {
     accessToken: async () => {
       if (options.throws === true) throw new Error('refresh rejected')
       return options.signedOut === true ? undefined : accessTokenFor(accountId)
     },
-    status: async () => ({
-      signedIn: options.signedOut !== true,
-      accountId,
-      planType: 'plus',
-    }),
+    status: async () => {
+      if (options.statusThrows === true) throw new Error('session store down')
+      return {
+        signedIn: options.signedOut !== true,
+        accountId,
+        planType: 'plus',
+      }
+    },
   }
 }
 
@@ -235,4 +238,101 @@ it('reads usage without an account identifier when the session reports none', as
   const ctx = await harness(stored)
   await expect(readingOf(ctx)).resolves.toMatchObject({ usedPercent: 3 })
   expect(requests[0]?.get('chatgpt-account-id')).toBe('acct-token')
+})
+
+describe('the discovery sweep', () => {
+  it('answers an empty sweep when the status read fails', async () => {
+    const ctx = await harness(session({ statusThrows: true }))
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    await expect(route.discoverModels()).resolves.toEqual({
+      supported: [], unsupported: [], skipped: [], stoppedAtLimit: false,
+    })
+  })
+  it('answers an empty sweep while signed out', async () => {
+    const ctx = await harness(undefined)
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    await expect(route.discoverModels()).resolves.toEqual({
+      supported: [], unsupported: [], skipped: [], stoppedAtLimit: false,
+    })
+  })
+
+  it('sweeps the installed catalog and remembers the verdicts per account', { timeout: 30_000 }, async () => {
+    const urls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input))
+      return new Response(
+        [
+          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }] })}`,
+          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}`,
+          'data: [DONE]',
+        ].join('\n\n'),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    }))
+    const ctx = await harness(session())
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    const result = await route.discoverModels()
+    // The catalog's models were probed, cheapest first: at least one probe
+    // per listed model.
+    expect(urls.filter(url => url.includes('/chat/completions')).length)
+      .toBeGreaterThanOrEqual(result.supported.length + result.unsupported.length + result.skipped.length)
+    expect(result.stoppedAtLimit).toBe(false)
+    // A second trigger after the sweep finished starts a fresh sweep with
+    // the same verdicts: the probes are idempotent.
+    await expect(route.discoverModels()).resolves.toEqual(result)
+  })
+
+  it('records an unsupported verdict from the terminal refusal and survives a throwing transport', { timeout: 30_000 }, async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      calls += 1
+      if (String(input).includes('/models')) {
+        return new Response('{}', { status: 200 })
+      }
+      // Half the probes throw out of the transport (the catch path), and the
+      // others finish with the Codex refusal wording (the record path).
+      if (calls % 2 === 0) throw new Error('not supported when using Codex with a ChatGPT account')
+      return new Response(
+        [
+          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: {}, finish_reason: 'not supported when using Codex with a ChatGPT account' }] })}`,
+          'data: [DONE]',
+        ].join('\n\n'),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )
+    }))
+    const ctx = await harness(session())
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    const result = await route.discoverModels()
+    // Both failure shapes classify without throwing out of the sweep.
+    expect(result.unsupported.length).toBeGreaterThan(0)
+    expect(result.stoppedAtLimit).toBe(false)
+  })
+
+  it('stops the sweep at the first limit refusal and skips the rest', { timeout: 30_000 }, async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/models')) return new Response('{}', { status: 200 })
+      calls += 1
+      // The transport throws the rendered limit sentence: the pi-ai error stop
+      // carries that text, and the sweep's classifier reads it as a limit.
+      throw new Error('You have hit your ChatGPT usage limit. Your limit resets tomorrow at 00:00.')
+    }))
+    const ctx = await harness(session())
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    const result = await route.discoverModels()
+    expect(result.stoppedAtLimit).toBe(true)
+    // The sweep stopped: it never probed the whole catalog.
+    expect(calls).toBeLessThan(9)
+    expect(result.skipped.length).toBeGreaterThan(0)
+  })
+
+  it('answers an empty sweep when the catalog provider is not installed', async () => {
+    const ctx = await harness(undefined)
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    // The account is undefined before any sweep: the route reads the session,
+    // and a missing session answers the empty result without probing.
+    await expect(route.discoverModels()).resolves.toEqual({
+      supported: [], unsupported: [], skipped: [], stoppedAtLimit: false,
+    })
+  })
 })
