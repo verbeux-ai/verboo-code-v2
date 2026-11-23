@@ -32,8 +32,9 @@ const COPY = JSON.parse(
   later: string
   close: string
   failed: string
+  diagnosticLabel: string
   running: { title: string; body: string; status: string }
-  applied: { title: string; body: string; dwellMs: number }
+  applied: { title: string; body: string; okLabel: string }
 }>
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -230,10 +231,12 @@ describe('the running window in a browser', () => {
     expect(width).toBe('100%')
     await entry.page.screenshot({ path: join(ARTIFACTS, 'progress-complete.png'), animations: 'disabled' })
 
-    await entry.page.evaluate((message) => {
-      ;(window as typeof window & { __fail: (value: string) => void }).__fail(message)
-    }, copy.failed)
+    const failure = { message: copy.failed, code: 'network' }
+    await entry.page.evaluate((value) => {
+      ;(window as typeof window & { __fail: (failure: typeof value) => void }).__fail(value)
+    }, failure)
     await text(entry, 'status').toBe(copy.failed)
+    await text(entry, 'diagnostic').toBe(`${copy.diagnosticLabel}: ${failure.code}`)
     await shown(entry, 'later', true)
     await text(entry, 'later').toBe(copy.close)
     await entry.page.screenshot({ path: join(ARTIFACTS, 'progress-failed.png'), animations: 'disabled' })
@@ -270,13 +273,16 @@ describe('the running window in a browser', () => {
 })
 
 describe('the applied notice in a browser', () => {
-  it('thanks the user and closes itself', async () => {
-    const entry = await open('updated.html', '__VERBOO_UPDATED__', { ...COPY.pt!.applied, dwellMs: 800 })
-    await expect.poll(async () => (await role(entry, 'title').textContent()) ?? '').toBe(COPY.pt!.applied.title)
-    await expect.poll(async () => (await role(entry, 'body').textContent()) ?? '').toContain('0.2.2-alpha.13')
+  it('shows the applied version and closes when confirmed', async () => {
+    const copy = COPY.pt!
+    const entry = await open('updated.html', '__VERBOO_UPDATED__', copy.applied)
+    await text(entry, 'title').toBe(copy.applied.title)
+    await expect.poll(async () => (await role(entry, 'body').textContent()) ?? '').toContain(copy.version)
+    await text(entry, 'ok').toBe(copy.applied.okLabel)
     await entry.page.screenshot({ path: join(ARTIFACTS, 'applied.png'), animations: 'disabled' })
-    // It leaves on its own, so the user never has to dismiss a celebration.
-    await expect.poll(() => commands(entry), { timeout: 6000 }).toEqual(['update_close'])
+    expect(await commands(entry)).toEqual([])
+    await role(entry, 'ok').click()
+    await expect.poll(() => commands(entry)).toEqual(['update_close'])
     await entry.page.close()
   })
 })
