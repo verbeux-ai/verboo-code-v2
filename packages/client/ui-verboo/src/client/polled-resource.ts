@@ -110,15 +110,16 @@ export async function* pollAccountResource<R, T>(
         continue
       }
       dirty = false
-      pending = new AbortController()
+      const readController = new AbortController()
+      pending = readController
       try {
-        const result = await read(AbortSignal.any([signal, pending.signal]))
+        const result = await read(AbortSignal.any([signal, readController.signal]))
         if (aborted() || !owned()) return
-        if (!visible() || !online()) continue
+        if (readController.signal.aborted || !visible() || !online()) continue
         for (const value of interpret(result)) yield value
       } catch (_error) {
         if (aborted() || !owned()) return
-        if (!visible() || !online()) continue
+        if (readController.signal.aborted || !visible() || !online()) continue
         yield failed()
       } finally {
         pending = undefined

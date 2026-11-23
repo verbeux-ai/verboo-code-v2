@@ -51,16 +51,16 @@ function MoveForm({
   const [moving, setMoving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<readonly SessionActivity[] | null>(null)
+  const canConfirm = !moving && selected !== undefined
   const close = () => {
     if (moving) return
     onSettle()
   }
-  const confirm = () => {
-    if (moving || selected === undefined) return
+  const confirm = (destination: WorkspaceId) => {
     setMoving(true)
     setError(null)
     setBlocked(null)
-    moveSession(request.sessionId, selected).then(() => {
+    moveSession(request.sessionId, destination).then(() => {
       setMoving(false)
       onSettle()
     }).catch((reason: unknown) => {
@@ -83,7 +83,7 @@ function MoveForm({
       footer={(
         <>
           <Button variant="outline" disabled={moving} onClick={close}>{t('cancel')}</Button>
-          <Button variant="primary" disabled={moving || selected === undefined} onClick={confirm}>
+          <Button variant="primary" disabled={!canConfirm} onClick={canConfirm ? () => confirm(selected) : undefined}>
             {t('move.action')}
           </Button>
         </>

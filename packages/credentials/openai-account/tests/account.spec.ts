@@ -99,24 +99,29 @@ function memoryStore(): { getSecret(): Promise<number[] | null>; setSecret(secre
   }
 }
 
-/** Distinct home per fixture, so no two runs share a store. */
-let counter = 0
 const contexts: Context[] = []
+const homes: string[] = []
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
+  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true })
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
 /** Mount the account service with a stubbed transport and an in-memory vault. */
-async function harness(handler: (url: string, init: RequestInit) => Response): Promise<OpenAiAccount> {
+async function harness(handler: (url: string, init: RequestInit) => Response | Promise<Response>): Promise<OpenAiAccount> {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-openai-account-'))
+  homes.push(home)
   const ctx = new Context()
   contexts.push(ctx)
+  ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([
+    { source: 'process', values: { DSH_HOME: home } },
+  ]))
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
     handler(input instanceof URL ? input.href : input instanceof Request ? input.url : input, init ?? {})))
   // Not prepared here: the service must create the key on its first write, as a
   // fresh installation does.
-  const vault = new GrantVault('https://auth.openai.com/oauth/token', `/tmp/openai-account-test-${String(counter++)}`, memoryStore())
+  const vault = new GrantVault('https://auth.openai.com/oauth/token', home, memoryStore())
   const service = new OpenAiAccount(ctx, {}, vault)
   await ctx.plugin({ apply: () => undefined })
   return service
