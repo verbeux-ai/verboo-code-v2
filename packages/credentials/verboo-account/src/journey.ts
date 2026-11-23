@@ -140,7 +140,6 @@ export class LoginJourney {
       if (record.kind !== 'grant')
         throw new AccountRequestError('contract_error')
       const state = queue.parse(record.payload)
-      if (state.pending.length === 0) return
       const first = state.pending[0]
       if (first === undefined) return
       const version = first.schemaVersion

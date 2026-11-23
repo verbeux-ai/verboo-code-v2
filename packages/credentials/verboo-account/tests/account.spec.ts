@@ -18,6 +18,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { VerbooAccount } from '../src/account.ts'
+import { LoginJourney } from '../src/journey.ts'
 import { GrantVault } from '../src/vault.ts'
 import { Config, deploymentOf } from '../src/config.ts'
 import * as Models from '../src/models.ts'
@@ -61,7 +62,10 @@ async function fixture(
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
-    collectionDown: false,
+    rejectLogin: false,
+    collectionStatus: 202,
+    collectionReceiptGate: null as Promise<void> | null,
+    wrongCollectionReceipt: false,
     catalogFailures: 0,
   }
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -83,7 +87,7 @@ async function fixture(
       else state.exchanges++
       if (refresh && options.refreshDelayMs !== undefined)
         await delay(options.refreshDelayMs)
-      if (refresh && state.rejectRefresh) {
+      if (refresh ? state.rejectRefresh : state.rejectLogin) {
         res.writeHead(400).end('{"error":"invalid_grant"}')
         return
       }
@@ -167,10 +171,11 @@ async function fixture(
         )
       res.end('data: [DONE]\n\n')
     } else if (req.url === '/api/journey/events') {
-      if (state.collectionDown) {
-        res.writeHead(503).end('{}')
+      if (state.collectionStatus !== 202) {
+        res.writeHead(state.collectionStatus).end('{}')
         return
       }
+      if (state.collectionReceiptGate !== null) await state.collectionReceiptGate
       const data = JSON.parse(body) as {
         schemaVersion: number
         events: Array<{ eventId: string; journeyId: string }>
@@ -182,7 +187,7 @@ async function fixture(
               eventId: event.eventId,
               journeyId: event.journeyId,
               clientApp: '',
-              payloadSha256: createHash('sha256')
+              payloadSha256: state.wrongCollectionReceipt ? '0'.repeat(64) : createHash('sha256')
                 .update(`${data.schemaVersion}:${JSON.stringify(event)}`)
                 .digest('hex'),
             })),
@@ -630,7 +635,7 @@ it('does not send a previously prepared prompt using a different login', async (
 
 it('keeps immutable anonymous observations during collector failure and confirms their exact replay', async () => {
   const app = await fixture()
-  app.state.collectionDown = true
+  app.state.collectionStatus = 503
   await app.login()
   const key = credentialKey('verboo-account', 'observations')
   await until(
@@ -654,7 +659,7 @@ it('keeps immutable anonymous observations during collector failure and confirms
       .filter(value => value.path === '/api/journey/events')
       .every(value => value.authorization === undefined),
   ).toBe(true)
-  app.state.collectionDown = false
+  app.state.collectionStatus = 202
   await app.login()
   await until(async () => {
     const current = await app.ctx.credentials.readRecord(key)
@@ -664,6 +669,114 @@ it('keeps immutable anonymous observations during collector failure and confirms
     )
   })
   expect(original).toContain('schemaVersion')
+})
+
+it('keeps original login events after an incorrect receipt and replays them in bounded batches', async () => {
+  const app = await fixture()
+  app.state.wrongCollectionReceipt = true
+  const key = credentialKey('verboo-account', 'observations')
+  const pending = Array.from({ length: 21 }, () => ({
+    schemaVersion: 1, release: 'fixture-previous-version',
+    json: JSON.stringify({
+      eventId: randomUUID(), journeyId: randomUUID(), operationId: randomUUID(),
+      stage: 'login', outcome: 'started', occurredAt: '2026-11-22T21:00:00Z',
+    }),
+  }))
+  await app.ctx.credentials.modifyRecord(key, () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, lost: 0, pending },
+  }))
+  await app.login()
+  const deliveries = () => app.requests.filter(value => value.path === '/api/journey/events')
+  await until(async () => deliveries().length > 0)
+  const saved = await app.ctx.credentials.readRecord(key)
+  expect(saved).toMatchObject({ kind: 'grant', payload: { lost: 0 } })
+  if (saved?.kind !== 'grant') throw new Error('Fixture login queue missing')
+  expect(saved.payload).toMatchObject({ pending: expect.arrayContaining(pending) })
+  expect(JSON.parse(deliveries()[0]!.body).events).toHaveLength(20)
+
+  const pivot = deliveries().length
+  app.state.wrongCollectionReceipt = false
+  await app.login()
+  await until(async () => JSON.stringify(await app.ctx.credentials.readRecord(key)).includes('"pending":[]'))
+  const batches = deliveries().slice(pivot)
+  expect(batches.length).toBeGreaterThanOrEqual(2)
+  expect(batches.every(value => value.authorization === undefined)).toBe(true)
+  expect(batches.every(value => JSON.parse(value.body).events.length <= 20)).toBe(true)
+  for (const entry of pending) {
+    expect(batches.some(batch => batch.body.includes(entry.json))).toBe(true)
+  }
+})
+
+it('keeps a full login outbox intact and reports the exact loss count', async () => {
+  const app = await fixture()
+  app.state.collectionStatus = 422
+  const key = credentialKey('verboo-account', 'observations')
+  const pending = Array.from({ length: 1000 }, () => ({
+    schemaVersion: 1, release: 'fixture-previous-version',
+    json: JSON.stringify({ eventId: randomUUID(), journeyId: randomUUID(), stage: 'login', outcome: 'started' }),
+  }))
+  await app.ctx.credentials.modifyRecord(key, () => Promise.resolve({
+    kind: 'grant', payload: { version: 1, lost: 0, pending },
+  }))
+  const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  await app.login()
+  await until(async () => JSON.stringify(await app.ctx.credentials.readRecord(key)).includes('"lost":2'))
+  expect(await app.ctx.credentials.readRecord(key)).toEqual({ kind: 'grant', payload: { version: 1, lost: 2, pending } })
+  expect(log.mock.calls.filter(([tag]) => tag === '[verboo-journey] collection_loss')).toHaveLength(2)
+})
+
+it('keeps the exact HTTP refusal on an anonymous login observation', async () => {
+  const app = await fixture()
+  app.state.rejectLogin = true
+  const { authorize } = await app.begin()
+  const query = new URLSearchParams({ state: authorize.searchParams.get('state')!, code: 'fixture-code' })
+  await fetch(`${app.callbackOrigin}/callback?${query}`)
+  await until(async () => app.requests.some(value =>
+    value.path === '/api/journey/events' && value.body.includes('"httpStatus":400')))
+  const failed = app.requests.find(value =>
+    value.path === '/api/journey/events' && value.body.includes('"httpStatus":400'))!
+  expect(failed.authorization).toBeUndefined()
+  expect(JSON.parse(failed.body).events).toContainEqual(expect.objectContaining({
+    stage: 'login', outcome: 'failed', errorCode: 'authentication_invalid', httpStatus: 400,
+  }))
+  expect(app.state.exchanges).toBe(1)
+})
+
+it('reports a corrupted login outbox with a fixed diagnostic and never submits its content', async () => {
+  const app = await fixture()
+  const key = credentialKey('verboo-account', 'observations')
+  const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  for (const record of [
+    { kind: 'api-key', key: 'fixture-unrelated-value' },
+    { kind: 'grant', payload: { version: 0 } },
+  ] as const) {
+    log.mockClear()
+    await app.ctx.credentials.modifyRecord(key, () => Promise.resolve(record))
+    new LoginJourney(app.ctx, deploymentOf({
+      apiOrigin: app.origin, routerBaseURL: `${app.origin}/router/v1`, allowLoopbackHttp: true,
+    }))
+    await until(async () => log.mock.calls.length > 0)
+    expect(log.mock.calls[0]).toEqual(['[verboo-journey] collection_pending', {
+      code: 'contract_error', ...(record.kind === 'api-key' ? { status: undefined } : {}),
+    }])
+  }
+  expect(app.requests.some(value => value.path === '/api/journey/events')).toBe(false)
+})
+
+it('keeps an unrelated credential change that happened while a login receipt was in flight', async () => {
+  const app = await fixture()
+  const key = credentialKey('verboo-account', 'observations')
+  const gate = Promise.withResolvers<undefined>()
+  app.state.collectionReceiptGate = gate.promise
+  cleanups.push(async () => { gate.resolve(undefined) })
+  const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  await app.begin()
+  await until(async () => app.requests.some(value => value.path === '/api/journey/events'))
+  const replacement = { kind: 'api-key', key: 'fixture-replacement' } as const
+  await app.ctx.credentials.modifyRecord(key, () => Promise.resolve(replacement))
+  gate.resolve(undefined)
+  await until(async () => log.mock.calls.some(([tag]) => tag === '[verboo-journey] collection_pending'))
+  expect(await app.ctx.credentials.readRecord(key)).toEqual(replacement)
 })
 
 it('retains operation identity across safe catalog retries and never retries code exchange', async () => {
