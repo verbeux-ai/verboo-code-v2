@@ -11,7 +11,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { type PanePersistence, PaneController } from '../src/client/panes/controller.ts'
-import { leaves, minimumSize, neighbor, readLayout, rectangles } from '../src/client/panes/layout.ts'
+import { boxAt, leaves, minimumSize, neighbor, readLayout, rectangles, removePane } from '../src/client/panes/layout.ts'
 import type { PaneLayout, PaneNode } from '../src/client/panes/layout.ts'
 
 const a = 'conversation-a' as SessionId
@@ -217,6 +217,7 @@ describe('split layout geometry and persisted input', () => {
     expect(neighbor(layout, 'left')).toBe('left')
     expect(neighbor(layout, 'up')).toBe('left')
     expect(rectangles(root).get('bottom')).toEqual({ x: 0.5, y: 0.5, width: 0.5, height: 0.5 })
+    expect(() => boxAt(rectangles(root), 'missing')).toThrow('Pane node has no computed rectangle')
     expect(minimumSize(root, 360, 280)).toEqual({ width: 720, height: 560 })
   })
   it('rejects unsupported, duplicate and oversized saved layouts before retaining sessions', () => {
@@ -225,6 +226,7 @@ describe('split layout geometry and persisted input', () => {
     expect(readLayout({ ...layout, focused: 'missing' })).toBeNull()
     expect(readLayout({ ...layout, root: { ...root, ratio: NaN } })).toBeNull()
     expect(readLayout({ ...layout, root: { ...root, first: leaf('top') } })).toBeNull()
+    expect(readLayout({ ...layout, root: { ...leaf('left'), workspaceId: 42 } })).toBeNull()
     expect(
       readLayout({
         version: 1,
@@ -239,5 +241,8 @@ describe('split layout geometry and persisted input', () => {
         },
       }),
     ).toBeNull()
+  })
+  it('collapses a split to its first pane when the second pane closes', () => {
+    expect(leaves(removePane(root, 'bottom')!).map(pane => pane.id)).toEqual(['left', 'top'])
   })
 })

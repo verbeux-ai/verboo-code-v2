@@ -21,6 +21,7 @@ import { VerbooAccount } from '../src/account.ts'
 import { GrantVault } from '../src/vault.ts'
 import { Config, deploymentOf } from '../src/config.ts'
 import * as Models from '../src/models.ts'
+import * as VerbooAccountPlugin from '../src/index.ts'
 
 const metadata = { version: 'fixture', locale: 'pt', timezoneOffsetSeconds: 0 }
 const cleanups: Array<() => Promise<unknown>> = []
@@ -309,6 +310,24 @@ async function fixture(
     login,
   }
 }
+
+it('mounts the account and its model provider from the shipped plugin in an empty profile', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'verboo-account-entry-'))
+  cleanups.push(() => rm(home, { recursive: true, force: true }))
+  const ctx = new Context()
+  cleanups.push(() => ctx.fiber.dispose())
+  await ctx.plugin(LocalCredentialProvider, { path: join(home, 'fixture-credentials.yml'), watch: false })
+  await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+  await ctx.plugin(Authorization)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(VerbooAccountPlugin, {
+    apiOrigin: 'http://127.0.0.1:1', routerBaseURL: 'http://127.0.0.1:1/router/v1', allowLoopbackHttp: true,
+  })
+  expect(await ctx.deepseekAccount.getState()).toMatchObject({ status: 'signed-out', attempt: null })
+  expect(ctx.llm.listConfigurableProviders()).toEqual([
+    expect.objectContaining({ provider: 'deepseek-account', displayName: 'Verboo Code' }),
+  ])
+})
 
 it('composes PKCE login, encrypted storage, exact account models and streaming through cordis.yml', async () => {
   const app = await fixture()
