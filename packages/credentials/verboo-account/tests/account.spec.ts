@@ -459,6 +459,34 @@ it('distinguishes explicit denial from a technical authorization expiry', async 
   expect(app.state.exchanges).toBe(0)
 })
 
+it.each(['completed cancellation', 'pending sign-out'])('shares one working login when retries overlap a %s', async (transition) => {
+  const app = await fixture()
+  const account = app.ctx.deepseekAccount
+  const initial = await app.begin()
+  const settling = transition === 'completed cancellation'
+    ? account.cancelSignIn(initial.view.attempt!.id)
+    : account.signOut(metadata)
+  if (transition === 'completed cancellation') await settling
+
+  const [first, second] = await Promise.all([
+    account.startSignIn(metadata, app.callbackOrigin, 'desktop'),
+    account.startSignIn(metadata, app.callbackOrigin, 'desktop'),
+  ])
+  await settling
+  expect(first.attempt?.id).toBe(second.attempt?.id)
+  await until(async () => {
+    const phase = (await account.getState()).attempt?.phase
+    return phase === 'waiting-browser' || phase === 'failed'
+  })
+  expect((await account.getState()).attempt).toMatchObject({
+    id: first.attempt?.id,
+    phase: 'waiting-browser',
+  })
+  const retry = await app.login()
+  expect(retry.view.attempt?.id).toBe(first.attempt?.id)
+  expect(app.state.exchanges).toBe(1)
+})
+
 it('serializes refresh rotation and refuses credentials outside the configured gateway', async () => {
   const app = await fixture({ expiresIn: 30 })
   await app.login()
