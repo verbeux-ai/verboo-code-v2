@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import type { PlanId, StaminaStatus } from '@deepseek-ai/dsh-api-verboo-product/types'
-import { StaminaButtonReading, StaminaLiquid } from '../src/client/StaminaLiquid.tsx'
+import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { ProductSnapshot } from '../src/client/model.ts'
+import type { StaminaModelState } from '../src/client/stamina-selection.ts'
+import { StaminaButtonFill, StaminaButtonReading, StaminaLiquid } from '../src/client/StaminaLiquid.tsx'
 
 afterEach(cleanup)
 const reading: StaminaStatus = {
@@ -13,6 +17,39 @@ const reading: StaminaStatus = {
 
 
 describe('liquid stamina inside the primary action', () => {
+  it('uses the current account resource and hides its reading for an unrelated model', () => {
+    const account: ProductSnapshot = {
+      view: { status: 'credential-stored', credentialRevision: 'revision-a' as AccountCredentialRevision,
+        attempt: null, links: { usageUrl: '', topUpUrl: '' } },
+      profile: { id: 'account-a' as AccountUserId, name: 'Fixture', contact: null },
+      profilePreviouslyVerified: true, initialized: true, accountFailed: false, actionFailed: null,
+      starting: false, plans: { subscriptions: [], catalog: [{
+        id: reading.groupId, slug: 'unlimited', name: reading.groupName, description: '',
+        priceCents: 100, currency: 'BRL', interval: 'month',
+      }] }, connections: null, plansFailed: false, connectionsFailed: false,
+      loadingPlans: false, loadingConnections: false, busy: null, handoff: null, handoffUntil: 0,
+      connectedTarget: null, feedback: null, modelFailed: false, initializingModel: false,
+      browserBlocked: false, navigationFailed: false, authorizationIds: [], mcpServers: null,
+      loadingMcp: false, mcpFailed: false, mcpProbe: null, probingMcp: false, mcpError: null,
+    }
+    let current: StaminaModelState['current'] = { provider: 'deepseek-account', model: 'unlimited/model' }
+    const useResource = vi.fn().mockReturnValue({
+      status: 'failed', value: [reading],
+      failure: new RemoteError('verboo/stamina-unavailable', 'Fixture unavailable', { reason: 'offline' }),
+    })
+    const props: Parameters<typeof StaminaButtonFill>[0] = {
+      useProduct: selector => selector(account),
+      useStaminaModel: selector => selector({ current }),
+      useResource,
+    }
+    const { container, rerender } = render(<StaminaButtonFill {...props} />)
+    expect(useResource).toHaveBeenCalledWith('dsh-resource://verboo-stamina/revision-a/account-a')
+    expect(container.querySelector<HTMLElement>('[data-stamina-water]')?.style.height).toBe('50%')
+    expect(container.querySelector('[data-stale]')).not.toBeNull()
+    current = { provider: 'other-provider', model: 'unlimited/model' }
+    rerender(<StaminaButtonFill {...props} />)
+    expect(container.firstChild).toBeNull()
+  })
   it.each([0, 50, 100])('paints the confirmed level without a numeric readout: %s', (remainingPercent) => {
     const { container } = render(<StaminaLiquid remainingPercent={remainingPercent} stale={false} />)
     const water = container.querySelector<HTMLElement>('[data-stamina-water]')!
