@@ -197,16 +197,22 @@ async function authority(): Promise<Authority> {
         response.writeHead(404).end()
     }
   })
+  issued.origin = await listen(server)
+  return issued
+}
+
+async function listen(server: Server): Promise<string> {
   servers.push(server)
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('the fixture server did not bind a port')
-  issued.origin = `http://127.0.0.1:${String(address.port)}`
-  return issued
+  return `http://127.0.0.1:${String(address.port)}`
 }
 
-/** Mount the service against a fake Host web server sharing the authority origin. */
-async function mount(origin: string) {
+type CallbackRoute = { path: string; handler: (request: IncomingMessage, response: ServerResponse) => void }
+
+/** Mount the service and serve its registered callback on loopback. */
+async function mount(options: { omitRequestUrl?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-verboo-mcp-flow-'))
   roots.push(root)
   const ctx = new Context()
@@ -218,10 +224,25 @@ async function mount(origin: string) {
   await ctx.plugin(StorageJson, { root: join(root, 'storage') })
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await (await ctx.plugin(McpServerManager, {})).await()
-  ctx.provide('webServer', { getOrigin: () => origin, register: () => () => {} })
+  let callback: CallbackRoute | undefined
+  const origin = await listen(createServer((request, response) => {
+    if (callback === undefined || request.url?.split('?')[0] !== callback.path) {
+      response.writeHead(404).end()
+      return
+    }
+    if (options.omitRequestUrl) delete request.url
+    callback.handler(request, response)
+  }))
+  ctx.provide('webServer', {
+    getOrigin: () => origin,
+    register: (route: CallbackRoute) => {
+      callback = route
+      return () => { callback = undefined }
+    },
+  })
   await (await ctx.plugin(VerbooMcpServers, {})).await()
   onTestFinished(() => undefined)
-  return { ctx, service: ctx.verbooMcp, credentials: ctx.get('credentials') as MemoryCredentials }
+  return { ctx, origin, service: ctx.verbooMcp, credentials: ctx.get('credentials') as MemoryCredentials }
 }
 
 const oauthInput = (origin: string): McpServerInput => ({
@@ -239,7 +260,7 @@ const oauthInput = (origin: string): McpServerInput => ({
 describe('browser sign-in against a real authorization server', () => {
   it('discovers, registers, authorizes, exchanges the code and stores the header', async () => {
     const issued = await authority()
-    const { ctx, service, credentials } = await mount(issued.origin)
+    const { service, credentials } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
 
     const started = await service.signInFromClient('remote')
@@ -256,9 +277,13 @@ describe('browser sign-in against a real authorization server', () => {
     const callback = new URL(authorized.headers.get('location') ?? '')
     expect(callback.pathname).toBe(OAUTH_CALLBACK_PATH)
 
-    const answered = await answerCallback(ctx, callback.searchParams)
+    const rejectedMethod = await fetch(callback, { method: 'POST' })
+    expect(rejectedMethod.status).toBe(405)
+    expect(rejectedMethod.headers.get('cache-control')).toBe('no-store')
+    const answered = await fetch(callback)
     expect(answered.status).toBe(200)
-    expect(answered.body).toContain('remote')
+    expect(answered.headers.get('cache-control')).toBe('no-store')
+    expect(await answered.text()).toContain('remote')
 
     // The definition now presents the issued bearer, and the token itself never
     // reached the stored record.
@@ -281,7 +306,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('reuses the persisted discovery state instead of probing the well-known documents again', async () => {
     const issued = await authority()
-    const { service } = await mount(issued.origin)
+    const { service } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const first = await service.signInFromClient('remote')
     expect(first.ok).toBe(true)
@@ -295,7 +320,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('refuses a second response for the same state, so a replay cannot re-authorize', async () => {
     const issued = await authority()
-    const { ctx, service } = await mount(issued.origin)
+    const { ctx, service } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const started = await service.signInFromClient('remote')
     if (!started.ok) throw new Error(started.message)
@@ -309,7 +334,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('renews a valid stored refresh grant without another browser page', async () => {
     const issued = await authority()
-    const { ctx, service, credentials } = await mount(issued.origin)
+    const { ctx, service, credentials } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const started = await service.signInFromClient('remote')
     if (!started.ok) throw new Error(started.message)
@@ -323,7 +348,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('drops only the pending attempt for the signed-out server', async () => {
     const issued = await authority()
-    const { ctx, service } = await mount(issued.origin)
+    const { ctx, service } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     await service.saveFromClient({ ...oauthInput(issued.origin), name: 'other' })
     const first = await service.signInFromClient('remote')
@@ -342,7 +367,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('uses the previously read grant when a token read is temporarily unavailable after refresh', async () => {
     const issued = await authority()
-    const { ctx, credentials } = await mount(issued.origin)
+    const { ctx, credentials } = await mount()
     const serverUrl = `${issued.origin}/mcp`
     await expect(authorizationHeader(ctx, 'remote', serverUrl)).rejects.toThrow('no stored OAuth grant')
     await oauthProvider(ctx, 'remote').saveTokens({ access_token: 'fixture-stored', token_type: '' })
@@ -362,7 +387,7 @@ describe('browser sign-in against a real authorization server', () => {
 
   it('reports an untyped credential-store failure without returning its value', async () => {
     const issued = await authority()
-    const { ctx, service, credentials } = await mount(issued.origin)
+    const { ctx, service, credentials } = await mount()
     await service.saveFromClient(oauthInput(issued.origin))
     const started = await service.signInFromClient('remote')
     if (!started.ok) throw new Error(started.message)
@@ -378,5 +403,13 @@ describe('browser sign-in against a real authorization server', () => {
     } finally {
       vi.restoreAllMocks()
     }
+  })
+
+  it('reports an incomplete request URL and a missing definition without changing state', async () => {
+    const { origin, service } = await mount({ omitRequestUrl: true })
+    const callback = await fetch(`${origin}${OAUTH_CALLBACK_PATH}?code=fixture&state=fixture`)
+    expect(callback.status).toBe(400)
+    expect(await callback.text()).toContain('response is incomplete')
+    expect(await service.signOutFromClient('missing')).toMatchObject({ ok: false, code: 'not_found' })
   })
 })
