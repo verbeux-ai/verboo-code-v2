@@ -3,7 +3,7 @@
  * account, and a refusal is remembered rather than re-probed.
  */
 import { describe, expect, it } from 'vitest'
-import { ModelAvailability, isUnsupportedModel, offeredModels } from '../src/availability.ts'
+import { ModelAvailability, cheapestFirst, isUnsupportedModel, offeredModels } from '../src/availability.ts'
 
 /** The provider's own wording for a model this account may not use. */
 const REFUSAL = "Codex error: The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account."
@@ -22,6 +22,16 @@ describe('refusal detection', () => {
 })
 
 describe('what the menu offers', () => {
+  it('orders known costs first, breaks ties by id and leaves the catalog intact', () => {
+    const prices = Object.freeze([
+      { id: 'unknown-z', input: 0 }, { id: 'expensive', input: 2 },
+      { id: 'low-b', input: 0.5 }, { id: 'unknown-a', input: -1 },
+      { id: 'low-a', input: 0.5 },
+    ])
+    expect(cheapestFirst(prices)).toEqual(['low-a', 'low-b', 'expensive', 'unknown-a', 'unknown-z'])
+    expect(prices.map(row => row.id)).toEqual(['unknown-z', 'expensive', 'low-b', 'unknown-a', 'low-a'])
+  })
+
   it('offers the whole catalog before any probe', () => {
     // Hiding unprobed models would empty the menu before the first turn.
     expect(offeredModels(['a', 'b'], undefined)).toEqual(['a', 'b'])
@@ -42,6 +52,16 @@ describe('what the menu offers', () => {
 })
 
 describe('scoping and lifetime', () => {
+  it('records both outcomes from a bounded sweep and leaves the skipped model available', () => {
+    const store = new ModelAvailability()
+    store.recordSweep('acct-1', {
+      supported: ['accepted'], unsupported: ['refused'], skipped: ['unprobed'], stoppedAtLimit: true,
+    })
+    expect(store.read('acct-1')?.verdicts).toEqual(new Map([['accepted', 'supported'], ['refused', 'unsupported']]))
+    expect(offeredModels(['accepted', 'refused', 'unprobed'], store.read('acct-1'))).toEqual(['accepted', 'unprobed'])
+    expect(offeredModels(['accepted', 'refused', 'unprobed'], store.read('acct-2'))).toEqual(['accepted', 'refused', 'unprobed'])
+  })
+
   it('never lends one account the refusals of another', () => {
     const store = new ModelAvailability()
     store.record('acct-1', 'a', 'unsupported')
