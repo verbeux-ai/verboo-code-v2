@@ -139,7 +139,8 @@ describe('CI workflow', () => {
     }
     for (const [file, command] of [
       ['release-publish.yml', 'pnpm run build:official --serial'],
-      ['release-vendor-publish.yml', 'pnpm run build:lib:host'],
+      ['release-vendor.yml', 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'],
+      ['release-vendor-publish.yml', 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'],
     ] as const) {
       expect(workflowJob(loadWorkflow('.github/workflows/' + file), 'pack').steps)
         .toContainEqual(expect.objectContaining({ name: 'Build', run: command }))
@@ -155,10 +156,8 @@ describe('CI workflow', () => {
 
   it('selects artifact builds only for PR release and API rehearsals', () => {
     const official = "${{ github.event_name == 'pull_request' && 'pnpm run build:artifacts --profile official' || 'pnpm run build:official' }}"
-    const vendor = "${{ github.event_name == 'pull_request' && 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries' || 'pnpm run build:lib:host' }}"
     for (const [file, jobName, expected] of [
       ['release.yml', 'pack', official],
-      ['release-vendor.yml', 'pack', vendor],
       ['e2e.yml', 'e2e', official],
     ] as const) {
       const job = workflowJob(loadWorkflow('.github/workflows/' + file), jobName)
@@ -169,11 +168,7 @@ describe('CI workflow', () => {
       for (const event of ['pull_request', 'push', 'workflow_dispatch']) {
         const expression = expected.slice('${{ '.length, -' }}'.length)
         const selected: unknown = runInNewContext(expression, { github: { event_name: event } }, { timeout: 1000 })
-        expect(selected).toBe(event === 'pull_request'
-          ? file === 'release-vendor.yml'
-            ? 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries'
-            : 'pnpm run build:artifacts --profile official'
-          : file === 'release-vendor.yml' ? 'pnpm run build:lib:host' : 'pnpm run build:official')
+        expect(selected).toBe(event === 'pull_request' ? 'pnpm run build:artifacts --profile official' : 'pnpm run build:official')
       }
     }
   })
@@ -511,7 +506,7 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toContain("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -655,6 +650,12 @@ describe('CI workflow', () => {
   it('gates standalone keyless blacksmith jobs and benchmark tiers on the failover variables', () => {
     const expectedFilenames = workflowJob(loadWorkflow('.github/workflows/expected-filenames.yml'), 'expected-filenames')
     const sandbox = workflowJob(loadWorkflow('.github/workflows/sandbox.yml'), 'sandbox-e2e')
+    if (!Array.isArray(sandbox.steps)) throw new TypeError('sandbox-e2e must define steps')
+    const sandboxSteps = sandbox.steps.filter(isRecord)
+    const build = sandboxSteps.findIndex(step => step.run === 'pnpm exec tsx scripts/compile-referenced-projects.ts host-libraries')
+    const tests = sandboxSteps.findIndex(step => step.name === 'Sandbox e2e (real kernel confinement, world-verified)')
+    expect(build).toBeGreaterThanOrEqual(0)
+    expect(tests).toBeGreaterThan(build)
     expect(expectedFilenames['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(expectedFilenames['runs-on']).toContain("== 'blacksmith'")
     expect(expectedFilenames['runs-on']).toContain('blacksmith-4vcpu-ubuntu-2404')
@@ -841,12 +842,20 @@ describe('CI workflow', () => {
     expect(pythonWorkflow.env).toEqual(prWorkflow.env)
 
     // Drills share the parent run’s supersession policy.
-    for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
+    for (const [name, platform] of [['serial-linux-selfhosted', 'LINUX'], ['serial-windows', 'WINDOWS']] as const) {
       const job = workflow.jobs[name]
-      if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
+      if (!isRecord(job) || typeof job.if !== 'string') throw new TypeError(`${name} must define its trigger`)
       expect(job.concurrency).toBeUndefined()
-      // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      const condition = job.if
+      const enabled = (repository: string, failover: string, ref = 'refs/heads/master'): unknown =>
+        runInNewContext(condition, {
+          github: { event_name: 'push', ref, repository },
+          vars: { [`DSH_CI_FAILOVER_${platform}`]: failover },
+        }, { timeout: 1000 })
+      expect(enabled('deepseek-harness/deepseek-harness', 'blacksmith')).toBe(true)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'blacksmith')).toBe(false)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'selfhosted')).toBe(true)
+      expect(enabled('verbeux-ai/verboo-code-v2', 'selfhosted', 'refs/heads/topic')).toBe(false)
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.

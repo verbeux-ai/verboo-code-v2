@@ -73,7 +73,7 @@ export function varReferences(value: string): string[] {
 
 /**
  * Every file shipped as package source whose name the predicate accepts,
- * excluding build output and installed dependencies.
+ * excluding temporary trees, build output, and installed dependencies.
  * @param accepts - filename predicate.
  * @returns absolute paths under packages/, `/`-separated on every platform so
  *   specs can match repo-relative suffixes verbatim.
@@ -84,7 +84,7 @@ export function packageFiles(accepts: (name: string) => boolean): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules' && entry.name !== 'lib' && entry.name !== 'dist') walk(path)
+        if (!entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== 'lib' && entry.name !== 'dist') walk(path)
       } else if (accepts(entry.name)) found.push(path.replaceAll('\\', '/'))
     }
   }
