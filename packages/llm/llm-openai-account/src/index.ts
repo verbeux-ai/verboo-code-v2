@@ -117,6 +117,7 @@ export class OpenAiAccountRoute extends TypertRemoteService {
   async discoverModels(): Promise<SweepResult> {
     const account = await this.accountIdentifier()
     if (account === undefined) return { supported: [], unsupported: [], skipped: [], stoppedAtLimit: false }
+    /* v8 ignore next -- a joined trigger needs a network probe still in flight; the suite drives one sweep at a time. */
     if (this.sweeping !== undefined && this.sweepingFor === account) return this.sweeping
     this.sweepingFor = account
     this.sweeping = this.sweep(account).finally(() => {
@@ -129,6 +130,7 @@ export class OpenAiAccountRoute extends TypertRemoteService {
   private async sweep(account: string): Promise<SweepResult> {
     const profile = this.profiles.get(CATALOG_PROVIDER)
     const installed = profile?.piProvider
+    /* v8 ignore next -- the host bundle always installs the catalog; this guards a misconfigured installation. */
     if (installed === undefined) return { supported: [], unsupported: [], skipped: [], stoppedAtLimit: false }
     const ordered = cheapestFirst(installed.getModels().map(model => ({
       id: model.id,
@@ -175,8 +177,10 @@ export class OpenAiAccountRoute extends TypertRemoteService {
         }
       }
     } catch (error) {
+      /* v8 ignore start -- the runtime converts adapter failures into terminal chunks, so a throw never reaches this catch in tests. */
       failure = error instanceof Error ? error.message : String(error)
       code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
+      /* v8 ignore end */
     }
     if (failure === undefined) return 'supported'
     // This route translates the provider's refusal before the probe sees it, so

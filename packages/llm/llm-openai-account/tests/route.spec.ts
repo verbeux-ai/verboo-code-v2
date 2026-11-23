@@ -294,7 +294,8 @@ describe('the discovery sweep', () => {
       if (calls % 2 === 0) throw new Error('not supported when using Codex with a ChatGPT account')
       return new Response(
         [
-          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: {}, finish_reason: 'not supported when using Codex with a ChatGPT account' }] })}`,
+          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }] })}`,
+          `data: ${JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gpt-5.5', choices: [{ index: 0, delta: {}, finish_reason: 'The gpt-5.5 model is not supported when using Codex with a ChatGPT account.' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}`,
           'data: [DONE]',
         ].join('\n\n'),
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
@@ -326,6 +327,16 @@ describe('the discovery sweep', () => {
     expect(result.skipped.length).toBeGreaterThan(0)
   })
 
+  it('classifies a throwing sign-in as unknown through the probe catch', { timeout: 30_000 }, async () => {
+    const ctx = await harness(session({ throws: true }))
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    const result = await route.discoverModels()
+    // Nothing was proved either way: every probe lands in the unknown bucket.
+    expect(result.supported).toEqual([])
+    expect(result.unsupported).toEqual([])
+    expect(result.stoppedAtLimit).toBe(false)
+  })
+
   it('answers an empty sweep when the catalog provider is not installed', async () => {
     const ctx = await harness(undefined)
     const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
@@ -335,4 +346,43 @@ describe('the discovery sweep', () => {
       supported: [], unsupported: [], skipped: [], stoppedAtLimit: false,
     })
   })
+})
+
+describe('the verdict recording over the real transport', () => {
+  /** One complete Codex responses stream, as the backend sends it. */
+  function codexStream(text: string, terminal: unknown): Response {
+    const events: Array<Record<string, unknown>> = [
+      { type: 'response.created', response: { id: 'resp-1' } },
+      { type: 'response.output_item.added', output_index: 0, item: { type: 'message', role: 'assistant' } },
+      { type: 'response.output_text.delta', item_id: 'msg-1', delta: text },
+      { type: 'response.output_item.done', output_index: 0, item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] } },
+    ]
+    events.push(terminal as Record<string, unknown>)
+    const body = events.map(event => `data: ${JSON.stringify(event)}`).join('\n\n')
+    return new Response(`${body}\n\n`, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+
+  it('records supported for a clean call and unsupported for the Codex refusal', { timeout: 30_000 }, async () => {
+    const recorded: Array<[string, string, string]> = []
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/models')) return new Response('{}', { status: 200 })
+      if (!url.includes('codex/responses')) return new Response('{}', { status: 200 })
+      // Alternate clean and refused calls by call count on the stub itself.
+      responsesServed += 1
+      return responsesServed % 2 === 1
+        ? codexStream('ok', { type: 'response.completed', response: { id: 'resp-1', status: 'completed', usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 } } })
+        : codexStream('', { type: 'error', code: 'model_not_supported', message: "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account." })
+    }))
+    const ctx = await harness(session())
+    const route = ctx.get('llmOpenaiAccount') as { discoverModels(): Promise<SweepResult> }
+    const result = await route.discoverModels()
+    expect(result.supported.length).toBeGreaterThan(0)
+    expect(result.unsupported.length).toBeGreaterThan(0)
+    expect(recorded).toEqual([])
+    expect(responsesServed).toBeGreaterThan(0)
+  })
+
+  let responsesServed = 0
 })

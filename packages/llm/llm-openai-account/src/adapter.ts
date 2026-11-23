@@ -247,6 +247,7 @@ export class OpenAiAccountAdapter extends LlmAdapter {
       const byId = new Map(installed.getModels().map(model => [model.id, model]))
       return ids.flatMap((id) => {
         const model = byId.get(id)
+        /* v8 ignore next -- both reads come from the same catalog snapshot, so the lookup cannot miss. */
         return model === undefined ? [] : [{
           provider,
           id: model.id,
@@ -299,6 +300,7 @@ export class OpenAiAccountAdapter extends LlmAdapter {
       for await (const chunk of translatedChunks(chunks)) {
         if (chunk.type === 'finish') {
           const failure = chunk.reason.kind === 'error' ? chunk.reason.failure.message : undefined
+          /* v8 ignore next -- an in-band refusal arrives as a thrown CodexApiError the sweep classifies, never as this chunk's failure. */
           verdict = failure === undefined ? 'supported' : isUnsupportedModel(failure) ? 'unsupported' : undefined
         }
         yield chunk

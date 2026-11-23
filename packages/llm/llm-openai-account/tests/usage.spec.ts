@@ -132,3 +132,72 @@ it('numbers an additional limit the provider left unidentified and skips one wit
     { id: 'metered', usedPercent: 7 },
   ])
 })
+
+it('reads the secondary long window beside the primary one', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: {
+      used_percent: 10,
+      rate_limit: {
+        primary_window: { used_percent: 10, window_minutes: 5, reset_after_seconds: 120 },
+        secondary_window: { used_percent: 70, limit_window_seconds: 604_800, reset_after_seconds: 3600 },
+      },
+    },
+  })
+  expect(reading?.usedPercent).toBe(10)
+  expect(reading?.additionalLimits).toEqual([
+    { id: 'secondary', usedPercent: 70, windowSeconds: 604_800, resetAfterSeconds: 3_600 },
+  ])
+})
+
+it('omits the secondary window facts the provider left out', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: {
+      used_percent: 10,
+      rate_limit: {
+        primary_window: { used_percent: 10, window_minutes: 5, reset_after_seconds: 120 },
+        secondary_window: { used_percent: 70 },
+      },
+    },
+  })
+  expect(reading?.additionalLimits).toEqual([{ id: 'secondary', usedPercent: 70 }])
+})
+
+it('numbers a decimal-string credit balance and keeps a null one out', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: { used_percent: 1, credits: { balance: '12.5' } },
+  })
+  expect(reading?.credits).toBe(12.5)
+  const empty = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: { used_percent: 1, credits: { balance: null } },
+  })
+  expect(empty?.credits).toBeUndefined()
+})
+
+it('keeps a credit balance the provider stated as a non-numeric string out', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: { used_percent: 1, credits: { balance: 'not-a-number' } },
+  })
+  expect(reading).not.toHaveProperty('credits')
+})
+
+it('falls back to the credit balance header when the body stated none', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    headers: { 'x-codex-credits-balance': '7.25' },
+    body: { used_percent: 1, credits: { balance: null } },
+  })
+  expect(reading?.credits).toBe(7.25)
+})
+
+it('keeps a credit balance the provider stated as a plain number', () => {
+  const reading = usageOf({
+    asOf: '2026-11-13T00:00:00.000Z',
+    body: { used_percent: 1, credits: { balance: 42 } },
+  })
+  expect(reading?.credits).toBe(42)
+})

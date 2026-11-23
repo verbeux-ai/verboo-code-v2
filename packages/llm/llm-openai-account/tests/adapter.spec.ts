@@ -1,5 +1,5 @@
 /** The route's own translation surface, exercised without the shared runtime. */
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { LlmError, QUOTA_EXCEEDED_CODE, ACCOUNT_QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmFailure, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -144,3 +144,43 @@ it('rejects a usage deadline outside the timer bound', () => {
 
 /** Keep the reading type referenced so the module's public surface stays checked. */
 export type ReadingSurface = SubscriptionUsage
+
+describe('the verdict recording', () => {
+  /** Drain one adapter stream and collect its chunks. */
+  async function drainOf(source: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
+    const collected: StreamChunk[] = []
+    for await (const chunk of source) collected.push(chunk)
+    return collected
+  }
+
+  it('records nothing for a technical failure, keeping the model offered', async () => {
+    const recorded: Array<[string, string, string]> = []
+    const mounted = new OpenAiAccountAdapter({
+      profiles,
+      accessToken: async () => 'fixture-token',
+      accountId: async () => 'acct-1',
+      record: (account, model, verdict) => { recorded.push([account, model, verdict]) },
+    })
+    const chunks = await drainOf(mounted.stream(request))
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    // A transient error records nothing: the model stays offered.
+    expect(recorded).toEqual([])
+  })
+
+  it('skips the verdict when no account is known', async () => {
+    const recorded: Array<[string, string, string]> = []
+    const mounted = new OpenAiAccountAdapter({
+      profiles,
+      accessToken: async () => 'fixture-token',
+      accountId: async () => undefined,
+      record: (account, model, verdict) => { recorded.push([account, model, verdict]) },
+    })
+    await drainOf(mounted.stream(request))
+    expect(recorded).toEqual([])
+  })
+
+  it('lists models filtered by the availability entry and tolerates a missing entry', async () => {
+    const models = await adapter().listModels(PROVIDER)
+    expect(models.length).toBeGreaterThan(0)
+  })
+})
