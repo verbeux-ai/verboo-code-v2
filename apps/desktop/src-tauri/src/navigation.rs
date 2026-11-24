@@ -21,7 +21,10 @@ pub(crate) enum NavigationDecision {
 /// A destination this program hands to another program is reported as such, so
 /// the in-place navigation hook and the new-window hook reach one decision.
 /// Every other scheme is denied rather than loaded in place.
-pub(crate) fn navigation_decision(url: &url::Url, owned_origin: Option<&url::Origin>) -> NavigationDecision {
+pub(crate) fn navigation_decision(
+    url: &url::Url,
+    owned_origin: Option<&url::Origin>,
+) -> NavigationDecision {
     // The window owns exactly two documents: the application protocol and the
     // Host page. Both are pages this program packaged or served, so a scheme
     // outside that set is refused before any origin comparison runs: `blob:`
@@ -46,15 +49,12 @@ pub(crate) fn navigation_decision(url: &url::Url, owned_origin: Option<&url::Ori
     NavigationDecision::OpenExternally
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn owned() -> url::Origin {
-        url::Url::parse("http://127.0.0.1:31501/")
-            .unwrap()
-            .origin()
+        url::Url::parse("http://127.0.0.1:31501/").unwrap().origin()
     }
 
     fn decide(address: &str, origin: Option<&url::Origin>) -> NavigationDecision {
@@ -107,7 +107,11 @@ mod tests {
             "ftp://example.com/file",
             "https://user:secret@code.verboo.ai/",
         ] {
-            assert_eq!(decide(address, Some(&origin)), NavigationDecision::Deny, "{address}");
+            assert_eq!(
+                decide(address, Some(&origin)),
+                NavigationDecision::Deny,
+                "{address}"
+            );
         }
     }
 
@@ -135,7 +139,11 @@ mod tests {
             "blob:http://127.0.0.1:31501/uuid",
             "data:text/html;base64,PHNjcmlwdD4=",
         ] {
-            assert_eq!(decide(address, Some(&origin)), NavigationDecision::Deny, "{address}");
+            assert_eq!(
+                decide(address, Some(&origin)),
+                NavigationDecision::Deny,
+                "{address}"
+            );
         }
     }
 
@@ -156,6 +164,9 @@ mod tests {
             decide("http://127.0.0.1:31501/session/1", None),
             NavigationDecision::OpenExternally
         );
-        assert_eq!(decide("tauri://localhost/index.html", None), NavigationDecision::NavigateHere);
+        assert_eq!(
+            decide("tauri://localhost/index.html", None),
+            NavigationDecision::NavigateHere
+        );
     }
 }

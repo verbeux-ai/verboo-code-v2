@@ -24,7 +24,7 @@ use tauri_plugin_opener::OpenerExt;
 
 mod navigation;
 
-use navigation::{NavigationDecision, navigation_decision};
+use navigation::{navigation_decision, NavigationDecision};
 
 #[derive(Default)]
 struct HostState {
@@ -231,8 +231,9 @@ fn main() {
             desktop_info,
             client_ready,
             client_diagnostic,
-            update::update_install,
-            update::update_close,
+            update::updates_status,
+            update::updates_restart,
+            update::updates_dismiss,
             quit_after_hold
         ])
         .setup(move |app| {
@@ -252,7 +253,9 @@ fn main() {
                     // unloads a backgrounded view, and bringing it forward then
                     // repaints from scratch. Unsupported on Linux, where the
                     // boot style alone owns the first frame.
-                    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+                    .background_throttling(
+                        tauri::utils::config::BackgroundThrottlingPolicy::Disabled,
+                    )
                     .initialization_script(include_str!("../../tauri/bridge.js"))
                     .disable_drag_drop_handler()
                     .on_page_load({

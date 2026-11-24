@@ -1,34 +1,77 @@
-//! Offer an available update in a product window, then install it in place.
+//! Optional desktop updates: check once per launch, download in the background,
+//! stage the installer, and apply it.
 //!
-//! The window shows the download and states that the application restarts on its
-//! own when the installation finishes, so the restart never surprises the user.
-//! Every failure stays silent until the user is involved: an unreachable feed or
-//! a malformed manifest must never block startup.
+//! No window interrupts the product. The sidebar shows the download while it
+//! runs, then a restart affordance once the installer is staged. A reader who
+//! never answers still gets the update: the staged installer is applied on the
+//! next launch. Every failure stays silent in the product — an unreachable feed
+//! or a malformed manifest must never block startup.
 
-use crate::locale;
-use crate::update_logic as logic;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use tauri_plugin_updater::{Error as UpdateError, Update, UpdaterExt};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_updater::{Error as UpdateError, UpdaterExt};
 
-use logic::{APPLIED_FILE, DECLINED_FILE, UPDATED_WINDOW, UPDATE_WINDOW};
+use crate::update_logic as logic;
 
-fn config_file(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
+use logic::{APPLIED_FILE, DECLINED_FILE, STAGED_FILE, STAGED_PAYLOAD};
+
+/// What the sidebar indicator renders. Serialized straight to the client.
+#[derive(Clone, Default, serde::Serialize)]
+pub struct UpdateStatus {
+    /// `idle`, `checking`, `downloading`, `ready`, or `error`.
+    phase: &'static str,
+    /// Version the feed announced, once it did.
+    version: Option<String>,
+    /// Whole-percent progress while downloading.
+    percent: Option<i64>,
+    /// Stable diagnostic code, never provider text.
+    failure: Option<&'static str>,
+}
+
+impl UpdateStatus {
+    fn set(&mut self, next: UpdateStatus) {
+        *self = next
+    }
+}
+
+/// Owns the status the client polls and guards one download per launch.
+#[derive(Default)]
+pub struct UpdateRuntime {
+    status: Mutex<UpdateStatus>,
+    downloading: Mutex<bool>,
+}
+
+impl UpdateRuntime {
+    fn publish(&self, next: UpdateStatus) {
+        if let Ok(mut slot) = self.status.lock() {
+            slot.set(next);
+        }
+    }
+
+    fn snapshot(&self) -> UpdateStatus {
+        self.status
+            .lock()
+            .map(|slot| slot.clone())
+            .unwrap_or_default()
+    }
+}
+
+fn config_file(app: &AppHandle, name: &str) -> Option<PathBuf> {
     app.path()
         .app_config_dir()
         .ok()
         .map(|directory| directory.join(name))
 }
 
-fn read_marker(app: &tauri::AppHandle, name: &str) -> Option<String> {
+fn read_marker(app: &AppHandle, name: &str) -> Option<String> {
     let path = config_file(app, name)?;
     std::fs::read_to_string(path)
         .ok()
         .map(|version| version.trim().to_string())
 }
 
-fn write_marker(app: &tauri::AppHandle, name: &str, version: &str) {
+fn write_marker(app: &AppHandle, name: &str, version: &str) {
     let Some(path) = config_file(app, name) else {
         return;
     };
@@ -42,109 +85,141 @@ fn write_marker(app: &tauri::AppHandle, name: &str, version: &str) {
     }
 }
 
-/// An update the feed offered and the user has not answered yet.
-struct Prepared {
-    version: String,
-    update: Update,
+fn remove_file(app: &AppHandle, name: &str) {
+    if let Some(path) = config_file(app, name) {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
-/// The offered update, taken once when the user confirms the installation.
-#[derive(Default)]
-pub struct Offered(Mutex<Option<Prepared>>);
-
-/// Open the offer window for a version the feed announced.
-fn open_offer(app: &tauri::AppHandle, version: &str) -> tauri::Result<WebviewWindow> {
-    let copy = locale::update_copy(version);
-    // Update cards are frameless; don't inherit the product window's native menu.
-    let menu = tauri::menu::Menu::new(app)?;
-    grant(app, UPDATE_WINDOW)?;
-    let window =
-        WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::App("update.html".into()))
-            .menu(menu)
-            .title("Verboo Code")
-            .inner_size(468.0, 328.0)
-            .resizable(false)
-            .maximizable(false)
-            .minimizable(false)
-            .decorations(false)
-            .always_on_top(true)
-            .focused(true)
-            .center()
-            .initialization_script(&logic::copy_script(&logic::OfferCopy {
-                version,
-                title: &copy.title,
-                body: &copy.body,
-                install: &copy.install,
-                later: &copy.later,
-                close: &copy.close,
-                failed: &copy.failed,
-                diagnostic_label: &copy.diagnostic_label,
-            }))
-            .build()?;
-    Ok(window)
+/// Keep the downloaded installer for the next launch.
+fn stage(app: &AppHandle, version: &str, bytes: &[u8]) -> bool {
+    let Some(path) = config_file(app, STAGED_PAYLOAD) else {
+        return false;
+    };
+    if let Some(parent) = path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return false;
+        }
+    }
+    if std::fs::write(&path, bytes).is_err() {
+        eprintln!("Verboo Code: update_stage_failed");
+        return false;
+    }
+    write_marker(app, STAGED_FILE, version);
+    true
 }
 
-/// Check the feed once and offer what it announces.
-async fn offer(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
-    let Some(update) = app.updater()?.check().await? else {
-        return Ok(());
+/// Read the installer kept by a previous launch.
+fn staged(app: &AppHandle) -> Option<(String, Vec<u8>)> {
+    let version = read_marker(app, STAGED_FILE)?;
+    let path = config_file(app, STAGED_PAYLOAD)?;
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some((version, bytes))
+}
+
+fn discard_staged(app: &AppHandle) {
+    remove_file(app, STAGED_FILE);
+    remove_file(app, STAGED_PAYLOAD);
+}
+
+/// Install one staged or freshly downloaded payload and restart into it.
+fn install_and_restart(
+    app: &AppHandle,
+    version: &str,
+    bytes: &[u8],
+    update: &tauri_plugin_updater::Update,
+) -> Result<(), UpdateError> {
+    // Windows exits inside the installer call, before it can return success.
+    // The next launch acknowledges this target only if it is actually running.
+    write_marker(app, APPLIED_FILE, version);
+    match update.install(bytes) {
+        Ok(()) => {
+            eprintln!("Verboo Code: update_installed");
+            app.restart()
+        }
+        Err(error) => {
+            remove_file(app, APPLIED_FILE);
+            discard_staged(app);
+            eprintln!(
+                "Verboo Code: update_failed code={} detail={error}",
+                update_failure_code(&error)
+            );
+            Err(error)
+        }
+    }
+}
+
+/// Check the feed, download what it announces, and stage the installer.
+async fn check_and_download(app: AppHandle) {
+    let runtime = app.state::<UpdateRuntime>();
+    runtime.publish(UpdateStatus {
+        phase: "checking",
+        ..UpdateStatus::default()
+    });
+    let update = match app.updater() {
+        Ok(updater) => match updater.check().await {
+            Ok(update) => update,
+            Err(error) => {
+                eprintln!("Verboo Code: update_check_failed {error}");
+                runtime.publish(UpdateStatus {
+                    phase: "error",
+                    failure: Some(update_failure_code(&error)),
+                    ..UpdateStatus::default()
+                });
+                return;
+            }
+        },
+        Err(error) => {
+            eprintln!("Verboo Code: update_check_failed {error}");
+            runtime.publish(UpdateStatus {
+                phase: "error",
+                failure: Some(update_failure_code(&error)),
+                ..UpdateStatus::default()
+            });
+            return;
+        }
+    };
+    let Some(update) = update else {
+        runtime.publish(UpdateStatus {
+            phase: "idle",
+            ..UpdateStatus::default()
+        });
+        return;
     };
     let version = update.version.clone();
     if !logic::should_offer(read_marker(&app, DECLINED_FILE).as_deref(), &version) {
-        return Ok(());
+        runtime.publish(UpdateStatus {
+            phase: "idle",
+            ..UpdateStatus::default()
+        });
+        return;
     }
-    if let Some(state) = app.try_state::<Offered>() {
-        if let Ok(mut slot) = state.0.lock() {
-            *slot = Some(Prepared {
-                version: version.clone(),
-                update,
-            });
+    {
+        let Ok(mut guard) = runtime.downloading.lock() else {
+            return;
+        };
+        if *guard {
+            return;
         }
+        *guard = true;
     }
-    open_offer(&app, &version)?;
-    Ok(())
-}
-
-/// Run the download the user confirmed, reporting its progress in the window.
-#[tauri::command]
-pub async fn update_install(
-    app: tauri::AppHandle,
-    window: WebviewWindow,
-    state: State<'_, Offered>,
-) -> Result<(), String> {
-    if window.label() != UPDATE_WINDOW {
-        return Err("update_install_denied".into());
-    }
-    let prepared = state.0.lock().ok().and_then(|mut slot| slot.take());
-    let Some(Prepared { version, update }) = prepared else {
-        return Err("update_install_unprepared".into());
-    };
-    let copy = locale::update_copy(&version);
-    let _ = window.eval(logic::running_script(&logic::RunningCopy {
-        title: &copy.running_title,
-        body: &copy.running_body,
-        status: &copy.status,
-    }));
-
-    // One eval per whole percent keeps the window responsive during a large download.
+    runtime.publish(UpdateStatus {
+        phase: "downloading",
+        version: Some(version.clone()),
+        percent: Some(0),
+        failure: None,
+    });
+    let progress_app = app.clone();
     let mut downloaded = 0usize;
     let mut reported = i64::MAX;
-    let mut indeterminate = false;
-    let progress_window = window.clone();
-    let finalizing_window = window.clone();
-    let finalizing_status = copy.finalizing_status.clone();
-    let marker_app = app.clone();
-    let marker_version = version.clone();
     let result = update
-        .download_and_install(
+        .download(
             move |chunk: usize, total: Option<u64>| {
                 downloaded += chunk;
                 let Some(ratio) = logic::ratio_of(downloaded, total) else {
-                    // A feed without a length still deserves motion, not a stalled bar.
-                    if !indeterminate {
-                        indeterminate = true;
-                        let _ = progress_window.eval("window.__setIndeterminate()");
-                    }
                     return;
                 };
                 let percent = logic::percent_of(ratio);
@@ -152,31 +227,75 @@ pub async fn update_install(
                     return;
                 }
                 reported = percent;
-                let _ = progress_window.eval(logic::progress_script(ratio));
+                progress_app.state::<UpdateRuntime>().publish(UpdateStatus {
+                    phase: "downloading",
+                    version: None,
+                    percent: Some(percent),
+                    failure: None,
+                });
             },
-            move || {
-                let _ = finalizing_window.eval(&logic::finalizing_script(&finalizing_status));
-                // Windows exits inside the installer call, before it can return success.
-                // The next launch acknowledges this target only if it is actually running.
-                write_marker(&marker_app, APPLIED_FILE, &marker_version);
-            },
+            || {},
         )
         .await;
-
+    if let Ok(mut guard) = runtime.downloading.lock() {
+        *guard = false;
+    }
     match result {
-        Ok(()) => {
-            eprintln!("Verboo Code: update_installed");
-            app.restart()
+        Ok(bytes) => {
+            if stage(&app, &version, &bytes) {
+                runtime.publish(UpdateStatus {
+                    phase: "ready",
+                    version: Some(version),
+                    percent: None,
+                    failure: None,
+                });
+            } else {
+                runtime.publish(UpdateStatus {
+                    phase: "error",
+                    version: Some(version),
+                    percent: None,
+                    failure: Some("install-path"),
+                });
+            }
         }
         Err(error) => {
-            if let Some(path) = config_file(&app, APPLIED_FILE) {
-                let _ = std::fs::remove_file(path);
-            }
-            let code = update_failure_code(&error);
-            eprintln!("Verboo Code: update_failed code={code} detail={error}");
-            let _ = window.eval(logic::fail_script(&copy.failed, code));
-            Err(code.into())
+            eprintln!("Verboo Code: update_download_failed {error}");
+            runtime.publish(UpdateStatus {
+                phase: "error",
+                version: Some(version),
+                percent: None,
+                failure: Some(update_failure_code(&error)),
+            });
         }
+    }
+}
+
+/// Apply an installer a previous launch staged, before anything else starts.
+///
+/// A staged installer whose version is not newer than the running one is
+/// discarded: that launch already applied it.
+fn apply_staged(app: &AppHandle) {
+    let Some((version, bytes)) = staged(app) else {
+        return;
+    };
+    let running = app.package_info().version.to_string();
+    if !logic::should_acknowledge_newer(&version, &running) {
+        discard_staged(app);
+        return;
+    }
+    let Ok(updater) = app.updater() else {
+        return;
+    };
+    let Ok(Some(update)) = tauri::async_runtime::block_on(updater.check()) else {
+        // The feed no longer offers it; keep the staged copy for a later launch.
+        return;
+    };
+    if update.version != version {
+        discard_staged(app);
+        return;
+    }
+    if let Err(error) = install_and_restart(app, &version, &bytes, &update) {
+        eprintln!("Verboo Code: update_staged_install_failed {error}");
     }
 }
 
@@ -210,91 +329,58 @@ fn update_failure_code(error: &UpdateError) -> &'static str {
     }
 }
 
-/// Close an update window; declining the offer is remembered for that version.
+/// Report the current update state to the sidebar indicator.
 #[tauri::command]
-pub fn update_close(
-    app: tauri::AppHandle,
-    window: WebviewWindow,
-    state: State<'_, Offered>,
-) -> Result<(), String> {
-    if window.label() != UPDATE_WINDOW && window.label() != UPDATED_WINDOW {
-        return Err("update_close_denied".into());
-    }
-    if window.label() == UPDATE_WINDOW {
-        if let Some(Prepared { version, .. }) = state.0.lock().ok().and_then(|mut slot| slot.take())
-        {
-            write_marker(&app, DECLINED_FILE, &version);
-        }
-    }
-    window.close().map_err(|_| "update_close_failed".into())
+pub fn updates_status(state: State<'_, UpdateRuntime>) -> UpdateStatus {
+    state.snapshot()
 }
 
-/// Acknowledge an update once, only when its target matches the running version.
-pub fn show_applied(app: &tauri::AppHandle) {
-    let Some(version) = read_marker(app, APPLIED_FILE) else {
-        return;
+/// Restart into the staged installer the reader confirmed.
+#[tauri::command]
+pub async fn updates_restart(app: AppHandle) -> Result<(), String> {
+    let Some((version, bytes)) = staged(&app) else {
+        return Err("update_not_staged".into());
     };
-    let Some(path) = config_file(app, APPLIED_FILE) else {
-        return;
+    let Ok(updater) = app.updater() else {
+        return Err("update_unavailable".into());
     };
-    // The notice is one-shot even when the window cannot open.
-    let _ = std::fs::remove_file(path);
-    if !logic::should_acknowledge(&version, &app.package_info().version.to_string()) {
-        return;
+    let update = match updater.check().await {
+        Ok(Some(update)) => update,
+        _ => return Err("update_unavailable".into()),
+    };
+    if update.version != version {
+        discard_staged(&app);
+        return Err("update_unavailable".into());
     }
-    if grant(app, UPDATED_WINDOW).is_err() {
-        eprintln!("Verboo Code: update_capability_failed");
-        return;
-    }
-    let (title, body, ok_label) = locale::updated_copy(&version);
-    let script = logic::applied_script(&title, &body, &ok_label);
-    let result = tauri::menu::Menu::new(app).and_then(|menu| {
-        WebviewWindowBuilder::new(app, UPDATED_WINDOW, WebviewUrl::App("updated.html".into()))
-            .menu(menu)
-            .title("Verboo Code")
-            .inner_size(428.0, 156.0)
-            .resizable(false)
-            .maximizable(false)
-            .minimizable(false)
-            .decorations(false)
-            .always_on_top(true)
-            .focused(false)
-            .center()
-            .initialization_script(&script)
-            .build()
+    install_and_restart(&app, &version, &bytes, &update)
+        .map_err(|error| update_failure_code(&error).to_string())
+}
+
+/// Remember that this reader dismissed the offer for one version.
+#[tauri::command]
+pub fn updates_dismiss(app: AppHandle, version: String) -> Result<(), String> {
+    write_marker(&app, DECLINED_FILE, &version);
+    app.state::<UpdateRuntime>().publish(UpdateStatus {
+        phase: "idle",
+        ..UpdateStatus::default()
     });
-    if result.is_err() {
-        eprintln!("Verboo Code: update_notice_unavailable");
-    }
+    Ok(())
 }
 
-/// Grant one update window the two commands it may call.
-fn grant(app: &tauri::AppHandle, label: &str) -> tauri::Result<()> {
-    use tauri::ipc::CapabilityBuilder;
-    let capability = CapabilityBuilder::new(format!("update-window-{label}"))
-        // The update card is served by `WebviewUrl::App`, so local IPC must be enabled.
-        .local(true)
-        .window(label)
-        .permission("update-window");
-    app.add_capability(capability)
-}
-
-/// Own the offered-update slot and show the notice for the previous install.
-pub fn install(app: &tauri::AppHandle) {
-    app.manage(Offered::default());
-    show_applied(app);
+/// Own the update state and apply whatever a previous launch staged.
+pub fn install(app: &AppHandle) {
+    app.manage(UpdateRuntime::default());
+    apply_staged(app);
 }
 
 /// Check the feed once per launch, without holding up the product window.
-pub fn spawn(app: &tauri::AppHandle) {
+pub fn spawn(app: &AppHandle) {
     if cfg!(debug_assertions) {
         return;
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        if let Err(error) = tauri::async_runtime::block_on(offer(app)) {
-            eprintln!("Verboo Code: update_check_failed {error}");
-        }
+        tauri::async_runtime::block_on(check_and_download(app));
     });
 }
 
