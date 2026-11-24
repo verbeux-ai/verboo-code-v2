@@ -88,8 +88,10 @@
   color: var(--dsw-alias-label-primary-foreground);
 }
 
-.primary:hover {
-  background: var(--dsw-alias-button-primary-hover);
+@media (hover: hover) {
+  .primary:hover {
+    background: var(--dsw-alias-button-primary-hover);
+  }
 }
 
 .secondary {

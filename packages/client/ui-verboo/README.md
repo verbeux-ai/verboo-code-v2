@@ -53,6 +53,8 @@ Components receive renderer-bound hooks and commands. The presenter discards res
 
 The product registers `conversation.hero.intro` for its quiet opening question and `conversation.chat.running.indicator` for a neutral pulse. Shared Chat defaults remain available to other profiles.
 
+The product sidebar declares its own footer seat, `verboo.sidebar.foot`, and renders it above the plan shortcut; the desktop update row occupies it. Until the first account read answers, the entry screen shows only the brand and the account-check spinner, because the welcome copy and sign-in button describe a state nobody has observed yet.
+
 </details>
 
 <a id="further-exploration"></a>
