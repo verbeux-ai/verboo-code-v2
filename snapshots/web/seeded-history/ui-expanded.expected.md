@@ -13,15 +13,15 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Read files" [expanded]
-- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel."
+- button "2 actions" [expanded]
+- button "Think"
 - button "Read a.txt":
   - text: Read
   - button "a.txt"
 - button "Read b.txt":
   - text: Read
   - button "b.txt"
-- button "Think Both files have been read. a.txt contains \"alpha\" and b.txt contains \"beta\". I'll now reply with DONE as instructed."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"
