@@ -39,6 +39,16 @@ afterEach(async () => {
  * @returns the service, the recorded fetch, and a request signal.
  */
 function fixture(...responses: Response[]) {
+  return configured({}, ...responses)
+}
+
+/**
+ * Serve a scripted sequence under an explicit deployment configuration.
+ * @param config - product configuration, including request ceilings.
+ * @param responses - one entry per request, in call order.
+ * @returns the service, the recorded fetch, and a request signal.
+ */
+function configured(config: Record<string, unknown>, ...responses: Response[]) {
   const ctx = new Context()
   contexts.push(ctx)
   const account = new FixtureAccount(ctx)
@@ -51,9 +61,22 @@ function fixture(...responses: Response[]) {
     return next
   })
   vi.stubGlobal('fetch', fetch)
-  const product = new VerbooProduct(ctx, {})
+  const product = new VerbooProduct(ctx, config)
   return { product, fetch, signal: new AbortController().signal }
 }
+
+/** Answer one request only after a delay, honoring the caller's cancellation. */
+const delayed = (delayMs: number, body: Response): typeof globalThis.fetch =>
+  async (_input: RequestInfo | URL, init?: RequestInit) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, delayMs)
+      init?.signal?.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(new Error('aborted'))
+      }, { once: true })
+    })
+    return body
+  }
 
 const link = (url: string, id: string | null = null): Response => Response.json({
   data: { url, expiresAt: '2026-11-05T12:00:00Z', id },
@@ -179,6 +202,25 @@ describe('agent tool discovery and execution', () => {
     expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({
       connectionId: 'ca_work', query: 'list files',
     })
+  })
+
+  it('waits past the general per-attempt ceiling for a slow provider search', async () => {
+    // Semantic search over a toolkit catalog answers far slower than the
+    // account client's default 10-second attempt ceiling, and a search that
+    // spent its budget cannot be retried by its caller.
+    const f = configured(
+      { requestTimeoutMs: 40, connectionSearchTimeoutMs: 2000 },
+      Response.json({ data: [tool] }),
+    )
+    vi.stubGlobal('fetch', delayed(120, Response.json({ data: [tool] })))
+    expect(JSON.parse(await f.product.searchAgentConnections('ca_work', 'list files', f.signal)))
+      .toEqual([tool])
+  })
+
+  it('still stops a non-search request at the general per-attempt ceiling', async () => {
+    const f = configured({ requestTimeoutMs: 40, connectionSearchTimeoutMs: 2000 })
+    vi.stubGlobal('fetch', delayed(120, Response.json({ data: { available: true, toolkits: [], accounts: [] } })))
+    expect(await f.product.getConnections()).toEqual({ ok: false, code: 'request_failed' })
   })
 
   it.each([
