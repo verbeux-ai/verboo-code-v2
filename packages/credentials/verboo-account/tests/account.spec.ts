@@ -466,6 +466,25 @@ it.each(['completed cancellation', 'pending sign-out'])('shares one working logi
   const retry = await app.login()
   expect(retry.view.attempt?.id).toBe(first.attempt?.id)
   expect(app.state.exchanges).toBe(1)
+
+  const exchange = app.requests.find(request => request.path === '/oauth/token')
+  expect(exchange?.journey).toBeTruthy()
+  expect(exchange?.operation).toBeTruthy()
+  const observations = () => app.requests
+    .filter(request => request.path === '/api/journey/events')
+    .flatMap(request => (JSON.parse(request.body) as {
+      events: Array<{ eventId: string; journeyId: string; operationId: string; outcome: string; errorCode?: string }>
+    }).events)
+  await until(async () => observations().some(event =>
+    event.journeyId === exchange?.journey && event.operationId === exchange?.operation && event.outcome === 'succeeded',
+  ))
+  const unique = [...new Map(observations().map(event => [event.eventId, event])).values()]
+  expect(unique.filter(event => event.outcome === 'started')).toHaveLength(2)
+  expect(unique.filter(event => event.outcome === 'failed')).toEqual([
+    expect.objectContaining({ errorCode: 'request_cancelled' }),
+  ])
+  expect(unique.filter(event => event.journeyId === exchange?.journey && event.operationId === exchange?.operation)
+    .map(event => event.outcome)).toEqual(['started', 'succeeded'])
 })
 
 it('serializes refresh rotation and refuses credentials outside the configured gateway', async () => {
