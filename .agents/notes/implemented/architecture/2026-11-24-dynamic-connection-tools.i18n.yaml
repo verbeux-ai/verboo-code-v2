@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-24-dynamic-connection-tools.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-24-dynamic-connection-tools.md
+/agent-note-dynamic-connection-tools-from-a-capability-search:
+  en: 049878f3d0657e8b
+  zh: 34f786450d7b7fed
+/agent-note-dynamic-connection-tools-from-a-capability-search/problem:
+  en: 49f47cca82c0d01e
+  zh: c2bcbe6ad3b471ed
+/agent-note-dynamic-connection-tools-from-a-capability-search/decision:
+  en: 44597524603d19a8
+  zh: 03b79b7aa7d295f4
+/agent-note-dynamic-connection-tools-from-a-capability-search/alternatives-considered:
+  en: 75902ebfa6d2b930
+  zh: bbf8b81a1559a5f4
+/agent-note-dynamic-connection-tools-from-a-capability-search/consequences:
+  en: aca1affc478db586
+  zh: ba0888549cc653b0
