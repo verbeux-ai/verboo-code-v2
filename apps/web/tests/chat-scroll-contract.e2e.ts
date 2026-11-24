@@ -626,10 +626,11 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(page)
         if (scenario.name === 'visible-steps' || scenario.name === 'large-input') {
           const offset = 20
+          // Position on the last step itself: a Turn now holds one process group, so
+          // the group's top is no longer the last step's row.
           await thoughts.last().getByRole('button').first().evaluate((button, offset) => {
             const host = button.closest<HTMLElement>('[data-conversation-scroll]')!
-            const group = button.closest<HTMLElement>('[data-chat-group-key]')!
-            host.scrollTop += group.getBoundingClientRect().top - host.getBoundingClientRect().top - offset
+            host.scrollTop += button.getBoundingClientRect().top - host.getBoundingClientRect().top - offset
             host.dispatchEvent(new Event('scroll'))
           }, offset)
           await nextPaint(page)
@@ -660,11 +661,6 @@ describe('web e2e: long Chat scroll contract', () => {
         expect(before.groupHeight).toBeGreaterThan(before.visibleHeight * 3)
         if (scenario.bodyParagraphs === 32) expect(before.visibleSteps).toBe(0)
         else expect(before.visibleSteps).toBeGreaterThan(0)
-        // The cancel race cancels the fold from the frame sampler by writing the
-        // never-folding presentation, which is what the removed Verbose item did.
-        const cancelFold = scenario.name === 'cancel-all-during-fold'
-          ? async (): Promise<void> => { await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'verbose' }) }
-          : undefined
         const release = holdTextAfter(world, 0)
         const finishGate = Promise.withResolvers<undefined>()
         const finishBlocked = Promise.withResolvers<undefined>()
@@ -716,13 +712,9 @@ describe('web e2e: long Chat scroll contract', () => {
             if (closing.length > 0) closingHeight ??= height
             if (!raceApplied && closingHeight !== undefined && height > 0 && height < closingHeight - 1) {
               if (race === 'cancel-all-during-fold') {
-                // Settings no longer offers the presentation, so this race writes
-                // the never-folding mode directly; that is the same cancellation
-                // the removed Verbose choice produced.
-                if (cancelFold !== undefined) {
-                  raceApplied = true
-                  void cancelFold()
-                }
+                // Only mark the frame here: the presentation write belongs to the
+                // Node side, which the page cannot reach from inside evaluate.
+                raceApplied = true
               } else if (race === 'content-growth-during-fold') {
                 // Controlled layout growth exercises ResizeObserver overlap, not Session-event delivery.
                 raceApplied = true
@@ -768,6 +760,11 @@ describe('web e2e: long Chat scroll contract', () => {
                   await page.clock.runFor(16)
                   return page.locator('[data-fold-race-applied]').count()
                 }, { timeout: 10_000 }).toBe(1)
+                // Cancelling needs the never-folding presentation; Settings no
+                // longer offers it, so the suite writes the value itself.
+                if (scenario.name === 'cancel-all-during-fold') {
+                  await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'verbose' })
+                }
               }
               await expect.poll(async () => {
                 await page.clock.runFor(16)
