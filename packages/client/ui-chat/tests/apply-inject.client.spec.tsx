@@ -209,7 +209,7 @@ describe('Chat inject API', () => {
       setCollapseTiming('next-input')
       expect(presentation.getSnapshot()).toMatchObject({ mode: 'compact', collapseTiming: 'next-input' })
       expect(b.chatSettings.set).toHaveBeenCalledWith('collapseTiming', 'next-input')
-      b.chatSettings.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'standard', performanceUsage: 'detailed', collapseTiming: 'next-input' }, revision: 1, writable: true })
+      b.chatSettings.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed', collapseTiming: 'next-input' }, revision: 1, writable: true })
       expect(presentation.getSnapshot()).toMatchObject({ mode: 'compact', collapseTiming: 'next-input' })
       setCollapseTiming('completion')
       expect(presentation.getSnapshot()).toMatchObject({ mode: 'compact', collapseTiming: 'completion' })
