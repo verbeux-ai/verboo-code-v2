@@ -156,10 +156,23 @@
 /* Project leading slot: folder by default, expand arrow on row hover. Both
    glyphs share the slot and crossfade instead of a display swap, so the
    hover change reads as a transition rather than a pop. */
-.projectRow .chevron { display: none; opacity: 0; }
-.projectRow .folder { transition: var(--dsw-motion-fade); }
+/* Both glyphs stay in the same grid cell, so swapping them never moves the
+   title: a display swap would reflow the row by the chevron's width. */
+.projectRow .folder,
+.projectRow .chevron {
+  grid-area: 1 / 1;
+  transition: var(--dsw-motion-fade);
+}
+
+.projectRow .slot:has(> .chevron) {
+  display: inline-grid;
+  place-items: center;
+}
+
+.projectRow .chevron { opacity: 0; }
+
 @media (hover: hover) {
-  .projectRow:hover .chevron { display: inline-flex; opacity: 1; }
+  .projectRow:hover .chevron { opacity: 1; }
 
   .projectRow:hover .folder { opacity: 0; }
 }
