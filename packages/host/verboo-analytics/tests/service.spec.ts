@@ -141,12 +141,12 @@ it('requires consent and sends only a completed root response through the real s
     expect(events).toContainEqual(expect.objectContaining({ feature: 'preference_coding_tools_on' }))
     expect(events).toContainEqual(expect.objectContaining({ feature: 'preference_preset_other' }))
   }, { timeout: 3000 })
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>('b'.repeat(64)), consent.revision, oldProof)
+  await ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>('b'.repeat(64)), consent.revision, oldProof)
   await delay(1200)
   expect(events.some(event => event.name === 'product_feature_used' && event.feature === 'browser')).toBe(false)
   rejectEvents = true
   const oldRevision = consent.revision
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
+  await ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
   for (let attempt = 0; attempt < 100 && !events.some(event => event.name === 'product_feature_used' && event.feature === 'browser'); attempt++) await delay(50)
   const failed = events.find(event => event.name === 'product_feature_used' && event.feature === 'browser')
   expect(failed).toBeDefined()
@@ -156,12 +156,12 @@ it('requires consent and sends only a completed root response through the real s
   const newProof = (await ctx.verbooAnalytics.status()).consent?.referenceProof ?? ''
   // An action begun under the old grant, or before any grant, cannot borrow
   // the new revision just because it finished after the user re-enabled it.
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), 0, newProof)
+  await ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), oldRevision, oldProof)
+  await ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), 0, newProof)
   await delay(1500)
   expect(events.filter(event => event.eventId === failed?.eventId)).toHaveLength(1)
   expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser')).toHaveLength(1)
-  ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, newProof)
+  await ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, newProof)
   for (let attempt = 0; attempt < 100 && events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser').length < 2; attempt++) await delay(50)
   expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'browser')).toHaveLength(2)
 
@@ -315,7 +315,9 @@ it('retries the same queued observation after a Host restart', async () => {
     res.end('{}')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
-  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  cleanup.push(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => { if (error) reject(error); else resolve() })
+  }))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server missing address')
   const origin = `http://127.0.0.1:${address.port}`
