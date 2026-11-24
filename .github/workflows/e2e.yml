@@ -26,6 +26,11 @@ name: E2E (Verboo Code)
 # push/pull_request/workflow_dispatch act as backstops.
 on:
   workflow_dispatch:
+    inputs:
+      probe_qwen_flash:
+        description: Check the existing CI identity's exact Qwen Flash route
+        type: boolean
+        default: false
   push:
     branches: [main, master]
   pull_request:
@@ -49,6 +54,46 @@ env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  qwen-flash-route:
+    if: github.event_name == 'workflow_dispatch' && inputs.probe_qwen_flash
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe the public Verboo Code Router
+        env:
+          VERBOO_CODE_CI_API_KEY: ${{ secrets.VERBOO_CODE_CI_API_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          const model = 'qwen3.8-flash'
+          const key = process.env.VERBOO_CODE_CI_API_KEY?.trim()
+          if (!key) throw new Error('Missing Verboo Code CI identity')
+          const endpoint = 'https://code.verboo.ai/router/v1'
+          const headers = { authorization: `Bearer ${key}`, 'content-type': 'application/json' }
+          const catalog = await fetch(`${endpoint}/models`, {
+            headers, redirect: 'error', signal: AbortSignal.timeout(10_000),
+          })
+          if (!catalog.ok) throw new Error(`Verboo Code catalog returned HTTP ${catalog.status}`)
+          const available = await catalog.json()
+          if (!Array.isArray(available.data) || !available.data.some(entry => entry.id === model)) {
+            throw new Error('The Verboo Code CI identity has no route for qwen3.8-flash')
+          }
+          const response = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST', headers, redirect: 'error', signal: AbortSignal.timeout(30_000),
+            body: JSON.stringify({
+              model, stream: false, max_tokens: 768, temperature: 0,
+              messages: [{ role: 'user', content: 'Respond with OK.' }],
+            }),
+          })
+          console.log(`Verboo Code route returned HTTP ${response.status}`)
+          if (!response.ok) throw new Error('The authenticated Qwen Flash call failed')
+          const result = await response.json()
+          const choice = result.choices?.[0]
+          if (!choice?.finish_reason || !(result.usage?.completion_tokens > 0)) {
+            throw new Error('The Router did not return a completed response with measured usage')
+          }
+          console.log('Authenticated qwen3.8-flash response and usage verified.')
+          NODE
+
   e2e:
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith'
@@ -57,9 +102,10 @@ jobs:
     # Run on every trusted event. Skip untrusted PRs (forks + Dependabot) where
     # the secret is withheld — they would otherwise hard-fail the preflight.
     if: >-
-      github.event_name != 'pull_request'
-      || (github.event.pull_request.head.repo.full_name == github.repository
-          && github.event.pull_request.user.login != 'dependabot[bot]')
+      !(github.event_name == 'workflow_dispatch' && inputs.probe_qwen_flash)
+      && (github.event_name != 'pull_request'
+          || (github.event.pull_request.head.repo.full_name == github.repository
+              && github.event.pull_request.user.login != 'dependabot[bot]'))
     # Profile e2e files can each own several complete dsh subprocess trees, so
     # four file workers preserve process/PTY headroom. Tests retain 120s/test
     # and retry 2; 45m still bounds retry storms against a slow API.
