@@ -183,14 +183,14 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
-  it('shows installation instead of expected backend reconnection and restores connection feedback after failure', () => {
-    const presentation = { phase: 'installing' as const, version: '1.0.1' }
-    const f = mount({ dictionary: zh, connectionState: 'connecting',
-      desktopUpdate: { failed: false, opening: false, presentation } })
-    expect(screen.getByRole('button', { name: '正在准备重启…' })).toBeTruthy()
-    expect(screen.queryByText('重新连接中')).toBeNull()
-    f.setDesktopUpdate({ failed: false, opening: false,
-      presentation: { phase: 'error', version: presentation.version, failure: 'install' } })
+  it('reports connection feedback in the settings trigger without owning the update row', () => {
+    // The update row lives in the product sidebar footer now, so this shell
+    // never suppresses its own connection feedback for an install.
+    const f = mount({ dictionary: zh, connectionState: 'connecting' })
+    expect(screen.getByText('重新连接中')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '正在准备重启…' })).toBeNull()
+    f.setDesktopUpdate({ failed: false, restarting: false,
+      presentation: { phase: 'installing' as never, version: '1.0.1' } })
     expect(screen.queryByRole('button', { name: '重试更新' })).toBeNull()
     expect(screen.getByText('重新连接中')).toBeTruthy()
   })

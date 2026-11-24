@@ -6,211 +6,191 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { DesktopUpdateIndicator } from '../src/client/DesktopUpdateIndicator.tsx'
 import type { DesktopUpdateBridge, DesktopUpdatePresentation } from '../src/types.ts'
 import { DesktopUpdateSource } from '../src/client/desktop-update-source.ts'
-import { en, zh } from '../src/client/locales.ts'
+import { en, pt, zh } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 type SettingsTranslate = PropsLocale<'settings'>['t']
 
-function translate(dictionary: typeof zh | typeof en): SettingsTranslate {
+function translate(dictionary: typeof zh | typeof en | typeof pt): SettingsTranslate {
   const messages: Readonly<Record<string, string>> = dictionary
   return (key, params) => Object.entries(params ?? {})
     .reduce((message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
       messages[key] ?? key)
 }
 
-function fixture() {
+function fixture(options: { settleStatus?: boolean } = {}) {
   let listener: ((state: DesktopUpdatePresentation) => void) | undefined
   const status = Promise.withResolvers<DesktopUpdatePresentation>()
   const unsubscribe = vi.fn()
-  const open = vi.fn(async () => {})
+  const restart = vi.fn(async () => {})
+  const dismiss = vi.fn(async () => {})
   const bridge: DesktopUpdateBridge = {
-    status: () => status.promise,
-    open,
+    status: () => (options.settleStatus === true ? Promise.resolve({ phase: 'idle' }) : status.promise),
+    restart,
+    dismiss,
     subscribe: (next) => { listener = next; return unsubscribe },
   }
   const source = new DesktopUpdateSource(bridge)
   const subscribe = (notify: () => void) => source.store.subscribe(notify)
   const snapshot = () => source.store.getSnapshot()
-  function Indicator({ wide = true, hidden = false, dictionary = zh }: {
+  function Indicator({ wide = true, dictionary = en }: {
     wide?: boolean
-    hidden?: boolean
-    dictionary?: typeof zh | typeof en
+    dictionary?: typeof zh | typeof en | typeof pt
   }) {
     const state = useSyncExternalStore(subscribe, snapshot)
-    return <DesktopUpdateIndicator wide={wide} hidden={hidden} t={translate(dictionary)} view={state} onOpen={() => { source.open() }} />
+    return (
+      <DesktopUpdateIndicator
+        wide={wide}
+        t={translate(dictionary)}
+        view={state}
+        onRestart={() => { source.restart() }}
+        onDismiss={() => { source.dismiss() }}
+      />
+    )
   }
   const view = render(<Indicator />)
   const unmount = view.unmount
   view.unmount = () => { source.dispose(); unmount() }
-  return { open, status, unsubscribe, view, Indicator, source, emit: async (state: DesktopUpdatePresentation) => {
-    await act(async () => { listener?.(state) })
-  } }
+  return {
+    restart, dismiss, status, unsubscribe, view, Indicator, source,
+    emit: async (state: DesktopUpdatePresentation) => {
+      await act(async () => { listener?.(state) })
+    },
+  }
 }
 
-const available = { phase: 'available', version: '1.0.1' } as const
-
-it('renders nothing outside the Desktop carrier', () => {
+it('renders nothing outside the desktop carrier', () => {
   const source = new DesktopUpdateSource(undefined)
-  const view = render(<DesktopUpdateIndicator wide hidden={false} t={translate(zh)}
-    view={source.store.getSnapshot()} onOpen={() => { source.open() }} />)
-  source.open()
+  const view = render(<DesktopUpdateIndicator wide t={translate(en)}
+    view={source.store.getSnapshot()} onRestart={() => { source.restart() }} onDismiss={() => { source.dismiss() }} />)
+  source.restart()
+  source.dismiss()
   source.dispose()
   expect(view.container.innerHTML).toBe('')
 })
 
-it('keeps the newest event, hides for connection priority, and invokes only the shell action', async () => {
+it('stays silent until there is something to report', async () => {
   const f = fixture()
-  try {
-    await f.emit(available)
-    await act(async () => { f.status.resolve({ phase: 'idle' }) })
-    fireEvent.click(screen.getByRole('button', { name: '新版本' }))
-    await act(async () => {})
-    expect(f.open).toHaveBeenCalledOnce()
-    f.view.rerender(<f.Indicator hidden />)
-    expect(screen.queryByRole('button')).toBeNull()
-    await f.emit({ phase: 'downloading', version: available.version, percent: 58 })
-    f.view.rerender(<f.Indicator />)
-    fireEvent.click(screen.getByRole('button', { name: '58%' }))
-    expect(f.open).toHaveBeenCalledOnce()
-    await f.emit({ phase: 'error', version: available.version, failure: 'download' })
-    const retry = screen.getByRole('button', { name: '重试更新' })
-    fireEvent.focus(retry)
-    expect((await screen.findByRole('tooltip')).textContent).toBe('下载更新失败，请重试。')
-    f.view.rerender(<f.Indicator wide={false} />)
-    expect(screen.queryByRole('button')).toBeNull()
-  } finally { f.view.unmount(); f.status.resolve(available) }
-  expect(f.unsubscribe).toHaveBeenCalledOnce()
-})
-
-it('keeps bridge failures actionable and ignores status completion after unmount', async () => {
-  const f = fixture()
-  await act(async () => { f.status.reject(new Error('IPC unavailable')) })
-  f.open.mockRejectedValueOnce(new Error('IPC unavailable'))
-  fireEvent.click(screen.getByRole('button', { name: '重试更新' }))
-  await act(async () => {})
+  expect(f.view.container.innerHTML).toBe('')
+  await f.emit({ phase: 'idle' })
+  expect(f.view.container.innerHTML).toBe('')
   f.view.unmount()
-  const late = fixture()
-  late.view.unmount()
-  await act(async () => { late.status.resolve(available) })
-  expect(late.unsubscribe).toHaveBeenCalledOnce()
 })
 
-it('accepts initial status, coalesces actions, and ignores late events and action rejection after disposal', async () => {
+it('reports the download, then offers one restart once the installer is staged', async () => {
   const f = fixture()
-  const pending = Promise.withResolvers<undefined>()
-  try {
-    await act(async () => { f.status.resolve(available) })
-    expect(screen.getByRole('button', { name: '新版本' })).toBeTruthy()
-    await f.emit({ phase: 'verifying', version: available.version })
-    f.source.open()
-    expect(f.open).not.toHaveBeenCalled()
-    await f.emit(available)
-    f.open.mockImplementationOnce(() => pending.promise)
-    act(() => { f.source.open(); f.source.open() })
-    expect(f.open).toHaveBeenCalledOnce()
-    const state = f.source.store.getSnapshot()
-    f.view.unmount()
-    f.source.open()
-    await f.emit({ phase: 'error', version: available.version, failure: 'install' })
-    await act(async () => { pending.reject(new Error('late IPC failure')) })
-    expect(f.source.store.getSnapshot()).toBe(state)
-  } finally { pending.resolve(undefined); f.status.resolve(available) }
-})
+  await f.emit({ phase: 'downloading', version: '1.0.1', percent: 42 })
+  const busy = screen.getByRole('button')
+  expect(busy.textContent).toContain('42%')
+  expect(busy.getAttribute('aria-disabled')).toBe('true')
+  // A busy row ignores clicks: the native side owns the download.
+  fireEvent.click(busy)
+  expect(f.restart).not.toHaveBeenCalled()
 
-it('keeps an event newer than an initial-status failure', async () => {
-  const f = fixture()
-  try {
-    await f.emit(available)
-    await act(async () => { f.status.reject(new Error('stale initial request')) })
-    expect(f.source.store.getSnapshot().failed).toBe(false)
-  } finally { f.view.unmount(); f.status.resolve(available) }
-})
-
-it('renders the same semantic update in the active Web locale', async () => {
-  const f = fixture()
-  try {
-    await f.emit(available)
-    expect(screen.getByRole('button', { name: '新版本' })).toBeTruthy()
-    f.view.rerender(<f.Indicator dictionary={en} />)
-    expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy()
-  } finally { f.view.unmount(); f.status.resolve(available) }
-})
-
-it('shows fallback progress and error details when the shell omits optional fields', async () => {
-  const f = fixture()
-  try {
-    await f.emit({ phase: 'downloading' })
-    const progress = screen.getByRole('button', { name: '0%' })
-    fireEvent.focus(progress)
-    expect((await screen.findByRole('tooltip')).textContent).toBe('0%')
-    await f.emit({ phase: 'downloading', version: '1.0.1' })
-    fireEvent.focus(screen.getByRole('button', { name: '0%' }))
-    expect((await screen.findByRole('tooltip')).textContent).toContain('1.0.1')
-    await f.emit({ phase: 'error' })
-    fireEvent.focus(screen.getByRole('button', { name: '重试更新' }))
-    expect((await screen.findByRole('tooltip')).textContent).toBe('安装更新失败，请稍后重试。')
-  } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
-})
-
-it.each(['checking', 'verifying', 'installing'] as const)('shows only the version during %s in both locales', async (phase) => {
-  const f = fixture()
-  try {
-    await f.emit({ phase, version: '0.1.7-alpha.2' })
-    fireEvent.focus(screen.getByRole('button'))
-    expect((await screen.findByRole('tooltip')).textContent).toBe('0.1.7-alpha.2')
-    f.view.rerender(<f.Indicator dictionary={en} />)
-    fireEvent.focus(screen.getByRole('button'))
-    expect((await screen.findByRole('tooltip')).textContent).toBe('0.1.7-alpha.2')
-  } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
-})
-
-it.each([
-  ['checking', '正在检查更新…'],
-  ['verifying', '正在校验更新文件…'],
-  ['installing', '正在准备重启…'],
-] as const)('retains the state label when %s has no version', async (phase, label) => {
-  const f = fixture()
-  try {
-    await f.emit({ phase })
-    fireEvent.focus(screen.getByRole('button', { name: label }))
-    expect((await screen.findByRole('tooltip')).textContent).toBe(label)
-  } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
-})
-
-it('localizes fullscreen timeout guidance and preserves the retry action', async () => {
-  const f = fixture()
-  const copy: string[] = []
-  try {
-    await f.emit({ phase: 'error', failure: 'fullscreen-timeout', version: available.version })
-    for (const dictionary of [zh, en]) {
-      f.view.rerender(<f.Indicator dictionary={dictionary} />)
-      fireEvent.focus(screen.getByRole('button'))
-      copy.push((await screen.findByRole('tooltip')).textContent ?? '')
-    }
-    expect(copy).toMatchInlineSnapshot(`
-      [
-        "无法退出全屏，请退出全屏后重试更新",
-        "Could not exit fullscreen. Exit fullscreen, then retry the update.",
-      ]
-    `)
-    fireEvent.click(screen.getByRole('button'))
-    expect(f.open).toHaveBeenCalledOnce()
-  } finally { f.view.unmount(); f.status.resolve(available) }
-})
-
-
-it('keeps a configuration error actionable while download progress continues', async () => {
-  const f = fixture()
-  await f.emit({ phase: 'idle', configurationError: 'format' })
-  const error = screen.getByRole('button', { name: '配置不可用' })
-  fireEvent.click(error)
-  await act(async () => {})
-  expect(f.open).toHaveBeenCalledOnce()
-  await f.emit({ phase: 'downloading', percent: 58, configurationError: 'cleanup' })
-  fireEvent.click(screen.getByRole('button', { name: '配置不可用' }))
-  await act(async () => {})
-  expect(f.open).toHaveBeenCalledTimes(2)
+  await f.emit({ phase: 'ready', version: '1.0.1' })
+  const staged = screen.getByRole('button')
+  expect(staged.textContent).toContain('Update ready')
+  expect(staged.getAttribute('data-staged')).toBe('true')
+  fireEvent.click(staged)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByText(/1\.0\.1/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Restart now' }))
+  expect(f.restart).toHaveBeenCalledOnce()
   f.view.unmount()
-  f.status.resolve({ phase: 'idle' })
+})
+
+it('closes the confirmation without restarting when the reader defers', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'ready', version: '2.0.0' })
+  fireEvent.click(screen.getByRole('button'))
+  // The dialog close control shares the deferral label; the footer action is last.
+  const defer = screen.getAllByRole('button', { name: 'On next restart' })
+  fireEvent.click(defer[defer.length - 1] as HTMLElement)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(f.restart).not.toHaveBeenCalled()
+  f.view.unmount()
+})
+
+it('reports a failure without a restart affordance', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'error', version: '1.0.1', failure: 'download' })
+  const row = screen.getByRole('button')
+  expect(row.textContent).toContain('Retry update')
+  expect(row.getAttribute('data-staged')).toBeNull()
+  fireEvent.click(row)
+  expect(f.restart).not.toHaveBeenCalled()
+  expect(f.dismiss).toHaveBeenCalledOnce()
+  f.view.unmount()
+})
+
+it('keeps the newest event and drops late events after disposal', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'downloading', version: '1.0.1', percent: 10 })
+  await f.emit({ phase: 'ready', version: '1.0.1' })
+  expect(screen.getByRole('button').textContent).toContain('Update ready')
+  f.view.unmount()
+  expect(f.unsubscribe).toHaveBeenCalled()
+})
+
+it('accepts an initial status that already settled', async () => {
+  const f = fixture({ settleStatus: true })
+  await act(async () => { await Promise.resolve() })
+  expect(f.view.container.innerHTML).toBe('')
+  f.view.unmount()
+})
+
+it('coalesces repeated restarts into one native call', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'ready', version: '1.0.1' })
+  fireEvent.click(screen.getByRole('button'))
+  const confirm = screen.getByRole('button', { name: 'Restart now' })
+  fireEvent.click(confirm)
+  f.source.restart()
+  f.source.restart()
+  expect(f.restart).toHaveBeenCalledOnce()
+  f.view.unmount()
+})
+
+it('renders the row copy in the active locale', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'ready', version: '1.0.1' })
+  f.view.rerender(<f.Indicator dictionary={pt} />)
+  expect(screen.getByRole('button').textContent).toContain('Atualização pronta')
+  f.view.unmount()
+})
+
+it('labels the collapsed rail without text', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'ready', version: '1.0.1' })
+  f.view.rerender(<f.Indicator wide={false} />)
+  const row = screen.getByRole('button')
+  expect(row.textContent).toBe('')
+  expect(row.getAttribute('aria-label')).toContain('Update ready')
+  f.view.unmount()
+})
+
+it('ignores a dismiss when no version was reported', () => {
+  const f = fixture()
+  f.source.dismiss()
+  expect(f.dismiss).not.toHaveBeenCalled()
+  f.view.unmount()
+})
+
+it('surfaces a bridge failure as a retryable row', async () => {
+  let fail = true
+  const bridge: DesktopUpdateBridge = {
+    status: () => (fail ? Promise.reject(new Error('offline')) : Promise.resolve({ phase: 'idle' })),
+    restart: async () => {},
+    dismiss: async () => {},
+    subscribe: () => () => {},
+  }
+  const source = new DesktopUpdateSource(bridge)
+  await act(async () => { await Promise.resolve() })
+  const view = render(<DesktopUpdateIndicator wide t={translate(en)} view={source.store.getSnapshot()}
+    onRestart={() => { source.restart() }} onDismiss={() => { source.dismiss() }} />)
+  expect(screen.getByRole('button').textContent).toContain('Retry update')
+  fail = false
+  source.dispose()
+  view.unmount()
 })
