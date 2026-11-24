@@ -488,6 +488,10 @@ describe('web e2e: agent teamwork panel', () => {
       expect(compactStyles[0]).toMatchObject({ width: 28, height: 28, padding: '0px', iconWidth: 15, iconHeight: 15 })
       expect(await trigger.evaluate(element => getComputedStyle(element.closest('[data-slot="conversation.session.header.actions"]')!.parentElement!).gap)).toBe('8px')
       await expandSidebar.hover()
+      // The hover fill fades in; read it once the running transitions finish.
+      await expandSidebar.evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map(async (item) => { await item.finished }))
+      })
       const expandHover = await expandSidebar.evaluate((element) => {
         const style = getComputedStyle(element)
         return { background: style.backgroundColor, color: style.color }
@@ -497,6 +501,9 @@ describe('web e2e: agent teamwork panel', () => {
       const countTooltip = page.getByRole('tooltip', { name: '1 subagent', exact: true })
       await countTooltip.waitFor({ state: 'hidden' })
       await trigger.hover()
+      await trigger.evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map(async (item) => { await item.finished }))
+      })
       expect(await trigger.evaluate((element) => {
         const style = getComputedStyle(element)
         return { background: style.backgroundColor, color: style.color }

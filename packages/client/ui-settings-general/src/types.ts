@@ -19,7 +19,7 @@ export type DesktopUpdateFailureKind =
 
 /** Public semantic preload fields consumed by the settings row. */
 export interface DesktopUpdatePresentation {
-  readonly phase: 'idle' | 'checking' | 'available' | 'downloading' | 'verifying' | 'installing' | 'ready' | 'error'
+  readonly phase: 'idle' | 'checking' | 'downloading' | 'ready' | 'error'
   readonly version?: string
   readonly percent?: number
   readonly failure?: DesktopUpdateFailureKind
@@ -29,8 +29,12 @@ export interface DesktopUpdatePresentation {
 /** Optional carrier API; it cannot select artifacts or authorize installation. */
 export interface DesktopUpdateBridge {
   readonly channels?: DesktopChannelBridge
+  /** Current download or staged state; the native side owns the download. */
   status(): Promise<DesktopUpdatePresentation>
-  open(): Promise<void>
+  /** Restart into the staged installer this reader confirmed. */
+  restart(): Promise<void>
+  /** Stop offering this version to this reader. */
+  dismiss(version: string): Promise<void>
   subscribe(listener: (state: DesktopUpdatePresentation) => void): () => void
 }
 
@@ -38,7 +42,7 @@ export interface DesktopUpdateBridge {
 export interface DesktopUpdateView {
   readonly presentation?: DesktopUpdatePresentation
   readonly failed: boolean
-  readonly opening: boolean
+  readonly restarting: boolean
 }
 
 /** Shell-owned channel choices exposed through the isolated preload. */

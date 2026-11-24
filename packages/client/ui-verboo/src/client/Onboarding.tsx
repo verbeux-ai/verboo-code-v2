@@ -12,6 +12,11 @@ export function Onboarding(props: ProductProps) {
   const waitingForInitialProfileCheck = state.profile === null
     && (!state.profilePreviouslyVerified || state.accountFailed)
   const visible = state.view?.status !== 'credential-stored' || waitingForInitialProfileCheck
+  // Until the first account read answers, the welcome copy and the sign-in
+  // button would describe a state nobody observed yet: a fresh install flashed
+  // them before the stored credential arrived. An unknown view shows the plain
+  // brand loading instead.
+  const booting = state.view === null && !state.accountFailed
   useModalLayer(ref, visible, () => {})
   if (!visible) return null
   const phase = state.view?.attempt?.phase
@@ -38,90 +43,97 @@ export function Onboarding(props: ProductProps) {
     >
       <section className={css.welcomeCopy}>
         <Brand t={props.t} large />
-        <div className={css.welcomeBody}>
-          <h1>{props.t('welcomeTitle')}</h1>
-          <p className={css.welcomeDescription}>
-            {props.t('welcomeDescription')}
-          </p>
-          <div className={css.loginArea}>
-            {stored ? (
-              <>
-                {state.accountFailed ? (
-                  <>
-                    <p className={css.error} role="alert">
-                      {props.t('accountLoadFailed')}
-                    </p>
-                    <button
-                      className={css.primary}
-                      onClick={props.retryAccount}
-                    >
-                      {props.t('retry')}
-                      <Glyph name="rotate-cw" />
-                    </button>
-                    <button
-                      className={css.textButton}
-                      onClick={() => {
-                        void props.signOut()
-                      }}
-                    >
-                      {props.t('signOut')}
-                    </button>
-                  </>
-                ) : (
+        {booting ? (
+          <div className={css.waiting} role="status">
+            <Glyph name="loader-circle" className={css.spin} />
+            {props.t('checking')}
+          </div>
+        ) : (
+          <div className={css.welcomeBody}>
+            <h1>{props.t('welcomeTitle')}</h1>
+            <p className={css.welcomeDescription}>
+              {props.t('welcomeDescription')}
+            </p>
+            <div className={css.loginArea}>
+              {stored ? (
+                <>
+                  {state.accountFailed ? (
+                    <>
+                      <p className={css.error} role="alert">
+                        {props.t('accountLoadFailed')}
+                      </p>
+                      <button
+                        className={css.primary}
+                        onClick={props.retryAccount}
+                      >
+                        {props.t('retry')}
+                        <Glyph name="rotate-cw" />
+                      </button>
+                      <button
+                        className={css.textButton}
+                        onClick={() => {
+                          void props.signOut()
+                        }}
+                      >
+                        {props.t('signOut')}
+                      </button>
+                    </>
+                  ) : (
+                    <div className={css.waiting} role="status">
+                      <Glyph name="loader-circle" className={css.spin} />
+                      {props.t('checking')}
+                    </div>
+                  )}
+                </>
+              ) : pending ? (
+                <>
                   <div className={css.waiting} role="status">
                     <Glyph name="loader-circle" className={css.spin} />
-                    {props.t('checking')}
+                    {props.t('waiting')}
                   </div>
-                )}
-              </>
-            ) : pending ? (
-              <>
-                <div className={css.waiting} role="status">
-                  <Glyph name="loader-circle" className={css.spin} />
-                  {props.t('waiting')}
-                </div>
-                <div className={css.inlineActions}>
-                  <button className={css.secondary} onClick={props.reopen}>
-                    {props.t('reopen')}
-                    <Glyph name="arrow-up-right" />
-                  </button>
-                  <button className={css.textButton} onClick={props.cancel}>
-                    {props.t('cancel')}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <button
-                className={css.primary}
-                disabled={!state.initialized}
-                onClick={props.start}
-              >
-                {props.t('signIn')}
-                <Glyph name="arrow-right" />
-              </button>
-            )}
-            {state.accountFailed && !stored && (
-              <p className={css.error} role="alert">
-                {props.t('unavailable')}{' '}
-                <button className={css.textButton} onClick={props.retryAccount}>
-                  {props.t('retry')}
+                  <div className={css.inlineActions}>
+                    <button className={css.secondary} onClick={props.reopen}>
+                      {props.t('reopen')}
+                      <Glyph name="arrow-up-right" />
+                    </button>
+                    <button className={css.textButton} onClick={props.cancel}>
+                      {props.t('cancel')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  className={css.primary}
+                  disabled={!state.initialized}
+                  onClick={props.start}
+                >
+                  {props.t('signIn')}
+                  <Glyph name="arrow-right" />
                 </button>
-              </p>
-            )}
-            {failed && (
-              <p className={css.error} role="alert">
-                {props.t('authFailed')}
-              </p>
-            )}
-            {!stored && (
-              <p className={css.fine}>
-                <Glyph name="shield-check" size={14} />
-                {props.t('secureBrowser')}
-              </p>
-            )}
+              )}
+              {state.accountFailed && !stored && (
+                <p className={css.error} role="alert">
+                  {props.t('unavailable')}{' '}
+                  <button className={css.textButton} onClick={props.retryAccount}>
+                    {props.t('retry')}
+                  </button>
+                </p>
+              )}
+              {failed && (
+                <p className={css.error} role="alert">
+                  {props.t('authFailed')}
+                </p>
+              )}
+              {!stored && (
+                <p className={css.fine}>
+                  <Glyph name="shield-check" size={14} />
+                  {props.t('secureBrowser')}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>
+        )}
+        {!booting && <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>}
       </section>
 
     </div>,

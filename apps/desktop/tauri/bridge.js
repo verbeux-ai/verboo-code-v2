@@ -29,6 +29,32 @@
     value: Object.freeze({
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
       quit: () => invoke('quit_after_hold'),
+      // The native side owns the download; this page renders what it reports.
+      // Polling keeps the download alive while the window is unfocused and
+      // stops as soon as the phase settles.
+      updates: {
+        status: () => invoke('updates_status'),
+        restart: () => invoke('updates_restart'),
+        dismiss: version => invoke('updates_dismiss', { version }),
+        subscribe(listener) {
+          let live = true
+          let timer
+          const busy = phase => phase === 'checking' || phase === 'downloading'
+          const poll = async () => {
+            if (!live) return
+            try {
+              const next = await invoke('updates_status')
+              if (!live) return
+              listener(next)
+              timer = setTimeout(poll, busy(next.phase) ? 800 : 5000)
+            } catch (_error) {
+              // A native shutdown closes IPC; a later launch checks again.
+            }
+          }
+          void poll()
+          return () => { live = false; clearTimeout(timer) }
+        },
+      },
       openExternal(url) {
         const target = new URL(url)
         // Same allowlist the native navigation hook applies: a browsable page on

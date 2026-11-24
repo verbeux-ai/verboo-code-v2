@@ -10,7 +10,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { TranscriptViewRow, type TranscriptViewRowProps } from '../src/client/settings/TranscriptViewRow.tsx'
 import { PerformanceUsageRow } from '../src/client/settings/PerformanceUsageRow.tsx'
-import type { LinkOpening, PerformanceUsageMode, TranscriptViewMode } from '../src/chat-settings.ts'
+import type { LinkOpening, PerformanceUsageMode } from '../src/chat-settings.ts'
 import { LinkOpeningRow } from '../src/client/settings/LinkOpeningRow.tsx'
 import { en, zh } from '../src/client/locale.ts'
 import type { CollapseTiming, FoldedReplies } from '../src/client/presentation-policy.ts'
@@ -36,11 +36,9 @@ function noPendingInteraction() {
 // The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
-function mount(mode: TranscriptViewMode = 'standard', dictionary: typeof en | typeof zh = en) {
-  const source = createSnapshotStore<TranscriptViewMode>(mode)
+function mount(dictionary: typeof en | typeof zh = en) {
   const collapseTiming = createSnapshotStore<CollapseTiming>('completion')
   const foldedReplies = createSnapshotStore<FoldedReplies>('all')
-  const setTranscriptView = vi.fn((next: TranscriptViewMode) => { source.set(next) })
   const setCollapseTiming = vi.fn((next: CollapseTiming) => { collapseTiming.set(next) })
   const setFoldedReplies = vi.fn((next: FoldedReplies) => { foldedReplies.set(next) })
   const props: TranscriptViewRowProps = {
@@ -52,36 +50,35 @@ function mount(mode: TranscriptViewMode = 'standard', dictionary: typeof en | ty
     useResource,
     ...allowAllAccess,
     useContextMenu: contextMenuHook(),
-    useTranscriptView: bindSnapshotSelector(source),
     useCollapseTiming: bindSnapshotSelector(collapseTiming),
     useFoldedReplies: bindSnapshotSelector(foldedReplies),
-    setTranscriptView,
     setCollapseTiming,
     setFoldedReplies,
     t: makeTranslate(dictionary),
   }
   render(<TranscriptViewRow {...props} />)
-  return { setTranscriptView, setCollapseTiming, setFoldedReplies, collapseTiming, foldedReplies, props }
+  return { setCollapseTiming, setFoldedReplies, collapseTiming, foldedReplies, props }
 }
 
 describe('TranscriptViewRow', () => {
-  it('explains the preference and shows Standard by default', () => {
+  it('offers only the collapse timing and folded-reply choices', () => {
     mount()
-    expect(screen.getByText('Work details')).toBeDefined()
-    expect(screen.getByText('Choose how much detail to show for tool calls')).toBeDefined()
-    expect(screen.getByRole('button', { name: /Standard/ }).getAttribute('aria-expanded')).toBe('false')
+    // The work-details presentation is not a preference: this product ships one.
+    expect(screen.queryByText('Work details')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.getByText('When to Collapse Work Details')).toBeDefined()
+    expect(screen.getByText('Replies After Collapse')).toBeDefined()
   })
 
   it.each([
-    [en, 'Work details', 'When to Collapse Work Details',
+    [en, 'When to Collapse Work Details',
       'Choose when to automatically collapse work details', 'On completion', 'On next message'],
-    [zh, '工作步骤展示', '工作步骤收起时机', '选择何时自动收起工作步骤', '回答结束后', '下次有新消息时'],
-  ] as const)('selects either collapse timing independently with localized labels (%s)', (dictionary, detailTitle, title, description, completion, nextInput) => {
-    const b = mount('standard', dictionary)
-    const titleElement = screen.getByText(title)
-    expect(screen.getByText(detailTitle).compareDocumentPosition(titleElement) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    [zh, '工作步骤收起时机', '选择何时自动收起工作步骤', '回答结束后', '下次有新消息时'],
+  ] as const)('selects either collapse timing independently with localized labels (%s)', (dictionary, title, description, completion, nextInput) => {
+    const b = mount(dictionary)
+    expect(screen.getByText(title)).toBeDefined()
     expect(screen.getByText(description)).toBeDefined()
-    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getAllByRole('button')).toHaveLength(2)
     const trigger = screen.getByRole('button', { name: completion })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(trigger)
@@ -94,14 +91,13 @@ describe('TranscriptViewRow', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: completion }))
     expect(b.setCollapseTiming).toHaveBeenLastCalledWith('completion')
     expect(screen.getByRole('button', { name: completion }).getAttribute('aria-expanded')).toBe('false')
-    expect(b.setTranscriptView).not.toHaveBeenCalled()
   })
 
   it.each([
     [en, 'Replies After Collapse', 'Choose which assistant replies stay visible when work details collapse', 'All replies', 'Final answer only'],
     [zh, '收起后显示的回复', '工作步骤收起后，保留哪些助手回复', '全部回复', '仅最终回答'],
   ] as const)('selects which replies stay visible below collapse timing (%s)', (dictionary, title, description, all, final) => {
-    const b = mount('standard', dictionary)
+    const b = mount(dictionary)
     const timingTitle = dictionary === en ? 'When to Collapse Work Details' : '工作步骤收起时机'
     expect(screen.getByText(timingTitle).compareDocumentPosition(screen.getByText(title)) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(screen.getByText(description)).toBeDefined()
@@ -114,17 +110,6 @@ describe('TranscriptViewRow', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: all }))
     expect(b.setFoldedReplies).toHaveBeenLastCalledWith('all')
     expect(b.setCollapseTiming).not.toHaveBeenCalled()
-    expect(b.setTranscriptView).not.toHaveBeenCalled()
-  })
-
-  it('omits the folded-reply choice while Verbose never folds a Turn', () => {
-    const b = mount('verbose')
-    expect(screen.queryByText('Replies After Collapse')).toBeNull()
-    expect(screen.getAllByRole('button')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('button', { name: 'Verbose' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Standard' }))
-    expect(b.setTranscriptView).toHaveBeenLastCalledWith('standard')
-    expect(screen.getByText('Replies After Collapse')).toBeDefined()
   })
 
   it('follows timing changes and closes its menu without changing either preference', () => {
@@ -135,7 +120,6 @@ describe('TranscriptViewRow', () => {
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menu')).toBeNull()
     expect(b.setCollapseTiming).not.toHaveBeenCalled()
-    expect(b.setTranscriptView).not.toHaveBeenCalled()
   })
 
   it('returns focus before publishing a timing change', async () => {
@@ -162,67 +146,6 @@ describe('TranscriptViewRow', () => {
     }
   })
 
-  it.each([
-    ['compact', 'Compact'],
-    ['detailed', 'Detailed'],
-    ['verbose', 'Verbose'],
-  ] as const)('selects %s and follows the mirrored value', (mode, label) => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: /Standard/ }))
-    expect(screen.queryByRole('menuitem', { name: 'Normal' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Expanded' })).toBeNull()
-    fireEvent.click(screen.getByRole('menuitem', { name: label }))
-    expect(b.setTranscriptView).toHaveBeenCalledWith(mode)
-    const trigger = screen.getByRole('button', { name: label })
-    fireEvent.click(trigger)
-    expect(screen.getByRole('menuitem', { name: 'Compact' })).toBeDefined()
-    fireEvent.pointerDown(document.body)
-    expect(screen.queryByRole('menuitem', { name: 'Compact' })).toBeNull()
-  })
-
-  it('shows all four work-detail values in Chinese', () => {
-    const b = mount('compact', zh)
-    expect(screen.getByText('工作步骤展示')).toBeDefined()
-    expect(screen.getByText('选择希望看到多少工具调用细节')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: '简洁' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '标准' }))
-    expect(b.setTranscriptView).toHaveBeenLastCalledWith('standard')
-    fireEvent.click(screen.getByRole('button', { name: '标准' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '详细' }))
-    expect(b.setTranscriptView).toHaveBeenLastCalledWith('detailed')
-    fireEvent.click(screen.getByRole('button', { name: '详细' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '完全展开' }))
-    expect(b.setTranscriptView).toHaveBeenLastCalledWith('verbose')
-    expect(screen.getByRole('button', { name: '完全展开' })).toBeDefined()
-  })
-
-  it('returns focus before publishing a mode change without refocusing after the menu closes', async () => {
-    const b = mount()
-    const trigger = screen.getByRole('button', { name: /Standard/ })
-    fireEvent.click(trigger)
-    const item = screen.getByRole('menuitem', { name: 'Detailed' })
-    item.focus()
-    const focus = vi.spyOn(trigger, 'focus')
-    const publish = b.setTranscriptView.getMockImplementation()!
-    let focusedAtPublication = false
-    b.setTranscriptView.mockImplementation((mode) => {
-      focusedAtPublication = document.activeElement === trigger
-      publish(mode)
-    })
-    try {
-      await act(async () => { fireEvent.click(item) })
-      expect(focusedAtPublication).toBe(true)
-      expect(document.activeElement).toBe(trigger)
-      expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
-      expect(screen.queryByRole('menu')).toBeNull()
-    } finally {
-      focus.mockRestore()
-    }
-  })
-})
-
-
-describe('LinkOpeningRow', () => {
   it('follows browser availability without clearing the saved destination', () => {
     const b = mount()
     const browserAvailable = createSnapshotStore(false)
@@ -245,7 +168,7 @@ describe('LinkOpeningRow', () => {
     [en, 'Open chat links in', 'Choose where to open web links', 'In-App Sidebar', 'Default Browser'],
     [zh, '网页链接默认打开方式', '对话中网页链接的打开位置', '应用内侧边栏', '默认浏览器'],
   ] as const)('selects either destination using localized labels (%s)', (dictionary, title, description, sidebar, newTab) => {
-    const b = mount('compact', dictionary)
+    const b = mount(dictionary)
     const source = createSnapshotStore<LinkOpening>('sidebar')
     const setLinkOpening = vi.fn((destination: LinkOpening) => { source.set(destination) })
     render(<LinkOpeningRow
@@ -263,7 +186,6 @@ describe('LinkOpeningRow', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: sidebar }))
     expect(setLinkOpening).toHaveBeenLastCalledWith('sidebar')
     expect(screen.getByRole('button', { name: sidebar }).getAttribute('aria-expanded')).toBe('false')
-    expect(b.setTranscriptView).not.toHaveBeenCalled()
   })
 })
 
@@ -282,6 +204,5 @@ describe('PerformanceUsageRow', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Compact' }))
     expect(setPerformanceUsage).toHaveBeenCalledWith('compact')
     expect(screen.getAllByRole('button', { name: 'Compact' })).toHaveLength(1)
-    expect(b.setTranscriptView).not.toHaveBeenCalled()
   })
 })

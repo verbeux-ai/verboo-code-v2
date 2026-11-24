@@ -592,10 +592,14 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('sidebar', () =>
     ctx.slots.register(
-      { name: 'sidebar', locale: 'verboo', inject: () => {
-        const product = face()
-        return { ...product, hooks: { ...product.hooks, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
-      } },
+      { name: 'sidebar', locale: 'verboo',
+        // The product footer seat: rows such as the desktop update indicator
+        // sit above the plan shortcut.
+        children: { 'sidebar.footer.row': { kind: 'single', scope: 'root' } },
+        inject: () => {
+          const product = face()
+          return { ...product, hooks: { ...product.hooks, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
+        } },
       Sidebar,
     ),
   )

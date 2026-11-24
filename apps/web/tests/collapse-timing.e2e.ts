@@ -27,7 +27,6 @@ const GOLDENS = [
   'completion-restored.expected.md',
   'input-pending.expected.md',
   'next-message.expected.md',
-  'verbose.expected.md',
 ]
 
 describe.skipIf(MODE === 'record')('web e2e: recorded collapse timing', () => {
@@ -90,10 +89,6 @@ describe.skipIf(MODE === 'record')('web e2e: recorded collapse timing', () => {
     await row.getByRole('button').click()
     await page.getByRole('menuitem', { name: choice, exact: true }).click()
     await row.getByRole('button', { name: choice, exact: true }).waitFor()
-    if (title === 'Work details') {
-      await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value, UI_WAIT)
-        .toMatchObject({ transcriptView: choice.toLowerCase() })
-    }
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   }
 
@@ -115,15 +110,12 @@ describe.skipIf(MODE === 'record')('web e2e: recorded collapse timing', () => {
     await expectDetails(turn, expanded)
   }
 
-  it('folds at completion, defers the latest process until ordinary input, and keeps Verbose open', async () => {
+  it('folds at completion and defers the latest process until ordinary input', async () => {
     onTestFailed(async () => {
       await mkdir(SCREENSHOT_DIR, { recursive: true })
       const directory = await mkdtemp(join(SCREENSHOT_DIR, 'recorded-'))
       await saveFailureShot(page, `${SCREENSHOTS}/${basename(directory)}/failure`)
     })
-    // Selecting the current client default does not create a saved Host preference.
-    await selectPreference('Work details', 'Compact')
-    await selectPreference('Work details', 'Detailed')
     const group = page.getByRole('treeitem').first()
     await group.waitFor()
     if (await group.getAttribute('aria-expanded') === 'false') await group.click()
@@ -175,12 +167,7 @@ describe.skipIf(MODE === 'record')('web e2e: recorded collapse timing', () => {
     ])
     await capture('next-message.expected.md')
 
-    await selectPreference('Work details', 'Verbose')
     await selectPreference('When to Collapse Work Details', 'On completion')
-    await expectDetails(1, true)
-    await expectDetails(2, true)
-    expect(await page.locator('[data-turn-process]:enabled').count()).toBe(0)
-    await capture('verbose.expected.md')
     expect(await readFile(SEED, 'utf8')).toBe(fixture)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
