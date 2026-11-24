@@ -55,6 +55,7 @@ it('requires consent and sends only a completed root response through the real s
   const home = await mkdtemp(join(tmpdir(), 'verboo-product-analytics-'))
   cleanup.push(() => rm(home, { recursive: true, force: true }))
   const events: Record<string, unknown>[] = []
+  const installationSecrets = new Set<string>()
   let rejectEvents = false
   let includeServerProof = true
   let serverNow = Date.now()
@@ -76,6 +77,7 @@ it('requires consent and sends only a completed root response through the real s
       return
     }
     if (req.url === '/api/analytics/product-events') {
+      installationSecrets.add(String(req.headers['x-verboo-analytics-installation'] ?? ''))
       const event = eventSchema.parse(JSON.parse(body))
       events.push(event)
       if (rejectEvents) { res.statusCode = 503; res.end('{}'); return }
@@ -124,8 +126,21 @@ it('requires consent and sends only a completed root response through the real s
   expect(response).toHaveLength(1)
   await vi.waitFor(() => { expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(1) })
   expect(response[0]).toMatchObject({ surface: 'desktop', appVersion: 'fixture', modality: 'verboo_gateway', outcome: 'completed', consentRevision: 1 })
+  expect([...installationSecrets]).toHaveLength(1)
+  expect([...installationSecrets][0]).toMatch(/^[a-f0-9]{64}$/)
   expect(JSON.stringify(events)).not.toMatch(/SECRET|fixture-root/)
   const oldProof = (await ctx.verbooAnalytics.status()).consent?.referenceProof ?? ''
+  await ctx.verbooAnalytics.feature('message_enter', 'started', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, oldProof,
+    { provider: 'verboo', model: 'max/qwen3.6-27b', effort: 'high' })
+  await vi.waitFor(() => {
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'message_enter', modelProvider: 'verboo', modelName: 'max/qwen3.6-27b', modelEffort: 'high' }))
+  }, { timeout: 3000 })
+  await ctx.verbooAnalytics.feature('preference_coding_tools_on', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, oldProof)
+  await ctx.verbooAnalytics.feature('preference_preset_other', 'completed', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, oldProof)
+  await vi.waitFor(() => {
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'preference_coding_tools_on' }))
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'preference_preset_other' }))
+  }, { timeout: 3000 })
   ctx.verbooAnalytics.feature('browser', 'completed', brandString<ProductAnalyticsSubject>('b'.repeat(64)), consent.revision, oldProof)
   await delay(1200)
   expect(events.some(event => event.name === 'product_feature_used' && event.feature === 'browser')).toBe(false)
@@ -229,6 +244,7 @@ it('requires consent and sends only a completed root response through the real s
     const identity = state.contexts.find(item => item.owner === state.activeOwner)
     if (!identity) throw new Error('fixture identity missing')
     identity.firstOpenEventId = legacyId
+    state.installationFirstOpenEventId = legacyId
     state.pending.push({ eventId: legacyId, owner: identity.owner, attempts: 0, nextAttemptAt: 0,
       json: JSON.stringify({ schemaVersion: 1, eventId: legacyId, name: 'product_first_open_observed',
         consentRevision: consent.revision, occurredAt: new Date().toISOString(), surface: 'desktop', os: 'linux', appVersion: 'fixture' }) })
@@ -236,10 +252,112 @@ it('requires consent and sends only a completed root response through the real s
   await ctx.verbooAnalytics.status()
   const cleaned = await store.read()
   expect(cleaned.pending.some(item => item.eventId === legacyId)).toBe(false)
-  expect(cleaned.contexts.find(item => item.owner === cleaned.activeOwner)?.firstOpenEventId).toBeNull()
+  expect(cleaned.contexts.find(item => item.owner === cleaned.activeOwner)?.firstOpenEventId).not.toBe(legacyId)
+  expect(cleaned.installationFirstOpenEventId).not.toBe(legacyId)
   expect(cleaned.lost).toBe(beforeLost + 1)
   expect(events.some(event => event.eventId === legacyId)).toBe(false)
+  // A first-open event discarded before delivery must not suppress the next
+  // eligible first opening after the preference is granted again.
+  const pendingFirst = randomUUID()
+  await store.update((state) => {
+    const identity = state.contexts.find(item => item.owner === state.activeOwner)
+    if (!identity) throw new Error('fixture identity missing')
+    identity.firstOpenEventId = pendingFirst
+    state.installationFirstOpenEventId = pendingFirst
+    state.pending.push({ eventId: pendingFirst, owner: identity.owner, attempts: 0,
+      nextAttemptAt: Date.now() + 60_000, json: '{}' })
+  })
+  expect((await ctx.verbooAnalytics.choose('denied')).ok).toBe(true)
+  const denied = await store.read()
+  expect(denied.installationFirstOpenEventId).toBeNull()
+  expect(denied.pending.some(item => item.eventId === pendingFirst)).toBe(false)
+  const firstOpenCount = events.filter(event => event.name === 'product_first_open_observed').length
+  expect((await ctx.verbooAnalytics.choose('granted')).ok).toBe(true)
+  await vi.waitFor(() => {
+    expect(events.filter(event => event.name === 'product_first_open_observed').length).toBeGreaterThan(firstOpenCount)
+  }, { timeout: 5000 })
+  const first = await store.select('fixture-account-one')
+  const second = await store.select('fixture-account-two')
+  expect(first.installationSecret).toBe(second.installationSecret)
+  expect(second.installationSecret).toBe([...installationSecrets][0])
+  expect(first.identity.anonymousLink).toBeNull()
+  expect(second.identity.anonymousLink).toBeNull()
 }, 25_000)
+
+it('retries the same queued observation after a Host restart', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'verboo-product-analytics-restart-'))
+  cleanup.push(() => rm(home, { recursive: true, force: true }))
+  const attempts: Array<{ body: string; installation: string }> = []
+  let unavailable = true
+  let serverOrder = 0
+  const server = createAnalyticsServer(async (req, res) => {
+    let body = ''
+    for await (const part of req) body += String(part)
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/api/analytics/product-consent') {
+      const issued = String(++serverOrder)
+      res.end(JSON.stringify({ data: { subjectId: 'a'.repeat(64), decision: 'granted', revision: 1,
+        policyVersion: 1, decisionOrder: '1', decidedAt: '2020-01-01T00:00:00Z',
+        expiresAt: '2099-01-01T00:00:00Z', enabled: true, serverTime: new Date().toISOString(),
+        serverOrder: issued, serverProof: proof(issued) } }))
+      return
+    }
+    if (req.url === '/api/analytics/product-events') {
+      const event = eventSchema.parse(JSON.parse(body))
+      if (event.feature === 'goal') attempts.push({ body, installation: String(req.headers['x-verboo-analytics-installation'] ?? '') })
+      if (unavailable) { res.statusCode = 503; res.end('{}'); return }
+      res.statusCode = 202
+      res.end(JSON.stringify({ data: { status: 'accepted', receipt: { eventId: event.eventId,
+        payloadSha256: createHash('sha256').update(body).digest('hex') } } }))
+      return
+    }
+    res.statusCode = 404
+    res.end('{}')
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  cleanup.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('server missing address')
+  const origin = `http://127.0.0.1:${address.port}`
+  const config = join(home, 'cordis.yml')
+  await writeFile(config, [
+    '- name: cordis:credentials', '  config:', `    path: ${JSON.stringify(join(home, 'credentials.yml'))}`, '    watch: false',
+    '- name: cordis:account', '- name: cordis:sessions', '- name: cordis:projections',
+    '- name: cordis:analytics', '  config:', `    apiOrigin: ${origin}`, `    routerBaseURL: ${origin}/router/v1`,
+    '    allowLoopbackHttp: true', '    surface: desktop', '    appVersion: fixture', '    retryIntervalMs: 1000', '',
+  ].join('\n'))
+  const start = async () => {
+    const ctx = new Context()
+    let closed = false
+    const close = async () => { if (!closed) { closed = true; await ctx.fiber.dispose() } }
+    cleanup.push(close)
+    ctx.baseUrl = pathToFileURL(config).href
+    await ctx.plugin(Loader)
+    Object.assign(ctx.loader.builtins, { include: Include, credentials: LocalCredentialProvider, account: AnonymousAccount,
+      sessions: SessionStore, projections: SessionProjectionRegistry, analytics: VerbooAnalytics })
+    await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
+    await ctx.loader.await()
+    return { ctx, close }
+  }
+  const first = await start()
+  const consent = (await first.ctx.verbooAnalytics.status()).consent
+  expect(consent?.decision).toBe('granted')
+  await first.ctx.verbooAnalytics.feature('goal', 'started', brandString<ProductAnalyticsSubject>('a'.repeat(64)), 1, consent?.referenceProof ?? '')
+  await vi.waitFor(() => { expect(attempts).toHaveLength(1) }, { timeout: 10_000 })
+  await vi.waitFor(async () => {
+    const state = await new AnalyticsStorageStore(first.ctx.credentials).read()
+    expect(state.pending.some(item => item.json === attempts[0]?.body && item.attempts > 0)).toBe(true)
+  }, { timeout: 10_000 })
+  await first.close()
+  unavailable = false
+  const second = await start()
+  await vi.waitFor(() => { expect(attempts).toHaveLength(2) }, { timeout: 15_000 })
+  expect(attempts[1]).toEqual(attempts[0])
+  await vi.waitFor(async () => {
+    const state = await new AnalyticsStorageStore(second.ctx.credentials).read()
+    expect(state.pending.some(item => item.json === attempts[0]?.body)).toBe(false)
+  }, { timeout: 10_000 })
+}, 35_000)
 
 it('does not attribute delayed opening or login observations to a replacement account', async () => {
   const home = await mkdtemp(join(tmpdir(), 'verboo-product-analytics-account-race-'))
@@ -357,6 +475,17 @@ it('does not attribute delayed opening or login observations to a replacement ac
   expect(bEvents.filter(event => event.name === 'product_opened')).toHaveLength(1)
   expect(bEvents.filter(event => event.name === 'product_login_completed')).toHaveLength(1)
   expect(events.some(event => event.authorization === 'Bearer token-a')).toBe(false)
+
+  // A later legitimate account switch remains the same installation: it may
+  // open normally, but must not count another first installation opening.
+  account.getPlatformSession.mockResolvedValue(session('a'))
+  account.resolveToken.mockResolvedValue('token-a')
+  ctx.emit('credentials/record-updated', credentialKey('verboo-account', 'default'))
+  await ctx.verbooAnalytics.status()
+  await vi.waitFor(() => {
+    expect(events.some(event => event.authorization === 'Bearer token-a' && event.name === 'product_opened')).toBe(true)
+  }, { timeout: 5000 })
+  expect(events.filter(event => event.name === 'product_first_open_observed')).toHaveLength(1)
 }, 15_000)
 
 it('deduplicates the first observed opening across simultaneous Hosts sharing credentials', async () => {

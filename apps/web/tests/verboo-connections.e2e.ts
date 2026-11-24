@@ -98,7 +98,7 @@ describe.skipIf(MODE === 'record')('Verboo Connections page in the built applica
   let directory: string
 
   const pageRegion = () => page.locator('[data-verboo-page="connections"]')
-  const mcpSection = () => pageRegion().locator('section').filter({ hasText: 'Servidores MCP' }).first()
+  const mcpSection = () => pageRegion().locator('[data-verboo-mcp]')
   const catalogSection = () => pageRegion().locator('section').filter({ hasText: 'Serviços disponíveis' }).first()
 
   /** Call one Host Remote method the way the page does. */

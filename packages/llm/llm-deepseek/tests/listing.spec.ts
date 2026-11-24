@@ -2,7 +2,7 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
+import { APP_IDENTITY, UPSTREAM_CLIENT_ID } from '@deepseek-ai/dsh-llm'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import { LISTING_TIMEOUT, MAX_BADGE_TEXT_LENGTH, parseModelListing, requestModelListing } from '../src/listing.ts'
 import type { ListedCapabilities } from '../src/listing.ts'
@@ -62,12 +62,13 @@ describe('parseModelListing', () => {
   it.each([
     [undefined, { kind: 'none' }],
     [{ other: { min_version: '9.0.0' } }, { kind: 'none' }],
-    [{ [APP_IDENTITY.product]: {} }, { kind: 'none' }],
-    [{ [APP_IDENTITY.product]: { min_version: '0.2.0-alpha.1' } }, { kind: 'min-version', version: '0.2.0-alpha.1' }],
+    [{ [APP_IDENTITY.product]: { min_version: '9.0.0' } }, { kind: 'none' }],
+    [{ [UPSTREAM_CLIENT_ID]: {} }, { kind: 'none' }],
+    [{ [UPSTREAM_CLIENT_ID]: { min_version: '0.2.0-alpha.1' } }, { kind: 'min-version', version: '0.2.0-alpha.1' }],
     ['0.2.0', { kind: 'invalid' }],
-    [{ [APP_IDENTITY.product]: '0.2.0' }, { kind: 'invalid' }],
-    [{ [APP_IDENTITY.product]: { min_version: 2 } }, { kind: 'invalid' }],
-    [{ [APP_IDENTITY.product]: { min_version: '' } }, { kind: 'invalid' }],
+    [{ [UPSTREAM_CLIENT_ID]: '0.2.0' }, { kind: 'invalid' }],
+    [{ [UPSTREAM_CLIENT_ID]: { min_version: 2 } }, { kind: 'invalid' }],
+    [{ [UPSTREAM_CLIENT_ID]: { min_version: '' } }, { kind: 'invalid' }],
   ])('reads client requirements %j', (requirements, expected) => {
     expect(only({ ...MESSAGES, ...requirements === undefined ? {} : { client_requirements: requirements } })?.requirement).toEqual(expected)
   })
@@ -110,8 +111,8 @@ describe('parseModelListing', () => {
       .toEqual({ usable: true, facts: { inputModalities: ['text'] } })
   })
 
-  const OWN = `client_metadata["${APP_IDENTITY.product}"]`
-  const showing = (badge: unknown) => ({ ...MESSAGES, client_metadata: { [APP_IDENTITY.product]: { badge } } })
+  const OWN = `client_metadata["${UPSTREAM_CLIENT_ID}"]`
+  const showing = (badge: unknown) => ({ ...MESSAGES, client_metadata: { [UPSTREAM_CLIENT_ID]: { badge } } })
   const longest = '十'.repeat(MAX_BADGE_TEXT_LENGTH)
   it.each([
     [{ text: '1017', tone: 'info' }, { text: '1017', tone: 'info' }],
@@ -133,25 +134,25 @@ describe('parseModelListing', () => {
     null,
     {},
     { other: { badge: { text: '1017' } } },
-    { [APP_IDENTITY.product]: null },
-    { [APP_IDENTITY.product]: { other_field: 1 } },
-    { [APP_IDENTITY.product]: { badge: null } },
+    { [UPSTREAM_CLIENT_ID]: null },
+    { [UPSTREAM_CLIENT_ID]: { other_field: 1 } },
+    { [UPSTREAM_CLIENT_ID]: { badge: null } },
   ])('declares no badge for client_metadata %j', (metadata) => {
     expect(only({ ...MESSAGES, client_metadata: metadata })).not.toHaveProperty('badge')
   })
 
   it('reads badges only from client_metadata', () => {
     const badge = { text: '1017' }
-    expect(only({ ...MESSAGES, badge, client_requirements: { [APP_IDENTITY.product]: { badge } } })).not.toHaveProperty('badge')
+    expect(only({ ...MESSAGES, badge, client_requirements: { [UPSTREAM_CLIENT_ID]: { badge } } })).not.toHaveProperty('badge')
   })
 
   it.each([
     ['1017', 'client_metadata is not an object'],
     [['1017'], 'client_metadata is not an object'],
-    [{ [APP_IDENTITY.product]: '1017' }, `${OWN} is not an object`],
-    [{ [APP_IDENTITY.product]: [] }, `${OWN} is not an object`],
-    [{ [APP_IDENTITY.product]: { badge: '1017' } }, `${OWN}.badge is not an object`],
-    [{ [APP_IDENTITY.product]: { badge: ['1017'] } }, `${OWN}.badge is not an object`],
+    [{ [UPSTREAM_CLIENT_ID]: '1017' }, `${OWN} is not an object`],
+    [{ [UPSTREAM_CLIENT_ID]: [] }, `${OWN} is not an object`],
+    [{ [UPSTREAM_CLIENT_ID]: { badge: '1017' } }, `${OWN}.badge is not an object`],
+    [{ [UPSTREAM_CLIENT_ID]: { badge: ['1017'] } }, `${OWN}.badge is not an object`],
   ])('rejects client_metadata %j without hiding the entry', (metadata, reason) => {
     const entry = only({ ...MESSAGES, client_metadata: metadata })
     expect(entry?.badge).toEqual({ kind: 'invalid', reason })
@@ -188,7 +189,7 @@ describe('parseModelListing', () => {
 
   it('rejects an own "__proto__" translation key', () => {
     const body: unknown = JSON.parse(
-      `{"data":[{"id":"m","client_metadata":{"${APP_IDENTITY.product}":{"badge":{"text":{"en":"New","__proto__":"x"}}}}}]}`,
+      `{"data":[{"id":"m","client_metadata":{"${UPSTREAM_CLIENT_ID}":{"badge":{"text":{"en":"New","__proto__":"x"}}}}}]}`,
     )
     expect(parseModelListing(body).entries[0]?.badge).toEqual({ kind: 'invalid', reason: unreadableText })
   })

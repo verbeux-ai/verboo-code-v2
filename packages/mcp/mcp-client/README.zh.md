@@ -104,6 +104,15 @@ kind: "package-reference"
 
 启用模板展开时，失败诊断、工具调用失败与 MCP `isError` 工具结果文本保留上游消息，但会把本实例解析过的每个值（包括此前轮换的值及其 URL 编码形式）替换为 `[redacted]`。成功工具结果保留原始内容。
 
+<a id="oauth-for-remote-servers"></a>
+### 远程服务器的 OAuth
+
+`createMcpOAuthProvider` 构建受 OAuth 保护的 HTTP 服务器所需的客户端提供方。它通过调用方提供的 `McpOAuthStore` 持久化五个值：令牌集、动态注册的客户端信息、PKCE 校验码、CSRF `state` 值，以及发现状态。存储实例本身已限定到单个服务器，因此槽名即可标识一个值。
+
+`beginMcpOAuth` 在已保存的刷新授权仍然有效时返回 `authorized`，否则返回供调用方打开的授权页面。提供方从不启动浏览器：`redirectToAuthorization` 只记录 URL，由界面决定如何处理。`completeMcpOAuth` 兑换回环回调收到的授权码，并透传 RFC 9207 的 `iss` 参数，使 SDK 能拒绝来自其他授权服务器的响应。
+
+发现状态不只是优化。SDK 将回调环节绑定到发现得到的授权服务器，这正是拒绝混用响应（SEP-2352）的依据；省略它的提供方会记录该绑定无法校验。持久化它还能避免第二次尝试时重新探测 well-known 文档。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -136,6 +145,7 @@ kind: "package-reference"
 | [`src/transport.ts`](src/transport.ts) | 传输工厂：带清洗环境的 stdio spawn、Streamable HTTP |
 | [`src/status.ts`](src/status.ts) | 以 Fiber 为键的状态单元，保留最终清理结果 |
 | [`src/probe.ts`](src/probe.ts) | 一次性探测：连接、取身份、列工具、关闭——不注册任何东西 |
+| [`src/oauth.ts`](src/oauth.ts) | OAuth 2.1 提供方、刷新或重定向、回调兑换 |
 | [`src/deadline.ts`](src/deadline.ts) | 启动与探测预算共用的结算截止器 |
 | [`src/diagnostic.ts`](src/diagnostic.ts) | 原因链诊断与密钥值替换 |
 | [`src/types.ts`](src/types.ts) | 客户端可用的连接状态与探测结果类型（`./types`） |

@@ -194,6 +194,14 @@
   object-fit: cover;
 }
 
+/* Loading or unreadable image: a bare skeleton that holds the 24px slot. The
+   bordered empty box read as a container nested inside the queued row, so the
+   placeholder keeps only a faint fill and no stroke. */
+.thumbPlaceholder {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .preview {
   flex: 1 1 auto;
   min-width: 0;

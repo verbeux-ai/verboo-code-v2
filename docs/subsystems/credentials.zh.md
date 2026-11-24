@@ -379,6 +379,53 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 
+<a id="ctxopenaiaccount--openaiaccount"></a>
+
+### `ctx.openaiAccount` — `OpenAiAccount`
+
+The [OI] account service: login, token renewal, and the status the Client reads.
+
+A stored grant is the only claim this service makes about being signed in; it never asserts that the provider currently accepts the token.
+
+```ts cordis-catalog
+/**
+ * Start one browser login and return the URL the system browser opens.
+ * @param redirectUri - loopback callback the Host serves.
+ * @param signal - caller's cancellation signal.
+ * @returns the authorization URL and the verifier the callback must present.
+ */
+begin(redirectUri: string, signal: AbortSignal): { url: string; verifier: string; state: string }
+
+/**
+ * Exchange one authorization code for a grant and persist it.
+ * @param code - authorization code the callback received.
+ * @param verifier - PKCE verifier kept from {@link begin}.
+ * @param redirectUri - the exact redirect the authorization request used.
+ * @param signal - caller's cancellation signal.
+ * @returns the status the new grant reports.
+ * @throws AccountRequestError when the exchange fails.
+ */
+async complete(code: string, verifier: string, redirectUri: string, signal: AbortSignal): Promise<OpenAiAccountStatus>
+
+/**
+ * Report the stored session's plan facts.
+ * @returns the status; presence means a grant is stored, not that it is still accepted.
+ */
+async status(): Promise<OpenAiAccountStatus>
+
+/**
+ * Produce a token the route may send, renewing an expired one.
+ * @param signal - caller's cancellation signal.
+ * @returns a usable access token, or `undefined` when no session is stored.
+ */
+async accessToken(signal: AbortSignal): Promise<string | undefined>
+
+/** Remove the stored grant and tell the tree no session remains. */
+async signOut(): Promise<void>
+```
+
+Source: [`packages/credentials/openai-account/src/account.ts`](../../packages/credentials/openai-account/src/account.ts)
+
 <a id="ctxverbooproduct--verbooproduct"></a>
 
 ### `ctx.verbooProduct` — `VerbooProduct`

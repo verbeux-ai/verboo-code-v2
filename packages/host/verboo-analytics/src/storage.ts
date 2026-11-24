@@ -25,8 +25,18 @@ export const eventSchema = z.object({
   appVersion: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/),
   operationId: z.uuid().optional(), modality: z.enum(['verboo_gateway', 'external']).optional(),
   outcome: z.enum(['started', 'completed', 'failed', 'cancelled']).optional(),
-  feature: z.enum(['conversation', 'model_switch', 'tool', 'browser', 'mcp', 'plan', 'goal', 'checkout']).optional(),
+  feature: z.enum(['conversation', 'model_switch', 'tool', 'browser', 'mcp', 'plan', 'goal', 'checkout', 'pane_split_right', 'pane_split_down', 'stop_button', 'project_add',
+    'message_enter', 'message_button', 'message_queue_enter', 'message_queue_button', 'message_steer_enter', 'message_steer_button',
+    'preference_busy_queue', 'preference_busy_steer', 'model_choice', 'queue_steer_button',
+    'preference_coding_tools_on', 'preference_coding_tools_off',
+    'preference_preset_cordis', 'preference_preset_ptc', 'preference_preset_minimal', 'preference_preset_standard', 'preference_preset_other',
+    'preference_theme_light', 'preference_theme_dark', 'preference_theme_system', 'preference_minimalist_on', 'preference_minimalist_off',
+    'preference_language_en', 'preference_language_pt', 'preference_language_zh', 'preference_language_ja',
+    'preference_language_es', 'preference_language_fr', 'preference_language_de', 'preference_language_ru', 'preference_language_other']).optional(),
   durationMs: z.number().int().min(0).max(604800000).optional(),
+  modelProvider: z.enum(['verboo', 'openai', 'deepseek', 'other']).optional(),
+  modelName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,79}$/).optional(),
+  modelEffort: z.enum(['default', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']).optional(),
 }).strict()
 
 const identitySchema = z.object({
@@ -46,6 +56,8 @@ const itemSchema = z.object({
 
 const storageSchema = z.object({
   version: z.literal(1), activeOwner: z.string().max(100),
+  installationSecret: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  installationFirstOpenEventId: z.uuid().nullable().optional(),
   contexts: z.array(identitySchema).max(32), pending: z.array(itemSchema).max(1000), lost: z.number().int().nonnegative(),
 }).strict()
 
@@ -91,26 +103,31 @@ export class AnalyticsStorageStore {
   /**
    * Select one canonical account, or mint a fresh anonymous context after logout.
    * @param userId - validated current account ID, absent while signed out.
-   * @returns the selected durable identity.
+   * @returns the selected durable identity and an account-independent installation secret.
    */
-  async select(userId: string | undefined): Promise<AnalyticsIdentity> {
+  async select(userId: string | undefined): Promise<{ identity: AnalyticsIdentity; installationSecret: string }> {
     let selected: AnalyticsIdentity | undefined
+    let installationSecret: string | undefined
     await this.update((state) => {
+      state.installationSecret ??= randomBytes(32).toString('hex')
+      if (state.installationFirstOpenEventId === undefined) {
+        state.installationFirstOpenEventId = state.contexts.find(context => context.firstOpenEventId !== null)?.firstOpenEventId ?? null
+      }
+      installationSecret = state.installationSecret
       const owner = userId ?? (state.activeOwner.startsWith('anonymous:') ? state.activeOwner : `anonymous:${randomUUID()}`)
-      const previous = state.contexts.find(context => context.owner === state.activeOwner)
       selected = state.contexts.find(context => context.owner === owner)
       if (selected === undefined) {
         if (state.contexts.length === 32) throw new Error('product_analytics_context_capacity')
         selected = { owner, secret: randomBytes(32).toString('hex'), consent: null, pendingDecision: null, pendingRevision: null, firstOpenEventId: null, anonymousLink: null, linked: false, observedLogin: null }
         state.contexts.push(selected)
       }
-      if (userId !== undefined && previous?.owner.startsWith('anonymous:') && previous.consent?.decision === 'granted' && previous.pendingDecision === null && Date.parse(previous.consent.expiresAt) > Date.now()) {
-        selected.anonymousLink = previous.secret
-        selected.linked = false
-      }
+      // Keep legacy fields readable while discarding any previously staged
+      // anonymous-to-account link; product measurement does not identify users.
+      selected.anonymousLink = null
+      selected.linked = false
       state.activeOwner = owner
     })
-    if (selected === undefined) throw new Error('product_analytics_identity_unavailable')
-    return selected
+    if (selected === undefined || installationSecret === undefined) throw new Error('product_analytics_identity_unavailable')
+    return { identity: selected, installationSecret }
   }
 }

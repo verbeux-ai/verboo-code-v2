@@ -13,6 +13,7 @@ import type { Connection, Toolkit } from '@deepseek-ai/dsh-api-verboo-product/ty
 import type {
   CustomMcpServerView,
   CustomMcpStatus,
+  McpAuthMode,
   McpServerInput,
   McpServerProbe,
   McpTransport,
@@ -183,7 +184,7 @@ function cls(value: string | undefined): string {
 }
 
 /** Pick the singular or plural form of a count label. */
-function countKey(key: 'catalogCount' | 'accountCount' | 'mcpCount' | 'mcpTools' | 'mcpSummaryHeaders' | 'mcpSummaryEnv' | 'mcpProbeToolCount' | 'catalogSearchResults', count: number): Key {
+function countKey(key: 'catalogCount' | 'accountCount' | 'mcpTools' | 'mcpSummaryHeaders' | 'mcpSummaryEnv' | 'mcpProbeToolCount' | 'catalogSearchResults', count: number): Key {
   return `${key}.${count === 1 ? 'one' : 'other'}`
 }
 
@@ -221,6 +222,8 @@ interface DraftSetting {
 interface McpDraft {
   name: string
   transport: McpTransport
+  /** How this definition authenticates; OAuth is offered for HTTP only. */
+  auth: McpAuthMode
   url: string
   headers: DraftSetting[]
   command: string
@@ -291,6 +294,7 @@ function draftInput(draft: McpDraft): McpServerInput {
     command: stdio ? draft.command.trim() : '',
     args: stdio ? draft.args.split(/\s+/).filter(part => part !== '') : [],
     env: stdio ? pairs(draft.env) : {},
+    auth: draft.auth,
     enabled: draft.enabled,
   }
 }
@@ -477,6 +481,8 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
   const [removingBusy, setRemovingBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testTarget, setTestTarget] = useState<string | null>(null)
+  /** Pasted bearer tokens, keyed by server, cleared as each is submitted. */
+  const [tokens, setTokens] = useState<Record<string, string>>({})
   const rowIds = useRef(0)
   const accountsRef = useRef<HTMLElement | null>(null)
   const mcpRef = useRef<HTMLElement | null>(null)
@@ -586,6 +592,7 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
     setDraft({
       name: '',
       transport: 'streamable-http',
+      auth: 'headers',
       url: '',
       headers: [emptyRow()],
       command: '',
@@ -603,6 +610,7 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
     setDraft({
       name: server.name,
       transport: server.transport,
+      auth: server.auth,
       url: server.url,
       headers: server.headerNames.map(name => ({
         id: nextRowId(),
@@ -722,6 +730,10 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
         t={t}
         onRefresh={refresh}
         loading={state.loadingConnections || state.loadingMcp}
+        actions={<button className={css.primary} disabled={mcpBusy} onClick={openCreate}>
+          <Glyph name="plus" size={15} />
+          {t('mcpAdd')}
+        </button>}
       />
       {state.connectionsFailed && (
         <Notice
@@ -827,6 +839,7 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
         </section>
       )}
 
+
       {/* The [OI] subscription belongs with the connected accounts, because that
           is what it is; the catalog below lists services, not accounts. */}
       <section className={css.connectedSection} data-verboo-external-account>
@@ -852,26 +865,11 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
         </div>
       </section>
 
-      <section className={css.mcpSection} ref={mcpRef}>
-        <div className={css.sectionHead}>
-          <div className={css.sectionTitle}>
-            <h2>
-              {t('mcpSectionTitle')}
-              {servers !== null && servers.length > 0 && (
-                <span className={css.sectionMeta}>
-                  {t(countKey('mcpCount', servers.length), { count: servers.length })}
-                </span>
-              )}
-            </h2>
-            <p>{t('mcpSectionDescription')}</p>
-          </div>
-          <div className={css.sectionTools}>
-            <button className={css.primary} disabled={mcpBusy} onClick={openCreate}>
-              <Glyph name="plus" size={15} />
-              {t('mcpAdd')}
-            </button>
-          </div>
-        </div>
+      {/* MCP servers are this page's own inventory, so they follow the account
+          lists without a second heading: the tally card and the page action
+          already name them. */}
+      <section className={css.mcpSection} ref={mcpRef} data-verboo-mcp>
+
 
         {state.mcpFailed && (
           <>
@@ -915,6 +913,26 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
                       </span>
                     </div>
                     <div className={css.mcpActions}>
+                      {server.auth === 'oauth' && (
+                        server.oauthSignedIn ? (
+                          <button
+                            className={css.textButton}
+                            disabled={busy}
+                            onClick={() => { void props.signOutMcpServer(server.name) }}
+                          >
+                            {t('mcpSignOut')}
+                          </button>
+                        ) : (
+                          <button
+                            className={css.secondary}
+                            disabled={busy}
+                            onClick={() => { void props.signInMcpServer(server.name) }}
+                          >
+                            <Glyph name="shield-check" size={15} />
+                            {t('mcpSignIn')}
+                          </button>
+                        )
+                      )}
                       <button
                         className={css.secondary}
                         disabled={state.probingMcp || busy}
@@ -971,7 +989,9 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
                         {t(countKey('mcpTools', server.status.toolCount), { count: server.status.toolCount })}
                       </span>
                     )}
-                    {server.headerNames.length > 0 && (
+                    {/* An OAuth definition carries the Authorization key the Host
+                        writes itself, so its count would describe nothing the user set. */}
+                    {server.auth !== 'oauth' && server.headerNames.length > 0 && (
                       <span className={css.mcpToolCount}>
                         {t(countKey('mcpSummaryHeaders', server.headerNames.length), { count: server.headerNames.length })}
                       </span>
@@ -982,6 +1002,37 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
                       </span>
                     )}
                   </div>
+                  {server.auth === 'oauth' && !server.oauthSignedIn && (
+                    <form
+                      className={css.mcpTokenForm}
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        const value = (tokens[server.name] ?? '').trim()
+                        if (value === '') return
+                        setTokens(current => ({ ...current, [server.name]: '' }))
+                        void props.setMcpToken(server.name, value)
+                      }}
+                    >
+                      <label htmlFor={`verboo-mcp-token-${server.name}`}>
+                        {t('mcpTokenLabel')}
+                      </label>
+                      <input
+                        id={`verboo-mcp-token-${server.name}`}
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={tokens[server.name] ?? ''}
+                        placeholder={t('mcpTokenPlaceholder')}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          setTokens(current => ({ ...current, [server.name]: value }))
+                        }}
+                      />
+                      <button className={css.secondary} type="submit" disabled={busy || (tokens[server.name] ?? '').trim() === ''}>
+                        {t('mcpTokenSave')}
+                      </button>
+                    </form>
+                  )}
                   {server.status.missing.length > 0 && (
                     <p className={css.mcpMissing} role="status">
                       <Glyph name="circle-alert" size={14} />
@@ -1248,16 +1299,43 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
                     </p>
                   )}
                 </div>
-                <SettingRows
-                  kind="headers"
-                  t={t}
-                  rows={draft.headers}
-                  revealed={revealed}
-                  onChange={(id, patch) => { updateRow('headers', id, patch) }}
-                  onRemove={(id) => { removeRow('headers', id) }}
-                  onAdd={() => { addRow('headers') }}
-                  onReveal={toggleReveal}
-                />
+                <div className={css.field}>
+                  <span className={css.fieldLabel} id="verboo-mcp-auth-label">
+                    {t('mcpAuth')}
+                  </span>
+                  <div className={css.segmentGroup} role="group" aria-labelledby="verboo-mcp-auth-label">
+                    {(['headers', 'oauth'] as const).map(auth => (
+                      <button
+                        key={auth}
+                        type="button"
+                        className={css.segment}
+                        data-active={draft.auth === auth}
+                        aria-pressed={draft.auth === auth}
+                        onClick={() => {
+                          props.clearMcpProbe()
+                          updateDraft({ auth })
+                        }}
+                      >
+                        {t(auth === 'oauth' ? 'mcpAuthOauth' : 'mcpAuthHeaders')}
+                      </button>
+                    ))}
+                  </div>
+                  <p className={css.fieldHint}>
+                    {t(draft.auth === 'oauth' ? 'mcpAuthOauthHint' : 'mcpAuthHeadersHint')}
+                  </p>
+                </div>
+                {draft.auth === 'oauth' ? null : (
+                  <SettingRows
+                    kind="headers"
+                    t={t}
+                    rows={draft.headers}
+                    revealed={revealed}
+                    onChange={(id, patch) => { updateRow('headers', id, patch) }}
+                    onRemove={(id) => { removeRow('headers', id) }}
+                    onAdd={() => { addRow('headers') }}
+                    onReveal={toggleReveal}
+                  />
+                )}
               </>
             ) : (
               <>

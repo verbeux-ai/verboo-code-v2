@@ -92,7 +92,6 @@ function Divider({
   resize,
   save,
   label,
-  focused,
 }: {
   node: PaneSplit
   box: PaneRect
@@ -103,7 +102,6 @@ function Divider({
   resize: (id: string, ratio: number, persist?: boolean) => void
   save: () => void
   label: string
-  focused: boolean
 }) {
   const horizontal = node.axis === 'x'
   const span = horizontal ? box.width * width : box.height * height
@@ -126,7 +124,6 @@ function Divider({
     <div
       className={css.divider}
       data-axis={node.axis}
-      data-focused={focused || undefined}
       style={style}
       role="separator"
       tabIndex={0}
@@ -276,7 +273,6 @@ export function Panes(props: PanesProps) {
               resize={resizePane}
               save={props.savePanes}
               label={t('paneResize')}
-              focused={leaves(node).some(pane => pane.id === layout.focused)}
             />
           ))}
         </div>

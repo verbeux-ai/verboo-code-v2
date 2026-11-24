@@ -50,6 +50,8 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  openaiAccount: 'credentials.md',
+  llmOpenaiAccount: 'llm-streaming.md',
   headlessStartup: 'boot.md',
   translator: 'translation.md',
   cotTranslation: 'translation.md',
@@ -106,7 +108,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   webServer: 'web-server.md',
   webApp: 'web-server.md',
   llm: 'llm-streaming.md',
-  llmOpenaiAccount: 'llm-streaming.md',
   lsp: 'lsp.md',
   messageFeedback: 'feedback.md',
   sessionFeedback: 'feedback.md',
@@ -184,7 +185,6 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
-  openaiAccount: 'optional account session interface — packages/credentials/openai-account/README.md owns the API',
   contextMenus: 'client-side interface-typed menu registry — packages/client/ui-context-menu/README.md owns the API',
   externalLinks: 'client-side external destination policy — packages/client/external-links/README.md owns the API',
   fileActions: 'client-side interface-typed file actions — packages/client/ui-file-actions/README.md owns the API',
@@ -238,6 +238,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  * {@link EVENT_WALK_EXEMPTIONS} names each one with its documentation owner.
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
+  'openai-account': 'credentials.md',
   'app-boot': 'boot.md',
   hmr: 'boot.md',
   'plugin-manager': 'boot.md',
@@ -255,7 +256,6 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'credentials': 'credentials.md',
   'deepseek-account': 'credentials.md',
   'verboo-account': 'credentials.md',
-  'openai-account': 'credentials.md',
   'domain': 'storage.md',
   'forge': 'forge.md',
   'fs': 'filesystem.md',
@@ -1006,8 +1006,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   ProductConsentResult: 'Product consent results are owned by packages/host/verboo-analytics/README.md and src/types.ts',
   ProductAnalyticsSubject: 'Product analytics identities are owned by packages/host/verboo-analytics/README.md and src/types.ts',
   ProductFeature: 'Product feature categories are owned by packages/host/verboo-analytics/README.md and src/types.ts',
-  SweepResult: 'Model discovery results are owned by packages/llm/llm-openai-account/README.md and src/types.ts',
-  SubscriptionUsage: 'Subscription usage is owned by packages/llm/llm-openai-account/README.md and src/types.ts',
+  ProductModelDetails: 'Bounded product model dimensions are owned by packages/host/verboo-analytics/src/types.ts',
   Result: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   PlanId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Plans: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
@@ -1020,6 +1019,9 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TrialStatus: 'Trial attention is documented in packages/api/verboo-product/README.md and src/types.ts',
   TrialOffer: 'Trial authorization is documented in packages/api/verboo-product/README.md and src/types.ts',
   TrialPayment: 'Payment recovery is documented in packages/api/verboo-product/README.md and src/types.ts',
+  SweepResult: 'Model availability sweeps are documented in packages/llm/llm-openai-account/README.md and src/availability.ts',
+  SubscriptionUsage: 'Subscription readings are documented in packages/llm/llm-openai-account/README.md and src/usage.ts',
+  OpenAiAccountStatus: '[OI] account status is documented in packages/credentials/openai-account/README.md and src/types.ts',
 
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',

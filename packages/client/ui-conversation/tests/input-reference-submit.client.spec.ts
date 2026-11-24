@@ -293,19 +293,25 @@ describe('submit transaction hardening', () => {
 
 it('captures click and Enter submission intent before async admission, excluding empty submits', async () => {
   const report = vi.fn()
+  const observed = vi.fn()
+  const beginMessageObservation = vi.fn(() => observed)
   const submissionState = vi.fn(() => ({ runMode: 'default' as const, running: false, newSession: false }))
-  const shell = new SessionInputShell({ actx: {} as Context, defaultSink: async () => ({ kind: 'success' }), commandAttachments, submissionState, messageSubmitted: report })
+  const shell = new SessionInputShell({ actx: {} as Context, defaultSink: async () => ({ kind: 'success' }), commandAttachments, submissionState, messageSubmitted: report, beginMessageObservation })
   try {
     shell.submit('queue', 'click')
     expect(submissionState).not.toHaveBeenCalled()
+    expect(beginMessageObservation).not.toHaveBeenCalled()
     shell.setDraft('first')
     shell.submit('steer', 'click')
+    expect(beginMessageObservation).toHaveBeenCalledWith('click', 'steer', false, undefined)
     expect(report).toHaveBeenCalledWith(expect.objectContaining({ mode: 'steer', source: 'click' }))
     await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('plain') })
     shell.setDraft('second')
     shell.submit('queue', 'enter')
     expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'queue', source: 'enter' }))
     expect(report).toHaveBeenCalledTimes(2)
+    expect(beginMessageObservation).toHaveBeenLastCalledWith('enter', 'queue', false, undefined)
+    expect(observed).toHaveBeenCalledTimes(2)
   } finally { shell.dispose() }
 })
 
@@ -323,10 +329,25 @@ it.each(['capture', 'report'])('analytics %s failure does not interrupt a messag
   } finally { shell.dispose() }
 })
 
+it.each(['begin', 'finish'])('message observation %s failure does not interrupt submission', async (stage) => {
+  const sink = vi.fn(async (): Promise<SubmitOutcome> => ({ kind: 'success' }))
+  const fail = () => { throw new Error('analytics unavailable') }
+  const shell = new SessionInputShell({ actx: {} as Context, defaultSink: sink, commandAttachments,
+    submissionState: () => ({ runMode: 'default', running: false, newSession: false }),
+    beginMessageObservation: stage === 'begin' ? fail : () => fail })
+  try {
+    shell.setDraft('message')
+    expect(() => { shell.submit('queue', 'click') }).not.toThrow()
+    expect(sink).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('plain') })
+  } finally { shell.dispose() }
+})
+
 
 it.each(['handled', 'claim', 'message'] as const)('counts only a message after asynchronous slash adjudication: %s', async (kind) => {
   const pending = Promise.withResolvers<PickOutcome>()
   const report = vi.fn()
+  const observed = vi.fn()
   const submissionState = vi.fn(() => ({ runMode: 'default' as const, running: false, newSession: false }))
   const command = vi.fn(async (): Promise<SubmitOutcome> => ({ kind: 'success' }))
   const sink = vi.fn(async (): Promise<SubmitOutcome> => ({ kind: 'success' }))
@@ -339,7 +360,7 @@ it.each(['handled', 'claim', 'message'] as const)('counts only a message after a
     resolveClaim: () => Promise.resolve(undefined),
   }
   const shell = new SessionInputShell({ actx: {} as Context, inputTriggers: () => inputTriggers,
-    submissionState, messageSubmitted: report, defaultSink: sink, commandAttachments })
+    submissionState, messageSubmitted: report, beginMessageObservation: () => observed, defaultSink: sink, commandAttachments })
   try {
     shell.setDraft('/compact')
     shell.submit('queue', 'enter')
@@ -347,6 +368,7 @@ it.each(['handled', 'claim', 'message'] as const)('counts only a message after a
     pending.resolve(kind === 'handled' ? 'handled' : kind === 'claim' ? { claim: { name: 'compact', token: '/compact', submit: command } } : undefined)
     await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('plain') })
     expect(report).toHaveBeenCalledTimes(kind === 'message' ? 1 : 0)
+    expect(observed).toHaveBeenCalledTimes(kind === 'message' ? 1 : 0)
     expect(sink).toHaveBeenCalledTimes(kind === 'message' ? 1 : 0)
     expect(submissionState).toHaveBeenCalledOnce()
     shell.setDraft('programmatic')

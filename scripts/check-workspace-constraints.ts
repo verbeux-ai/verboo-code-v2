@@ -66,16 +66,6 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** Private reference tool run from the repository; it publishes no files. */
 const pluginMarketGeneratorDirectory = 'apps/plugin-market-generator'
-/** Product packages bundled into Verboo Code; these workspace packages are deliberately private. */
-const privateProductPackageDirectories = new Set([
-  'packages/api/verboo-mcp',
-  'packages/api/verboo-product',
-  'packages/bundle/verboo-app',
-  'packages/client/ui-verboo',
-  'packages/credentials/openai-account',
-  'packages/credentials/verboo-account',
-  'packages/extensions/verboo-connections',
-])
 /**
  * Ordinary directories whose packages this repository publishes: one release member each. The reference plugin
  * market generator is a private repository tool, not a published application.
@@ -86,6 +76,22 @@ const standardReleaseMemberDirectory = new RegExp(
 )
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
+/**
+ * The Verboo Code product layer. These packages are private by design: they
+ * build into the desktop installer, they are never published to npm, and they
+ * belong to this product's repository rather than to the harness upstream, so
+ * the release-member rules (public access, upstream repository URL) would
+ * describe a publication that does not exist.
+ */
+const productPackageDirectories: ReadonlySet<string> = new Set([
+  'packages/api/verboo-mcp',
+  'packages/api/verboo-product',
+  'packages/bundle/verboo-app',
+  'packages/client/ui-verboo',
+  'packages/credentials/openai-account',
+  'packages/credentials/verboo-account',
+  'packages/extensions/verboo-connections',
+])
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'lib/types/*.d.ts'],
@@ -469,7 +475,8 @@ export function checkExperimentalNameExceptions(manifests: readonly WorkspaceMan
 function isReleaseMemberDirectory(dir: string): boolean {
   // The SSH carrier is distributed as executable archives, never as an npm application.
   if (dir === 'packages/ssh/ssh-helper-runtime') return false
-  if (privateProductPackageDirectories.has(dir)) return false
+  // The product layer ships inside the desktop installer, never on npm.
+  if (productPackageDirectories.has(dir)) return false
   return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
 }
 

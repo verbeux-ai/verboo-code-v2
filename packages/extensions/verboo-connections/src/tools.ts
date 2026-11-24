@@ -4,6 +4,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-verboo-product'
 import type {} from '@deepseek-ai/dsh-api-verboo-mcp'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { ConnectionToolRegistry, discoverConnectionTools } from './discovery.ts'
+import type { DiscoveryBudgets } from './discovery.ts'
 import { installMcpTools } from './mcp-tools.ts'
 import type { Config } from './index.ts'
 export const inject = ['tools', 'verbooProduct', 'verbooMcp']
@@ -16,13 +18,35 @@ const output = {
     },
   ],
 }
+/** Guidance that makes the discovery step reachable without guessing a tool name. */
+const CONNECTIONS_GUIDANCE = [
+  'The user has connected services (for example Gmail, GitHub, Slack, Drive, Notion) available through Composio.',
+  'When a request needs one of those services, run `connections_search` with the capability in plain words before concluding you cannot do it.',
+  'The search registers the matching provider tools for this conversation with their real names and argument schemas; call them on your next step to do the work.',
+  'Search again when a task needs a capability you do not have a tool for yet, and prefer one search that names both the read and the write action over two separate searches.',
+].join(' ')
 /**
  * Register through the ordinary tool/permission/logging pipeline of each Agent preset.
  * @param ctx - Agent scope.
- * @param config - validated request budget.
+ * @param config - validated request and discovery budgets.
  */
 export function apply(ctx: Context, config: Config): void {
+  const budgets: DiscoveryBudgets = {
+    maxTools: config.discoveryMaxTools,
+    maxTargets: config.discoveryMaxTargets,
+    maxSchemaBytes: config.discoveryMaxSchemaBytes,
+    maxDescriptionChars: config.discoveryMaxDescriptionChars,
+    timeoutMs: config.timeoutMs,
+  }
+  // Discovery registers provider tools in this Agent scope, so each conversation
+  // owns exactly the tools its own searches added.
+  const registry = new ConnectionToolRegistry(ctx, ctx.verbooProduct, budgets)
   ctx.effect(function* () {
+    yield ctx.systemPrompt.section({
+      name: 'verboo:connections',
+      order: ctx.systemPrompt.getSectionOrder('MCP_SERVERS'),
+      text: CONNECTIONS_GUIDANCE,
+    })
     yield ctx.tools.register(
       defineTool({
         name: 'connections_list',
@@ -39,50 +63,45 @@ export function apply(ctx: Context, config: Config): void {
       defineTool({
         name: 'connections_search',
         description:
-          'Find tools and their exact input schemas for one account or public service returned by connections_list. Preserve the returned slug and version for execution.',
+          'Find the provider tools that perform a task and make them callable in this conversation. Search before any integration work: this is how a service such as Gmail, GitHub or Slack becomes usable. Pass the capability in plain words; omit toolkit and connectionId to search every service the user has, or name one to narrow it. The returned tools are registered immediately with their own names and argument schemas — call them on your next step, in this same request. A service with several accounts needs the user’s choice first.',
         parameters: {
-          connectionId: {
-            type: 'string',
-            required: true,
-            description: 'Account or public service ID returned by connections_list.',
-          },
           query: {
             type: 'string',
             required: true,
-            description: 'The capability to find, up to 200 characters.',
+            description: 'The capability to find, in plain words, up to 200 characters.',
+          },
+          toolkit: {
+            type: 'string',
+            description: 'Optional service slug from connections_list, such as "gmail" or "github".',
+          },
+          connectionId: {
+            type: 'string',
+            description: 'Optional account or public service ID from connections_list.',
           },
         },
         output,
         timeoutMs: config.timeoutMs,
-        execute: (args, exec) =>
-          ctx.verbooProduct.searchAgentConnections(
-            args.connectionId,
-            args.query,
-            exec.signal,
-          ),
-      }),
-    )
-    yield ctx.tools.register(
-      defineTool({
-        name: 'connections_execute',
-        description:
-          'Execute one discovered tool using its exact version and an account explicitly chosen for the user’s task. Follow the user’s instructions and permissions. Never automatically repeat a timed out or unconfirmed action; inspect the service first.',
-        parameters: {
-          connectionId: { type: 'string', required: true },
-          slug: { type: 'string', required: true },
-          version: { type: 'string', required: true },
-          arguments: {
-            type: 'object',
-            required: true,
-            additionalProperties: true,
-          },
+        execute: async (args, exec) => {
+          const query = args.query.trim()
+          if (query === '' || query.length > 200) {
+            throw new Error('query must contain 1 to 200 characters')
+          }
+          const outcome = await discoverConnectionTools({
+            product: ctx.verbooProduct,
+            registry,
+            budgets,
+            request: {
+              query,
+              ...args.toolkit === undefined ? {} : { toolkit: args.toolkit },
+              ...args.connectionId === undefined ? {} : { connectionId: args.connectionId },
+            },
+            signal: exec.signal,
+          })
+          return JSON.stringify(outcome)
         },
-        output,
-        timeoutMs: config.timeoutMs,
-        execute: (args, exec) =>
-          ctx.verbooProduct.executeAgentConnection(args, exec.signal),
       }),
     )
   }, 'Verboo: connected service tools')
+  ctx.effect(() => () => { registry.dispose() }, 'Verboo: discovered connection tools')
   installMcpTools(ctx, config.timeoutMs)
 }

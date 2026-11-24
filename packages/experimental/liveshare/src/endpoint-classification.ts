@@ -237,6 +237,9 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'verbooMcp/removeServer': 'owner-only', // owner-defined MCP servers and their live state
   'verbooMcp/save': 'owner-only', // owner-defined MCP servers and their live state
   'verbooMcp/setEnabled': 'owner-only', // owner-defined MCP servers and their live state
+  'verbooMcp/signIn': 'owner-only', // owner signs a remote MCP server in
+  'verbooMcp/signOut': 'owner-only', // owner drops a remote MCP server grant
+  'verbooMcp/setToken': 'owner-only', // owner pastes a remote MCP server token
   'commands/execute': 'owner-only', // owner executes a slash command
   'permissionPresets/catalog': 'owner-only', // owner permission presets
   'userQuestions/answer': 'owner-only', // owner answers a pending question

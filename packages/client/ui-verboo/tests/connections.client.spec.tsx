@@ -19,6 +19,8 @@ const account = (id: string, toolkitSlug: string, label: string, status: Connect
 const server = (overrides: Partial<CustomMcpServerView> = {}): CustomMcpServerView => ({
   name: 'docs',
   transport: 'streamable-http',
+  auth: 'headers',
+  oauthSignedIn: false,
   url: 'https://mcp.example.com/mcp',
   headerNames: ['Authorization'],
   command: '',
@@ -92,6 +94,9 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
     deleteMcpServer: vi.fn(async () => true),
     setMcpEnabled: vi.fn(async () => true),
     probeMcpServer: vi.fn(async () => true),
+    signInMcpServer: vi.fn(async () => true),
+    setMcpToken: vi.fn(async () => true),
+    signOutMcpServer: vi.fn(async () => true),
     clearMcpProbe: vi.fn(),
     connect: vi.fn(async () => true),
     disconnect: vi.fn(async () => true),
@@ -112,7 +117,8 @@ describe('connections page structure', () => {
     expect(view.container.querySelector('[data-verboo-page="connections"]')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Conexões' })).toBeTruthy()
     expect(screen.getByText('Work')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: /Servidores MCP/ })).toBeTruthy()
+    // The page action owns MCP creation; the servers need no heading of their own.
+    expect(screen.getByRole('button', { name: /Adicionar servidor MCP/ })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'docs' })).toBeTruthy()
   })
 
@@ -363,7 +369,6 @@ describe('english copy', () => {
   it('uses the same structure in English', () => {
     const { props } = fixture('en')
     render(<ConnectionsPage {...props} />)
-    expect(screen.getByRole('heading', { name: /MCP servers/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Add MCP server/ })).toBeTruthy()
     expect(screen.getAllByText('Connected').length).toBeGreaterThan(0)
     expect(screen.getByText('Pick a category to see its services.')).toBeTruthy()
@@ -450,5 +455,80 @@ describe('service brand marks', () => {
     expect(screen.getByText('GitHub')).not.toBeNull()
     // A toolkit the catalog no longer lists keeps its raw slug.
     expect(screen.getByText('mystery')).not.toBeNull()
+  })
+})
+
+describe('OAuth for a custom MCP server', () => {
+  const oauthFixture = (overrides: Partial<CustomMcpServerView> = {}) => {
+    const base = fixture('pt', {
+      mcpServers: [server({ auth: 'oauth', headerNames: ['Authorization'], ...overrides })],
+      loadingMcp: false,
+    })
+    return base
+  }
+
+  it('offers a sign-in action and no header rows for an OAuth definition', () => {
+    const { props } = oauthFixture()
+    render(<ConnectionsPage {...props} />)
+    expect(screen.getByRole('button', { name: /Entrar/ })).toBeTruthy()
+    // The bearer value is the Host's, so the card names no header keys.
+    expect(screen.queryByText(/1 cabeçalho/)).toBeNull()
+  })
+
+  it('asks the Host to begin the sign-in', () => {
+    const { props } = oauthFixture()
+    render(<ConnectionsPage {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /Entrar/ }))
+    expect(props.signInMcpServer).toHaveBeenCalledWith('docs')
+  })
+
+  it('replaces the sign-in action with sign-out once the definition holds a grant', () => {
+    const { props } = oauthFixture({ oauthSignedIn: true })
+    render(<ConnectionsPage {...props} />)
+    expect(screen.queryByRole('button', { name: /^Entrar$/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Sair/ }))
+    expect(props.signOutMcpServer).toHaveBeenCalledWith('docs')
+  })
+
+  it('stores a pasted token, and refuses to submit a blank one', () => {
+    const { props } = oauthFixture()
+    render(<ConnectionsPage {...props} />)
+    const field = screen.getByLabelText('Ou cole um token')
+    const submit = screen.getByRole('button', { name: 'Usar token' })
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(field, { target: { value: '  abc123  ' } })
+    expect((submit as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(submit)
+    expect(props.setMcpToken).toHaveBeenCalledWith('docs', 'abc123')
+  })
+
+  it('hides the token fallback once the definition can authenticate', () => {
+    const { props } = oauthFixture({ oauthSignedIn: true })
+    render(<ConnectionsPage {...props} />)
+    expect(screen.queryByLabelText('Ou cole um token')).toBeNull()
+  })
+
+  it('offers the header mode instead of OAuth on a stdio definition', () => {
+    const { props } = fixture()
+    render(<ConnectionsPage {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar servidor MCP/ }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Comando' }))
+    // A spawned process completes no redirect, so the mode picker does not exist.
+    expect(within(dialog).queryByRole('button', { name: 'Entrar' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Cabeçalhos' })).toBeNull()
+  })
+
+  it('switches the editor between header and OAuth modes', () => {
+    const { props } = fixture()
+    render(<ConnectionsPage {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar servidor MCP/ }))
+    const dialog = screen.getByRole('dialog')
+    // Headers is the default mode for an HTTP definition.
+    expect(within(dialog).getByRole('button', { name: 'Cabeçalhos' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Entrar' }))
+    expect(within(dialog).getByRole('button', { name: 'Entrar' }).getAttribute('aria-pressed')).toBe('true')
+    // The header rows belong to the header mode only.
+    expect(within(dialog).queryByRole('button', { name: /Adicionar cabeçalho/ })).toBeNull()
   })
 })

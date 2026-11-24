@@ -24,8 +24,8 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
-    "./assets/*": "./lib/assets/*",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./assets/*": "./lib/assets/*"
   },
   "dsh": {
     "client": {
@@ -110,7 +110,6 @@
     "lib/index.js",
     "lib/client.js",
     "lib/assets",
-    "LICENSES.md",
     "lib/types/**/*.d.ts"
   ],
   "private": true,

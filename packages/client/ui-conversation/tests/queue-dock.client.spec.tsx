@@ -795,4 +795,25 @@ describe('QueueDock', () => {
       QueueDock,
     )
   })
+
+  it('reports only the queued-message steer button before forwarding its action', async () => {
+    const updateQueue = vi.fn(async () => {})
+    const reportControlClick = vi.fn()
+    const scope = { get: () => ({ updateQueue, input: { for: () => ({ notify: vi.fn() }) } }) }
+    let injection: ((sessionId: SessionId) => QueueDockInjected) | undefined
+    const register = (entry: { inject?: (sessionId: SessionId) => QueueDockInjected }) => {
+      injection = entry.inject
+      return () => undefined
+    }
+    queueDockEntry.apply({
+      slots: { inject: (_name: string, registerEntry: () => () => void) => registerEntry(), register },
+      sessions: { scope: () => scope }, uiConversation: { reportControlClick },
+    } as never)
+    if (injection === undefined) throw new Error('queue registration did not expose its injection')
+    const controls = injection('session-root' as SessionId)
+    await controls.updateQueue(iid('item'), { kind: 'steer' })
+    await controls.updateQueue(iid('item'), { kind: 'remove' })
+    expect(reportControlClick).toHaveBeenCalledExactlyOnceWith('session-root', 'queue_steer_button')
+    expect(updateQueue).toHaveBeenCalledTimes(2)
+  })
 })

@@ -10,13 +10,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { Config } from './config.ts'
+import type { Config } from './config.ts'
 import { OpenAiAccount } from './account.ts'
 import { OpenAiAccountLogin } from './remote.ts'
 
-export { Config }
-export { deploymentOf } from './config.ts'
-export type { Config as ConfigShape, Deployment } from './config.ts'
+export { Config, deploymentOf } from './config.ts'
+export type { Deployment } from './config.ts'
 export { OpenAiAccount, SERVICE_KEY, claimsOf, pkcePair } from './account.ts'
 export { OpenAiAccountLogin } from './remote.ts'
 export { AccountHttp, AccountRequestError, operation } from './http.ts'

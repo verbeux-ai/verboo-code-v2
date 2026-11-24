@@ -14,6 +14,7 @@ import { Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { OpenAiAccountStatus, SignInStart } from './types.ts'
 import { OpenAiAccount } from './account.ts'
 

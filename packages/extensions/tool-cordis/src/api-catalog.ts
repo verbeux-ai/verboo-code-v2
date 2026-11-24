@@ -2172,6 +2172,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'openaiAccount',
+    summary: 'The [OI] account service: login, token renewal, and the status the Client reads.',
+    description: 'The [OI] account service: login, token renewal, and the status the Client reads.\n\nA stored grant is the only claim this service makes about being signed in; it never asserts that the provider currently accepts the token.',
+    methods: [
+      {
+        signature: 'begin(redirectUri: string, signal: AbortSignal): { url: string; verifier: string; state: string }',
+        description: 'Start one browser login and return the URL the system browser opens.',
+        parameters: [{ name: 'redirectUri', description: 'loopback callback the Host serves.' }, { name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'the authorization URL and the verifier the callback must present.',
+      },
+      {
+        signature: 'async complete(code: string, verifier: string, redirectUri: string, signal: AbortSignal): Promise<OpenAiAccountStatus>',
+        description: 'Exchange one authorization code for a grant and persist it.',
+        parameters: [{ name: 'code', description: 'authorization code the callback received.' }, { name: 'verifier', description: 'PKCE verifier kept from {@link begin}.' }, { name: 'redirectUri', description: 'the exact redirect the authorization request used.' }, { name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'the status the new grant reports.',
+        throws: ['AccountRequestError when the exchange fails.'],
+      },
+      {
+        signature: 'async status(): Promise<OpenAiAccountStatus>',
+        description: 'Report the stored session\'s plan facts.',
+        parameters: [],
+        returns: 'the status; presence means a grant is stored, not that it is still accepted.',
+      },
+      {
+        signature: 'async accessToken(signal: AbortSignal): Promise<string | undefined>',
+        description: 'Produce a token the route may send, renewing an expired one.',
+        parameters: [{ name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'a usable access token, or `undefined` when no session is stored.',
+      },
+      {
+        signature: 'async signOut(): Promise<void>',
+        description: 'Remove the stored grant and tell the tree no session remains.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'otel',
     summary: 'Shared transport provider.',
     description: 'Shared transport provider. Mounting creates no queue, identity, or network connection.',
@@ -4325,9 +4362,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'confirmed preference, or a fixed failure without credentials.',
       },
       {
-        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void',
+        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string, model?: ProductModelDetails): Promise<void>',
         description: 'Observe one allowlisted feature without tool names, arguments or page data.',
-        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }, { name: 'consentProof', description: 'signed reference observed when the action began.' }],
+        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }, { name: 'consentProof', description: 'signed reference observed when the action began.' }, { name: 'model', description: 'bounded model and effort dimensions for a message attempt.' }],
+        returns: 'after the eligible observation\'s local queue attempt settles.',
       },
     ],
   },
@@ -4365,6 +4403,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one definition and withdraw its tools.',
         parameters: [{ name: 'name', description: 'server key.' }],
         returns: '`null` after the Host confirmed removal.',
+      },
+      {
+        signature: '@Remote(\'signIn\') async signInFromClient(name: string): Promise<McpResult<string>>',
+        description: 'Start an OAuth sign-in for one stored definition and report the page the user must open. A grant that is still refreshable needs no page.',
+        parameters: [{ name: 'name', description: 'server key.' }],
+        returns: 'the authorization URL, or `\'` when the stored grant was refreshed.',
+      },
+      {
+        signature: '@Remote(\'setToken\') async setTokenFromClient(name: string, token: string): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Redeem a bearer token the user pasted, for an authorization server the browser flow cannot reach. The value is written as this server\'s header credential and never stored in the definition.',
+        parameters: [{ name: 'name', description: 'server key.' }, { name: 'token', description: 'complete `Authorization` header value or a bare bearer token.' }],
+        returns: 'the stored definition with its live state.',
+      },
+      {
+        signature: '@Remote(\'signOut\') async signOutFromClient(name: string): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Drop one definition\'s OAuth grant so the next sign-in starts clean.',
+        parameters: [{ name: 'name', description: 'server key.' }],
+        returns: 'the stored definition with its live state.',
       },
       {
         signature: '@Remote(\'probe\') async probeFromClient( input: McpServerInput, signal: AbortSignal, ): Promise<McpResult<McpServerProbe>>',
@@ -6472,7 +6528,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CustomMcpServer',
-    declaration: 'export interface CustomMcpServer {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headerNames: string[];\n    command: string;\n    args: string[];\n    envNames: string[];\n    enabled: boolean;\n    credentialRefs: string[];\n    createdAt: string;\n    updatedAt: string;\n}',
+    declaration: 'export interface CustomMcpServer {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headerNames: string[];\n    command: string;\n    args: string[];\n    envNames: string[];\n    auth: McpAuthMode;\n    oauthSignedIn: boolean;\n    enabled: boolean;\n    credentialRefs: string[];\n    createdAt: string;\n    updatedAt: string;\n}',
   },
   {
     name: 'CustomMcpServerView',
@@ -7443,6 +7499,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type MatcherValue = string | number | boolean | null | RegExp | readonly (string | number | boolean | null)[];',
   },
   {
+    name: 'McpAuthMode',
+    declaration: 'export type McpAuthMode = \'none\' | \'headers\' | \'oauth\';',
+  },
+  {
     name: 'McpCloseResult',
     declaration: 'export interface McpCloseResult {\n    closeConfirmed: boolean;\n    cleanupError?: string;\n}',
   },
@@ -7488,7 +7548,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'McpServerInput',
-    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headers: Record<string, string>;\n    command: string;\n    args: string[];\n    env: Record<string, string>;\n    enabled: boolean;\n}',
+    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headers: Record<string, string>;\n    command: string;\n    args: string[];\n    env: Record<string, string>;\n    auth?: McpAuthMode | undefined;\n    enabled: boolean;\n}',
   },
   {
     name: 'McpServerProbe',
@@ -8020,7 +8080,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProductFeature',
-    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\';',
+    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\' | \'pane_split_right\' | \'pane_split_down\' | \'stop_button\' | \'project_add\' | \'message_enter\' | \'message_button\' | \'message_queue_enter\' | \'message_queue_button\' | \'message_steer_enter\' | \'message_steer_button\' | \'preference_busy_queue\' | \'preference_busy_steer\' | \'model_choice\' | \'queue_steer_button\' | \'preference_coding_tools_on\' | \'preference_coding_tools_off\' | \'preference_preset_cordis\' | \'preference_preset_ptc\' | \'preference_preset_minimal\' | \'preference_preset_standard\' | \'preference_preset_other\' | \'preference_theme_light\' | \'preference_theme_dark\' | \'preference_theme_system\' | \'preference_minimalist_on\' | \'preference_minimalist_off\' | \'preference_language_en\' | \'preference_language_pt\' | \'preference_language_zh\' | \'preference_language_ja\' | \'preference_language_es\' | \'preference_language_fr\' | \'preference_language_de\' | \'preference_language_ru\' | \'preference_language_other\';',
+  },
+  {
+    name: 'ProductModelDetails',
+    declaration: 'export interface ProductModelDetails {\n    provider: \'verboo\' | \'openai\' | \'deepseek\' | \'other\';\n    model: string;\n    effort: \'default\' | \'off\' | \'minimal\' | \'low\' | \'medium\' | \'high\' | \'xhigh\' | \'max\' | \'ultra\' | \'other\';\n}',
   },
   {
     name: 'ProductTelemetryRecord',

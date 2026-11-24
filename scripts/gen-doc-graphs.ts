@@ -113,9 +113,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns product consent, metadata-only observations, and a durable receipt-checked delivery queue.',
   },
   {
-    key: 'llmOpenaiAccount', pkg: 'llm-openai-account', title: 'OpenAI account model route', mode: 'service',
+    key: 'openaiAccount', pkg: 'openai-account', title: '[OI] ChatGPT account', mode: 'service',
     consumers: ['client-ui-verboo'],
-    note: 'Discovers available subscription models and reads usage for the authenticated account.',
+    note: 'Stores the [OI] subscription grant and reports the plan facts product surfaces show.',
+  },
+  {
+    key: 'llmOpenaiAccount', pkg: 'llm-openai-account', title: '[OI] subscription routing', mode: 'service',
+    consumers: ['client-ui-verboo'],
+    note: 'Routes the subscription models and reports the usage and limit readings the composer shows.',
   },
   {
     key: 'verbooMcp', pkg: 'api-verboo-mcp', title: 'Verboo account MCP servers', mode: 'service',

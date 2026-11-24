@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { productResponseProjection, type ProductResponseState } from './projection.ts'
 import { AnalyticsStorageStore, consentSchema, eventSchema, type AnalyticsIdentity } from './storage.ts'
-import type { ProductAnalyticsStatus, ProductAnalyticsSubject, ProductConsentResult, ProductFeature, ProductSurface } from './types.ts'
+import type { ProductAnalyticsStatus, ProductAnalyticsSubject, ProductConsentResult, ProductFeature, ProductModelDetails, ProductSurface } from './types.ts'
 export type * from './types.ts'
 
 /** Public collector configuration; all destination credentials stay on the server. */
@@ -52,6 +52,7 @@ const consentResponse = z.object({ data: consentSchema.extend({ serverTime: z.is
 
 interface Owner {
   identity: AnalyticsIdentity
+  installationSecret: string
   token?: string
   sessionId?: string
   generation: number
@@ -106,7 +107,6 @@ export default class VerbooAnalytics extends TypertRemoteService {
   private refreshing: Promise<void> | undefined
   private draining: Promise<void> | undefined
   private readonly openedOwners = new Set<string>()
-  private readonly linkingOwners = new Set<string>()
   private readonly turnOwners = new WeakMap<Session, TurnOwner>()
   private readonly turnCheckpoints = new WeakMap<Session, TurnCheckpoint>()
   private readonly loginOwners = new Set<string>()
@@ -204,13 +204,13 @@ export default class VerbooAnalytics extends TypertRemoteService {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
     if (!this.isGenerationCurrent(generation)) return undefined
     if (session !== null && session.userId === null) return undefined
-    const identity = await this.store.select(session?.userId ?? undefined)
+    const { identity, installationSecret } = await this.store.select(session?.userId ?? undefined)
     if (!this.isGenerationCurrent(generation)) return undefined
     const token = session === null ? undefined : await this.ctx.deepseekAccount.resolveToken(this.deployment.routerBaseURL)
     if (session !== null && token === undefined) return undefined
     if (!this.isGenerationCurrent(generation)) return undefined
     return {
-      identity, generation,
+      identity, installationSecret, generation,
       ...(token === undefined ? {} : { token }),
       ...(session?.sessionId === undefined ? {} : { sessionId: session.sessionId }),
     }
@@ -229,14 +229,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
 
   private headers(owner: Owner): Headers {
     const headers = new Headers({ 'Content-Type': 'application/json', 'X-Verboo-Analytics-Scope': owner.identity.secret })
+    if (this.config.surface !== 'dashboard') headers.set('X-Verboo-Analytics-Installation', owner.installationSecret)
     if (owner.token !== undefined) headers.set('Authorization', `Bearer ${owner.token}`)
     return headers
   }
 
-  private async request(owner: Owner, path: string, method = 'GET', body?: string, anonymousScope?: string): Promise<unknown> {
+  private async request(owner: Owner, path: string, method = 'GET', body?: string): Promise<unknown> {
     if (!(await this.current(owner))) throw new AccountRequestError('request_cancelled')
     const headers = this.headers(owner)
-    if (anonymousScope !== undefined) headers.set('X-Verboo-Analytics-Scope', anonymousScope)
     const value = await this.http.request(this.deployment.apiOrigin + path, {
       method, headers, signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(8000)]),
       ...(body === undefined ? {} : { body }),
@@ -266,13 +266,19 @@ export default class VerbooAnalytics extends TypertRemoteService {
       serverProof.split('.')[1] !== String(order) ? undefined : { order, serverTime: Date.parse(serverTime), proof: serverProof }
     this.lastReference = reference
     const next = { ...consent, ...(reference === undefined ? {} : { referenceProof: reference.proof }) }
+    let firstOpenDiscarded = false
     await this.store.update((state) => {
       const identity = state.contexts.find(item => item.owner === owner.identity.owner)
       if (identity === undefined || identity.pendingDecision !== decision || owner.generation !== this.generation) return
       identity.consent = next
       identity.pendingDecision = null
       identity.pendingRevision = null
-      if (next.decision !== 'granted') state.pending = state.pending.filter(item => item.owner !== identity.owner)
+      if (next.decision !== 'granted') state.pending = state.pending.filter((item) => {
+        if (item.owner !== identity.owner) return true
+        if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; firstOpenDiscarded = true }
+        if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
+        return false
+      })
       else state.pending = state.pending.filter((item) => {
         if (item.owner !== identity.owner) return true
         try {
@@ -281,14 +287,25 @@ export default class VerbooAnalytics extends TypertRemoteService {
             (raw as { schemaVersion?: unknown }).schemaVersion === 1 && !('consentProof' in raw)) {
             // Events from an older collector cannot prove prior consent.
             if (identity.firstOpenEventId === item.eventId) identity.firstOpenEventId = null
+            if (state.installationFirstOpenEventId === item.eventId) {
+              state.installationFirstOpenEventId = null
+              firstOpenDiscarded = true
+            }
             state.lost++
             return false
           }
-          return eventSchema.parse(raw).consentRevision === next.revision
+          const retained = eventSchema.parse(raw).consentRevision === next.revision
+          if (!retained && identity.firstOpenEventId === item.eventId) identity.firstOpenEventId = null
+          if (!retained && state.installationFirstOpenEventId === item.eventId) {
+            state.installationFirstOpenEventId = null
+            firstOpenDiscarded = true
+          }
+          return retained
         }
         catch (_error) { return true } // Invalid pending bytes remain visible and are never sent.
       })
     })
+    if (firstOpenDiscarded || next.decision !== 'granted' || !next.enabled) this.openedOwners.delete(owner.identity.owner)
     this.failure = 'none'
     if (next.decision !== 'granted' || !next.enabled) return
     // Re-read the stored grant after synchronization, but never adopt a new
@@ -297,11 +314,6 @@ export default class VerbooAnalytics extends TypertRemoteService {
     if (captured === undefined || captured.generation !== owner.generation ||
       captured.identity.owner !== owner.identity.owner || captured.sessionId !== owner.sessionId ||
       captured.identity.consent?.revision !== next.revision || !allowed(captured.identity)) return
-    if (captured.token !== undefined && captured.identity.anonymousLink !== null &&
-      !captured.identity.linked && !this.linkingOwners.has(captured.identity.owner)) {
-      this.linkingOwners.add(captured.identity.owner)
-      this.background(this.link(captured).finally(() => { this.linkingOwners.delete(captured.identity.owner) }))
-    }
     if (!this.openedOwners.has(captured.identity.owner)) {
       this.openedOwners.add(captured.identity.owner)
       this.background(this.opened(captured, reference).then((opened) => {
@@ -335,29 +347,6 @@ export default class VerbooAnalytics extends TypertRemoteService {
     await this.refreshing
   }
 
-  private async link(owner: Owner): Promise<void> {
-    const secret = owner.identity.anonymousLink
-    if (secret === null) return
-    try {
-      z.object({ data: z.object({ status: z.literal('accepted') }) }).parse(await this.request(owner, '/api/analytics/product-identity', 'POST', '{}', secret))
-      await this.store.update((state) => {
-        const identity = state.contexts.find(item => item.owner === owner.identity.owner)
-        if (identity?.anonymousLink === secret && owner.generation === this.generation) identity.linked = true
-      })
-    } catch (error: unknown) {
-      if (error instanceof AccountRequestError && (error.status === 403 || error.status === 409)) {
-        await this.store.update((state) => {
-          const identity = state.contexts.find(item => item.owner === owner.identity.owner)
-          if (identity?.anonymousLink === secret) identity.anonymousLink = null
-        })
-        this.failure = 'rejected'
-        this.ctx.logger.warn('Optional product analytics identity was not linked', { code: 'identity_unlinked' })
-        return
-      }
-      throw error
-    }
-  }
-
   /**
    * Read the product analytics preference and queue status for the current identity.
    * @returns preference for the current identity; unavailable does not grant collection.
@@ -383,6 +372,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       if (owner === undefined || !(await this.current(owner))) return { ok: false, code: 'account_changed' }
       // Fence any in-flight grant before persisting a newer explicit choice.
       owner.generation = ++this.generation
+      let firstOpenDiscarded = false
       const previousRefresh = this.refreshing
       await this.store.update((state) => {
         if (owner.generation !== this.generation) return
@@ -391,8 +381,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
         identity.pendingDecision = decision
         identity.pendingRevision = identity.consent?.revision ?? 0
         // New consent cannot resurrect an older pending grant's events.
-        state.pending = state.pending.filter(item => item.owner !== identity.owner)
+        state.pending = state.pending.filter((item) => {
+          if (item.owner !== identity.owner) return true
+          if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; firstOpenDiscarded = true }
+          if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
+          return false
+        })
       })
+      if (firstOpenDiscarded || decision === 'denied') this.openedOwners.delete(owner.identity.owner)
       if (previousRefresh) await previousRefresh.catch(() => {}) // Its result is fenced; the new choice still needs a fresh read.
       if (!(await this.current(owner))) return { ok: false, code: 'account_changed' }
       await this.refresh()
@@ -442,12 +438,15 @@ export default class VerbooAnalytics extends TypertRemoteService {
         owner.generation !== this.generation) return
       // The shared credentials lock makes first-open and login idempotent even
       // when multiple Hosts observe the same installation at the same time.
-      if (name === 'product_first_open_observed' && identity.firstOpenEventId !== null) return
+      if (name === 'product_first_open_observed' && state.installationFirstOpenEventId !== null && state.installationFirstOpenEventId !== undefined) return
       if (name === 'product_login_completed' && identity.observedLogin === owner.sessionId) return
       if (state.pending.some(item => item.eventId === eventId)) return
       if (state.pending.length === 1000) { state.lost++; this.failure = 'storage'; return }
       state.pending.push({ eventId, owner: identity.owner, json, attempts: 0, nextAttemptAt: 0 })
-      if (name === 'product_first_open_observed') identity.firstOpenEventId = eventId
+      if (name === 'product_first_open_observed') {
+        identity.firstOpenEventId = eventId
+        state.installationFirstOpenEventId = eventId
+      }
       if (name === 'product_login_completed') identity.observedLogin = owner.sessionId ?? null
     })
   }
@@ -508,15 +507,21 @@ export default class VerbooAnalytics extends TypertRemoteService {
    * @param subjectId - consent subject observed when the user initiated the action.
    * @param consentRevision - granted revision observed when the action began.
    * @param consentProof - signed reference observed when the action began.
+   * @param model - bounded model and effort dimensions for a message attempt.
+   * @returns after the eligible observation's local queue attempt settles.
    */
   @Remote
-  feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void {
-    this.background((async () => {
+  feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string, model?: ProductModelDetails): Promise<void> {
+    const at = Date.now()
+    const work = (async () => {
       const owner = await this.owner()
       if (owner?.identity.consent?.subjectId !== subjectId || owner.identity.consent.revision !== consentRevision) return
-      const at = Date.now()
-      await this.enqueue('product_feature_used', { feature, outcome }, at, randomUUID(), at, owner, consentProof)
-    })())
+      await this.enqueue('product_feature_used', { feature, outcome,
+        ...(model === undefined ? {} : { modelProvider: model.provider, modelName: model.model, modelEffort: model.effort }),
+      }, at, randomUUID(), at, owner, consentProof)
+    })()
+    this.background(work)
+    return work
   }
 
   private async flush(): Promise<void> {

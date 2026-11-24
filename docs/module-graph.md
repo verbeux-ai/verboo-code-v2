@@ -349,7 +349,6 @@ flowchart TD
     pkg_host_open_in_app["host-open-in-app"]
     pkg_host_plugin_inventory["host-plugin-inventory"]
     pkg_host_product_telemetry_otel["host-product-telemetry-otel"]
-    pkg_host_verboo_analytics["host-verboo-analytics"]
     pkg_host_webserver["host-webserver"]
   end
   subgraph group_identity["packages/identity"]
@@ -512,6 +511,7 @@ flowchart TD
   pkg_credentials_local --> pkg_credentials
   pkg_credentials_local --> pkg_home_paths
   pkg_credentials_local --> pkg_launch_environment
+  pkg_openai_account --> pkg_host_webserver
   pkg_openai_account --> pkg_launch_environment
   pkg_openai_account --> pkg_typert_protocol
   pkg_experimental_liveshare --> pkg_scope
@@ -820,13 +820,6 @@ flowchart TD
   pkg_command_feedback --> pkg_commands
   pkg_command_feedback --> pkg_session
   pkg_command_feedback --> pkg_typert_protocol
-  pkg_host_verboo_analytics --> pkg_brand
-  pkg_host_verboo_analytics --> pkg_credentials
-  pkg_host_verboo_analytics --> pkg_deepseek_account
-  pkg_host_verboo_analytics --> pkg_llm
-  pkg_host_verboo_analytics --> pkg_session
-  pkg_host_verboo_analytics --> pkg_session_projection
-  pkg_host_verboo_analytics --> pkg_typert_protocol
   pkg_permission_presets --> pkg_agent
   pkg_permission_presets --> pkg_commands
   pkg_permission_presets --> pkg_sandbox
@@ -1722,7 +1715,7 @@ flowchart TD
 | [`computer-use`](../packages/computer-use/computer-use) | `computer-use` | [`brand`](../packages/util/brand) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`llm`](../packages/llm/llm) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |
-| [`openai-account`](../packages/credentials/openai-account) | `credentials` | [`launch-environment`](../packages/util/launch-environment), [`typert-protocol`](../packages/typert/protocol) |
+| [`openai-account`](../packages/credentials/openai-account) | `credentials` | [`host-webserver`](../packages/host/webserver), [`launch-environment`](../packages/util/launch-environment), [`typert-protocol`](../packages/typert/protocol) |
 | [`experimental-liveshare`](../packages/experimental/liveshare) | `experimental` | [`scope`](../packages/core/scope) |
 | [`anonymous-user-id`](../packages/identity/anonymous-user-id) | `identity` | [`brand`](../packages/util/brand), [`home-paths`](../packages/util/home-paths) |
 | [`lsp`](../packages/lsp/lsp) | `lsp` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm) |
@@ -1820,7 +1813,6 @@ flowchart TD
 | [`experimental-ptc-runtime-python`](../packages/experimental/ptc-runtime-python) | `experimental` | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`timeout`](../packages/util/timeout), [`util-values`](../packages/util/values) |
 | [`experimental-worktree`](../packages/experimental/worktree) | `experimental` | [`agent`](../packages/core/agent), [`fs`](../packages/fs/fs), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`subprocess`](../packages/subprocess/subprocess), [`working-directory`](../packages/session/working-directory) |
 | [`command-feedback`](../packages/feedback/command-feedback) | `feedback` | [`anonymous-user-id`](../packages/identity/anonymous-user-id), [`commands`](../packages/interaction/commands), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
-| [`host-verboo-analytics`](../packages/host/verboo-analytics) | `host` | [`brand`](../packages/util/brand), [`credentials`](../packages/credentials/credentials), [`deepseek-account`](../packages/credentials/deepseek-account), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
 | [`permission-presets`](../packages/interaction/permission-presets) | `interaction` | [`agent`](../packages/core/agent), [`commands`](../packages/interaction/commands), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`shell`](../packages/shell/shell), [`typert-protocol`](../packages/typert/protocol), [`user-approval`](../packages/interaction/user-approval) |
 | [`jobs-local`](../packages/jobs/jobs-local) | `jobs` | [`agent`](../packages/core/agent), [`jobs`](../packages/jobs/jobs), [`scope`](../packages/core/scope), [`timeout`](../packages/util/timeout) |
 | [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node) | `ptc-runtime` | [`fs`](../packages/fs/fs), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |

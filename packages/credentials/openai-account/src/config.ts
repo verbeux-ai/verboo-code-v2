@@ -60,7 +60,8 @@ export interface Deployment {
  * Resolve one deployment, allowing cleartext HTTP only for an explicit loopback fixture.
  * @param config - parsed or plain deployment configuration.
  * @returns absolute endpoints without credentials, queries, or fragments.
- * @throws Error when an endpoint is not an absolute allowed URL, the client id is blank, the scope list is empty, or a required scope is missing.
+ * @throws Error when an endpoint is not an absolute allowed URL, the client id
+ *   is blank, the scope list is empty, or a required scope is missing.
  */
 export function deploymentOf(config: Config = {}): Deployment {
   const resolved = Config(config)

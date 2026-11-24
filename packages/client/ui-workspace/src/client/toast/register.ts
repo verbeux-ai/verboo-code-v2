@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RowToastActions, WorkspaceViewStoreHandle } from '../contract/slots.ts'
 import type { ArchiveToastInjected, ToastDisplayInjected } from '../contract/toast.ts'
+import type { WorkspaceKey } from '../locales.ts'
 import { ArchiveToastEntry, ToastEntry, WorkspaceToast } from './Toast.tsx'
 
 /** Register notice presentations with their business-owned display fields and actions.
@@ -18,6 +19,14 @@ export function registerToasts(
   const archiveFilterAction: ArchiveToastInjected['filterAction'] = (t, dismiss) => ({
     prefix: t('toast.archivedOr'), label: t('toast.archivedFilter'),
     onClick: () => { dismiss(); actions.showArchived() },
+  })
+  /** Both archive toasts differ only by their message; the undo action is one. */
+  const archiveToast = (textKey: WorkspaceKey): ArchiveToastInjected => ({
+    display: (notice, t, dismiss) => ({
+      text: t(textKey), tone: 'success', holdMs: 6000,
+      actions: [{ label: t('toast.archivedUndo'), onClick: () => { dismiss(); actions.undoArchive(notice.sessionId) } }],
+    }),
+    filterAction: archiveFilterAction,
   })
   ctx.slots.registerFactory({ name: 'workspace.toast.content', scope: 'root' }, WorkspaceToast)
   ctx.slots.inject('workspace.toast', function* () {
@@ -82,23 +91,11 @@ export function registerToasts(
     }, ToastEntry<PropsRuntime<'workspace.toast', 'forkRequiresOpen'>>)
     yield ctx.slots.register({
       name: 'workspace.toast', key: 'archived', locale: 'workspace', store: viewStore,
-      inject: (): ArchiveToastInjected => ({
-        display: (notice, t, dismiss) => ({
-          text: t('toast.archived'), tone: 'success', holdMs: 6000,
-          actions: [{ label: t('toast.archivedUndo'), onClick: () => { dismiss(); actions.undoArchive(notice.sessionId) } }],
-        }),
-        filterAction: archiveFilterAction,
-      }),
+      inject: (): ArchiveToastInjected => archiveToast('toast.archived'),
     }, ArchiveToastEntry)
     yield ctx.slots.register({
       name: 'workspace.toast', key: 'stoppedAndArchived', locale: 'workspace', store: viewStore,
-      inject: (): ArchiveToastInjected => ({
-        display: (notice, t, dismiss) => ({
-          text: t('toast.stoppedAndArchived'), tone: 'success', holdMs: 6000,
-          actions: [{ label: t('toast.archivedUndo'), onClick: () => { dismiss(); actions.undoArchive(notice.sessionId) } }],
-        }),
-        filterAction: archiveFilterAction,
-      }),
+      inject: (): ArchiveToastInjected => archiveToast('toast.stoppedAndArchived'),
     }, ArchiveToastEntry)
     yield ctx.slots.register({
       name: 'workspace.toast', key: 'deleted', locale: 'workspace',

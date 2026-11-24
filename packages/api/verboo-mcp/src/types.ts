@@ -8,6 +8,13 @@
 
 /** Which transport a user-defined MCP server speaks. */
 export type McpTransport = 'stdio' | 'streamable-http'
+/**
+ * How a definition authenticates. 'headers' sends the stored static header
+ * values, 'oauth' sends a bearer token the user obtained through an
+ * authorization flow, and 'none' sends no credential. OAuth is offered only
+ * for 'streamable-http': a spawned process has no redirect to complete.
+ */
+export type McpAuthMode = 'none' | 'headers' | 'oauth'
 /** One user definition of an MCP server the user owns, as the product stores it. */
 export interface CustomMcpServer {
   /** Server key; also the tool namespace prefix in the Agent's tool registry. */
@@ -23,6 +30,10 @@ export interface CustomMcpServer {
   args: string[]
   /** stdio environment keys; values live only in the credential store. */
   envNames: string[]
+  /** How this definition authenticates. */
+  auth: McpAuthMode
+  /** Whether the stored OAuth grant holds a token the Host can present. */
+  oauthSignedIn: boolean
   /** Whether the user asked for a live connection. */
   enabled: boolean
   /** Credential references this definition needs stored before it can connect. */
@@ -43,6 +54,12 @@ export interface McpServerInput {
   args: string[]
   /** Non-empty values are stored as credentials and replaced by their reference. */
   env: Record<string, string>
+  /**
+   * How the definition authenticates; omission keeps the mode the stored
+   * definition already had, and a new definition with header values defaults
+   * to 'headers'.
+   */
+  auth?: McpAuthMode | undefined
   enabled: boolean
 }
 /** Live connection state of one user-defined MCP server, flattened for display. */

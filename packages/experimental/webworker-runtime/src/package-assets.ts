@@ -12,7 +12,14 @@ import type { MemoryVfs } from './storage/memory.ts'
 import { packTar, parseTar } from './storage/tar.ts'
 import type { VfsDirent } from './storage/types.ts'
 
-/** Media type of each asset extension the Client build emits. */
+/**
+ * Media type of each asset extension the Client build emits.
+ *
+ * The build's own table lives in `dsh-client-modules`, which imports `node:crypto`
+ * for content revisioning and therefore cannot enter a browser bundle. This
+ * resolver runs inside the worker image, so it states the table locally; the
+ * package-asset test walks the build's map and fails if the two ever disagree.
+ */
 const ASSET_MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
   ['.woff2', 'font/woff2'],
   ['.woff', 'font/woff'],

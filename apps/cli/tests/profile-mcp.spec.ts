@@ -42,14 +42,18 @@ describe('shipped MCP resource composition', () => {
     }
   })
 
-  it.each(Object.keys(PROFILE_TEMPLATES))('%s mounts the server manager only with the Web application', (name) => {
+  it.each(Object.keys(PROFILE_TEMPLATES))('%s mounts the server manager exactly when its bundles carry the Web application', (name) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-profile-mcp-'))
     try {
       const profile = loadProfile('dsh', name, installAnchor, home)
       const rows = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])
-      expect(rows.filter(row => row.name === '@deepseek-ai/dsh-mcp-manager')).toEqual(name === 'web'
+      // The manager is a Web-application feature, not a base one, so a profile
+      // mounts it iff one of its bundles is the web app — the product profile
+      // includes that bundle, which is why its users get the server manager too.
+      const expected = PROFILE_TEMPLATES[name]!.bundles.includes('@deepseek-ai/dsh-web-app')
         ? [{ id: 'mcp-manager', name: '@deepseek-ai/dsh-mcp-manager', inject: ['credentials'] }]
-        : [])
+        : []
+      expect(rows.filter(row => row.name === '@deepseek-ai/dsh-mcp-manager')).toEqual(expected)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

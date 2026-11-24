@@ -73,6 +73,14 @@ jobs:
       - name: Run blocking Windows builds
         shell: pwsh
         run: pnpm run check:ci:windows-blocking
+      - name: Generate Typert remote contributions
+        # The observational lane's Client-assembly suites import generated
+        # `/remote` contributions, which resolve through package exports to
+        # built `lib/` files. Running the pass here, outside the gate runner,
+        # keeps it clear of tests that create fixture packages Typert would
+        # otherwise try to analyze.
+        shell: pwsh
+        run: pnpm exec tsx scripts/compile-referenced-projects.ts host-contracts
       - name: Verify Desktop updater dependency versions
         shell: pwsh
         run: |
@@ -178,6 +186,14 @@ jobs:
           } else {
             pnpm install --frozen-lockfile
           }
+      # Generate Typert remote contributions before coverage: Client-assembly
+      # suites import generated `/remote` contributions, which resolve through
+      # package exports to built `lib/` files. Running the pass here, outside
+      # the test runner, keeps it clear of tests that create fixture packages
+      # Typert would otherwise try to analyze.
+      - name: Generate Typert remote contributions
+        shell: pwsh
+        run: pnpm exec tsx scripts/compile-referenced-projects.ts host-contracts
       # No build before coverage, matching the Linux lane: workspace imports
       # resolve to src through the tsconfig paths map, and the lib-consuming
       # suites (webworker-packer image-loadable, webworker-runtime

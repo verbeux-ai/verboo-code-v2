@@ -71,6 +71,8 @@ function fixture() {
       data: {
         name: 'docs',
         transport: 'streamable-http' as const,
+        auth: 'headers' as const,
+        oauthSignedIn: false,
         url: 'https://mcp.example.com/mcp',
         headerNames: [],
         command: '',
@@ -89,6 +91,8 @@ function fixture() {
       data: {
         name: 'docs',
         transport: 'streamable-http' as const,
+        auth: 'headers' as const,
+        oauthSignedIn: false,
         url: 'https://mcp.example.com/mcp',
         headerNames: [],
         command: '',
@@ -101,6 +105,9 @@ function fixture() {
         status: { state: 'disabled' as const, toolCount: 0, lastError: '', missing: [] },
       },
     })),
+    signInMcpServer: vi.fn(async () => ({ ok: true as const, data: '' })),
+    setMcpToken: vi.fn(async () => ({ ok: true as const, data: undefined as never })),
+    signOutMcpServer: vi.fn(async () => ({ ok: true as const, data: undefined as never })),
     probeMcpServer: vi.fn(async () => ({
       ok: true as const,
       data: {

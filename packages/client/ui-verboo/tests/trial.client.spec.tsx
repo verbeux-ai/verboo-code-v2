@@ -5,72 +5,12 @@ import type { ComponentProps } from 'react'
 import type { PlanId, TrialId, TrialOfferId, TrialAttemptId } from '@deepseek-ai/dsh-api-verboo-product/types'
 import { TrialModal, TrialDock } from '../src/client/Trial.tsx'
 import type { TrialSnapshot } from '../src/client/trial-model.ts'
-import type { ProductInjected } from '../src/client/contracts.ts'
+import type { OpenAiStatus, PreferenceSnapshot } from '../src/client/contracts.ts'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ProductSnapshot } from '../src/client/model.ts'
-import type { InputActions } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { AccountProfile } from '@deepseek-ai/dsh-deepseek-account/types'
 import { en, pt, zh } from '../src/client/locales.ts'
 afterEach(cleanup)
-type TrialFixtureProps = ComponentProps<typeof TrialModal> & ComponentProps<typeof TrialDock>
-const noOp = (..._args: unknown[]): void => {}
-const unexpectedSessionRuntime = (): never => { throw new Error('unexpected use of session runtime props') }
-const falseSync = (..._args: unknown[]): boolean => false
-const inputActions: InputActions = {
-  insertQuote: falseSync,
-  captureInsertion: unexpectedSessionRuntime,
-  insertText: falseSync,
-  setDraft: noOp,
-  persistDraft: noOp,
-  addAttachments: falseSync,
-  removeAttachment: noOp,
-  pruneAttachments: noOp,
-  submit: noOp,
-}
-const noOpAsync = async (..._args: unknown[]): Promise<void> => {}
-const falseAsync = async (..._args: unknown[]): Promise<boolean> => false
-const noSignInAsync = async (): Promise<undefined> => undefined
-const noOpenAiStatusAsync = async () => ({ signedIn: false })
-const productActions: Omit<ProductInjected, 'hooks'> = {
-  start: noOp,
-  reopen: noOp,
-  cancel: noOp,
-  retryAccount: noOp,
-  signOut: falseAsync,
-  startSession: noOp,
-  openSession: noOp,
-  openWorkspace: noOp,
-  addProject: noOpAsync,
-  renameProject: noOpAsync,
-  removeProject: noOpAsync,
-  sessionMenu: noOp,
-  selectPanel: noOp,
-  toggleSidebar: noOp,
-  loadPlans: noOp,
-  loadConnections: noOp,
-  beginOpenAiSignIn: noSignInAsync,
-  completeOpenAiSignIn: falseAsync,
-  openAiStatus: noOpenAiStatusAsync,
-  signOutOpenAi: noOpAsync,
-  refreshSubscriptionUsage: noOp,
-  openOpenAiDialog: noOp,
-  closeOpenAiDialog: noOp,
-  refreshStamina: noOp,
-  connect: falseAsync,
-  reopenConnection: noOp,
-  disconnect: falseAsync,
-  loadMcpServers: noOp,
-  saveMcpServer: falseAsync,
-  deleteMcpServer: falseAsync,
-  setMcpEnabled: falseAsync,
-  probeMcpServer: falseAsync,
-  clearMcpProbe: noOp,
-  billing: noOp,
-  dismiss: noOp,
-  setTheme: noOp,
-  setLocale: noOp,
-  retryModel: noOp,
-  help: noOp,
-}
 function fixture(locale = 'pt') {
   const state: TrialSnapshot = {
     notices: [{ id: 'trial' as TrialId, groupId: 'pro' as never, source: 'free_tokens', state: 'ended', tokensRemaining: 0 }],
@@ -99,12 +39,33 @@ function fixture(locale = 'pt') {
   const dictionary = locale === 'pt' ? pt : locale === 'zh' ? zh : en
   const product: ProductSnapshot = {
     view: null,
-    profile: { id: null, name: 'Owner', contact: null },
-    profilePreviouslyVerified: false,
+    profile: { id: 'owner' } as AccountProfile,
+    profilePreviouslyVerified: true,
     initialized: true,
     accountFailed: false,
     actionFailed: null,
     starting: false,
+    connections: null,
+    plansFailed: false,
+    connectionsFailed: false,
+    loadingPlans: false,
+    loadingConnections: false,
+    busy: null,
+    handoff: null,
+    handoffUntil: 0,
+    connectedTarget: null,
+    feedback: null,
+    modelFailed: false,
+    initializingModel: false,
+    browserBlocked: false,
+    navigationFailed: false,
+    authorizationIds: [],
+    mcpServers: null,
+    loadingMcp: false,
+    mcpFailed: false,
+    mcpProbe: null,
+    probingMcp: false,
+    mcpError: null,
     plans: {
       subscriptions: [],
       catalog: [
@@ -128,63 +89,62 @@ function fixture(locale = 'pt') {
         },
       ],
     },
-    connections: null,
-    plansFailed: false,
-    connectionsFailed: false,
-    loadingPlans: false,
-    loadingConnections: false,
-    busy: null,
-    handoff: null,
-    handoffUntil: 0,
-    connectedTarget: null,
-    feedback: null,
-    modelFailed: false,
-    initializingModel: false,
-    browserBlocked: false,
-    navigationFailed: false,
-    authorizationIds: [],
-    mcpServers: null,
-    loadingMcp: false,
-    mcpFailed: false,
-    mcpProbe: null,
-    probingMcp: false,
-    mcpError: null,
   }
-  const props: TrialFixtureProps = {
-    ...productActions,
-    useTrial: select => select(state),
-    useProduct: select => select(product),
-    usePreferences: select => select({ locale, theme: 'system', languages: [] }),
-    useNavigation: select => select([]),
-    useExternalStatus: select => select({ signedIn: false }),
-    useStaminaModel: select => select({ current: null }),
-    useSession: unexpectedSessionRuntime,
-    sessionId: 'trial-test' as SessionId,
-    useProjection: unexpectedSessionRuntime,
-    useAccess: unexpectedSessionRuntime,
-    useConversation: unexpectedSessionRuntime,
-    useInput: unexpectedSessionRuntime,
-    inputActions,
-    useChat: unexpectedSessionRuntime,
-    useTrajectory: unexpectedSessionRuntime,
-    useWorkspaces: unexpectedSessionRuntime,
-    usePanelInfo: unexpectedSessionRuntime,
-    useRemoteAccess: unexpectedSessionRuntime,
-    useSessions: unexpectedSessionRuntime,
-    useSessionStatus: unexpectedSessionRuntime,
-    useSessionRetainInfo: unexpectedSessionRuntime,
-    useSessionAccess: unexpectedSessionRuntime,
-    useResource: unexpectedSessionRuntime,
-    useContextMenu: unexpectedSessionRuntime,
-    useWorkspaceAccess: unexpectedSessionRuntime,
-    t: (key, params) => {
-      const copy = (dictionary as Record<string, string>)[key] ?? key
-      return copy.replace(/\{(\w+)\}/g, (_match: string, name: string) => {
-        const value = params?.[name]
-        return typeof value === 'string' || typeof value === 'number' ? String(value) : name
-      })
-    },
+  type TrialFixture = ComponentProps<typeof TrialModal> & Pick<ComponentProps<typeof TrialDock>, 'useStaminaModel'>
+  const props: TrialFixture = {
+    useTrial: <T,>(select: (s: TrialSnapshot) => T): T => select(state),
+    useProduct: <T,>(select: (s: typeof product) => T): T => select(product),
+    useStaminaModel: <T,>(select: (s: { current: null }) => T): T => select({ current: null }),
+    useNavigation: <T,>(select: (s: readonly { id: MainPanelId; label: string }[]) => T): T =>
+      select([]),
+    useExternalStatus: <T,>(select: (s: OpenAiStatus) => T): T => select({ signedIn: false }),
+    usePreferences: <T,>(select: (s: PreferenceSnapshot) => T): T =>
+      select({ theme: 'system', locale, languages: [] }),
+    t: ((key: string, params: Record<string, string> = {}) =>
+      (dictionary as Record<string, string>)[key]?.replace(/\{(\w+)\}/g, (_, name: string) => params[name] ?? name) ??
+      key) as TrialFixture['t'],
     selectTrialGroup: vi.fn(),
+    start: vi.fn(),
+    reopen: vi.fn(),
+    cancel: vi.fn(),
+    retryAccount: vi.fn(),
+    signOut: vi.fn(async () => true),
+    startSession: vi.fn(),
+    openSession: vi.fn(),
+    openWorkspace: vi.fn(),
+    addProject: vi.fn(async () => undefined),
+    renameProject: vi.fn(async () => undefined),
+    removeProject: vi.fn(async () => undefined),
+    sessionMenu: vi.fn(),
+    selectPanel: vi.fn(),
+    toggleSidebar: vi.fn(),
+    loadConnections: vi.fn(),
+    beginOpenAiSignIn: vi.fn(async () => undefined),
+    completeOpenAiSignIn: vi.fn(async () => false),
+    openAiStatus: vi.fn(async () => ({ signedIn: false })),
+    signOutOpenAi: vi.fn(async () => undefined),
+    refreshSubscriptionUsage: vi.fn(),
+    openOpenAiDialog: vi.fn(),
+    closeOpenAiDialog: vi.fn(),
+    refreshStamina: vi.fn(),
+    connect: vi.fn(async () => true),
+    reopenConnection: vi.fn(),
+    disconnect: vi.fn(async () => true),
+    loadMcpServers: vi.fn(),
+    saveMcpServer: vi.fn(async () => true),
+    deleteMcpServer: vi.fn(async () => true),
+    setMcpEnabled: vi.fn(async () => true),
+    probeMcpServer: vi.fn(async () => true),
+    signInMcpServer: vi.fn(async () => true),
+    setMcpToken: vi.fn(async () => true),
+    signOutMcpServer: vi.fn(async () => true),
+    clearMcpProbe: vi.fn(),
+    billing: vi.fn(),
+    dismiss: vi.fn(),
+    setTheme: vi.fn(),
+    setLocale: vi.fn(),
+    retryModel: vi.fn(),
+    help: vi.fn(),
     loadPlans: vi.fn(),
     showTrial: vi.fn(),
     closeTrial: vi.fn(),

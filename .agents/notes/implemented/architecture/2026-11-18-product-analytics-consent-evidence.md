@@ -14,6 +14,8 @@ The Host keeps optional product measurement separate from editor content and beg
 
 The signed reference establishes that the backend issued an order; it does not prove when a device action happened. That boundary remains the client's responsibility. The [collector package](../../../../packages/host/verboo-analytics/README.md) owns the Host contract.
 
+The product collector uses an installation secret independent of account contexts to derive a pseudonymous destination identity. Account authentication remains necessary for account-scoped authorization and queue isolation, but the product destination does not receive the account ID or an identity-link request. Message observations capture the gesture, model selection and authorization before command adjudication; the observation is emitted only when the submitted input proceeds as an ordinary message. Selection observations emit only after the Host accepts the choice.
+
 ## Alternatives considered
 
 **Compare wall clocks.** Device clocks and backend instances can differ, and a consent transaction can commit after its timestamp is assigned.
@@ -23,3 +25,5 @@ The signed reference establishes that the backend issued an order; it does not p
 ## Consequences
 
 Actions without a prior valid reference are not measured, including some actions immediately after startup or while offline. The receiver needs a configured proof key and a coordinated backend rollout; rotation must retain verification for queued proofs. The collector never puts prompts, responses, tool arguments, or the proof itself into PostHog properties.
+
+Distinct installations approximate people: one person using several installations can be counted more than once. Only supported Verboo, OpenAI account and official DeepSeek model catalogs carry model dimensions; custom provider and model labels are grouped as `other`. An unreported effort is labelled `default`, which does not identify the provider's resolved value. Renderer-to-Host RPC failures can still lose an observation before it reaches the durable queue.

@@ -106,8 +106,10 @@ Host-owned consent, response observation and receipt-checked product outbox.
  * @param subjectId - consent subject observed when the user initiated the action.
  * @param consentRevision - granted revision observed when the action began.
  * @param consentProof - signed reference observed when the action began.
+ * @param model - bounded model and effort dimensions for a message attempt.
+ * @returns after the eligible observation's local queue attempt settles.
  */
-@Remote feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string): void
+@Remote feature(feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string, model?: ProductModelDetails): Promise<void>
 ```
 
 Source: [`packages/host/verboo-analytics/src/index.ts`](../../packages/host/verboo-analytics/src/index.ts)

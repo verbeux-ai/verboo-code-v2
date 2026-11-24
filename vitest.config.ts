@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
@@ -191,10 +192,86 @@ const claudeCodeTestingAliases = {
 // only in built `lib/` output. On a clean checkout Vite resolves that import while transforming the
 // entry, before `vi.mock` can answer it, so the jsdom assembly suites need a resolvable stand-in.
 const liveshareRemoteBuild = fileURLToPath(new URL('./packages/experimental/liveshare/lib/typert.remote-client.js', import.meta.url))
-const generatedRemoteAliases = existsSync(liveshareRemoteBuild) ? {} : {
-  '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
+
+// One map of every generated Host-for-Client endpoint to its access class; the
+// absent-remote stand-ins draw their method surface from it.
+import { VIEWER_ENDPOINT_CLASSES } from './packages/experimental/liveshare/src/endpoint-classification.ts'
+
+/**
+ * Write one stand-in contribution for a package whose built `./remote` is
+ * absent, named after that package so the typert registry sees distinct remote
+ * packages. A registry rejects a second registration of one remote package
+ * name, so aliases sharing a single module would collide the moment two absent
+ * contributions loaded in one process.
+ * @param packageName - the package the stand-in stands in for.
+ * @returns the stand-in module's file path.
+ */
+function remoteStubFor(packageName: string): string {
+  const file = fileURLToPath(new URL(`./scripts/generated-remote-stubs/${packageName.slice('@deepseek-ai/'.length)}.ts`, import.meta.url))
+  mkdirSync(dirname(file), { recursive: true })
+  // Methods come from the endpoint classification the repo already maintains, so
+  // an assembled Client exposes the same namespace.method surface the real build
+  // would. A registry validates descriptors, so each entry carries the minimal
+  // well-formed descriptor: one request per endpoint, answered by the suite's
+  // own connection mock.
+  const namespace = packageName.slice('@deepseek-ai/dsh-'.length)
+  const methods = Object.keys(VIEWER_ENDPOINT_CLASSES)
+    .filter(endpoint => endpoint.startsWith(`${namespace}/`))
+    .map(endpoint => `${namespace}/${endpoint.slice(namespace.length + 1)}`)
+    .map(endpoint => `'${endpoint}': { invocation: { kind: 'direct' }, parameters: [] }`)
+  const methodEntries = methods.length === 0 ? '' : methods.join(',\n    ') + ','
+  writeFileSync(file, `import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
+import { z } from 'zod'
+
+export default createTypertRemoteInfo({
+  package: '${packageName}',
+  methods: {
+    ${methodEntries}
+  },
+}, z)
+`)
+  return file
 }
-const testingAliases = { ...vitestCleanCheckoutAliases, ...claudeCodeTestingAliases, ...generatedRemoteAliases }
+
+/**
+ * Every workspace package that publishes a generated `./remote` contribution
+ * resolves that subpath through its own `exports` to a built `lib/` file. A
+ * clean checkout has none of them, so each absent build falls back to the shared
+ * stand-in above.
+ * @returns aliases keyed by the `<package>/remote` specifier.
+ */
+function absentRemoteAliases(): Record<string, string> {
+  const aliases: Record<string, string> = {}
+  for (const manifestPath of globSync('packages/*/*/package.json')) {
+    const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    if (typeof manifest !== 'object' || manifest === null) continue
+    const { name, exports } = manifest as { name?: unknown; exports?: unknown }
+    if (typeof name !== 'string' || typeof exports !== 'object' || exports === null) continue
+    const remote: unknown = (exports as Record<string, unknown>)['./remote']
+    const target = typeof remote === 'string' ? remote : (remote as { default?: unknown } | undefined)?.default
+    if (typeof target !== 'string') continue
+    if (existsSync(join(dirname(manifestPath), target))) continue
+    aliases[`${name}/remote`] = remoteStubFor(name)
+  }
+  return aliases
+}
+
+const generatedRemoteAliases = {
+  ...absentRemoteAliases(),
+  ...existsSync(liveshareRemoteBuild) ? {} : {
+    '@deepseek-ai/dsh-experimental-liveshare/remote': fileURLToPath(new URL('./packages/experimental/liveshare/tests/generated-remote-stub.ts', import.meta.url)),
+  },
+}
+// The vendored packages publish from built `lib/`, which a clean checkout does
+// not have. The tsconfig path aliases point at their `src`, but Vite resolves a
+// directory through the package's own exports, so a bare import of a vendored
+// name reaches a `lib/` entry that was never built. `cosmokit` is the one every
+// other vendor package and the LLM retry policy import, so it is pinned to its
+// source entry; the rest resolve through the path aliases.
+const vendorSourceAliases = {
+  '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
+}
+const testingAliases = { ...vitestCleanCheckoutAliases, ...claudeCodeTestingAliases, ...generatedRemoteAliases, ...vendorSourceAliases }
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],

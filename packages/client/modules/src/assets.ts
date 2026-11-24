@@ -8,8 +8,6 @@
  * @module @deepseek-ai/dsh-client-modules/src/assets
  */
 
-import { createHash } from 'node:crypto'
-
 /** Route segment between a package name and its asset path. */
 export const PACKAGE_ASSET_SEGMENT = 'assets'
 
@@ -33,9 +31,6 @@ export const PACKAGE_ASSET_EXPORT_TARGET = './lib/assets/*'
 /** The `files` entry that publishes {@link PACKAGE_ASSET_EXPORT_TARGET}. */
 export const PACKAGE_ASSET_FILES_ENTRY = 'lib/assets'
 
-/** Hex digits kept from the content digest; the same length as client artifact revisions. */
-const PACKAGE_ASSET_REVISION_LENGTH = 12
-
 /**
  * Look up the media type of an asset path.
  * @param assetPath - file path or URL path; only its final extension is read, case-insensitively.
@@ -45,17 +40,6 @@ export function packageAssetMediaType(assetPath: string): string | undefined {
   const name = assetPath.slice(Math.max(assetPath.lastIndexOf('/'), assetPath.lastIndexOf('\\')) + 1)
   const dot = name.lastIndexOf('.')
   return dot <= 0 ? undefined : PACKAGE_ASSET_MEDIA_TYPES.get(name.slice(dot).toLowerCase())
-}
-
-/**
- * Compute the content revision of one built asset. The build writes it into
- * the emitted file name, so a URL names exactly one content and a rebuilt
- * asset gets a new URL.
- * @param bytes - exact bytes written under `lib/assets/`.
- * @returns the first 12 hexadecimal digits of the SHA-1 digest.
- */
-export function packageAssetRevision(bytes: Uint8Array): string {
-  return createHash('sha1').update(bytes).digest('hex').slice(0, PACKAGE_ASSET_REVISION_LENGTH)
 }
 
 /**

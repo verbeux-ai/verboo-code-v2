@@ -122,6 +122,8 @@ export class InputHub implements SessionInputResolver {
         })
       },
       messageSubmitted: (submission) => { reportMessageSubmission(this.rootCtx, submission) },
+      beginMessageObservation: (source, mode, running, model) =>
+        this.rootCtx.uiConversation.beginMessageSubmission(session.sessionId, source, mode, running, model),
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,
