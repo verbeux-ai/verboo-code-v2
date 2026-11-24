@@ -63,7 +63,7 @@ export class LoginJourney {
    */
   record(
     context: Operation,
-    outcome: 'started' | 'succeeded' | 'failed',
+    outcome: 'started' | 'succeeded' | 'failed' | 'expired',
     error?: AccountRequestError,
   ): void {
     observe(context, 'login', outcome, error)

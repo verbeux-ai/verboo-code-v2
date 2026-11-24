@@ -53,7 +53,7 @@ export function operation(): Operation {
 export function observe(
   context: Operation,
   stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return',
-  outcome: 'started' | 'succeeded' | 'failed',
+  outcome: 'started' | 'succeeded' | 'failed' | 'expired',
   error?: AccountRequestError,
 ): void {
   console.error(

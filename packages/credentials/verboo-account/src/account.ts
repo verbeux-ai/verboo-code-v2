@@ -81,6 +81,8 @@ interface Attempt {
   removeRoute?: () => Promise<void>
 }
 
+class BrowserCallbackExpired extends Error {}
+
 /** Verboo's public PKCE client; encrypted grants remain exclusively on the Host. */
 export class VerbooAccount extends DeepSeekAccount {
   static inject = ['credentials', 'authorization']
@@ -275,6 +277,11 @@ export class VerbooAccount extends DeepSeekAccount {
         this.finishCallback(attempt, outcome.status === 'authorized')
       })
       .catch((error: unknown) => {
+        if (error instanceof BrowserCallbackExpired) {
+          this.update(attempt, { phase: 'expired', errorCode: 'expired' })
+          this.journey.record(attempt.context, 'expired')
+          return
+        }
         const failure =
           error instanceof AccountRequestError
             ? error
@@ -318,12 +325,19 @@ export class VerbooAccount extends DeepSeekAccount {
     })
     const deadline = AbortSignal.timeout(this.deployment.attemptTimeoutMs)
     const signal = AbortSignal.any([session.signal, deadline])
+    const deadlineExpired = () =>
+      deadline.aborted && signal.reason === deadline.reason
     const abort = () => {
-      code.reject(
-        new AccountRequestError(
-          deadline.aborted ? 'request_timeout' : 'request_cancelled',
-        ),
-      )
+      const expired = deadlineExpired()
+      if (
+        expired &&
+        attempt.view.phase === 'waiting-browser' &&
+        attempt.response === undefined
+      ) {
+        code.reject(new BrowserCallbackExpired())
+      } else {
+        code.reject(new AccountRequestError(expired ? 'request_timeout' : 'request_cancelled'))
+      }
     }
     signal.addEventListener('abort', abort, { once: true })
     try {
@@ -418,7 +432,13 @@ export class VerbooAccount extends DeepSeekAccount {
         }),
       })
     } catch (error) {
-      if (deadline.aborted) throw new AccountRequestError('request_timeout')
+      if (
+        deadlineExpired() &&
+        (error === signal.reason ||
+          (error instanceof AccountRequestError && error.code === 'request_cancelled'))
+      ) {
+        throw new AccountRequestError('request_timeout')
+      }
       throw error
     } finally {
       signal.removeEventListener('abort', abort)

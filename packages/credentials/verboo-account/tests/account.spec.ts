@@ -38,7 +38,13 @@ async function until(check: () => Promise<boolean>): Promise<void> {
 }
 
 async function fixture(
-  options: { expiresIn?: number; attemptTimeoutMs?: number; requestTimeoutMs?: number; refreshDelayMs?: number } = {},
+  options: {
+    expiresIn?: number
+    attemptTimeoutMs?: number
+    requestTimeoutMs?: number
+    refreshDelayMs?: number
+    exchangeDelayMs?: number
+  } = {},
 ) {
   const home = await mkdtemp(join(tmpdir(), 'verboo-account-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
@@ -82,6 +88,8 @@ async function fixture(
       else state.exchanges++
       if (refresh && options.refreshDelayMs !== undefined)
         await delay(options.refreshDelayMs)
+      if (!refresh && options.exchangeDelayMs !== undefined)
+        await delay(options.exchangeDelayMs)
       if (refresh && state.rejectRefresh) {
         res.writeHead(400).end('{"error":"invalid_grant"}')
         return
@@ -296,6 +304,14 @@ async function fixture(
     )
     return attempt
   }
+  function loginObservations() {
+    const events = requests
+      .filter(request => request.path === '/api/journey/events')
+      .flatMap(request => (JSON.parse(request.body) as {
+        events: Array<{ eventId: string; journeyId: string; operationId: string; outcome: string; errorCode?: string }>
+      }).events)
+    return [...new Map(events.map(event => [event.eventId, event])).values()]
+  }
   return {
     ctx,
     home,
@@ -307,6 +323,7 @@ async function fixture(
     callbackOrigin,
     begin,
     login,
+    loginObservations,
   }
 }
 
@@ -423,7 +440,7 @@ it('rejects forged callbacks and removes only the cancelled attempt route', asyn
   expect((await app.ctx.deepseekAccount.getState()).status).toBe('signed-out')
 })
 
-it('distinguishes explicit denial from a technical authorization expiry', async () => {
+it('records callback expiry separately from explicit denial and request failures', async () => {
   const app = await fixture({ attemptTimeoutMs: 300 })
   const { authorize } = await app.begin()
   await fetch(
@@ -438,6 +455,40 @@ it('distinguishes explicit denial from a technical authorization expiry', async 
       (await app.ctx.deepseekAccount.getState()).attempt?.phase === 'expired',
   )
   expect(app.state.exchanges).toBe(0)
+  await until(async () => app.loginObservations().length === 4)
+  const [denial, expiry] = app.loginObservations().filter(event => event.outcome !== 'started')
+  const starts = app.loginObservations().filter(event => event.outcome === 'started')
+  expect(denial).toMatchObject({ outcome: 'failed', errorCode: 'request_cancelled' })
+  expect(starts).toHaveLength(2)
+  expect(expiry).toMatchObject({
+    outcome: 'expired',
+    journeyId: starts[1]?.journeyId,
+    operationId: starts[1]?.operationId,
+  })
+  expect(expiry?.errorCode).toBeUndefined()
+})
+
+it.each([
+  { attemptTimeoutMs: 5_000, requestTimeoutMs: 200 },
+  { attemptTimeoutMs: 1_000, requestTimeoutMs: 2_000 },
+])('keeps token exchange timeouts actionable after a valid callback (%j)', async (timeouts) => {
+  const app = await fixture({ ...timeouts, exchangeDelayMs: 1_500 })
+  const { authorize } = await app.begin()
+  const callback = new URL('/callback', app.callbackOrigin)
+  callback.searchParams.set('state', authorize.searchParams.get('state') ?? '')
+  callback.searchParams.set('code', 'fixture-code')
+  await fetch(callback)
+  await until(async () => app.loginObservations().length === 2)
+
+  const exchange = app.requests.find(request => request.path === '/oauth/token')
+  expect(app.state.exchanges).toBe(1)
+  expect((await app.ctx.deepseekAccount.getState()).attempt?.phase).toBe('expired')
+  expect(app.loginObservations()[1]).toMatchObject({
+    outcome: 'failed',
+    errorCode: 'request_timeout',
+    journeyId: exchange?.journey,
+    operationId: exchange?.operation,
+  })
 })
 
 it.each(['completed cancellation', 'pending sign-out'])('shares one working login when retries overlap a %s', async (transition) => {
@@ -470,15 +521,10 @@ it.each(['completed cancellation', 'pending sign-out'])('shares one working logi
   const exchange = app.requests.find(request => request.path === '/oauth/token')
   expect(exchange?.journey).toBeTruthy()
   expect(exchange?.operation).toBeTruthy()
-  const observations = () => app.requests
-    .filter(request => request.path === '/api/journey/events')
-    .flatMap(request => (JSON.parse(request.body) as {
-      events: Array<{ eventId: string; journeyId: string; operationId: string; outcome: string; errorCode?: string }>
-    }).events)
-  await until(async () => observations().some(event =>
+  await until(async () => app.loginObservations().some(event =>
     event.journeyId === exchange?.journey && event.operationId === exchange?.operation && event.outcome === 'succeeded',
   ))
-  const unique = [...new Map(observations().map(event => [event.eventId, event])).values()]
+  const unique = app.loginObservations()
   expect(unique.filter(event => event.outcome === 'started')).toHaveLength(2)
   expect(unique.filter(event => event.outcome === 'failed')).toEqual([
     expect.objectContaining({ errorCode: 'request_cancelled' }),
