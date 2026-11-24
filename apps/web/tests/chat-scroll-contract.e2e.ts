@@ -660,9 +660,11 @@ describe('web e2e: long Chat scroll contract', () => {
         expect(before.groupHeight).toBeGreaterThan(before.visibleHeight * 3)
         if (scenario.bodyParagraphs === 32) expect(before.visibleSteps).toBe(0)
         else expect(before.visibleSteps).toBeGreaterThan(0)
-        if (scenario.name === 'cancel-all-during-fold') {
-          await openSettings(page, 'en')
-        }
+        // The cancel race cancels the fold from the frame sampler by writing the
+        // never-folding presentation, which is what the removed Verbose item did.
+        const cancelFold = scenario.name === 'cancel-all-during-fold'
+          ? async (): Promise<void> => { await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'verbose' }) }
+          : undefined
         const release = holdTextAfter(world, 0)
         const finishGate = Promise.withResolvers<undefined>()
         const finishBlocked = Promise.withResolvers<undefined>()
@@ -714,11 +716,12 @@ describe('web e2e: long Chat scroll contract', () => {
             if (closing.length > 0) closingHeight ??= height
             if (!raceApplied && closingHeight !== undefined && height > 0 && height < closingHeight - 1) {
               if (race === 'cancel-all-during-fold') {
-                const verbose = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-                  .find(element => element.textContent?.trim() === 'Verbose')
-                if (verbose !== undefined) {
+                // Settings no longer offers the presentation, so this race writes
+                // the never-folding mode directly; that is the same cancellation
+                // the removed Verbose choice produced.
+                if (cancelFold !== undefined) {
                   raceApplied = true
-                  verbose.click()
+                  void cancelFold()
                 }
               } else if (race === 'content-growth-during-fold') {
                 // Controlled layout growth exercises ResizeObserver overlap, not Session-event delivery.
@@ -861,7 +864,8 @@ describe('web e2e: long Chat scroll contract', () => {
           expect(samples.some(sample => sample.raceApplied)).toBe(true)
           expect(last.folding).toBe(false)
           expect(last.spacer).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
-          expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(1)
+          // The race writes the mode directly, so no Settings dialog is involved.
+          expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
           expect(await page.locator('[data-input-fold]').count()).toBe(0)
           assertClean(world)
           return
