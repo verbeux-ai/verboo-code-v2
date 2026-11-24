@@ -11,8 +11,8 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [disabled]
-- button "Asked questions" [expanded]
-- button "Think The user wants me to ask them a checkpoint question first, then continue with whatever they interject. Let me do exactly that."
+- button "1 action" [expanded]
+- button "Think"
 - button "Ask question 1/1 answered"
 - group "Questions and answers":
   - term: Checkpoint Ready to continue?

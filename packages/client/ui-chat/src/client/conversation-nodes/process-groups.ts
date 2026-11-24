@@ -157,7 +157,9 @@ class TurnGroups {
         // One Node, two rows: reasoning joins the step run, a reply stands outside it.
         if (reasoning(node)) pending.push({ kind: 'node', key, groupPart: 'reasoning' })
         if (reply(node)) {
-          flush(true)
+          // A reply renders outside the run but no longer ends it: the Turn keeps
+          // accumulating into one group, so a Turn with several replies shows a
+          // single process title instead of one per reply.
           emit(key, { kind: 'node', key, groupPart: 'response' })
         }
       } else pending.push({ kind: 'node', key })
@@ -282,7 +284,11 @@ export class ProcessState {
       if (turn === undefined) return [{ kind: 'node', key }]
       const groups = this.turns.get(turn)
       if (groups === undefined) throw new Error(`Chat grouping order is missing Turn ${turn}`)
-      return groups.references(key)
+      // An assistant Node can anchor both its reasoning group and its reply row.
+      // The group carries the work that produced the reply, so it leads at that
+      // anchor even though a reply emits before the run closes.
+      return [...groups.references(key)].sort((left, right) =>
+        (left.kind === 'group' ? 0 : 1) - (right.kind === 'group' ? 0 : 1))
     })
   }
 

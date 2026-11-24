@@ -28,9 +28,7 @@ function derivedDocumentStore(remote: object) {
 }
 import { en, zh } from '../src/client/locales.ts'
 import { CurrentVersionRow } from '../src/client/CurrentVersionRow.tsx'
-import { DesktopUpdateBadge } from '../src/client/DesktopUpdateIndicator.tsx'
 import { HostReleasePrompt, type HostReleasePromptProps } from '../src/client/HostReleasePrompt.tsx'
-import type { DesktopUpdateView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllEnvs() })
 
@@ -50,42 +48,6 @@ const kit = {
   useContextMenu: contextMenuHook(),
 }
 
-describe('Desktop collapsed update badge', () => {
-  it('shows update and retry status and yields to connection feedback', () => {
-    let state: DesktopUpdateView = { failed: false, opening: false }
-    let connection: 'connected' | 'connecting' | 'disconnected' = 'connected'
-    const props = { ...kit, t,
-      useDesktopUpdate: (select => select(state)) as Parameters<typeof DesktopUpdateBadge>[0]['useDesktopUpdate'],
-      useConnectionState: (select => select(connection)) as Parameters<typeof DesktopUpdateBadge>[0]['useConnectionState'],
-    }
-    const view = render(<DesktopUpdateBadge {...props} />)
-    expect(screen.queryByRole('img')).toBeNull()
-    state = { ...state, presentation: { phase: 'available', version: '1.0.1' } }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: 'Update' })).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
-    state = { ...state, failed: true }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
-    state = { failed: true, opening: false }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
-    state = { failed: false, opening: false, presentation: { phase: 'error', failure: 'install' } }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
-    state = { failed: false, opening: false, presentation: { phase: 'idle', configurationError: 'format' } }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.channel.unavailable'] })).toBeTruthy()
-    state = { ...state, presentation: { phase: 'idle' } }
-    view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.queryByRole('img')).toBeNull()
-    for (const value of ['connecting', 'disconnected'] as const) {
-      connection = value
-      view.rerender(<DesktopUpdateBadge {...props} />)
-      expect(screen.queryByRole('img')).toBeNull()
-    }
-  })
-})
 
 it('toggles developer tools using the accepted setting and disables duplicate writes', async () => {
   const state = createSnapshotStore(false)

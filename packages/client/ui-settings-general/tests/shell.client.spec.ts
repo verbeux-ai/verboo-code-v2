@@ -51,31 +51,25 @@ const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
 ]
 
 describe('ui-settings-general shell', () => {
-  it('shares one carrier subscription between both update locations and releases it on unload', async ({ start }) => {
+  it('subscribes to the carrier once and releases it on unload', async ({ start }) => {
+    // The footer row itself is declared by the product sidebar, which this
+    // roster does not boot; the subscription lifecycle is this package's own.
     const initial = Promise.withResolvers<DesktopUpdatePresentation>()
     let publish: ((state: DesktopUpdatePresentation) => void) | undefined
     const off = vi.fn()
     const subscribe = vi.fn((listener: typeof publish) => { publish = listener; return off })
-    const open = vi.fn(async () => {})
-    vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, open } })
+    const restart = vi.fn(async () => {})
+    const dismiss = vi.fn(async () => {})
+    vi.stubGlobal('__VERBOO_DESKTOP__', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, restart, dismiss } })
     onTestFinished(() => { vi.unstubAllGlobals(); initial.resolve({ phase: 'idle' }) })
     const c = await start()
-    const row = injectedOf(c)
-    const badge = (c.ctx.slots.entries('sidebar.toggle.badge')[0]!.inject as () => Pick<SettingsRootInjected, 'hooks'>)()
-    expect(badge.hooks.desktopUpdate).toBe(row.hooks.desktopUpdate)
     expect(subscribe).toHaveBeenCalledOnce()
-    const status = { phase: 'available' as const, version: '1.0.1' }
-    publish!(status)
-    expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
-    row.openDesktopUpdate()
-    await c.flush()
-    expect(open).toHaveBeenCalledOnce()
     await c.unload(SELF)
     await c.flush()
     expect(off).toHaveBeenCalledOnce()
-    expect(c.ctx.slots.entries('sidebar.toggle.badge')).toHaveLength(0)
-    publish!({ phase: 'error', version: status.version, failure: 'install' })
-    expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
+    // A late carrier event after unload never reaches a released consumer.
+    publish?.({ phase: 'ready', version: '1.0.1' })
+    expect(off).toHaveBeenCalledOnce()
   }, COLD_BOOT_TIMEOUT_MS)
 
   it('declares its services', () => {

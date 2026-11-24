@@ -348,6 +348,7 @@
   background: transparent;
   cursor: pointer;
   color: var(--dsw-alias-label-secondary);
+  transition: var(--dsw-motion-colors);
 }
 
 @media (hover: hover) {
@@ -371,19 +372,33 @@
 }
 
 /* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
-   affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
+   no hover circle) and hovering crossfades to the panel icon — the expand
+   affordance (figma sidebar-hover flow). Expanded it is a plain panel icon.
+   Both glyphs share one grid cell so the swap is an opacity transition, and
+   the update badge stays absolutely positioned above the stack. */
+.collapsed .toggle {
+  display: grid;
+  place-items: center;
+}
+
+.collapsed .toggle .railMark,
 .collapsed .toggle .panelIcon {
-  display: none;
+  grid-area: 1 / 1;
+  transition: var(--dsw-motion-fade);
+}
+
+.collapsed .toggle .panelIcon {
+  opacity: 0;
+  pointer-events: none;
 }
 
 @media (hover: hover) {
   .collapsed .toggle:hover .panelIcon {
-    display: inline;
+    opacity: 1;
   }
 
   .collapsed .toggle:hover .railMark {
-    display: none;
+    opacity: 0;
   }
 }
 
@@ -438,6 +453,7 @@
   line-height: 22px;
   cursor: pointer;
   overflow: hidden;
+  transition: var(--dsw-motion-colors);
 }
 
 @media (hover: hover) {
@@ -814,7 +830,11 @@
   .railIn .newSession,
   .railIn .panelList,
   .railIn .footArea,
-  .railIn .regionArea {
+  .railIn .regionArea,
+  .iconButton,
+  .newSession,
+  .collapsed .toggle .railMark,
+  .collapsed .toggle .panelIcon {
     transition: none;
     animation: none;
   }

@@ -24,7 +24,7 @@ import { sessionFixtureName } from '@deepseek-ai/dsh-session-snapshot'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { createChatScrollFixture, type ChatScrollFixture } from './chat-scroll-fixture.ts'
 import { launchWebScaffold, parseSeedFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { newEnglishPage, openSettings } from './support.ts'
+import { newEnglishPage } from './support.ts'
 
 declare global {
   interface Window {
@@ -424,16 +424,22 @@ async function openSessionBySearch(page: Page, query: string): Promise<void> {
   await results.click()
 }
 
-async function choosePreferences(page: Page, scenario: Case): Promise<void> {
-  await openSettings(page, 'en')
-  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-  const timing = dialog.getByText('When to Collapse Work Details', { exact: true }).locator('../..')
-  await timing.getByRole('button').click()
-  await page.getByRole('menuitem', { name: scenario.timing, exact: true }).click()
-  const details = dialog.getByText('Work details', { exact: true }).locator('../..')
-  await details.getByRole('button').click()
-  await page.getByRole('menuitem', { name: scenario.mode, exact: true }).click()
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+/**
+ * Seed the matrix's presentation and collapse timing before the page loads.
+ *
+ * Settings no longer offers the presentation, so this matrix writes both values
+ * directly; the seeded document is the supported way to reach the richer
+ * presentations. Seeding happens before navigation because a reload afterwards
+ * would drop the Session this case just opened.
+ * @param scaffold - owning scaffold, used for the settings document.
+ * @param scenario - presentation and timing this case exercises.
+ */
+async function seedPreferences(scaffold: WebScaffold, scenario: Case): Promise<void> {
+  const collapseTiming = scenario.timing === 'On next message' ? 'next-input' : 'completion'
+  const transcriptView = scenario.mode === 'Detailed' ? 'detailed' : 'compact'
+  await scaffold.ctx.settings.update('ui-chat', { transcriptView, collapseTiming })
+  await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
+    .toMatchObject({ transcriptView, collapseTiming })
 }
 
 async function expandSeededSteps(page: Page, root: string, scenario: Case): Promise<void> {
@@ -602,13 +608,13 @@ async function prepareWorld(browser: Browser, scenario: Case, scaffold: WebScaff
   if (scenario.surface === 'main') {
     const fixture = seededFixture(scenario.id, scenario.bodyParagraphs)
     await seedSession(scaffold, fixture.log, sessionId)
+    await seedPreferences(scaffold, scenario)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await openSessionBySearch(page, fixture.markers.user(1))
     await page.locator(MAIN_ROOT).getByText('FOLDMX_BODY', { exact: false }).last().waitFor({ timeout: 30_000 })
     const resolved = await scaffold.ctx.sessionController.resolveAgent(sessionId)
     if ('error' in resolved) throw resolved.error
     scaffold.ctx.permissionPresets.set(resolved.agent.session, 'danger-full-access')
-    await choosePreferences(page, scenario)
     return { browser, scaffold, page, root: MAIN_ROOT, target: sessionId, tripwire, searchQuery: fixture.markers.user(1) }
   }
   const parentFixture = createChatScrollFixture({ markerPrefix: 'FOLDMXP', title: `FOLDMX parent ${scenario.id}`, turns: 2 })
@@ -617,9 +623,9 @@ async function prepareWorld(browser: Browser, scenario: Case, scaffold: WebScaff
   if ('error' in resolved) throw resolved.error
   scaffold.ctx.permissionPresets.set(resolved.agent.session, 'danger-full-access')
   const childId = await createChild(scaffold, sessionId, scenario)
+  await seedPreferences(scaffold, scenario)
   await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
   await openSessionBySearch(page, parentFixture.markers.user(1))
-  await choosePreferences(page, scenario)
   const trigger = page.getByRole('button', { name: '1 subagent', exact: true })
   await trigger.waitFor({ timeout: 15_000 })
   await trigger.hover()

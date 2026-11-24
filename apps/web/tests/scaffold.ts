@@ -1172,8 +1172,11 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
       let normalized = value
         .replace(/Anonymous user: [0-9a-f-]{36}(?=\.$)/gi, 'Anonymous user: {{anonymousUserId}}')
         // The checkout path and listener port differ per machine and run.
-        .replace(/Current Verboo Code implementation checkout: "(?:[^"\\]|\\.)*"\./g, 'Current Verboo Code implementation checkout: "{{sourceRoot}}".')
-        .replace(/Current Verboo Code Web GUI URL: "(?:[^"\\]|\\.)*"\./g, 'Current Verboo Code Web GUI URL: "{{webUrl}}".')
+        // Anchored on the stable tail rather than the product name, which moved
+        // from "Verboo Code" to "DeepSeek Harness [DSH]": the checkout path and
+        // listener port differ per machine and run.
+        .replace(/implementation checkout: "(?:[^"\\]|\\.)*"\./g, 'implementation checkout: "{{sourceRoot}}".')
+        .replace(/Web GUI URL: "(?:[^"\\]|\\.)*"\./g, 'Web GUI URL: "{{webUrl}}".')
       for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
       return normalized
     })) as { type?: unknown; data?: { endpoint?: unknown } }

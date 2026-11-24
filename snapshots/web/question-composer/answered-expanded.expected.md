@@ -11,8 +11,8 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Asked questions" [expanded]
-- button "Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that."
+- button "1 action" [expanded]
+- button "Think"
 - button "Ask question 1/1 answered" [expanded]
 - term: Which color do you prefer?
 - definition: Blue Include accessibility notes
@@ -23,7 +23,7 @@
   - text: {{clock}}
   - button "Copy"
 - button "Analysis completed" [expanded]
-- button "Think The user answered \"Blue\". I should now reply with the single word DONE and stop."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"

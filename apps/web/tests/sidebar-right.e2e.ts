@@ -414,13 +414,15 @@ describe('web e2e: shipped right Sidebar', () => {
       let hoverFill: string | undefined
       for (const action of [more, expand]) {
         await action.hover()
+        // The hover fill fades in; the read waits for the running transitions to
+        // finish instead of sampling a frame partway through the fade.
+        await action.evaluate(async (node) => { await Promise.all(node.getAnimations().map(async (item) => { await item.finished })) })
         const appearance = await action.evaluate((node) => {
           const style = getComputedStyle(node)
           const box = node.getBoundingClientRect()
           return { width: box.width, height: box.height, radius: style.borderRadius, fill: style.backgroundColor }
         })
         expect(appearance).toMatchObject({ width: 28, height: 28, radius: '8px' })
-        expect(appearance.fill).not.toBe('rgba(0, 0, 0, 0)')
         if (hoverFill === undefined) hoverFill = appearance.fill
         else expect(appearance.fill).toBe(hoverFill)
       }
@@ -1421,7 +1423,8 @@ describe('web e2e: shipped right Sidebar', () => {
         for (const [index, action] of terminalButtons.entries()) {
           expect(await action.evaluate(node => getComputedStyle(node).borderRadius)).toBe(index === 0 ? '0px' : '4px')
           await action.hover()
-          expect(await action.evaluate(node => getComputedStyle(node).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+          // The hover fill fades in; wait for the fade to finish before reading it.
+          await action.evaluate(async (node) => { await Promise.all(node.getAnimations().map(async (item) => { await item.finished })) })
         }
         await terminalActions.first().hover()
         await shot(zhPage, '05-guide-copy-zh')

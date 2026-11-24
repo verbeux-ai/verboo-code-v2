@@ -5,7 +5,7 @@ import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CollapseTiming, FoldedReplies } from './presentation-policy.ts'
 import {
   COLLAPSE_TIMING_FIELD, DEFAULT_COLLAPSE_TIMING, DEFAULT_FOLDED_REPLIES, FOLDED_REPLIES_FIELD,
-  DEFAULT_TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE, LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE, TRANSCRIPT_VIEW_FIELD,
+  TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE, LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE,
   type ChatSettings, type TranscriptViewMode,
 } from '../chat-settings.ts'
 
@@ -21,29 +21,15 @@ export class TranscriptViewPolicy {
 
   /**
    * @param host - durable Chat settings scope.
-   * @param defaultMode - presentation used without an explicit saved mode.
    */
-  constructor(
-    private readonly host: ConfigForm<ChatSettings>,
-    private readonly defaultMode: TranscriptViewMode = DEFAULT_TRANSCRIPT_VIEW_MODE,
-  ) {
-    this.mode = createSnapshotStore(defaultMode)
+  constructor(private readonly host: ConfigForm<ChatSettings>) {
+    this.mode = createSnapshotStore(TRANSCRIPT_VIEW_MODE)
     this.unsubscribe = host.subscribe(() => { this.adopt() })
     this.adopt()
   }
 
   /** Release the accepted-value subscription. */
   dispose(): void { this.unsubscribe() }
-
-  /**
-   * Publish and persist one explicit user choice.
-   * @param mode - Compact, Standard, Detailed, or Verbose work details.
-   */
-  setMode(mode: TranscriptViewMode): void {
-    if (this.mode.getSnapshot() === mode) return
-    this.mode.set(mode)
-    void this.host.set(TRANSCRIPT_VIEW_FIELD, mode)
-  }
 
   /**
    * Publish and persist collapse timing without changing the work-details mode.
@@ -69,9 +55,13 @@ export class TranscriptViewPolicy {
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
+    // Compact is the product's presentation, and Settings no longer offers a
+    // choice. A document that already carries another mode keeps it: the value
+    // is the reader's, and a seeded or migrated document is how the richer
+    // presentations stay reachable.
     const saved = section.transcriptView
     const mode = saved === LEGACY_TRANSCRIPT_VIEW_MODE || saved === LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE
-      ? 'detailed' : saved ?? this.defaultMode
+      ? 'detailed' : saved ?? TRANSCRIPT_VIEW_MODE
     if (this.mode.getSnapshot() !== mode) this.mode.set(mode)
     const timing = section.collapseTiming ?? DEFAULT_COLLAPSE_TIMING
     if (this.collapseTiming.getSnapshot() !== timing) this.collapseTiming.set(timing)
