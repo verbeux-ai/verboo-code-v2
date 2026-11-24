@@ -44,6 +44,20 @@ export const APP_IDENTITY: AppIdentity = {
 }
 
 /**
+ * The client token the upstream model listing keys its per-client metadata by.
+ *
+ * This is NOT this build's name and must not follow a rename. The listing
+ * endpoint declares `client_requirements[<token>]` and
+ * `client_metadata[<token>]` for clients it knows about, and it knows this
+ * harness by the token it shipped under. Reading those entries under any other
+ * token silently matches nothing: a model that requires a newer client would be
+ * offered instead of refused, and a declared badge would never appear.
+ *
+ * The brand lives in {@link APP_IDENTITY}; this constant is a wire contract.
+ */
+export const UPSTREAM_CLIENT_ID = 'deepseek-harness'
+
+/**
  * The standard `User-Agent` value: `product/version (+url)`. The
  * parenthesized `+url` comment is the conventional self-identification form
  * (RFC 9110 §10.1.5 product + comment syntax).

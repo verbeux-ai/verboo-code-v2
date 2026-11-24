@@ -31,9 +31,9 @@ import {
   PACKAGE_ASSET_MEDIA_TYPES,
   packageAssetMediaType,
   packageAssetReference,
-  packageAssetRevision,
   packageAssetRevisionedPath,
 } from './modules/src/assets.ts'
+import { packageAssetRevision } from './modules/src/asset-revision.ts'
 import { optionalStringArray } from './modules/src/client/manifest.ts'
 import { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } from './web/src/platform.ts'
 import { clientBuildEnvironmentDefines, clientBuildValueDefines } from '../../scripts/client-build-environment.ts'

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { build, type TsdownBundle, type UserConfig } from 'tsdown'
 import { afterEach, describe, expect, it } from 'vitest'
-import { packageAssetRevision } from '../packages/client/modules/src/assets.ts'
+import { packageAssetRevision } from '../packages/client/modules/src/asset-revision.ts'
 import { clientBundle } from '../packages/client/tsdown.client.ts'
 
 interface EmittedAsset {
@@ -269,13 +269,13 @@ describe('client bundle package asset imports', () => {
   })
 
   it('ignores imports and modules that are not supported assets', async () => {
-    const root = await assetPackage({ 'src/client/index.ts': '', 'src/client/assets/font.woff2': 'font' })
+    const root = await assetPackage({ 'src/client/index.ts': '', 'src/client/assets/face.ttf': 'font' })
     const { resolveId, load } = hooks(browserPlugins(root)('dsh-package-asset'))
     const importer = join(root, 'src/client/index.ts')
     const context = recordingContext()
 
     expect(resolveId('./index.ts', importer)).toBeNull()
-    expect(resolveId('./assets/font.woff2', importer)).toBeNull()
+    expect(resolveId('./assets/face.ttf', importer)).toBeNull()
     expect(resolveId('./assets/whale.png', undefined)).toBeNull()
     expect(await load.call(context, importer)).toBeNull()
     expect(await load.call(context, 'whale.png')).toBeNull()
@@ -484,13 +484,13 @@ describe('client bundle stylesheet url()', () => {
   })
 
   it.each([
-    ['./assets/font.woff2', 'is not a supported asset; supported extensions: .svg, .png, .webp, .jpg, .jpeg'],
+    ['./assets/face.ttf', 'is not a supported asset; supported extensions: .woff2, .woff, .svg, .png, .webp, .jpg, .jpeg'],
     ['./whale.png', 'is outside src/client/assets; move the asset there'],
     ['./assets/missing.png', 'cannot resolve asset'],
   ])('rejects url(%s)', async (url, message) => {
     const root = await assetPackage({
       'src/client/whale.png': WHALE,
-      'src/client/assets/font.woff2': 'font',
+      'src/client/assets/face.ttf': 'font',
       'src/client/View.module.css': `.x { background: url(${url}); }`,
     })
 

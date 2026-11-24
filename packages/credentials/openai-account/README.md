@@ -1,5 +1,6 @@
 ---
 description: "[OI] ChatGPT account login, encrypted grant storage, and the subscription plan facts a sign-in already carries."
+kind: "package-reference"
 ---
 
 # [DSH] [OI] Account
@@ -50,7 +51,7 @@ Plan facts come from the ID token payload: `chatgpt_plan_type`, `chatgpt_account
 
 <a id="dev-note"></a>
 
-## Dev Note
+### Dev Note
 
 The grant vault mirrors the Verboo account's: authenticated encryption with the key in the credential store, issuer binding, and no plaintext on disk.
 

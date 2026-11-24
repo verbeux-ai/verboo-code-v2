@@ -15,9 +15,9 @@
  */
 
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -28,6 +28,13 @@ import { GrantVault } from './vault.ts'
 
 /** Cordis service key the route and the Client both address. */
 export const SERVICE_KEY = 'openaiAccount'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The [OI] account service; absent when this plugin is not composed. */
+    openaiAccount: OpenAiAccount
+  }
+}
 
 /** Authorization parameters that make the issued grant Codex-compatible. */
 const EXTRA_AUTHORIZE_PARAMS: Readonly<Record<string, string>> = {
@@ -83,7 +90,7 @@ export function claimsOf(idToken: string): IdTokenClaims {
   if (segments.length < 2 || segments[1] === undefined) return {}
   let payload: unknown
   try {
-    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as unknown
+    payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'))
   } catch {
     // A payload this build cannot decode carries no plan facts; the tokens are
     // still usable, so the login does not fail over display data.
@@ -126,7 +133,7 @@ export function pkcePair(): Pkce {
  * A stored grant is the only claim this service makes about being signed in; it
  * never asserts that the provider currently accepts the token.
  */
-export class OpenAiAccount extends Service<never> {
+export class OpenAiAccount extends Service {
   static inject = ['credentials']
   static Config = Config
   private readonly deployment: Deployment
@@ -168,6 +175,10 @@ export class OpenAiAccount extends Service<never> {
     }
     // The key lives in the OS credential store, so the file holds ciphertext
     // only; the mode keeps another local account from reading even that.
+    // A first login on a fresh installation has no home directory yet, so it is
+    // created here rather than assumed: the credential is the first thing this
+    // package ever writes.
+    await mkdir(dirname(this.grantFile), { recursive: true, mode: 0o700 })
     await writeFile(this.grantFile, `${JSON.stringify(sealed)}\n`, { mode: 0o600 })
   }
 

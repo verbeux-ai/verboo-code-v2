@@ -247,6 +247,31 @@ async reconcile(): Promise<void>
 @Remote('removeServer') async removeFromClient(name: string): Promise<McpResult<null>>
 
 /**
+ * Start an OAuth sign-in for one stored definition and report the page the
+ * user must open. A grant that is still refreshable needs no page.
+ * @param name - server key.
+ * @returns the authorization URL, or `'` when the stored grant was refreshed.
+ */
+@Remote('signIn') async signInFromClient(name: string): Promise<McpResult<string>>
+
+/**
+ * Redeem a bearer token the user pasted, for an authorization server the
+ * browser flow cannot reach. The value is written as this server's header
+ * credential and never stored in the definition.
+ * @param name - server key.
+ * @param token - complete `Authorization` header value or a bare bearer token.
+ * @returns the stored definition with its live state.
+ */
+@Remote('setToken') async setTokenFromClient(name: string, token: string): Promise<McpResult<CustomMcpServerView>>
+
+/**
+ * Drop one definition's OAuth grant so the next sign-in starts clean.
+ * @param name - server key.
+ * @returns the stored definition with its live state.
+ */
+@Remote('signOut') async signOutFromClient(name: string): Promise<McpResult<CustomMcpServerView>>
+
+/**
  * Test one definition without saving it.
  * @param input - submitted definition; its secret values are used for this probe only.
  * @param signal - caller cancellation.

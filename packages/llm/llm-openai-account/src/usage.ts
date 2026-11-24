@@ -21,6 +21,7 @@ import {
 } from './limits.ts'
 import { BASE_URL, USAGE_PATH } from './config.ts'
 import type { SubscriptionAdditionalLimit, SubscriptionUsage } from './types.ts'
+import { headerOf } from './headers.ts'
 
 /**
  * One rate-limit window as the backend reports it. Both the snake-case
@@ -175,18 +176,9 @@ function secondaryFacts(outer: z.infer<typeof usageSchema>): (WindowFacts & { us
   return facts.usedPercent === undefined ? undefined : { ...facts, usedPercent: facts.usedPercent }
 }
 
-/** Read one header case-insensitively from an already-collected record. */
-function headerOf(headers: Readonly<Record<string, string>> | undefined, name: string): string | undefined {
-  if (headers === undefined) return undefined
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === name) return textOf(value)
-  }
-  return undefined
-}
-
 /** Read a numeric header, ignoring a value that is not a finite number. */
 function numericHeader(headers: Readonly<Record<string, string>> | undefined, name: string): number | undefined {
-  const raw = headerOf(headers, name)
+  const raw = textOf(headerOf(headers, name))
   if (raw === undefined) return undefined
   const value = Number(raw)
   return Number.isFinite(value) ? value : undefined
@@ -202,7 +194,7 @@ function numericHeader(headers: Readonly<Record<string, string>> | undefined, na
  * @returns true only for an explicit unlimited claim.
  */
 export function unlimitedOf(headers: Readonly<Record<string, string>> | undefined): boolean {
-  return headerOf(headers, UNLIMITED_HEADER)?.toLowerCase() === 'true'
+  return textOf(headerOf(headers, UNLIMITED_HEADER))?.toLowerCase() === 'true'
 }
 
 /**
@@ -225,7 +217,7 @@ export function usageOf(input: {
   if (!parsed.success) return undefined
   const document = parsed.data
   const primary = mergedFacts(document)
-  const headerReachedType = headerOf(input.headers, REACHED_TYPE_HEADER)
+  const headerReachedType = textOf(headerOf(input.headers, REACHED_TYPE_HEADER))
   const reachedType = headerReachedType ?? primary.reachedType
   if (primary.usedPercent === undefined) return undefined
   const credits = balanceOf(document.credits?.balance) ?? numericHeader(input.headers, CREDIT_BALANCE_HEADER)
@@ -239,7 +231,7 @@ export function usageOf(input: {
   })
   // The active-limit header names the meter governing requests; it is only a
   // classification hint, so it is reported without inventing a window for it.
-  const activeLimit = headerOf(input.headers, ACTIVE_LIMIT_HEADER)
+  const activeLimit = textOf(headerOf(input.headers, ACTIVE_LIMIT_HEADER))
   const reach = reachedType ?? activeLimit
   return {
     usedPercent: primary.usedPercent,

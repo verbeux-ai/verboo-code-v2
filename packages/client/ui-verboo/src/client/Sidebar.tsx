@@ -4,6 +4,7 @@ import {
   Menu,
   Modal,
   Tooltip,
+  useCollapseSettled,
   useModalLayer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
@@ -20,9 +21,6 @@ const panels = {
   plan: 'verboo.plan' as MainPanelId,
   preferences: 'verboo.preferences' as MainPanelId,
 }
-
-/** Time the fading expanded content stays mounted before the rail layout applies. */
-const COLLAPSE_SETTLE_MS = 150
 
 function ConversationRow({
   session,
@@ -260,12 +258,7 @@ export function Sidebar(props: SidebarProps) {
   // expanded layout (frozen inline width) and fades in place while the frame's
   // column slides and clips it. The rail layout only applies once the fade has
   // settled, so no row reflows mid-slide and nothing pops.
-  const [settled, setSettled] = useState(collapsed)
-  useEffect(() => {
-    if (drawer || !collapsed) { setSettled(collapsed); return }
-    const timer = window.setTimeout(() => { setSettled(true) }, COLLAPSE_SETTLE_MS)
-    return () => { window.clearTimeout(timer) }
-  }, [collapsed, drawer])
+  const settled = useCollapseSettled(collapsed, drawer)
   const wide = drawer || !collapsed || !settled
   // The frozen width is the last expanded one; the sliding column then clips
   // the fading content instead of squeezing it.

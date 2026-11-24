@@ -23,7 +23,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
-import { en, pt, zh } from './locales.ts'
+import { en, pt, zh, ja, es, fr, de, ru } from './locales.ts'
 import { Config } from '../config.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
@@ -88,7 +88,7 @@ export const inject = [
  */
 export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(
-    () => ctx.locale.register('verboo', { en, pt, zh }),
+    () => ctx.locale.register('verboo', { en, pt, zh, ja, es, fr, de, ru }),
     'Verboo: dictionaries',
   )
   ctx.effect(
@@ -319,7 +319,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       // the background and never holds the dialog open.
       void ctx.remote.llmOpenaiAccount.discoverModels().then(() => {
         // A finished sweep changes the menu, so the model directory re-reads it.
-        void ctx.remote.session.initializeDefaultModel?.()
+        void ctx.remote.session.initializeDefaultModel()
       }).catch(() => {
         // Discovery is an enhancement; a failed sweep leaves the catalog intact.
       })
@@ -627,10 +627,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             ...product,
             hooks: { ...product.hooks, externalDialogOpen },
             openAiSignIn: {
-              begin: product.beginOpenAiSignIn,
-              complete: product.completeOpenAiSignIn,
-              signOut: product.signOutOpenAi,
-              close: product.closeOpenAiDialog,
+              begin: product.beginOpenAiSignIn.bind(product),
+              complete: product.completeOpenAiSignIn.bind(product),
+              signOut: product.signOutOpenAi.bind(product),
+              close: product.closeOpenAiDialog.bind(product),
             },
           }
         },

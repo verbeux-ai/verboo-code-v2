@@ -38,7 +38,7 @@ import { classifyLimit } from './limits.ts'
 import type { SubscriptionUsage } from './types.ts'
 
 export { Config, BASE_URL, CATALOG_PROVIDER, PROVIDER, USAGE_PATH } from './config.ts'
-export type { Config as ConfigShape, ResolvedConfig } from './config.ts'
+export type { ResolvedConfig } from './config.ts'
 export { CREDITS_MESSAGE, DISPLAY_NAME, SIGN_IN_MESSAGE, USAGE_LIMIT_MESSAGE } from './adapter.ts'
 export { classifyLimit, creditsDepleted, reachedTypeOf } from './limits.ts'
 export type { LimitEvidence } from './limits.ts'
@@ -132,14 +132,13 @@ export class OpenAiAccountRoute extends TypertRemoteService {
     if (installed === undefined) return { supported: [], unsupported: [], skipped: [], stoppedAtLimit: false }
     const ordered = cheapestFirst(installed.getModels().map(model => ({
       id: model.id,
-      input: model.cost?.input ?? 0,
+      input: model.cost.input,
     })))
     const supported: string[] = []
     const unsupported: string[] = []
     const skipped: string[] = []
     let stoppedAtLimit = false
     for (const [index, model] of ordered.entries()) {
-      if (stoppedAtLimit) { skipped.push(...ordered.slice(index)); break }
       const verdict = await this.probe(model)
       if (verdict === 'supported') supported.push(model)
       else if (verdict === 'unsupported') unsupported.push(model)
@@ -170,9 +169,9 @@ export class OpenAiAccountRoute extends TypertRemoteService {
         maxTokens: 1,
         signal: AbortSignal.timeout(this.probeTimeoutMs),
       })) {
-        if (chunk.type === 'finish' && chunk.reason?.kind === 'error') {
-          failure = chunk.reason.failure?.message
-          code = chunk.reason.failure?.code
+        if (chunk.type === 'finish' && chunk.reason.kind === 'error') {
+          failure = chunk.reason.failure.message
+          code = chunk.reason.failure.code
         }
       }
     } catch (error) {

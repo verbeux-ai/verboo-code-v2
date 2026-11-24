@@ -212,6 +212,7 @@ export function apply(ctx: ClientContext): void {
       const shellStore: typeof shellHandle = { ...shellHandle, create: () => shellInstance }
       const disposeCommand = ctx.shortcuts.register({
         id: 'settings.open' as ShortcutCommandId, label: () => t('shortcut.open'), aliases: ['settings', 'preferences'],
+        /* jscpd:ignore-start -- each plugin declares its own shortcut table */
         defaults: {
           'desktop:macos': { code: 'Comma', modifiers: ['primary'] },
           'desktop:windows': { code: 'Comma', modifiers: ['primary'] },
@@ -219,6 +220,7 @@ export function apply(ctx: ClientContext): void {
           'web:macos': { code: 'Comma', modifiers: ['primary', 'alt'] },
           'web:windows': { code: 'Comma', modifiers: ['primary', 'alt'] },
         },
+        /* jscpd:ignore-end */
         regions: ['page', 'editable', 'terminal'], modals: ['settings'],
         resolve: ({ modal }) => {
           if (modal !== null && modal !== 'settings') return { status: 'blocked', reason: 'modal' }

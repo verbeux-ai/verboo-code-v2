@@ -2020,6 +2020,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'llmOpenaiAccount',
+    summary: 'The `openai-account` route and its usage reading.',
+    description: 'The `openai-account` route and its usage reading.\n\nThe adapter registers with this plugin\'s fiber, so disposal withdraws the route; the usage method never throws, because a reading is display data and a failed read must not fail the caller\'s request.',
+    methods: [
+      {
+        signature: '@Remote(\'discoverModels\') async discoverModels(): Promise<SweepResult>',
+        description: 'Discover which models this account may use, cheapest first.\n\nCalled after a sign-in. A second trigger while a sweep runs joins it rather than spending the account\'s quota twice.',
+        parameters: [],
+        returns: 'what the sweep concluded, or an empty result while signed out.',
+      },
+      {
+        signature: '@Remote(\'usage\') async usage(signal: AbortSignal): Promise<SubscriptionUsage | undefined>',
+        description: 'Read the subscription usage of the signed-in account.\n\nAbsent, signed-out, failed, or unreadable reads produce `undefined`; the method never throws, so a client renders nothing instead of a zeroed meter. The reading carries no token, request text, or account secret.',
+        parameters: [{ name: 'signal', description: 'caller cancellation; an aborted read yields no reading.' }],
+        returns: 'the usage reading, or `undefined` when none could be obtained.',
+      },
+    ],
+  },
+  {
     key: 'lsp',
     summary: 'The LSP capability seam (`ctx.lsp`).',
     description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
@@ -2149,6 +2168,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the current rendering generation before reusing a Client PDF.',
         parameters: [{ name: 'signal', description: 'Remote caller cancellation.' }],
         returns: 'provider lifetime, replaced with rendering, font, or engine configuration.',
+      },
+    ],
+  },
+  {
+    key: 'openaiAccount',
+    summary: 'The [OI] account service: login, token renewal, and the status the Client reads.',
+    description: 'The [OI] account service: login, token renewal, and the status the Client reads.\n\nA stored grant is the only claim this service makes about being signed in; it never asserts that the provider currently accepts the token.',
+    methods: [
+      {
+        signature: 'begin(redirectUri: string, signal: AbortSignal): { url: string; verifier: string; state: string }',
+        description: 'Start one browser login and return the URL the system browser opens.',
+        parameters: [{ name: 'redirectUri', description: 'loopback callback the Host serves.' }, { name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'the authorization URL and the verifier the callback must present.',
+      },
+      {
+        signature: 'async complete(code: string, verifier: string, redirectUri: string, signal: AbortSignal): Promise<OpenAiAccountStatus>',
+        description: 'Exchange one authorization code for a grant and persist it.',
+        parameters: [{ name: 'code', description: 'authorization code the callback received.' }, { name: 'verifier', description: 'PKCE verifier kept from {@link begin}.' }, { name: 'redirectUri', description: 'the exact redirect the authorization request used.' }, { name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'the status the new grant reports.',
+        throws: ['AccountRequestError when the exchange fails.'],
+      },
+      {
+        signature: 'async status(): Promise<OpenAiAccountStatus>',
+        description: 'Report the stored session\'s plan facts.',
+        parameters: [],
+        returns: 'the status; presence means a grant is stored, not that it is still accepted.',
+      },
+      {
+        signature: 'async accessToken(signal: AbortSignal): Promise<string | undefined>',
+        description: 'Produce a token the route may send, renewing an expired one.',
+        parameters: [{ name: 'signal', description: 'caller\'s cancellation signal.' }],
+        returns: 'a usable access token, or `undefined` when no session is stored.',
+      },
+      {
+        signature: 'async signOut(): Promise<void>',
+        description: 'Remove the stored grant and tell the tree no session remains.',
+        parameters: [],
       },
     ],
   },
@@ -4324,6 +4380,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '`null` after the Host confirmed removal.',
       },
       {
+        signature: '@Remote(\'signIn\') async signInFromClient(name: string): Promise<McpResult<string>>',
+        description: 'Start an OAuth sign-in for one stored definition and report the page the user must open. A grant that is still refreshable needs no page.',
+        parameters: [{ name: 'name', description: 'server key.' }],
+        returns: 'the authorization URL, or `\'` when the stored grant was refreshed.',
+      },
+      {
+        signature: '@Remote(\'setToken\') async setTokenFromClient(name: string, token: string): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Redeem a bearer token the user pasted, for an authorization server the browser flow cannot reach. The value is written as this server\'s header credential and never stored in the definition.',
+        parameters: [{ name: 'name', description: 'server key.' }, { name: 'token', description: 'complete `Authorization` header value or a bare bearer token.' }],
+        returns: 'the stored definition with its live state.',
+      },
+      {
+        signature: '@Remote(\'signOut\') async signOutFromClient(name: string): Promise<McpResult<CustomMcpServerView>>',
+        description: 'Drop one definition\'s OAuth grant so the next sign-in starts clean.',
+        parameters: [{ name: 'name', description: 'server key.' }],
+        returns: 'the stored definition with its live state.',
+      },
+      {
         signature: '@Remote(\'probe\') async probeFromClient( input: McpServerInput, signal: AbortSignal, ): Promise<McpResult<McpServerProbe>>',
         description: 'Test one definition without saving it.',
         parameters: [{ name: 'input', description: 'submitted definition; its secret values are used for this probe only.' }, { name: 'signal', description: 'caller cancellation.' }],
@@ -5286,6 +5360,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'One managed server\'s status transitioned.',
     description: 'One managed server\'s status transitioned. Emitted for every published change while the manager is live and either the entry is configured or registered, or a runtime record remains. Removed entries may emit cleanup failures; `watch` and `list()` report removals. Lifecycle operations do not wait for listeners. Synchronous throws and returned promise rejections are logged without skipping other listeners.',
     parameters: [{ name: 'name', description: 'the configured `servers` key or registered name.' }, { name: 'status', description: 'the status now current for that server.' }],
+  },
+  {
+    name: 'openai-account/sign-in-required',
+    mode: 'emit',
+    signature: '\'openai-account/sign-in-required\'(): void',
+    summary: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    description: 'A provider call needs the user to sign in again; emitted once per cleared session.',
+    parameters: [],
+  },
+  {
+    name: 'openai-account/signed-out',
+    mode: 'emit',
+    signature: '\'openai-account/signed-out\'(): void',
+    summary: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    description: 'The stored session was removed locally, whether by sign-out or by a rejected refresh grant.',
+    parameters: [],
   },
   {
     name: 'permission-presets/catalog-changed',
@@ -6397,7 +6487,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CustomMcpServer',
-    declaration: 'export interface CustomMcpServer {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headerNames: string[];\n    command: string;\n    args: string[];\n    envNames: string[];\n    enabled: boolean;\n    credentialRefs: string[];\n    createdAt: string;\n    updatedAt: string;\n}',
+    declaration: 'export interface CustomMcpServer {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headerNames: string[];\n    command: string;\n    args: string[];\n    envNames: string[];\n    auth: McpAuthMode;\n    oauthSignedIn: boolean;\n    enabled: boolean;\n    credentialRefs: string[];\n    createdAt: string;\n    updatedAt: string;\n}',
   },
   {
     name: 'CustomMcpServerView',
@@ -7368,6 +7458,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type MatcherValue = string | number | boolean | null | RegExp | readonly (string | number | boolean | null)[];',
   },
   {
+    name: 'McpAuthMode',
+    declaration: 'export type McpAuthMode = \'none\' | \'headers\' | \'oauth\';',
+  },
+  {
     name: 'McpCloseResult',
     declaration: 'export interface McpCloseResult {\n    closeConfirmed: boolean;\n    cleanupError?: string;\n}',
   },
@@ -7413,7 +7507,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'McpServerInput',
-    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headers: Record<string, string>;\n    command: string;\n    args: string[];\n    env: Record<string, string>;\n    enabled: boolean;\n}',
+    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransport;\n    url: string;\n    headers: Record<string, string>;\n    command: string;\n    args: string[];\n    env: Record<string, string>;\n    auth?: McpAuthMode | undefined;\n    enabled: boolean;\n}',
   },
   {
     name: 'McpServerProbe',
@@ -9620,6 +9714,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
+    name: 'SubscriptionAdditionalLimit',
+    declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
+  },
+  {
+    name: 'SubscriptionLimitWindow',
+    declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionUsage',
+    declaration: 'export interface SubscriptionUsage {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly credits?: number;\n    readonly unlimited: boolean;\n    readonly planType?: string;\n    readonly activeUntil?: string;\n    readonly reachedType?: string;\n    readonly additionalLimits?: readonly SubscriptionAdditionalLimit[];\n    readonly asOf: string;\n}',
+  },
+  {
     name: 'SurfaceEvent',
     declaration: 'export type SurfaceEvent = SessionEvent<SurfaceEventType>;',
   },
@@ -9638,6 +9744,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SurfaceSnapshot',
     declaration: 'export interface SurfaceSnapshot {\n    readonly generation: number;\n    readonly tree: readonly SerializedNode[] | null;\n}',
+  },
+  {
+    name: 'SweepResult',
+    declaration: 'export interface SweepResult {\n    readonly supported: readonly string[];\n    readonly unsupported: readonly string[];\n    readonly skipped: readonly string[];\n    readonly stoppedAtLimit: boolean;\n}',
   },
   {
     name: 'SystemMessage',

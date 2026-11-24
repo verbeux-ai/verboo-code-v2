@@ -192,6 +192,13 @@ jobs:
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
 
+      - name: Generate Typert remote contributions
+        # Client-assembly suites import generated `/remote` contributions, which
+        # resolve through package exports to built `lib/` files. Running the
+        # pass here, outside the test runner, keeps it clear of tests that
+        # create fixture packages Typert would otherwise try to analyze.
+        run: pnpm exec tsx scripts/compile-referenced-projects.ts host-contracts
+
       - name: Run exhaustive coverage
         run: pnpm run check:ci:coverage
 

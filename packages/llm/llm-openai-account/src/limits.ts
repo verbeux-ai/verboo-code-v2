@@ -22,6 +22,7 @@
 
 import { isQuotaExceededError } from '@deepseek-ai/dsh-llm'
 import { ACCOUNT_QUOTA_EXCEEDED_CODE, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { headerOf } from './headers.ts'
 
 /** Response header naming why the backend refused a subscription request. */
 export const REACHED_TYPE_HEADER = 'x-codex-rate-limit-reached-type'
@@ -80,15 +81,6 @@ export interface LimitEvidence {
   readonly message: string
   /** Response headers, when the caller observed them. */
   readonly headers?: Readonly<Record<string, string>>
-}
-
-/** Read one header case-insensitively from an already-collected record. */
-function headerOf(headers: Readonly<Record<string, string>> | undefined, name: string): string | undefined {
-  if (headers === undefined) return undefined
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === name) return value
-  }
-  return undefined
 }
 
 /**

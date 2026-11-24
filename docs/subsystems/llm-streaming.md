@@ -1187,6 +1187,38 @@ Types: [FileAttachmentRef](attachment.md) · [ImageAttachmentRef](attachment.md)
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxllmopenaiaccount--openaiaccountroute"></a>
+
+### `ctx.llmOpenaiAccount` — `OpenAiAccountRoute`
+
+The `openai-account` route and its usage reading.
+
+The adapter registers with this plugin's fiber, so disposal withdraws the route; the usage method never throws, because a reading is display data and a failed read must not fail the caller's request.
+
+```ts cordis-catalog
+/**
+ * Discover which models this account may use, cheapest first.
+ *
+ * Called after a sign-in. A second trigger while a sweep runs joins it rather
+ * than spending the account's quota twice.
+ * @returns what the sweep concluded, or an empty result while signed out.
+ */
+@Remote('discoverModels') async discoverModels(): Promise<SweepResult>
+
+/**
+ * Read the subscription usage of the signed-in account.
+ *
+ * Absent, signed-out, failed, or unreadable reads produce `undefined`; the
+ * method never throws, so a client renders nothing instead of a zeroed
+ * meter. The reading carries no token, request text, or account secret.
+ * @param signal - caller cancellation; an aborted read yields no reading.
+ * @returns the usage reading, or `undefined` when none could be obtained.
+ */
+@Remote('usage') async usage(signal: AbortSignal): Promise<SubscriptionUsage | undefined>
+```
+
+Source: [`packages/llm/llm-openai-account/src/index.ts`](../../packages/llm/llm-openai-account/src/index.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events
