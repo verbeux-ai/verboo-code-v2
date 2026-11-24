@@ -100,8 +100,9 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '工作区内修改' }).waitFor({ timeout: 10_000 })
     await expect.poll(() => dialog.getByText('语言', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     await expect.poll(() => dialog.getByText('外观', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
-    await dialog.getByText('工作步骤展示', { exact: true }).locator('../..')
-      .getByRole('button', { name: '详细', exact: true }).waitFor({ timeout: 10_000 })
+    // The presentation is not a preference; the timing row is what General shows.
+    await dialog.getByText('工作步骤收起时机', { exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: '回答结束后', exact: true }).waitFor({ timeout: 10_000 })
     expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'))
       .not.toContain('transcriptView:')
     const openDocument = dialog.getByRole('button', { name: '打开配置文件' })
@@ -784,40 +785,6 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it.each([
-    ['compact', '简洁'], ['standard', '标准'], ['verbose', '完全展开'],
-  ] as const)('persists the %s work-details mode across reload', async (mode, label) => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByText('工作步骤展示', { exact: true }).waitFor({ timeout: 10_000 })
-    const details = dialog.getByText('工作步骤展示', { exact: true }).locator('../..')
-    await details.getByRole('button', { name: '详细', exact: true }).click()
-    await page.getByRole('menuitem', { name: label, exact: true }).click()
-    await details.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
-    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
-      .toContain(`transcriptView: ${mode}`)
-    await page.keyboard.press('Escape')
-
-    const warningStart = tripwire.warnings.length
-    await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    await openSettings(page, 'zh')
-    const reloaded = page.getByRole('dialog', { name: '设置' })
-    const restoredDetails = reloaded.getByText('工作步骤展示', { exact: true }).locator('../..')
-    await restoredDetails.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
-
-    await restoredDetails.getByRole('button', { name: label, exact: true }).click()
-    await page.getByRole('menuitem', { name: '详细', exact: true }).click()
-    await restoredDetails.getByRole('button', { name: '详细', exact: true }).waitFor({ timeout: 10_000 })
-    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
-      .toContain('transcriptView: detailed')
-    await page.keyboard.press('Escape')
-    expect(tripwire.pageErrors).toEqual([])
-  }, 90_000)
-
   it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
     await openSettings(page, 'zh')
@@ -1232,7 +1199,7 @@ describe('web e2e: Host-backed collapse timing preference', () => {
     await page.getByRole('menuitem', { name: copy.completion, exact: true }).click()
     await timing.getByRole('button', { name: copy.completion, exact: true }).waitFor()
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value, uiWait)
-      .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'completion' })
+      .toMatchObject({ collapseTiming: 'completion' })
     expect((await readPersistence()).storage).toEqual(before.storage)
     await sharedTiming.getByRole('button', { name: copy.completion, exact: true }).waitFor()
     await isolatedTiming.getByRole('button', { name: copy.completion, exact: true }).waitFor()

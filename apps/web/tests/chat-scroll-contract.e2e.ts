@@ -948,7 +948,6 @@ describe('web e2e: long Chat scroll contract', () => {
       await page.reload({ waitUntil: 'load' })
       await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
         .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'next-input' })
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
       await openSeed(page, fixtureA, fixtureA.markers.assistant(fixtureA.turns))
       await expectBottom(page)
 
