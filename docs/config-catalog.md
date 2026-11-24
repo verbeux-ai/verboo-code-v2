@@ -4774,10 +4774,18 @@ export interface Config {
 - `source`: [`packages/extensions/verboo-connections/src/index.ts:10`](../packages/extensions/verboo-connections/src/index.ts)
 
 ```ts config-catalog
-/** Bounded execution time for a connected service tool. */
+/** Bounded execution time for a connected service tool and its discovery surface. */
 export interface Config {
   /** Maximum duration in milliseconds of one connected service tool execution. */
   timeoutMs: number
+  /** Most provider tools one search makes callable. */
+  discoveryMaxTools: number
+  /** Most connections one search queries. */
+  discoveryMaxTargets: number
+  /** Largest argument schema, in bytes, declared to the model. */
+  discoveryMaxSchemaBytes: number
+  /** Longest tool description declared to the model. */
+  discoveryMaxDescriptionChars: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-connections -->
