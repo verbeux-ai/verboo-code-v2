@@ -124,7 +124,9 @@ it('sends anonymous, bounded observations for actual project and split controls'
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'verbooAnalytics/status', payload: { args: {} } }),
     })
-    expect(await remoteStatus.json()).toMatchObject({ result: { ok: true, value: { consent: { decision: 'granted', referenceProof: expect.stringMatching(/^v1\./) } } } })
+    expect(await remoteStatus.json()).toMatchObject({ result: { ok: true, value: { consent: {
+      decision: 'granted', referenceProof: expect.stringMatching(/^v1\./) as unknown,
+    } } } })
     try {
       await expect.poll(() => events.some(event => String(event.feature).startsWith('preference_')), { timeout: 20000 }).toBe(true)
     } catch (error) {
@@ -203,7 +205,7 @@ it('sends anonymous, bounded observations for actual project and split controls'
     try { await browser?.close() } catch (error) { failures.push(error) }
     try { await scaffold?.close() } catch (error) { failures.push(error) }
     try {
-      await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() })
     } catch (error) { failures.push(error) }
     try { if (directory !== undefined) await rm(directory, { recursive: true, force: true }) } catch (error) { failures.push(error) }
   }

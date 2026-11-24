@@ -266,7 +266,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       serverProof.split('.')[1] !== String(order) ? undefined : { order, serverTime: Date.parse(serverTime), proof: serverProof }
     this.lastReference = reference
     const next = { ...consent, ...(reference === undefined ? {} : { referenceProof: reference.proof }) }
-    let firstOpenDiscarded = false
+    const discarded = { firstOpen: false }
     await this.store.update((state) => {
       const identity = state.contexts.find(item => item.owner === owner.identity.owner)
       if (identity === undefined || identity.pendingDecision !== decision || owner.generation !== this.generation) return
@@ -275,7 +275,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       identity.pendingRevision = null
       if (next.decision !== 'granted') state.pending = state.pending.filter((item) => {
         if (item.owner !== identity.owner) return true
-        if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; firstOpenDiscarded = true }
+        if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; discarded.firstOpen = true }
         if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
         return false
       })
@@ -289,7 +289,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
             if (identity.firstOpenEventId === item.eventId) identity.firstOpenEventId = null
             if (state.installationFirstOpenEventId === item.eventId) {
               state.installationFirstOpenEventId = null
-              firstOpenDiscarded = true
+              discarded.firstOpen = true
             }
             state.lost++
             return false
@@ -298,14 +298,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
           if (!retained && identity.firstOpenEventId === item.eventId) identity.firstOpenEventId = null
           if (!retained && state.installationFirstOpenEventId === item.eventId) {
             state.installationFirstOpenEventId = null
-            firstOpenDiscarded = true
+            discarded.firstOpen = true
           }
           return retained
         }
         catch (_error) { return true } // Invalid pending bytes remain visible and are never sent.
       })
     })
-    if (firstOpenDiscarded || next.decision !== 'granted' || !next.enabled) this.openedOwners.delete(owner.identity.owner)
+    if (discarded.firstOpen || next.decision !== 'granted' || !next.enabled) this.openedOwners.delete(owner.identity.owner)
     this.failure = 'none'
     if (next.decision !== 'granted' || !next.enabled) return
     // Re-read the stored grant after synchronization, but never adopt a new
@@ -372,7 +372,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       if (owner === undefined || !(await this.current(owner))) return { ok: false, code: 'account_changed' }
       // Fence any in-flight grant before persisting a newer explicit choice.
       owner.generation = ++this.generation
-      let firstOpenDiscarded = false
+      const discarded = { firstOpen: false }
       const previousRefresh = this.refreshing
       await this.store.update((state) => {
         if (owner.generation !== this.generation) return
@@ -383,12 +383,12 @@ export default class VerbooAnalytics extends TypertRemoteService {
         // New consent cannot resurrect an older pending grant's events.
         state.pending = state.pending.filter((item) => {
           if (item.owner !== identity.owner) return true
-          if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; firstOpenDiscarded = true }
+          if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; discarded.firstOpen = true }
           if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
           return false
         })
       })
-      if (firstOpenDiscarded || decision === 'denied') this.openedOwners.delete(owner.identity.owner)
+      if (discarded.firstOpen || decision === 'denied') this.openedOwners.delete(owner.identity.owner)
       if (previousRefresh) await previousRefresh.catch(() => {}) // Its result is fenced; the new choice still needs a fresh read.
       if (!(await this.current(owner))) return { ok: false, code: 'account_changed' }
       await this.refresh()
