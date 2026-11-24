@@ -70,7 +70,7 @@ describe('TranscriptViewPolicy', () => {
     }
   })
 
-  it('restores saved timing in each new instance while the mode stays fixed', () => {
+  it('restores both saved preferences in each new instance', () => {
     const host = stubConfigForm<ChatSettings>()
     host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'standard', performanceUsage: 'detailed' }, revision: 1, writable: true })
     const first = new TranscriptViewPolicy(host.scope)
@@ -81,7 +81,7 @@ describe('TranscriptViewPolicy', () => {
       try {
         expect(first.collapseTiming.getSnapshot()).toBe('next-input')
         expect(second.collapseTiming.getSnapshot()).toBe('next-input')
-        expect(second.mode.getSnapshot()).toBe('compact')
+        expect(second.mode.getSnapshot()).toBe('standard')
         expect(host.set).toHaveBeenCalledExactlyOnceWith('collapseTiming', 'next-input')
       } finally {
         second.dispose()
@@ -92,7 +92,7 @@ describe('TranscriptViewPolicy', () => {
     expect(host.listenerCount()).toBe(0)
   })
 
-  it('adopts Host timing updates while the presentation mode stays fixed', () => {
+  it('adopts Host mode and timing updates without writing them back', () => {
     const host = stubConfigForm<ChatSettings>()
     const policy = new TranscriptViewPolicy(host.scope)
     try {
@@ -100,9 +100,9 @@ describe('TranscriptViewPolicy', () => {
       host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed', collapseTiming: 'next-input' }, revision: 1, writable: true })
       expect(policy.mode.getSnapshot()).toBe('compact')
       expect(policy.collapseTiming.getSnapshot()).toBe('next-input')
-      // A saved choice from another build never reaches the live policy.
+      // A document that already carries another mode keeps it.
       host.publish({ value: { linkOpening: 'sidebar', transcriptView: 'verbose', performanceUsage: 'detailed' }, revision: 2 })
-      expect(policy.mode.getSnapshot()).toBe('compact')
+      expect(policy.mode.getSnapshot()).toBe('verbose')
       expect(policy.collapseTiming.getSnapshot()).toBe('completion')
       expect(host.set).toHaveBeenCalledExactlyOnceWith('collapseTiming', 'next-input')
     } finally {
@@ -118,13 +118,16 @@ describe('TranscriptViewPolicy', () => {
     expect(host.set).not.toHaveBeenCalled()
   })
 
-  it.each(['compact', 'standard', 'detailed', 'verbose', 'normal', 'expanded'] as const)(
-    'accepts a saved %s setting without applying or rewriting it',
-    (mode) => {
+  it.each([
+    ['compact', 'compact'], ['standard', 'standard'], ['detailed', 'detailed'], ['verbose', 'verbose'],
+    ['normal', 'detailed'], ['expanded', 'detailed'],
+  ] as const)(
+    'reads a saved %s setting as %s without rewriting it',
+    (mode, expected) => {
       const host = stubConfigForm<ChatSettings>()
       host.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: mode, performanceUsage: 'detailed' }, revision: 1, writable: true })
       const policy = new TranscriptViewPolicy(host.scope)
-      expect(policy.mode.getSnapshot()).toBe('compact')
+      expect(policy.mode.getSnapshot()).toBe(expected)
       expect(host.set).not.toHaveBeenCalled()
       policy.dispose()
     },
