@@ -102,3 +102,21 @@ it('keeps onboarding closed during a later profile refresh and preserves recover
   expect(screen.getByRole('dialog')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Continue with Verboo' })).toBeTruthy()
 })
+
+it('shows a plain brand loading until the first account read answers', () => {
+  // An unread view used to render the welcome copy and the sign-in button, so a
+  // fresh launch flashed them before the stored credential arrived.
+  const { props, setSnapshot } = fixture({ view: null, initialized: false })
+  const view = render(<Onboarding {...props} />)
+
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toContain('Checking your account')
+  expect(screen.queryByRole('button', { name: 'Continue with Verboo' })).toBeNull()
+  expect(screen.queryByText('A coding agent that works where your code lives.'))
+    .toBeNull()
+
+  // The sign-in surface appears only once a read reports a signed-out account.
+  setSnapshot({ view: accountView('revision-1', 'signed-out'), initialized: true })
+  view.rerender(<Onboarding {...props} />)
+  expect(screen.getByRole('button', { name: 'Continue with Verboo' })).toBeTruthy()
+})
