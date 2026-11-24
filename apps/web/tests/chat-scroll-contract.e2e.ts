@@ -606,16 +606,12 @@ describe('web e2e: long Chat scroll contract', () => {
         const { page } = world
         await page.setViewportSize({ width: 1280, height: 720 })
         await page.emulateMedia({ reducedMotion: scenario.reduced ? 'reduce' : 'no-preference' })
+        // Settings no longer offers the presentation, so this suite seeds the
+        // detailed mode whose flat rows it measures.
+        await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed', collapseTiming: 'next-input' })
         await openSeed(page, fixture, bodyMarker)
-        await openSettings(page, 'en')
-        const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-        const timing = dialog.getByText('When to Collapse Work Details', { exact: true }).locator('../..')
-        await timing.getByRole('button').click()
-        await page.getByRole('menuitem', { name: 'On next message', exact: true }).click()
-        const details = dialog.getByText('Work details', { exact: true }).locator('../..')
-        await details.getByRole('button').click()
-        await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
-        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
+          .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'next-input' })
         const thoughts = page.locator('[data-chat-turn="8"] [data-variant="think"]')
         await expect.poll(() => thoughts.count()).toBe(6)
         for (let index = 0; index < 6; index++) {
@@ -666,9 +662,6 @@ describe('web e2e: long Chat scroll contract', () => {
         else expect(before.visibleSteps).toBeGreaterThan(0)
         if (scenario.name === 'cancel-all-during-fold') {
           await openSettings(page, 'en')
-          const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
-          await settings.getByText('Work details', { exact: true }).locator('../..').getByRole('button').click()
-          await page.getByRole('menuitem', { name: 'Verbose', exact: true }).waitFor()
         }
         const release = holdTextAfter(world, 0)
         const finishGate = Promise.withResolvers<undefined>()
@@ -868,9 +861,7 @@ describe('web e2e: long Chat scroll contract', () => {
           expect(samples.some(sample => sample.raceApplied)).toBe(true)
           expect(last.folding).toBe(false)
           expect(last.spacer).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
-          expect(await page.getByRole('dialog', { name: 'Settings', exact: true })
-            .getByText('Work details', { exact: true }).locator('../..')
-            .getByRole('button', { name: 'Verbose', exact: true }).count()).toBe(1)
+          expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(1)
           expect(await page.locator('[data-input-fold]').count()).toBe(0)
           assertClean(world)
           return
@@ -916,80 +907,7 @@ describe('web e2e: long Chat scroll contract', () => {
     }, 180_000)
   }
 
-  it.skipIf(MODE === 'record')('resets transcript height when switching from Verbose back to Standard during a reply', async () => {
-    const fixture = createChatScrollFixture({ markerPrefix: 'MODE', title: 'CHAT_MODE_HEIGHT', turns: 8 })
-    await mkdir(fileURLToPath(new URL('../../../.artifacts/screenshots/chat-mode-height/', import.meta.url)), { recursive: true })
-    await withScrollWorld({
-      failureShot: 'screenshots/chat-mode-height/web-e2e-chat-mode-height',
-      replay: [replayEntry(textStream('CHAT_MODE_REPLY', 'CHAT_MODE_DONE', 2))],
-      seeds: [{ fixture, id: 'chat-mode-height-e2e' }],
-    }, async (world) => {
-      const { page } = world
-      await page.setViewportSize({ width: 1280, height: 720 })
-      await page.emulateMedia({ reducedMotion: 'no-preference' })
-      const selectPreference = async (title: string, choice: string): Promise<void> => {
-        await openSettings(page, 'en')
-        const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-        const row = dialog.getByText(title, { exact: true }).locator('../..')
-        await row.getByRole('button').click()
-        await page.getByRole('menuitem', { name: choice, exact: true }).click()
-        await row.getByRole('button', { name: choice, exact: true }).waitFor()
-        if (title === 'Work details') {
-          await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-            .toMatchObject({ transcriptView: choice.toLowerCase() })
-        }
-        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-        await expect.poll(() => page.locator('[data-chat-motion="collapse"], [data-chat-motion="reveal"]').count()).toBe(0)
-        await nextPaint(page)
-      }
-      const returnToBottom = async (): Promise<void> => {
-        await wheelTranscript(page, -600)
-        await page.getByRole('button', { name: 'Back to bottom', exact: true }).click()
-        await expectBottom(page)
-      }
-      const geometry = () => page.locator('[data-conversation-scroll]').evaluate(host => ({
-        height: host.scrollHeight,
-        viewport: host.clientHeight,
-        spacer: host.querySelector<HTMLElement>('[data-chat-turn-spacer]')!.getBoundingClientRect().height,
-      }))
-      await selectPreference('Work details', 'Standard')
-      await openSeed(page, fixture, fixture.markers.assistant(8))
-      // Hold a live reply so preference changes exercise the same fold animation as incoming content.
-      const release = holdTextAfter(world, 1)
-      let replyStarted = false
-      try {
-        await page.locator('[data-composer-input][contenteditable="true"]').last().fill('CHAT_MODE_NEXT_INPUT')
-        await page.getByRole('button', { name: 'Send message', exact: true }).click()
-        await page.getByText('CHAT_MODE_REPLY', { exact: false }).waitFor()
-        replyStarted = true
-        await selectPreference('When to Collapse Work Details', 'On next message')
-        await page.locator('[data-chat-flow][data-chat-motion=""]').waitFor()
-        await returnToBottom()
-        const standard = await geometry()
-        expect(standard.height).toBeGreaterThan(standard.viewport)
-        expect(standard.spacer).toBe(0)
-        for (let cycle = 0; cycle < 2; cycle += 1) {
-          await selectPreference('Work details', 'Verbose')
-          await expect.poll(async () => (await geometry()).height)
-            .toBeGreaterThan(standard.height + GEOMETRY_TOLERANCE)
-          await returnToBottom()
-          await selectPreference('Work details', 'Standard')
-          await expect.poll(async () => (await geometry()).spacer).toBe(0)
-          await expect.poll(async () => Math.abs((await geometry()).height - standard.height))
-            .toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
-          await expectBottom(page)
-          await expectMarkerAboveComposer(page, 'CHAT_MODE_REPLY')
-        }
-      } finally {
-        const settled = replyStarted ? world.scaffold.whenTurnSettled() : undefined
-        release()
-        await settled
-      }
-      assertClean(world)
-    })
-  })
-
-  it.skipIf(MODE === 'record')('keeps a running Session stationary when returning with output held', async () => {
+    it.skipIf(MODE === 'record')('keeps a running Session stationary when returning with output held', async () => {
     const fixtureA = createChatScrollFixture({ markerPrefix: 'RETURN_A', title: 'CHAT_RUNNING_RETURN_A' })
     const fixtureB = createChatScrollFixture({ markerPrefix: 'RETURN_B', title: 'CHAT_RUNNING_RETURN_B', turns: 32 })
     const heldMarker = 'CHAT_RUNNING_RETURN_HELD'
@@ -1024,17 +942,12 @@ describe('web e2e: long Chat scroll contract', () => {
       const { page } = world
       await page.setViewportSize({ width: 1280, height: 720 })
       await page.emulateMedia({ reducedMotion: 'no-preference' })
-      await openSettings(page, 'en')
-      const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-      for (const [title, choice] of [
-        ['Work details', 'Standard'],
-        ['When to Collapse Work Details', 'On next message'],
-      ] as const) {
-        await dialog.getByText(title, { exact: true }).locator('../..').getByRole('button').click()
-        await page.getByRole('menuitem', { name: choice, exact: true }).click()
-      }
+      // Settings no longer offers the presentation, so this suite seeds the
+      // detailed mode it exercises instead of selecting it through the dialog.
+      await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed', collapseTiming: 'next-input' })
+      await page.reload({ waitUntil: 'load' })
       await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-        .toMatchObject({ transcriptView: 'standard' })
+        .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'next-input' })
       await dialog.getByRole('button', { name: 'Close', exact: true }).click()
       await openSeed(page, fixtureA, fixtureA.markers.assistant(fixtureA.turns))
       await expectBottom(page)
@@ -1393,14 +1306,6 @@ describe('web e2e: long Chat scroll contract', () => {
     }, async (world) => {
       await world.page.emulateMedia({ reducedMotion: 'no-preference' })
       await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
-      await openSettings(world.page, 'en')
-      await world.page.getByRole('dialog', { name: 'Settings', exact: true })
-        .getByText('Work details', { exact: true }).locator('../..')
-        .getByRole('button', { name: 'Detailed', exact: true }).click()
-      await world.page.getByRole('menuitem', { name: 'Standard', exact: true }).click()
-      await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-        .toMatchObject({ transcriptView: 'standard' })
-      await world.page.keyboard.press('Escape')
       const gates = parts.slice(1).map(() => Promise.withResolvers<undefined>())
       const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
         let index = -1

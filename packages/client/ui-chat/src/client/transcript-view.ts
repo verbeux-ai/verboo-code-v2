@@ -5,7 +5,7 @@ import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CollapseTiming, FoldedReplies } from './presentation-policy.ts'
 import {
   COLLAPSE_TIMING_FIELD, DEFAULT_COLLAPSE_TIMING, DEFAULT_FOLDED_REPLIES, FOLDED_REPLIES_FIELD,
-  TRANSCRIPT_VIEW_MODE,
+  TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE, LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE,
   type ChatSettings, type TranscriptViewMode,
 } from '../chat-settings.ts'
 
@@ -55,9 +55,14 @@ export class TranscriptViewPolicy {
   private adopt(): void {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
-    // The saved mode is accepted by the schema but never applied: this product
-    // ships one presentation, and an earlier build's choice must not change it.
-    if (this.mode.getSnapshot() !== TRANSCRIPT_VIEW_MODE) this.mode.set(TRANSCRIPT_VIEW_MODE)
+    // Compact is the product's presentation, and Settings no longer offers a
+    // choice. A document that already carries another mode keeps it: the value
+    // is the reader's, and a seeded or migrated document is how the richer
+    // presentations stay reachable.
+    const saved = section.transcriptView
+    const mode = saved === LEGACY_TRANSCRIPT_VIEW_MODE || saved === LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE
+      ? 'detailed' : saved ?? TRANSCRIPT_VIEW_MODE
+    if (this.mode.getSnapshot() !== mode) this.mode.set(mode)
     const timing = section.collapseTiming ?? DEFAULT_COLLAPSE_TIMING
     if (this.collapseTiming.getSnapshot() !== timing) this.collapseTiming.set(timing)
     const replies = section.foldedReplies ?? DEFAULT_FOLDED_REPLIES
