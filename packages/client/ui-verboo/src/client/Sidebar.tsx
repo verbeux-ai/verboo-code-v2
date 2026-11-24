@@ -535,7 +535,7 @@ export function Sidebar(props: SidebarProps) {
         )}
       </div>
       <footer className={css.sidebarFoot}>
-        {props.renderSlot('verboo.sidebar.foot', { wide })}
+        {props.renderSlot('sidebar.footer.row', { wide })}
         <Tooltip portal label={t('plan')} disabled={wide}>
           <button
             className={css.planShortcut}

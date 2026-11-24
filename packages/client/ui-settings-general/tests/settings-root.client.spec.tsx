@@ -56,7 +56,7 @@ function mount({
   wide = true,
   dictionary = en,
   connectionState = 'connected',
-  desktopUpdate = { failed: false, opening: false },
+  desktopUpdate = { failed: false, restarting: false },
   onboardingActive = true,
   mainView = true,
   rows = [
@@ -120,7 +120,6 @@ function mount({
     useContextMenu: contextMenuHook(),
     wide,
     reconnect,
-    openDesktopUpdate: () => {},
     useDesktopUpdate: select => select(desktopUpdate),
     t: makeTranslate(dictionary),
     useConnectionState: (select) => {

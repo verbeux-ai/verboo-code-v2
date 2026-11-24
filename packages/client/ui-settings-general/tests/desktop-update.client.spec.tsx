@@ -6,9 +6,25 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { DesktopUpdateIndicator } from '../src/client/DesktopUpdateIndicator.tsx'
 import type { DesktopUpdateBridge, DesktopUpdatePresentation } from '../src/types.ts'
 import { DesktopUpdateSource } from '../src/client/desktop-update-source.ts'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { en, pt, zh } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+// The row consumes none of the standard seats; the fixture still has to carry them.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const unusedHook = (() => { throw new Error('unused by the update row') }) as never
+const kit = {
+  useSessions: unusedHook,
+  useSessionStatus: unusedHook,
+  usePanelInfo: ((selector: (state: { activePanelId: null }) => unknown) => selector({ activePanelId: null })) as GlobalStandardProps['usePanelInfo'],
+  useSessionRetainInfo: () => undefined,
+  useResource,
+  useWorkspaces: unusedHook,
+  ...allowAllAccess,
+  useContextMenu: contextMenuHook(),
+}
 
 type SettingsTranslate = PropsLocale<'settings'>['t']
 
@@ -41,11 +57,12 @@ function fixture(options: { settleStatus?: boolean } = {}) {
     const state = useSyncExternalStore(subscribe, snapshot)
     return (
       <DesktopUpdateIndicator
+        {...kit}
         wide={wide}
         t={translate(dictionary)}
-        view={state}
-        onRestart={() => { source.restart() }}
-        onDismiss={() => { source.dismiss() }}
+        useDesktopUpdate={selector => selector(state)}
+        restartDesktopUpdate={() => { source.restart() }}
+        dismissDesktopUpdate={() => { source.dismiss() }}
       />
     )
   }
@@ -62,8 +79,9 @@ function fixture(options: { settleStatus?: boolean } = {}) {
 
 it('renders nothing outside the desktop carrier', () => {
   const source = new DesktopUpdateSource(undefined)
-  const view = render(<DesktopUpdateIndicator wide t={translate(en)}
-    view={source.store.getSnapshot()} onRestart={() => { source.restart() }} onDismiss={() => { source.dismiss() }} />)
+  const view = render(<DesktopUpdateIndicator {...kit} wide t={translate(en)}
+    useDesktopUpdate={selector => selector(source.store.getSnapshot())}
+    restartDesktopUpdate={() => { source.restart() }} dismissDesktopUpdate={() => { source.dismiss() }} />)
   source.restart()
   source.dismiss()
   source.dispose()
@@ -187,8 +205,9 @@ it('surfaces a bridge failure as a retryable row', async () => {
   }
   const source = new DesktopUpdateSource(bridge)
   await act(async () => { await Promise.resolve() })
-  const view = render(<DesktopUpdateIndicator wide t={translate(en)} view={source.store.getSnapshot()}
-    onRestart={() => { source.restart() }} onDismiss={() => { source.dismiss() }} />)
+  const view = render(<DesktopUpdateIndicator {...kit} wide t={translate(en)}
+    useDesktopUpdate={selector => selector(source.store.getSnapshot())}
+    restartDesktopUpdate={() => { source.restart() }} dismissDesktopUpdate={() => { source.dismiss() }} />)
   expect(screen.getByRole('button').textContent).toContain('Retry update')
   fail = false
   source.dispose()

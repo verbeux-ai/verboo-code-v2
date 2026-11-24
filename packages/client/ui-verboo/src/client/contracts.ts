@@ -117,17 +117,11 @@ export interface ProductInjected {
   help(): void
 }
 /** Localized product observations and commands for a root component. */
-/** Geometry the product sidebar footer hands its rows. */
-export interface VerbooSidebarFootOwnerProps {
-  /** Whether the sidebar renders wide content (false = collapsed rail). */
-  wide: boolean
-}
-
 export type ProductProps = PropsLocale<'verboo'> & InjectFace<ProductInjected>
 /** Product capabilities and the central page renderer. */
 export type PageProps = ProductProps & PropsRuntime<'main'>
 /** Product capabilities and the navigation renderer. */
-export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderSlots<'verboo.sidebar.foot'>
+export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.footer.row'>
   & InjectFace<ExecutionInjected>
 /** Product capabilities and the conversation introduction renderer. */
 export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
@@ -135,13 +129,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     verboo: Key
   }
-  interface SlotMap {
-    /**
-     * Rows above the plan shortcut in the product sidebar footer. Declared by
-     * this package's 'sidebar' entry; the desktop update row occupies it.
-     */
-    'verboo.sidebar.foot': { kind: 'single'; scope: 'root'; owner: VerbooSidebarFootOwnerProps }
-  }
+
   interface ResourceProtocolMap {
     /** Public stamina for the account encoded in the resource address. */
     'verboo-stamina': StaminaStatus[]

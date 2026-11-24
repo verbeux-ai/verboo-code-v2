@@ -123,8 +123,8 @@ export function apply(ctx: ClientContext): void {
   }
 
   // The product sidebar footer owns the one update row, above the plan shortcut.
-  ctx.slots.inject('verboo.sidebar.foot', () => ctx.slots.register({
-    name: 'verboo.sidebar.foot', id: 'desktop-update', locale: NS,
+  ctx.slots.inject('sidebar.footer.row', () => ctx.slots.register({
+    name: 'sidebar.footer.row', locale: NS,
     inject: () => ({
       hooks: { desktopUpdate: desktopUpdate.store },
       restartDesktopUpdate: () => { desktopUpdate.restart() },
