@@ -11,7 +11,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Read images" [expanded]
+- button "1 action" [expanded]
 - button "Read image red.png" [expanded]:
   - text: Read image
   - button "red.png"
