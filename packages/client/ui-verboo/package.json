@@ -110,6 +110,7 @@
     "lib/index.js",
     "lib/client.js",
     "lib/assets",
+    "LICENSES.md",
     "lib/types/**/*.d.ts"
   ],
   "private": true,

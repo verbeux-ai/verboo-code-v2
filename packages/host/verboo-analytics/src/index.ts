@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { productResponseProjection, type ProductResponseState } from './projection.ts'
-import { AnalyticsStorageStore, consentSchema, eventSchema, type AnalyticsIdentity } from './storage.ts'
+import { AnalyticsStorageStore, consentSchema, eventSchema, type AnalyticsIdentity, type AnalyticsStorage } from './storage.ts'
 import type { ProductAnalyticsStatus, ProductAnalyticsSubject, ProductConsentResult, ProductFeature, ProductModelDetails, ProductSurface } from './types.ts'
 export type * from './types.ts'
 
@@ -76,6 +76,20 @@ function positiveOrder(value: string | undefined): bigint | undefined {
 function allowed(identity: AnalyticsIdentity, at = Date.now()): boolean {
   const consent = identity.consent
   return identity.pendingDecision === null && consent?.enabled === true && consent.decision === 'granted' && Date.parse(consent.expiresAt) > at
+}
+
+function discardPendingForOwner(state: AnalyticsStorage, identity: AnalyticsIdentity): boolean {
+  let firstOpenDiscarded = false
+  state.pending = state.pending.filter((item) => {
+    if (item.owner !== identity.owner) return true
+    if (item.eventId === state.installationFirstOpenEventId) {
+      state.installationFirstOpenEventId = null
+      firstOpenDiscarded = true
+    }
+    if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
+    return false
+  })
+  return firstOpenDiscarded
 }
 
 /**
@@ -273,12 +287,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
       identity.consent = next
       identity.pendingDecision = null
       identity.pendingRevision = null
-      if (next.decision !== 'granted') state.pending = state.pending.filter((item) => {
-        if (item.owner !== identity.owner) return true
-        if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; discarded.firstOpen = true }
-        if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
-        return false
-      })
+      if (next.decision !== 'granted') discarded.firstOpen = discardPendingForOwner(state, identity)
       else state.pending = state.pending.filter((item) => {
         if (item.owner !== identity.owner) return true
         try {
@@ -381,12 +390,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
         identity.pendingDecision = decision
         identity.pendingRevision = identity.consent?.revision ?? 0
         // New consent cannot resurrect an older pending grant's events.
-        state.pending = state.pending.filter((item) => {
-          if (item.owner !== identity.owner) return true
-          if (item.eventId === state.installationFirstOpenEventId) { state.installationFirstOpenEventId = null; discarded.firstOpen = true }
-          if (item.eventId === identity.firstOpenEventId) identity.firstOpenEventId = null
-          return false
-        })
+        discarded.firstOpen = discardPendingForOwner(state, identity)
       })
       if (discarded.firstOpen || decision === 'denied') this.openedOwners.delete(owner.identity.owner)
       if (previousRefresh) await previousRefresh.catch(() => {}) // Its result is fenced; the new choice still needs a fresh read.

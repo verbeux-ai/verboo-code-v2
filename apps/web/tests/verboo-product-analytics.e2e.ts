@@ -124,9 +124,9 @@ it('sends anonymous, bounded observations for actual project and split controls'
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'verbooAnalytics/status', payload: { args: {} } }),
     })
-    expect(await remoteStatus.json()).toMatchObject({ result: { ok: true, value: { consent: {
-      decision: 'granted', referenceProof: expect.stringMatching(/^v1\./) as unknown,
-    } } } })
+    const remoteStatusText = await remoteStatus.text()
+    expect(JSON.parse(remoteStatusText)).toMatchObject({ result: { ok: true, value: { consent: { decision: 'granted' } } } })
+    expect(remoteStatusText).toMatch(/"referenceProof"\s*:\s*"v1\./)
     try {
       await expect.poll(() => events.some(event => String(event.feature).startsWith('preference_')), { timeout: 20000 }).toBe(true)
     } catch (error) {
