@@ -797,7 +797,9 @@ export class ScheduleService extends TypertRemoteService {
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     if (this.stopping) return Promise.reject(new Error('Schedule service is stopping'))
     let release: () => void
-    try { release = this.ctx.agents.exitAdmission.begin() } catch (error: unknown) { return Promise.reject(error) }
+    try { release = this.ctx.agents.exitAdmission.begin() } catch (error: unknown) {
+      return Promise.reject(error instanceof Error ? error : new Error('Exit admission failed', { cause: error }))
+    }
     const pending = this.chain.then(work)
     this.chain = pending.catch(() => undefined) // Preserve FIFO progress after the caller receives the failure.
     void pending.then(release, release)
