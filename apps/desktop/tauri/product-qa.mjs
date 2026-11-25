@@ -580,6 +580,7 @@ try {
     const results = input.messages.slice(start + 1).filter(message => message.role === 'tool')
     const actions = [
       ['connections_search', { query: 'find and reply to an email', toolkit: 'gmail' }],
+      ['connection__gmail__GMAIL_SEARCH_EMAILS', {}],
       ['connection__gmail__GMAIL_SEARCH_EMAILS', { query: 'from:ana' }],
       ['connection__gmail__GMAIL_REPLY_EMAIL', { message_id: 'message-1', body: 'Obrigado!' }],
     ]
@@ -587,6 +588,7 @@ try {
       const declared = JSON.stringify(input.tools)
       if (!declared.includes('GMAIL_SEARCH_EMAILS') || !declared.includes('GMAIL_REPLY_EMAIL') || !declared.includes('message_id')) throw new Error('Discovered Gmail tools or their parameters were not declared')
     }
+    if (results.length === 2 && (!JSON.stringify(results[1]).includes('invalid arguments') || state.connectionExecutions.length !== 0)) throw new Error('Invalid provider arguments were not rejected before execution')
     if (results.length >= actions.length) {
       finish('QA_GMAIL_DONE')
       return true

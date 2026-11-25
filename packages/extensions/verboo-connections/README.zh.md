@@ -41,7 +41,7 @@ kind: "package-reference"
 
 Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查连接所有权与工具包归属，并在单次执行前固定工具版本。提供方密钥不会成为工具参数。写入结果不明时，会提示 Agent 先检查服务再重试。
 
-每个被发现的工具都通过产品 API 执行，使用它自己那次搜索解析出的连接和版本，因此后续搜索无法把先前的调用重定向到别处。本地 schema 引用和不同 JSON 类型的联合会投影到受支持的工具 schema 子集：不受支持的关键字与未在属性中声明的 `required` 键会被丢弃而不是转发；超过 `discoveryMaxSchemaBytes` 的定义首先移除注释；如果仍超出预算，则保留开放式参数 schema。一次搜索最多在 `discoveryMaxTargets` 个连接上注册 `discoveryMaxTools` 个工具，因此宽泛查询不会用大量声明淹没请求。
+每个被发现的工具在通过产品 API 执行前，根据投影后的 schema 验证参数，并使用它自己那次搜索解析出的连接和版本，因此后续搜索无法把先前的调用重定向到别处。本地 schema 引用和不同 JSON 类型的联合会投影到受支持的工具 schema 子集：不受支持的关键字与未在属性中声明的 `required` 键会被丢弃而不是转发。超过 `discoveryMaxSchemaBytes` 的定义首先缩短注释，再移除注释；如果仍超出预算，则不会注册该工具，发现结果会报告 `schema_unavailable`。一次搜索最多在 `discoveryMaxTargets` 个连接上注册 `discoveryMaxTools` 个工具，因此宽泛查询不会用大量声明淹没请求。
 
 </details>
 
@@ -74,7 +74,7 @@ Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查�
 
 - 未提供托管授权的 OAuth 服务需要在服务器配置产品认证。提供方操作可能在网络故障前已提交，因此绝不自动重试写入。
 - 被发现的工具只属于搜索它的那次对话，因此模型之后需要的提供方操作会再花一个搜索步骤。
-- 压缩后的参数仍超过 `discoveryMaxSchemaBytes` 时，提供方工具仍可使用开放式参数 schema 调用，但模型无法获得完整字段列表。
+- 提供方工具的参数压缩后仍超过 `discoveryMaxSchemaBytes` 时，只有其定义符合配置预算后才能注册。
 - 从对话中添加的 MCP 服务器属于 Host 而非该对话，并会保持启用，直到使用者将其停用或移除。
 
 <a id="dev-note"></a>

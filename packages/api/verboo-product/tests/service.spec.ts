@@ -78,6 +78,26 @@ const delayed = (delayMs: number, body: Response): typeof globalThis.fetch =>
     return body
   }
 
+/** Send headers now and finish the JSON body later, as a slow catalog may do. */
+const delayedBody = (delayMs: number, body: unknown): typeof globalThis.fetch =>
+  async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener('abort', abort)
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(body)))
+          controller.close()
+        }, delayMs)
+        const abort = () => {
+          clearTimeout(timer)
+          controller.error(new Error('aborted'))
+        }
+        init?.signal?.addEventListener('abort', abort, { once: true })
+      },
+    })
+    return new Response(stream, { headers: { 'content-type': 'application/json' } })
+  }
+
 const link = (url: string, id: string | null = null): Response => Response.json({
   data: { url, expiresAt: '2026-11-05T12:00:00Z', id },
 })
@@ -217,10 +237,26 @@ describe('agent tool discovery and execution', () => {
       .toEqual([tool])
   })
 
-  it('still stops a non-search request at the general per-attempt ceiling', async () => {
+  it('waits beyond the general ceiling for both connection catalog consumers', async () => {
+    const f = configured({ requestTimeoutMs: 40, connectionListTimeoutMs: 2000 })
+    const listing = { data: { available: true, toolkits: [], accounts: [] } }
+    vi.stubGlobal('fetch', delayedBody(120, listing))
+    expect(JSON.parse(await f.product.listAgentConnections(f.signal))).toEqual({
+      available: true, accounts: [], publicServices: [],
+    })
+    expect(await f.product.getConnections()).toEqual({ ok: true, data: listing.data })
+  })
+
+  it('classifies an interrupted catalog body as a timeout rather than malformed JSON', async () => {
+    const f = configured({ connectionListTimeoutMs: 40 })
+    vi.stubGlobal('fetch', delayedBody(120, { data: { available: true, toolkits: [], accounts: [] } }))
+    await expect(f.product.listAgentConnections(f.signal)).rejects.toMatchObject({ code: 'request_timeout' })
+  })
+
+  it('still stops an unrelated request at the general per-attempt ceiling', async () => {
     const f = configured({ requestTimeoutMs: 40, connectionSearchTimeoutMs: 2000 })
-    vi.stubGlobal('fetch', delayed(120, Response.json({ data: { available: true, toolkits: [], accounts: [] } })))
-    expect(await f.product.getConnections()).toEqual({ ok: false, code: 'request_failed' })
+    vi.stubGlobal('fetch', delayed(120, Response.json({ data: [] })))
+    expect(await f.product.getPlans()).toEqual({ ok: false, code: 'request_failed' })
   })
 
   it.each([

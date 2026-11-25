@@ -200,7 +200,7 @@ describe('discoverConnectionTools', () => {
       product: product(),
       registry,
       budgets,
-      request: { query: 'search email', connectionId: 'ca_personal' },
+      request: { query: 'search email', toolkit: 'gmail', connectionId: 'ca_personal' },
       signal: new AbortController().signal,
     })
     expect(outcome.tools.map(tool => tool.account)).toEqual(['Personal'])
@@ -239,6 +239,70 @@ describe('discoverConnectionTools', () => {
       request: { query: 'search email', connectionId: 'ca_expired' },
       signal: new AbortController().signal,
     })).rejects.toThrow('that connection is not available')
+  })
+
+  it('rejects a toolkit that does not match the specified connection', async () => {
+    const ctx = await scope()
+    const stub = product()
+    const search = vi.fn(async () => JSON.stringify([gmailSearch]))
+    const registry = new ConnectionToolRegistry(ctx, { ...stub, searchAgentConnections: search }, budgets)
+    await expect(discoverConnectionTools({
+      product: { ...stub, searchAgentConnections: search }, registry, budgets,
+      request: { query: 'search email', toolkit: 'github', connectionId: 'ca_work' },
+      signal: new AbortController().signal,
+    })).rejects.toThrow('does not belong to the requested toolkit')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it.each(['pending', 'expired', 'failed', 'disconnected', 'unknown'])('does not search an account with %s status', async (status) => {
+    const ctx = await scope()
+    const search = vi.fn(async () => JSON.stringify([gmailSearch]))
+    const stub = product({
+      listAgentConnections: async () => JSON.stringify({
+        available: true, accounts: [{ id: 'ca_offline', toolkit: 'gmail', label: 'Work', status }], publicServices: [],
+      }),
+      searchAgentConnections: search,
+    })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    await expect(discoverConnectionTools({
+      product: stub, registry, budgets, request: { query: 'search email', connectionId: 'ca_offline' },
+      signal: new AbortController().signal,
+    })).rejects.toThrow('that connection is not available')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('does not query a service that is not connected', async () => {
+    const ctx = await scope()
+    const stub = product()
+    const search = vi.fn(async () => JSON.stringify([gmailSearch]))
+    const registry = new ConnectionToolRegistry(ctx, { ...stub, searchAgentConnections: search }, budgets)
+    await expect(discoverConnectionTools({
+      product: { ...stub, searchAgentConnections: search }, registry, budgets,
+      request: { query: 'list channels', toolkit: 'slack' }, signal: new AbortController().signal,
+    })).rejects.toThrow('no connected account or public service')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('keeps successful tools when another connected service fails without leaking provider details', async () => {
+    const ctx = await scope()
+    const secret = 'provider secret text'
+    const stub = product({
+      listAgentConnections: async () => JSON.stringify({ available: true, accounts: [
+        { id: 'ca_a', toolkit: 'gmail', label: 'Email', status: 'connected' },
+        { id: 'ca_b', toolkit: 'github', label: 'Code', status: 'connected' },
+      ], publicServices: [] }),
+      searchAgentConnections: async (id) => {
+        if (id === 'ca_a') throw Object.assign(new Error(secret), { code: secret })
+        return JSON.stringify([{ ...gmailSearch, slug: 'GITHUB_LIST_COMMITS' }])
+      },
+    })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    const outcome = await discoverConnectionTools({
+      product: stub, registry, budgets, request: { query: 'find recent items' }, signal: new AbortController().signal,
+    })
+    expect(outcome.failed).toEqual([{ toolkit: 'gmail', connectionId: 'ca_a', code: 'request_failed' }])
+    expect(outcome.tools.map(tool => tool.tool)).toEqual(['connection__github__GITHUB_LIST_COMMITS'])
+    expect(JSON.stringify(outcome)).not.toContain(secret)
   })
 
   it('reports a failed search without leaking the provider body', async () => {
@@ -316,7 +380,7 @@ describe('discoverConnectionTools', () => {
     expect(outcome.tools).toHaveLength(budgets.maxTools)
   })
 
-  it('declares unconstrained arguments when a schema exceeds the byte budget', async () => {
+  it('does not register a tool whose schema exceeds the byte budget', async () => {
     const ctx = await scope()
     const huge = {
       ...gmailSearch,
@@ -332,14 +396,16 @@ describe('discoverConnectionTools', () => {
     const registry = new ConnectionToolRegistry(ctx, product({
       searchAgentConnections: async () => JSON.stringify([huge]),
     }), budgets)
-    await discoverConnectionTools({
+    const outcome = await discoverConnectionTools({
       product: product({ searchAgentConnections: async () => JSON.stringify([huge]) }),
       registry,
       budgets,
       request: { query: 'search email', connectionId: 'ca_work' },
       signal: new AbortController().signal,
     })
-    expect(ctx.tools.get('connection__gmail__GMAIL_HUGE')?.parameters).toEqual({})
+    expect(ctx.tools.get('connection__gmail__GMAIL_HUGE')).toBeUndefined()
+    expect(outcome.failed).toEqual([{ toolkit: 'gmail', connectionId: 'ca_work', tool: 'GMAIL_HUGE', code: 'schema_unavailable' }])
+    expect(outcome.note).toContain('do not guess')
   })
 
   it('counts multibyte text against the schema byte budget', async () => {
@@ -347,16 +413,30 @@ describe('discoverConnectionTools', () => {
     const smallBudget = { ...budgets, maxSchemaBytes: 100 }
     const stub = product()
     const registry = new ConnectionToolRegistry(ctx, stub, smallBudget)
-    registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
+    expect(() => registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
       ...gmailSearch,
       parameters: { type: 'object', properties: { ['é'.repeat(40)]: { type: 'string' } } },
+    })).toThrow()
+    expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')).toBeUndefined()
+  })
+
+  it('reports an invalid tool schema without blocking other valid tools', async () => {
+    const ctx = await scope()
+    const stub = product({ searchAgentConnections: async () => JSON.stringify([
+      { ...gmailSearch, slug: 'GMAIL_INVALID', parameters: null }, gmailSearch,
+    ]) })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    const outcome = await discoverConnectionTools({
+      product: stub, registry, budgets, request: { query: 'search email', connectionId: 'ca_work' },
+      signal: new AbortController().signal,
     })
-    expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')?.parameters).toEqual({})
+    expect(outcome.failed).toEqual([{ toolkit: 'gmail', connectionId: 'ca_work', tool: 'GMAIL_INVALID', code: 'schema_unavailable' }])
+    expect(outcome.tools.map(tool => tool.tool)).toEqual(['connection__gmail__GMAIL_SEARCH_EMAILS'])
   })
 
   it('keeps argument names and requirements when descriptions exceed the budget', async () => {
     const ctx = await scope()
-    const smallBudget = { ...budgets, maxSchemaBytes: 180 }
+    const smallBudget = { ...budgets, maxSchemaBytes: 120 }
     const registry = new ConnectionToolRegistry(ctx, product(), smallBudget)
     registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
       ...gmailSearch,
@@ -365,6 +445,58 @@ describe('discoverConnectionTools', () => {
     expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')?.parameters).toEqual({
       type: 'object', properties: { query: { type: 'string' } }, required: ['query'],
     })
+  })
+
+  it('shortens guidance further before dropping every field description', async () => {
+    const ctx = await scope()
+    const registry = new ConnectionToolRegistry(ctx, product(), budgets)
+    registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
+      ...gmailSearch,
+      parameters: { type: 'object', properties: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [
+        `field${index}`, { type: 'string', description: `Field ${index}: ${'x'.repeat(600)}` },
+      ])) },
+    })
+    const schema = ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')?.parameters as {
+      properties: Record<string, { description?: string }>
+    }
+    expect(Object.values(schema.properties).every(value => typeof value.description === 'string')).toBe(true)
+    expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThanOrEqual(budgets.maxSchemaBytes)
+  })
+
+  it('retains field guidance when one provider description is oversized', async () => {
+    const ctx = await scope()
+    const execute = vi.fn(async () => '{"ok":true}')
+    const registry = new ConnectionToolRegistry(ctx, product({ executeAgentConnection: execute }), budgets)
+    registry.install({ id: 'ca_mcp', toolkit: 'posthog_mcp', label: 'Work' }, {
+      slug: 'POSTHOG_MCP_EXEC', name: 'Exec', description: 'Run one command.', version: '20240101_00',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: `Commands: search, info, schema, call. ${'x'.repeat(3000)}` },
+          context: { type: 'string', description: 'Explain the abstract purpose without personal data.' },
+          llm_model: { type: 'string', description: 'Exact model identifier or unknown.' },
+        },
+        required: ['command', 'context', 'llm_model'],
+      },
+    })
+    const schema = ctx.tools.get('connection__posthog_mcp__POSTHOG_MCP_EXEC')?.parameters as {
+      properties: Record<string, { description?: string }>
+    }
+    expect(schema).toMatchObject({
+      required: ['command', 'context', 'llm_model'],
+      properties: {
+        context: { description: 'Explain the abstract purpose without personal data.' },
+        llm_model: { description: 'Exact model identifier or unknown.' },
+      },
+    })
+    expect(schema.properties.command?.description).toContain('Commands: search, info, schema, call.')
+    expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThanOrEqual(budgets.maxSchemaBytes)
+    const definition = ctx.tools.get('connection__posthog_mcp__POSTHOG_MCP_EXEC')!
+    await expect(definition.execute({}, { signal: new AbortController().signal } as never))
+      .rejects.toThrow(/command.*context.*llm_model/)
+    await expect(definition.execute('not an object', { signal: new AbortController().signal } as never))
+      .rejects.toThrow('arguments must be an object')
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not register tools after a search is cancelled', async () => {

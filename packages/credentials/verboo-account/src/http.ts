@@ -205,8 +205,16 @@ export class VerbooHttp {
       }
       try {
         return await response.json()
-      } catch {
-        throw new AccountRequestError('contract_error', response.status)
+      } catch (error) {
+        // Reading the body can outlive receipt of the response headers. Preserve
+        // cancellation and timeout diagnostics instead of calling an aborted
+        // or interrupted response malformed JSON.
+        throw new AccountRequestError(
+          init.signal?.aborted ? 'request_cancelled'
+            : signal.aborted ? 'request_timeout'
+              : error instanceof SyntaxError ? 'contract_error' : 'network_error',
+          response.status,
+        )
       }
     }
   }

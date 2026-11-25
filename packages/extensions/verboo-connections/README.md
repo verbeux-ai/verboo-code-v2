@@ -41,7 +41,7 @@ The same contribution installs the [MCP server tools](src/mcp-tools.ts) over `ct
 
 The Agent contribution is disposed with its owning fiber. The backend derives the actor from authenticated identity, verifies connection ownership and toolkit membership, and pins the tool version before executing once. Provider keys never become tool arguments. Ambiguous write failures instruct the Agent to inspect the service before retrying.
 
-Each discovered tool executes through the product API with the connection and version its own search resolved, so a later search cannot redirect an earlier call. Local schema references and unions of distinct JSON types are projected onto the enforced tool-schema subset: unsupported keywords and undeclared `required` keys are dropped rather than forwarded, and a definition larger than `discoveryMaxSchemaBytes` first loses annotations, then keeps an open argument schema if it still exceeds the budget. One search registers at most `discoveryMaxTools` tools across at most `discoveryMaxTargets` connections, so a broad query cannot flood the request with declarations.
+Each discovered tool validates its arguments against the projected schema before executing through the product API with the connection and version its own search resolved, so a later search cannot redirect an earlier call. Local schema references and unions of distinct JSON types are projected onto the enforced tool-schema subset: unsupported keywords and undeclared `required` keys are dropped rather than forwarded. A definition larger than `discoveryMaxSchemaBytes` first shortens annotations, then removes them; if its schema still exceeds the budget, the tool is not registered and discovery reports `schema_unavailable`. One search registers at most `discoveryMaxTools` tools across at most `discoveryMaxTargets` connections, so a broad query cannot flood the request with declarations.
 
 </details>
 
@@ -74,7 +74,7 @@ The base tools and prompt prefixes remain unchanged. A search that registers new
 
 - OAuth providers without managed authorization need a product auth config on the server. A provider action can commit before a network failure; writes are never retried automatically.
 - Discovered tools are scoped to the conversation that searched for them, so a provider action the model needs later costs another search step.
-- A provider tool whose compacted arguments exceed `discoveryMaxSchemaBytes` remains callable with an open argument schema; the model does not receive the complete field list.
+- A provider tool whose compacted arguments exceed `discoveryMaxSchemaBytes` cannot be registered until its definition fits the configured budget.
 - An MCP server added from a conversation is stored for the Host, not for that conversation, and stays enabled until the user switches it off or removes it.
 
 <a id="dev-note"></a>
