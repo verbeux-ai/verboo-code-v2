@@ -6,11 +6,11 @@ mod menu;
 mod update;
 mod update_logic;
 
-use host::{authenticated_url, HostEvent, HostProcess, RuntimeConfig, STARTUP_DEADLINE};
+use host::{authenticated_url, HostEvent, HostProcess, QuitReservation, RuntimeConfig, STARTUP_DEADLINE};
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc, Mutex, OnceLock,
     },
     thread,
@@ -36,6 +36,18 @@ struct HostState {
     quit_confirmation: AtomicBool,
     exit_ready: AtomicBool,
     quit_hold_confirmed: AtomicBool,
+    host_disconnected: AtomicBool,
+    failure_reported: AtomicBool,
+    // 0 = finished, 1 = installation/setup protected, 2 = waiting for another instance, 3 = cancelled.
+    startup_install_phase: AtomicU8,
+}
+
+fn claim_install_start(phase: &AtomicU8) -> bool {
+    phase.load(Ordering::SeqCst) == 1 || phase.compare_exchange(2, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+}
+
+fn cancel_install_wait(phase: &AtomicU8) -> bool {
+    phase.compare_exchange(2, 3, Ordering::SeqCst, Ordering::SeqCst).is_ok()
 }
 
 impl HostState {
@@ -49,6 +61,24 @@ impl HostState {
             Some(mut process) => process.stop(),
             None => Ok(()),
         }
+    }
+
+    fn reserve_idle(&self) -> Result<QuitReservation, String> {
+        let mut process = self.process.lock().map_err(|_| "host_state_poisoned")?;
+        match process.as_mut() {
+            Some(process) => process.reserve_idle().map_err(str::to_string),
+            None => Ok(QuitReservation::Confirm),
+        }
+    }
+
+    fn finalize_idle(&self, lease: u64) -> Result<bool, String> {
+        let mut process = self.process.lock().map_err(|_| "host_state_poisoned")?;
+        process.as_mut().ok_or("quit_host_unavailable")?.finalize_idle(lease).map_err(str::to_string)
+    }
+
+    fn cancel_idle(&self, lease: u64) -> Result<(), String> {
+        let mut process = self.process.lock().map_err(|_| "host_state_poisoned")?;
+        process.as_mut().ok_or("quit_host_unavailable")?.cancel_idle(lease).map_err(str::to_string)
     }
 }
 
@@ -166,6 +196,7 @@ fn client_diagnostic(
 }
 
 fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
+    if state.failure_reported.swap(true, Ordering::SeqCst) { return; }
     eprintln!("Verboo Code: {code}");
     state.quitting.store(true, Ordering::SeqCst);
     if let Err(code) = state.stop() {
@@ -177,6 +208,17 @@ fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
         .blocking_show();
     state.exit_ready.store(true, Ordering::SeqCst);
     app.exit(1);
+}
+
+/// A failed admission exchange never authorizes shutdown or claims the Host is available.
+fn quit_check_failure(app: &tauri::AppHandle, code: &str) {
+    eprintln!("Verboo Code: {code}");
+    let dialog = app.dialog().message(locale::quit_check_failure()).title("Verboo Code");
+    let dialog = match app.get_webview_window("main") {
+        Some(window) => dialog.parent(&window),
+        None => dialog,
+    };
+    dialog.blocking_show();
 }
 
 /// Hand one destination to the system browser, reporting a failed handoff.
@@ -231,13 +273,15 @@ fn main() {
             desktop_info,
             client_ready,
             client_diagnostic,
-            update::updates_status,
-            update::updates_restart,
-            update::updates_dismiss,
+            update::update_install,
+            update::update_close,
+            update::update_snapshot,
+            update::update_restart,
             quit_after_hold
         ])
         .setup(move |app| {
             update::install(&app.handle());
+            setup_state.startup_install_phase.store(1, Ordering::SeqCst);
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Verboo Code")
@@ -318,6 +362,29 @@ fn main() {
                         }
                     })
                     .build()?;
+            let app = app.handle().clone();
+            let setup_state = setup_state.clone();
+            thread::spawn(move || {
+                let wait_window = window.clone();
+                let wait_state = setup_state.clone();
+                let proceed_state = setup_state.clone();
+                let result = update::install_pending(&app, move || {
+                    wait_state.startup_install_phase.store(2, Ordering::SeqCst);
+                    let text = serde_json::to_string(locale::update_install_wait()).expect("localized text serializes");
+                    let _ = wait_window.eval(format!("(()=>{{window.__verbooInstallWait=true;const show=()=>{{if(!window.__verbooInstallWait)return;let p=document.getElementById('install-wait');if(!p){{p=document.createElement('p');p.id='install-wait';p.style.cssText='color:#c9c2cf;text-align:center;font:14px system-ui;margin-top:28px';document.querySelector('main')?.appendChild(p)}}if(p)p.textContent={text}}};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',show,{{once:true}});else show()}})()"));
+                }, move || {
+                    claim_install_start(&proceed_state.startup_install_phase)
+                });
+                let _ = window.eval("window.__verbooInstallWait=false;document.getElementById('install-wait')?.remove()");
+                setup_state.startup_install_phase.store(0, Ordering::SeqCst);
+                match result {
+                    Ok(true) => return,
+                    Err(code) => { startup_failure(&app, &setup_state, code); return; }
+                    Ok(false) => (),
+                }
+                if setup_state.quitting.load(Ordering::SeqCst) { return; }
+                update::show_applied(&app);
+                let startup = || -> Result<(), Box<dyn std::error::Error>> {
             let config_file = std::env::var_os("VERBOO_TAURI_RUNTIME_CONFIG")
                 .map(PathBuf::from)
                 .unwrap_or(app.path().resource_dir()?.join("runtime/manifest.json"));
@@ -333,7 +400,7 @@ fn main() {
                 .process
                 .lock()
                 .map_err(|_| std::io::Error::other("host_state_poisoned"))? = Some(process);
-            let app = app.handle().clone();
+            let app = app.clone();
             let state = setup_state.clone();
             thread::spawn(move || {
                 let ready = match events.recv_timeout(STARTUP_DEADLINE) {
@@ -365,7 +432,7 @@ fn main() {
                     .permission("opener:allow-open-url")
                     .permission("opener:allow-default-urls");
                 let origin_url =
-                    url::Url::parse(&format!("{}/", url.origin().ascii_serialization()))
+                    url::Url::parse(&format!("{}/desktop-startup.html", url.origin().ascii_serialization()))
                         .expect("validated Host origin");
                 *state.bootstrap.lock().expect("Host bootstrap lock") = Some(url);
                 if app.add_capability(capability).is_err() || window.navigate(origin_url).is_err() {
@@ -375,8 +442,15 @@ fn main() {
                 eprintln!("Verboo Code: tauri_host_ready");
                 update::spawn(&app);
                 while events.recv().is_ok() {}
+                state.host_disconnected.store(true, Ordering::SeqCst);
                 if !state.quitting.load(Ordering::SeqCst) {
                     startup_failure(&app, &state, "host_disconnected");
+                }
+            });
+                    Ok(())
+                };
+                if startup().is_err() && !setup_state.quitting.load(Ordering::SeqCst) {
+                    startup_failure(&app, &setup_state, "host_startup_failed");
                 }
             });
             Ok(())
@@ -387,6 +461,15 @@ fn main() {
         if let RunEvent::ExitRequested { api, code, .. } = event {
             if !state.exit_ready.load(Ordering::SeqCst) {
                 api.prevent_exit();
+                if code != Some(tauri::RESTART_EXIT_CODE) {
+                    let phase = &state.startup_install_phase;
+                    if cancel_install_wait(phase) {
+                        state.exit_ready.store(true, Ordering::SeqCst);
+                        app.exit(0);
+                        return;
+                    }
+                    if phase.load(Ordering::SeqCst) != 0 { return; }
+                }
                 if state.quitting.load(Ordering::SeqCst) {
                     return;
                 }
@@ -397,7 +480,47 @@ fn main() {
                 let app = app.clone();
                 let state = state.clone();
                 thread::spawn(move || {
+                    let mut finalized_idle = false;
                     if code != Some(tauri::RESTART_EXIT_CODE) && !held {
+                        match state.reserve_idle() {
+                            Ok(QuitReservation::Reserved(lease)) => {
+                                if state.quitting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+                                    let _ = state.cancel_idle(lease);
+                                    state.quit_confirmation.store(false, Ordering::SeqCst);
+                                    return;
+                                }
+                                match state.finalize_idle(lease) {
+                                    Ok(true) => finalized_idle = true,
+                                    Ok(false) => state.quitting.store(false, Ordering::SeqCst),
+                                    Err(error) => {
+                                        // Finalization may already have started; do not force a Host shutdown.
+                                        let own_report = !state.failure_reported.swap(true, Ordering::SeqCst);
+                                        state.quitting.store(false, Ordering::SeqCst);
+                                        state.quit_confirmation.store(false, Ordering::SeqCst);
+                                        if own_report { quit_check_failure(&app, &error); }
+                                        if state.host_disconnected.load(Ordering::SeqCst) {
+                                            state.exit_ready.store(true, Ordering::SeqCst);
+                                            app.exit(1);
+                                        } else if own_report {
+                                            state.failure_reported.store(false, Ordering::SeqCst);
+                                            // A disconnection between the read and resetting the report is still reported.
+                                            if state.host_disconnected.load(Ordering::SeqCst) {
+                                                startup_failure(&app, &state, "host_disconnected");
+                                            }
+                                        }
+                                        return;
+                                    }
+                                }
+                            }
+                            Ok(QuitReservation::Confirm) => (),
+                            Err(error) => {
+                                state.quit_confirmation.store(false, Ordering::SeqCst);
+                                quit_check_failure(&app, &error);
+                                return;
+                            }
+                        }
+                    }
+                    if code != Some(tauri::RESTART_EXIT_CODE) && !held && !finalized_idle {
                         eprintln!("Verboo Code: quit_confirmation_requested");
                         let dialog = app
                             .dialog()
@@ -419,7 +542,10 @@ fn main() {
                         }
                     }
                     eprintln!("Verboo Code: quit_confirmed");
-                    state.quitting.store(true, Ordering::SeqCst);
+                    if !finalized_idle && state.quitting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+                        state.quit_confirmation.store(false, Ordering::SeqCst);
+                        return;
+                    }
                     let code = match state.stop() {
                         Ok(()) => {
                             eprintln!("Verboo Code: host_shutdown_complete");
@@ -436,4 +562,30 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod startup_install_tests {
+    use super::{cancel_install_wait, claim_install_start};
+    use std::sync::{atomic::{AtomicU8, Ordering}, Arc, Barrier};
+    use std::thread;
+
+    #[test]
+    fn installation_and_wait_cancellation_are_mutually_exclusive() {
+        for _ in 0..100 {
+            let phase = Arc::new(AtomicU8::new(2));
+            let barrier = Arc::new(Barrier::new(2));
+            let worker_phase = phase.clone();
+            let worker_barrier = barrier.clone();
+            let worker = thread::spawn(move || {
+                worker_barrier.wait();
+                claim_install_start(&worker_phase)
+            });
+            barrier.wait();
+            let cancelled = cancel_install_wait(&phase);
+            let installing = worker.join().unwrap();
+            assert_ne!(cancelled, installing);
+            assert_eq!(phase.load(Ordering::SeqCst), if cancelled { 3 } else { 1 });
+        }
+    }
 }

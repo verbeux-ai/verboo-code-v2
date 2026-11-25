@@ -9,6 +9,7 @@ import type {
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ProductSnapshot } from './model.ts'
+import type { DesktopUpdateState } from './update-source.ts'
 import type {
   ConnectionId,
   PlanId,
@@ -122,7 +123,7 @@ export type ProductProps = PropsLocale<'verboo'> & InjectFace<ProductInjected>
 export type PageProps = ProductProps & PropsRuntime<'main'>
 /** Product capabilities and the navigation renderer. */
 export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.footer.row'>
-  & InjectFace<ExecutionInjected>
+  & InjectFace<ExecutionInjected & { hooks: { desktopUpdate: HostObservable<DesktopUpdateState> }; installDesktopUpdate(): Promise<void> }>
 /** Product capabilities and the conversation introduction renderer. */
 export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
 declare module '@deepseek-ai/dsh-client-ui-slots' {

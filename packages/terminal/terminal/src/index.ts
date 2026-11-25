@@ -114,6 +114,10 @@ export class TerminalSessionService extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'terminals')
+    ctx.inject(['agents'], (agentCtx) => {
+      agentCtx.effect(() => agentCtx.agents.exitAdmission.registerOptional(() =>
+        this.sessions.size > 0 || this.pendingSpawns.size > 0 ? 'unknown' : 'idle'), 'terminals.exitAdmission()')
+    })
     ctx.effect(() => () => this.disposeAll(), 'pty teardown')
   }
 
@@ -152,6 +156,7 @@ export class TerminalSessionService extends Service {
    * @returns published identity, metadata, status, and MOTD.
    */
   async spawn(owner: Agent, request: TerminalSpawnRequest, signal?: AbortSignal): Promise<TerminalSpawnResult> {
+    this.ctx.get('agents')?.exitAdmission.assertAdmission()
     this.assertActive()
     signal?.throwIfAborted()
     this.ensureOwnerCleanup(owner)
@@ -241,6 +246,7 @@ export class TerminalSessionService extends Service {
    * @returns live operation handle for foreground await or task registration.
    */
   startSend(owner: Agent, id: TerminalSessionId, request: TerminalSendRequest): TerminalSendOperation {
+    this.ctx.get('agents')?.exitAdmission.assertAdmission()
     const record = this.expectOwned(owner, id)
     if (record.closing !== undefined) throw new Error(`PTY session ${id} is closing`)
     if (record.active !== undefined) throw new TerminalError(`PTY session ${id} already has an active send`, 'SEND_ACTIVE')

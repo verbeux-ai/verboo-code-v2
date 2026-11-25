@@ -35,6 +35,7 @@ import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
 import { TrialModel } from './trial-model.ts'
 import { TrialDock, TrialModal, type TrialInjected } from './Trial.tsx'
+import { createUpdateSource } from './update-source.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
@@ -321,6 +322,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     sync()
     return () => { stopPanes(); stopAccount(); stopModel?.() }
   }, 'Verboo: focused trial group')
+  const desktopUpdate = createUpdateSource()
+  ctx.effect(() => desktopUpdate.start(), 'Verboo: desktop update status')
   const stamina = createStaminaResource(
     signal => ctx.remote.verboo.getStamina(signal),
     model.state,
@@ -769,7 +772,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         children: { 'sidebar.footer.row': { kind: 'single', scope: 'root' } },
         inject: () => {
           const product = face()
-          return { ...product, hooks: { ...product.hooks, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
+          return { ...product, installDesktopUpdate: () => desktopUpdate.install(), hooks: { ...product.hooks, desktopUpdate: desktopUpdate.state, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
         } },
       Sidebar,
     ),

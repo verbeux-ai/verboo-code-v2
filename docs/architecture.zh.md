@@ -78,6 +78,8 @@ Subagent Activation 拥有运行时树成员关系。
 
 AgentLoop 回滚失败的初始化，并在启动已排队工作前等待串行 `agent/created`；卸载在 teardown 期间保留所需资源（[顺序](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。
 
+Agent 注册表协调循环、任务、计划和终端的保守退出准入；桌面应用在关闭前请求可撤销的空闲预留（[退出准入](../packages/core/agent/README.zh.md#use-this-package)）。
+
 [事件生产者与消费者](event-producer-consumer.zh.md)。
 
 <a id="turn-flow"></a>

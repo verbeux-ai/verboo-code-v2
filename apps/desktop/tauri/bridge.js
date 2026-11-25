@@ -25,36 +25,35 @@
   Object.defineProperty(window, '__DSH_DIRECTORY_PICKER__', {
     value: Object.freeze({ pick: () => invoke('pick_directory') }),
   })
+  // The native updater owns the state and validates the caller when installing.
+  // Validate both snapshots and event payloads before exposing them to the UI.
+  const updateState = value => {
+    if (value === null || typeof value !== 'object'
+      || !['idle', 'downloading', 'ready', 'installing', 'error'].includes(value.phase)
+      || !(value.percent === null || (Number.isInteger(value.percent) && value.percent >= 0 && value.percent <= 100))) {
+      throw new Error('Verboo Code: desktop_update_state_invalid')
+    }
+    return Object.freeze({ phase: value.phase, percent: value.percent })
+  }
+  Object.defineProperty(window, '__VERBOO_UPDATE__', {
+    value: Object.freeze({
+      getState: async () => updateState(await invoke('update_snapshot')),
+      subscribe(listener) {
+        const onState = event => {
+          let state
+          try { state = updateState(event.detail) } catch (_error) { return /* Ignore malformed renderer events. */ }
+          listener(state)
+        }
+        window.addEventListener('verboo-update-state', onState)
+        return () => window.removeEventListener('verboo-update-state', onState)
+      },
+      install: () => invoke('update_restart'),
+    }),
+  })
   Object.defineProperty(window, '__VERBOO_DESKTOP__', {
     value: Object.freeze({
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
       quit: () => invoke('quit_after_hold'),
-      // The native side owns the download; this page renders what it reports.
-      // Polling keeps the download alive while the window is unfocused and
-      // stops as soon as the phase settles.
-      updates: {
-        status: () => invoke('updates_status'),
-        restart: () => invoke('updates_restart'),
-        dismiss: version => invoke('updates_dismiss', { version }),
-        subscribe(listener) {
-          let live = true
-          let timer
-          const busy = phase => phase === 'checking' || phase === 'downloading'
-          const poll = async () => {
-            if (!live) return
-            try {
-              const next = await invoke('updates_status')
-              if (!live) return
-              listener(next)
-              timer = setTimeout(poll, busy(next.phase) ? 800 : 5000)
-            } catch (_error) {
-              // A native shutdown closes IPC; a later launch checks again.
-            }
-          }
-          void poll()
-          return () => { live = false; clearTimeout(timer) }
-        },
-      },
       openExternal(url) {
         const target = new URL(url)
         // Same allowlist the native navigation hook applies: a browsable page on

@@ -44,19 +44,49 @@ async function start(t, cli = manifest, browserOverride = false) {
     diagnostics.close()
     await rm(home, { recursive: true, force: true })
   })
-  const event = (type) => {
-    const present = events.find(event => event.type === type)
+  const event = (type, predicate = () => true) => {
+    const present = events.find(event => event.type === type && predicate(event))
     if (present !== undefined) return Promise.resolve(present)
     return new Promise((resolve, reject) => {
       const deadline = setTimeout(() => reject(new Error(`Host did not emit ${type}`)), 30_000)
       waiters.push((event) => {
-        if (event.type === type) { clearTimeout(deadline); resolve(event) }
+        if (event.type === type && predicate(event)) { clearTimeout(deadline); resolve(event) }
       })
       exit.then(() => { clearTimeout(deadline); reject(new Error(`Host exited before ${type}`)) })
     })
   }
   return { child, event, exit, events, browserRequests }
 }
+
+test('idle exit admission can be cancelled without terminating the Host', { timeout: 45_000 }, async (t) => {
+  const { child, event, exit } = await start(t)
+  await event('ready')
+  child.stdin.write('{"type":"quit-reserve","requestId":1}\n')
+  const reservation = await event('quit-response', event => event.requestId === 1)
+  assert.equal(reservation.kind, 'reserved', 'a fully initialized empty Host must prove idle')
+  assert.ok(Number.isSafeInteger(reservation.lease))
+  child.stdin.write(`${JSON.stringify({ type: 'quit-commit', requestId: 2, lease: reservation.lease })}\n`)
+  assert.equal((await event('quit-response', event => event.requestId === 2)).kind, 'committed')
+  child.stdin.write(`${JSON.stringify({ type: 'quit-cancel', requestId: 3, lease: reservation.lease })}\n`)
+  assert.equal((await event('quit-response', event => event.requestId === 3)).kind, 'cancelled')
+  assert.equal(child.exitCode, null)
+  child.stdin.write('{"type":"shutdown"}\n')
+  assert.equal((await exit)[0], 0)
+})
+
+test('committed idle exit finalizes and stops the real Host once', { timeout: 45_000 }, async (t) => {
+  const { child, event, exit, events } = await start(t)
+  await event('ready')
+  child.stdin.write('{"type":"quit-reserve","requestId":1}\n')
+  const reservation = await event('quit-response', event => event.requestId === 1)
+  assert.equal(reservation.kind, 'reserved')
+  child.stdin.write(`${JSON.stringify({ type: 'quit-commit', requestId: 2, lease: reservation.lease })}\n`)
+  assert.equal((await event('quit-response', event => event.requestId === 2)).kind, 'committed')
+  child.stdin.write(`${JSON.stringify({ type: 'quit-finalize', requestId: 3, lease: reservation.lease })}\n`)
+  assert.equal((await event('quit-response', event => event.requestId === 3)).kind, 'finalized')
+  assert.equal((await exit)[0], 0)
+  assert.equal(events.filter(event => event.type === 'stopped').length, 1)
+})
 
 test('keeps chat in the native window even when a user patch enables browser startup', { timeout: 45_000 }, async (t) => {
   const { child, event, exit, browserRequests } = await start(t, manifest, true)
@@ -74,6 +104,11 @@ test('serves authenticated application assets and disposes the same Host after r
   const origin = new URL(url).origin
   const unauthorized = await fetch(origin)
   assert.equal(unauthorized.status, 401)
+  const startup = await fetch(new URL('/desktop-startup.html', origin))
+  assert.equal(startup.status, 200)
+  assert.match(await startup.text(), /class="orbit"/)
+  const mascot = await fetch(new URL('/desktop-startup-mascot.png', origin))
+  assert.equal(mascot.status, 200)
   const bootstrap = await fetch(url, { redirect: 'manual' })
   const cookie = bootstrap.headers.get('set-cookie')?.split(';')[0]
   assert.ok(cookie, 'the owned WebView must receive an authentication cookie')

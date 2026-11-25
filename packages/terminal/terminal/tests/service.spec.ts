@@ -157,6 +157,29 @@ describe('TerminalSessionService backend registry', () => {
 })
 
 describe('TerminalSessionService ownership and lifecycle', () => {
+  it('treats a persistent terminal as unknown for silent exit', async () => {
+    const ctx = await harness()
+    const gate = ctx.agents.exitAdmission
+    gate.registerRequired('jobs', () => 'idle')
+    gate.registerRequired('schedule', () => 'idle')
+    const b = backend()
+    ctx.terminals.registerBackend(b.provider)
+    const owner = stubAgent(ctx, 'exit-owner')
+    Object.defineProperty(owner, 'exitActivity', { value: 'idle' })
+    await ctx.agents.register(owner)
+    const lease = gate.tryReserve()
+    if (lease.kind !== 'reserved') throw new Error(`expected idle: ${lease.kind}`)
+    expect(gate.commit(lease.id)).toBe(true)
+    await expect(ctx.terminals.spawn(owner, { type: 'stub' })).rejects.toThrow('shutting down')
+    gate.cancel(lease.id)
+    const created = await ctx.terminals.spawn(owner, { type: 'stub' })
+    expect(gate.tryReserve()).toEqual({ kind: 'unknown' })
+    await ctx.terminals.kill(owner, created.sessionId)
+    const after = gate.tryReserve()
+    expect(after.kind).toBe('reserved')
+    if (after.kind === 'reserved') gate.cancel(after.id)
+    await ctx.fiber.dispose()
+  })
   it('publishes only after spawn and fences every operation to the exact owner', async () => {
     const ctx = await harness()
     const b = backend()

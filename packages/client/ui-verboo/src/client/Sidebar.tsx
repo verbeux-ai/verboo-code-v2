@@ -1,5 +1,5 @@
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   Menu,
   Modal,
@@ -15,6 +15,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarProps, ProductProps } from './contracts.ts'
 import { Brand, BrandMark } from './Brand.tsx'
 import { Glyph } from './Glyph.tsx'
+import { DesktopUpdate } from './DesktopUpdate.tsx'
 import css from './Product.module.css'
 const panels = {
   connections: 'verboo.connections' as MainPanelId,
@@ -81,7 +82,11 @@ function ConversationRow({
     </div>
   )
 }
-function ProjectGroup({
+/** Render a project with an accessible animated conversation list.
+ * @param options - project data, session rows, navigation actions and close behavior.
+ * @returns the project disclosure and its action menu.
+ */
+export function ProjectGroup({
   workspace,
   sessions,
   current,
@@ -97,6 +102,18 @@ function ProjectGroup({
   close: () => void
 }) {
   const [menu, setMenu] = useState(false)
+  const [expanded, setExpanded] = useState(true)
+  const expandedRef = useRef(true)
+  const listId = useId()
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const toggle = () => {
+    const next = !expandedRef.current
+    expandedRef.current = next
+    if (!next && listRef.current?.contains(document.activeElement)) toggleRef.current?.focus()
+    if (listRef.current) listRef.current.inert = !next
+    setExpanded(next)
+  }
   const [action, setAction] = useState<'rename' | 'remove' | null>(null)
   const [title, setTitle] = useState(workspace.title)
   const [busy, setBusy] = useState(false)
@@ -116,10 +133,13 @@ function ProjectGroup({
     }
   }
   return (
-    <details className={css.projectGroup} open>
-      <summary>
-        <Glyph name="folder" size={16} />
-        <span>{workspaceDisplayTitle(workspace.title,props.t('workspace'))}</span>
+    <div className={css.projectGroup}>
+      <div className={css.projectHeader}>
+        <button type="button" className={css.projectToggle} ref={toggleRef}
+          aria-expanded={expanded} aria-controls={listId} onClick={toggle}>
+          <Glyph name="folder" size={16} />
+          <span>{workspaceDisplayTitle(workspace.title,props.t('workspace'))}</span>
+        </button>
         <Menu
           open={menu}
           onClose={() =>{  setMenu(false) }}
@@ -162,29 +182,33 @@ function ProjectGroup({
             setAction(id === 'rename' ? 'rename' : 'remove')
           }}
         />
-      </summary>
-      <div className={css.sessionList}>
-        {query === '' && (
-          <button
-            className={css.projectStart}
-            onClick={() => {
-              props.openWorkspace(workspace.workspaceId)
-              close()
-            }}
-          >
-            <Glyph name="plus" size={13} />
-            {props.t('newTask')}
-          </button>
-        )}
-        {sessions.map(session => (
-          <ConversationRow
-            key={session.id}
-            session={session}
-            active={current === session.id}
-            props={props}
-            close={close}
-          />
-        ))}
+      </div>
+      <div className={css.projectDisclosure} data-expanded={expanded}>
+        <div className={css.projectDisclosureInner} id={listId} ref={listRef} aria-hidden={!expanded}>
+          <div className={css.sessionList}>
+            {query === '' && (
+              <button
+                className={css.projectStart}
+                onClick={() => {
+                  props.openWorkspace(workspace.workspaceId)
+                  close()
+                }}
+              >
+                <Glyph name="plus" size={13} />
+                {props.t('newTask')}
+              </button>
+            )}
+            {sessions.map(session => (
+              <ConversationRow
+                key={session.id}
+                session={session}
+                active={current === session.id}
+                props={props}
+                close={close}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       <Modal
         open={action !== null}
@@ -244,13 +268,14 @@ function ProjectGroup({
           )}
         </div>
       </Modal>
-    </details>
+    </div>
   )
 }
 /** Product navigation reads the canonical Workspace and Session controllers. */
 export function Sidebar(props: SidebarProps) {
   const { t, collapsed, drawer, toggleSidebar, usePanelInfo } = props
   const state = props.useProduct(s => s)
+  const desktopUpdate = props.useDesktopUpdate(s => s)
   const extras = props.useNavigation(s => s)
   const selected = usePanelInfo(s => s.activePanelId)
   const ref = useRef<HTMLDivElement>(null)
@@ -534,6 +559,7 @@ export function Sidebar(props: SidebarProps) {
           </div>
         )}
       </div>
+      <DesktopUpdate state={desktopUpdate} t={t} install={props.installDesktopUpdate} />
       <footer className={css.sidebarFoot}>
         {props.renderSlot('sidebar.footer.row', { wide })}
         <Tooltip portal label={t('plan')} disabled={wide}>

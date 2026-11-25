@@ -126,6 +126,30 @@ async function harness(config: JobsConfig = {}) {
   return ctx
 }
 
+it('protects running and stopping jobs and rolls back failed admissions', async () => {
+  const ctx = await harness()
+  const gate = ctx.agents.exitAdmission
+  gate.registerRequired('schedule', () => 'idle')
+  expect(() => ctx.jobs.start(producer({ kind: '' as JobKind }).spec)).toThrow()
+  const reservation = gate.tryReserve()
+  expect(reservation.kind).toBe('reserved')
+  if (reservation.kind !== 'reserved') throw new Error('expected idle')
+  expect(gate.commit(reservation.id)).toBe(true)
+  expect(() => ctx.jobs.start(producer().spec)).toThrow('shutting down')
+  gate.cancel(reservation.id)
+  const job = producer()
+  const id = ctx.jobs.start(job.spec)
+  expect(gate.tryReserve()).toEqual({ kind: 'busy' })
+  expect(ctx.jobs.kill(id)).toBe('requested')
+  expect(gate.tryReserve()).toEqual({ kind: 'busy' })
+  job.settle({ status: 'completed' })
+  await tick()
+  const done = gate.tryReserve()
+  expect(done.kind).toBe('reserved')
+  if (done.kind === 'reserved') gate.cancel(done.id)
+  await ctx.fiber.dispose()
+})
+
 /** Collect events matching `filter`; `types` narrows what is recorded. */
 function collect(ctx: Context, filter: JobEventFilter = { owners: 'all' }, types?: JobEvent['type'][]): JobEvent[] {
   const seen: JobEvent[] = []

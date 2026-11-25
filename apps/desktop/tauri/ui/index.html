@@ -5,18 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Verboo Code</title>
     <style>
-      :root { color-scheme: light dark; font-family: system-ui, sans-serif; background: #fff; color: #242424; }
+      :root { color-scheme: dark; background: #09090b; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-      main { display: grid; justify-items: center; gap: 28px; }
-      .brand { display: flex; align-items: center; gap: 10px; font-size: 15px; }
-      strong { font-weight: 500; }
-      .spinner { width: 16px; height: 16px; border: 2px solid #e5e5e5; border-top-color: #777; border-radius: 50%; animation: spin 1s linear infinite; }
-      @media (prefers-color-scheme: dark) { :root { background: #212121; color: #ececec; } .spinner { border-color: #3b3b3b; border-top-color: #aaa; } }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+      .orbit { position: relative; width: 128px; height: 128px; display: grid; place-items: center; border: 1px solid #ad34fe66; border-radius: 50%; box-shadow: 0 0 55px #ad34fe35; }
+      .orbit::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; background: radial-gradient(circle at 50% 4px, #e5bcff 0 4px, transparent 5px); animation: orbit 3s linear infinite; }
+      .mascot { width: 76px; height: 76px; filter: drop-shadow(0 0 16px #ad34fe66); }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      @keyframes orbit { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .orbit::after { animation: none; } }
     </style>
   </head>
   <body>
-    <main aria-busy="true"><div class="brand"><img src="verboo-mascot.png" width="32" height="32" alt="" /><strong>Verboo Code</strong></div><div class="spinner" aria-hidden="true"></div></main>
+    <main role="status" aria-label="Verboo Code"><span class="sr-only">Verboo Code</span><div class="orbit" aria-hidden="true"><img class="mascot" src="verboo-mascot.png" alt="" /></div></main>
   </body>
 </html>

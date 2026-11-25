@@ -14,11 +14,14 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionEvent, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { installTurnArchiveAdmission } from './archive-admission.ts'
+import { ExitAdmission } from './exit-admission.ts'
 import type { Agent, TurnBoundaryProjection } from './types.ts'
 import type { AgentOptions, SessionStartSource } from './runtime-types.ts'
 import { turnBoundaryProjectionDefinition } from './projection.ts'
 
 export * from './runtime-types.ts'
+export { ExitAdmission } from './exit-admission.ts'
+export type { ExitActivity, ExitReservation } from './exit-admission.ts'
 export * from './types.ts'
 export { AgentModel, modelSelectionProjectionDefinition, installModelSelection } from './model-selection.ts'
 export type { ModelSelectionProjectionState } from './model-selection.ts'
@@ -246,6 +249,9 @@ interface FactorySlot {
 export class AgentRegistry extends Service {
   static inject = ['sessionProjections']
 
+  /** Global conservative admission for a desktop silent exit. */
+  readonly exitAdmission: ExitAdmission = new ExitAdmission()
+
   private turnBoundaryProjectionHandle!: ProjectionHandle<TurnBoundaryProjection>
   private store = new Map<SessionId, AgentEntry>()
   private factory: FactorySlot | undefined
@@ -258,6 +264,15 @@ export class AgentRegistry extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'agents')
+    ctx.effect(() => this.exitAdmission.registerRequired('agents', () => {
+      if (this.activeInitiatorRuns > 0) return 'busy'
+      let unknown = false
+      for (const { agent } of this.store.values()) {
+        if (agent.exitActivity === 'busy') return 'busy'
+        if (agent.exitActivity !== 'idle') unknown = true
+      }
+      return unknown ? 'unknown' : 'idle'
+    }), 'agents.exitAdmission()')
     ctx.inject(['typert'], (typeCtx) => {
       typeCtx.typert.lookups.register('agent', {
         parameter: 'agent',
@@ -408,15 +423,18 @@ export class AgentRegistry extends Service {
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
   async create(options: CreateAgentOptions): Promise<AgentHandle> {
-    const ownerCtx = this.ctx
-    // Re-trace a Service-backed factory through the accessing context
-    // explicitly. This preserves AgentLoop's dependency origin while binding
-    // its effects to ownerCtx; plain factories receive ownerCtx as an explicit
-    // capability and need no Cordis tracker magic.
-    const { target } = this.requireFactory()
-    const receiver = getTraceable(ownerCtx, target)
-    // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
+    const release = this.exitAdmission.begin()
+    try {
+      const ownerCtx = this.ctx
+      // Re-trace a Service-backed factory through the accessing context
+      // explicitly. This preserves AgentLoop's dependency origin while binding
+      // its effects to ownerCtx; plain factories receive ownerCtx as an explicit
+      // capability and need no Cordis tracker magic.
+      const { target } = this.requireFactory()
+      const receiver = getTraceable(ownerCtx, target)
+      // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
+      return await Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
+    } finally { release() }
   }
 
   /**
@@ -427,11 +445,14 @@ export class AgentRegistry extends Service {
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
   async resume(options: ResumeAgentOptions): Promise<AgentHandle> {
-    const ownerCtx = this.ctx
-    const { target } = this.requireFactory()
-    const receiver = getTraceable(ownerCtx, target)
-    // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.resume, receiver, [ownerCtx, options])
+    const release = this.exitAdmission.begin()
+    try {
+      const ownerCtx = this.ctx
+      const { target } = this.requireFactory()
+      const receiver = getTraceable(ownerCtx, target)
+      // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
+      return await Reflect.apply(target.resume, receiver, [ownerCtx, options])
+    } finally { release() }
   }
 
   /**
@@ -472,6 +493,7 @@ export class AgentRegistry extends Service {
    *   creation dispatch settles.
    */
   enter(agent: Agent): () => void {
+    this.exitAdmission.assertAdmission()
     const id = agent.id
     if (id !== agent.session.id) {
       throw new Error(`agent id "${id}" does not match session id "${agent.session.id}"`)
@@ -611,6 +633,7 @@ export class AgentRegistry extends Service {
 
   /** Establish one tracked initiator or clearing boundary. */
   private runWithInitiator<T>(agent: Agent | undefined, operation: () => T): T {
+    this.exitAdmission.assertAdmission()
     if (this.initiatorState !== 'active') throw new Error(DISPOSED_INITIATOR_MESSAGE)
     const run: InitiatorRun = {
       active: true,

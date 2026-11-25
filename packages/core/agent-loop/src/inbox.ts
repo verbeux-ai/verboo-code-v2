@@ -69,12 +69,14 @@ export const inboxProjectionDefinition = {
  * @param readState - reader for the live Inbox projection state.
  * @param session - session whose durable events store pending input.
  * @param dispatch - agent-scoped notifications for Inbox lifecycle events.
+ * @param admit - optional guard before inserting new pending input.
  */
 export class ReactLoopInbox implements InboxContract {
   constructor(
     private readonly readState: () => InboxState,
     private readonly session: Session,
     private readonly dispatch: AgentEventDispatch,
+    private readonly admit: () => void = () => {},
   ) {}
 
   /** Prompts awaiting individual turns. */
@@ -169,6 +171,7 @@ export class ReactLoopInbox implements InboxContract {
     deleteCount: number,
     inserted: UserMessage[],
   ): UserMessage[] {
+    if (inserted.length > 0) this.admit()
     return this.mutate(target, start, deleteCount, inserted, true)
   }
 

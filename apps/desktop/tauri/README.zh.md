@@ -10,7 +10,7 @@
 pnpm run dev:desktop
 ```
 
-该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。打包后的 Windows 应用是 GUI 程序，因此 Host 控制台进程以 `CREATE_NO_WINDOW` 创建；否则 Windows 会在产品窗口旁打开一个终端窗口。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源提交文档，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
+该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。打包后的 Windows 应用是 GUI 程序，因此 Host 控制台进程以 `CREATE_NO_WINDOW` 创建；否则 Windows 会在产品窗口旁打开一个终端窗口。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源显示打包的启动动画，避免请求受保护的首页，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
 
 仓库构建完成后，可复用产物：
 
@@ -36,13 +36,11 @@ Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖�
 
 ## 更新
 
-Tauri 更新器随应用一起发布，不会中断产品使用。Host 开始提供产品页面后，它每次启动读取一次更新源，并自动下载发布的版本。Linux 根据已安装的包类型选择签名的 AppImage、Debian 包或 RPM；Windows 以 `passive` 模式复用 NSIS 安装器，macOS 用归档的 `.app` 替换应用包。开发构建从不检查更新，因此检出目录不会自行安装发布版本。
-
-下载的安装器与版本标记保存在应用配置目录中，`updates_status` 在产品侧栏的套餐快捷入口上方显示当前阶段。确认该行会调用 `updates_restart`，安装已准备的内容并在原位置重启；即使用户不回应，下次启动时也会应用尚未安装的版本。`updates_dismiss` 记录用户拒绝的版本，使同一版本只提示一次。不会打开更新窗口。
+Tauri 更新器在 Host 启动后每次检查一次更新源，在后台下载新版本并验证签名后暂存。侧边栏显示下载进度，暂存完成后可选择重启；重启前需要确认，因为正在进行的对话或任务可能中断。暂存的更新会在下次启动 Host 前再次验证并提示安装，即使没有网络也可以进行。安装前用户需确认已关闭运行旧版本的其他窗口；支持该协议的版本还通过进程锁协调。如果其他实例正在安装，启动窗口会显示等待提示，关闭此窗口不会中断该安装。安装失败时显示错误并避免自动重启循环。开发构建不检查更新。Linux 使用与安装包相匹配的 AppImage、Debian 或 RPM；Windows 使用 `passive` 模式的 NSIS 安装器，macOS 用归档中的 `.app` 替换应用包。
 
 `bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名；由于 RPM 的包元数据使用规范化的预发布版本，发布工作流还用产品版本签署 RPM。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
 
-更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。拒绝某个版本的用户不会再被同一版本打扰。
+更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。
 
 ## 发布流水线
 

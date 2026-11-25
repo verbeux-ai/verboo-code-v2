@@ -76,6 +76,37 @@ test('hands a completed quit hold to the native shutdown owner', async (t) => {
   assert.ok(allowed.includes('quit_after_hold'), 'native ACL must allow the completed gesture')
 })
 
+test('exposes validated update snapshots, subscribes to changes and unregisters', async (t) => {
+  const { dom, requests } = page(t, '<main>workspace</main>')
+  const originalInvoke = dom.window.__TAURI_INTERNALS__.invoke
+  dom.window.__TAURI_INTERNALS__.invoke = (command, args) => command === 'update_snapshot'
+    ? Promise.resolve({ phase: 'downloading', percent: 25 })
+    : originalInvoke(command, args)
+  const updates = dom.window.__VERBOO_UPDATE__
+  assert.equal(dom.window.__VERBOO_DESKTOP__.updates, undefined)
+  assert.deepEqual(JSON.parse(JSON.stringify(await updates.getState())), { phase: 'downloading', percent: 25 })
+  const seen = []
+  const unsubscribe = updates.subscribe(state => seen.push(JSON.parse(JSON.stringify(state))))
+  dom.window.dispatchEvent(new dom.window.CustomEvent('verboo-update-state', { detail: { phase: 'ready', percent: 100 } }))
+  dom.window.dispatchEvent(new dom.window.CustomEvent('verboo-update-state', { detail: { phase: 'ready', percent: 101 } }))
+  dom.window.dispatchEvent(new dom.window.CustomEvent('verboo-update-state', { detail: { phase: 'unknown', percent: null } }))
+  unsubscribe()
+  dom.window.dispatchEvent(new dom.window.CustomEvent('verboo-update-state', { detail: { phase: 'idle', percent: null } }))
+  assert.deepEqual(seen, [{ phase: 'ready', percent: 100 }])
+  await updates.install()
+  assert.equal(requests.at(-1).command, 'update_restart')
+  const permissions = await readFile(new URL('../../src-tauri/permissions/desktop.toml', import.meta.url), 'utf8')
+  const allowed = JSON.parse(permissions.match(/^commands\.allow = (.+)$/m)[1])
+  assert.ok(allowed.includes('update_snapshot'))
+  assert.ok(allowed.includes('update_restart'))
+})
+
+test('rejects malformed native update snapshots', async (t) => {
+  const { dom } = page(t, '<main>workspace</main>')
+  dom.window.__TAURI_INTERNALS__.invoke = () => Promise.resolve({ phase: 'ready', percent: -1 })
+  await assert.rejects(dom.window.__VERBOO_UPDATE__.getState(), /desktop_update_state_invalid/)
+})
+
 test('native diagnostics contain asset coordinates and never error-message contents', async (t) => {
   const { dom, requests } = page(t, '<main>workspace</main>')
   const error = new dom.window.Error('fixture-private-account@example.invalid fixture-private-token')

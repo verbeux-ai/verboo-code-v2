@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import thinkingBoo from './assets/boo-thinking.svg'
 import type { ProductProps } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
 import css from './Product.module.css'
@@ -38,10 +39,12 @@ export function Notice({ text, retry, label, error = false }: {
   error?: boolean
 }) {
   return (
-    <div className={css.notice} role={error ? 'alert' : 'status'}>
-      <Glyph name="triangle-alert" size={18} />
-      <p>{text}</p>
-      {retry && <button className={css.textButton} onClick={retry}>{label}</button>}
+    <div className={error ? css.noticeError : css.notice} role={error ? 'alert' : 'status'}>
+      {error ? <div className={css.noticeMascot} aria-hidden="true"><img src={thinkingBoo} alt="" /></div> : <Glyph name="triangle-alert" size={18} />}
+      <div className={error ? css.noticeCard : css.noticeBody}>
+        <p>{text}</p>
+        {retry && <button className={css.textButton} onClick={retry}>{label}</button>}
+      </div>
     </div>
   )
 }
