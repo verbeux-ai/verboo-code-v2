@@ -271,7 +271,11 @@ const generatedRemoteAliases = {
 const vendorSourceAliases = {
   '@deepseek-ai/cosmokit': fileURLToPath(new URL('./vendor/cosmokit/src/index.ts', import.meta.url)),
 }
-const testingAliases = { ...vitestCleanCheckoutAliases, ...claudeCodeTestingAliases, ...generatedRemoteAliases, ...vendorSourceAliases }
+const testingAliases = [
+  ...vitestCleanCheckoutAliases,
+  ...Object.entries({ ...claudeCodeTestingAliases, ...generatedRemoteAliases, ...vendorSourceAliases })
+    .map(([find, replacement]) => ({ find, replacement })),
+]
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],

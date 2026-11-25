@@ -14,7 +14,7 @@ export const vitestExecArgv = process.allowedNodeEnvironmentFlags.has('--webstor
  * workspace exports point at ignored `lib/` output, so clean checkouts need
  * these aliases to resolve the same package sources as TypeScript.
  */
-export const vitestCleanCheckoutAliases = {
+const cleanCheckoutSourceEntries = {
   '@deepseek-ai/cordis/src': fileURLToPath(new URL('./vendor/cordis/src', import.meta.url)),
   '@deepseek-ai/dsh-session/types': fileURLToPath(new URL('./packages/core/session/src/types.ts', import.meta.url)),
   '@deepseek-ai/dsh-session/surface': fileURLToPath(new URL('./packages/core/session/src/surface.ts', import.meta.url)),
@@ -29,6 +29,13 @@ export const vitestCleanCheckoutAliases = {
   '@deepseek-ai/dsh-llm/types': fileURLToPath(new URL('./packages/llm/llm/src/types.ts', import.meta.url)),
   '@deepseek-ai/dsh-llm': fileURLToPath(new URL('./packages/llm/llm/src/index.ts', import.meta.url)),
 }
+
+// Vite's string aliases also match subpaths. Match bare package entries
+// exactly so generated exports such as dsh-llm/remote still resolve normally.
+export const vitestCleanCheckoutAliases = Object.entries(cleanCheckoutSourceEntries).map(([name, replacement]) => ({
+  find: /^@[^/]+\/[^/]+$/.test(name) ? new RegExp(`^${name}$`) : name,
+  replacement,
+}))
 
 /**
  * Transform standard TypeScript decorators before Vite's default parser sees source files.
