@@ -8,15 +8,15 @@
  * resolved, so a later search cannot redirect an earlier call. The provider's
  * JSON Schema is projected onto the enforced tool-schema subset before
  * registration: keywords the harness does not enforce are dropped rather than
- * forwarded, so an upstream schema cannot change how arguments are validated. A
+ * forwarded, so an upstream schema cannot change how arguments are validated.
  * Oversized definitions lose annotations first; a definition still too large
- * keeps an unconstrained argument schema and stays callable.
+ * is reported as unavailable instead of accepting unvalidated arguments.
  *
  * @module
  */
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
+import { assertSupportedJsonSchema, ToolArgsError, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -122,6 +122,8 @@ export interface AmbiguousToolkit {
 export interface FailedSearch {
   toolkit: string
   connectionId: string
+  /** Provider tool whose definition could not be registered, when known. */
+  tool?: string
   /** Bounded failure category; never an upstream body. */
   code: string
 }
@@ -145,23 +147,25 @@ const INVALID_NAME_CHARS = /[^A-Za-z0-9_-]/g
 const HASH_LENGTH = 12
 /** Hex characters that separate two accounts of one toolkit. */
 const ACCOUNT_HASH_LENGTH = 8
+/** Reduce annotations in stages so field guidance survives when it can fit. */
+const SCHEMA_ANNOTATION_LIMITS = [1024, 256, 64] as const
 /** Deepest provider schema node this projection follows. */
 const MAX_SCHEMA_DEPTH = 12
 /** Types the enforced subset accepts. */
 const SCHEMA_TYPES: readonly string[] = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
 /** Types that may carry `enum` or `const`. */
 const SCALAR_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'null']
+/** Fixed categories allowed in discovery results; provider error text stays private. */
+const SEARCH_FAILURE_CODES = new Set([
+  'request_timeout', 'request_cancelled', 'network_error', 'contract_error',
+  'authentication_invalid', 'authorization_denied', 'unavailable', 'unknown',
+])
 /** A scalar literal accepted by `enum` and `const`. */
 type SchemaScalar = string | number | boolean | null
 
 /** Narrow one JSON value to a plain string-keyed record. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** Read model-supplied arguments as a record; a non-object call sends no arguments. */
-function asArguments(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {}
 }
 
 /** Whether a candidate is a finite JSON number the subset accepts. */
@@ -282,6 +286,29 @@ function projectNode(candidate: unknown, depth: number, root: unknown): Record<s
   return node
 }
 
+/** Shorten individual annotations while retaining instructions for each field. */
+function abbreviateSchema(schema: Record<string, unknown>, limit: number): Record<string, unknown> {
+  const result = { ...schema }
+  for (const key of ['description', 'title']) {
+    const value = result[key]
+    if (typeof value === 'string') {
+      const characters = Array.from(value)
+      if (characters.length > limit) {
+        result[key] = `${characters.slice(0, limit - 1).join('')}…`
+      }
+    }
+  }
+  if (isRecord(result.properties)) {
+    result.properties = Object.fromEntries(Object.entries(result.properties).map(([key, value]) =>
+      [key, isRecord(value) ? abbreviateSchema(value, limit) : value]))
+  }
+  if (isRecord(result.items)) result.items = abbreviateSchema(result.items, limit)
+  if (Array.isArray(result.oneOf)) {
+    result.oneOf = result.oneOf.map((value: unknown) => isRecord(value) ? abbreviateSchema(value, limit) : value)
+  }
+  return result
+}
+
 /** Remove annotations before giving up on an oversized provider schema. */
 function compactSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const { description: _description, title: _title, ...compact } = schema
@@ -332,6 +359,9 @@ interface MountedTool {
   readonly dispose: () => void
 }
 
+/** A provider definition cannot be declared within the configured schema budget. */
+class ToolSchemaUnavailableError extends Error {}
+
 /**
  * Owns the tools one search registers in one Agent scope. A name that already
  * serves a different account is never reused, so a later search cannot redirect
@@ -380,6 +410,7 @@ export class ConnectionToolRegistry {
       this.mounted.delete(name)
     }
     const schema = this.declaredSchema(tool)
+    assertSupportedJsonSchema(schema)
     const definition: ToolDefinition = {
       name,
       description: boundedDescription(tool, target.toolkit, target.label, this.budgets.maxDescriptionChars),
@@ -391,11 +422,15 @@ export class ConnectionToolRegistry {
         ],
       },
       timeoutMs: this.budgets.timeoutMs,
-      execute: async (args: unknown, exec) =>
-        this.product.executeAgentConnection(
-          { connectionId: target.id, slug: tool.slug, version: tool.version, arguments: asArguments(args) },
+      execute: async (args: unknown, exec) => {
+        if (!isRecord(args)) throw new ToolArgsError(['arguments must be an object'])
+        const violations = validateJsonSchemaValue(schema, args, '')
+        if (violations.length > 0) throw new ToolArgsError(violations)
+        return await this.product.executeAgentConnection(
+          { connectionId: target.id, slug: tool.slug, version: tool.version, arguments: args },
           exec.signal,
-        ),
+        )
+      },
       presentCall: () => ({ card: 'generic', title: `${target.toolkit} · ${tool.name}`, kind: 'execute' }),
     }
     this.mounted.set(name, {
@@ -406,18 +441,25 @@ export class ConnectionToolRegistry {
     return { tool: name, status: held === undefined ? 'added' : 'updated' }
   }
 
-  /** Project the provider schema, dropping annotations before using an open argument schema. */
+  /** Project the provider schema, preserving arguments within the declaration budget. */
   private declaredSchema(tool: DiscoveredTool): Record<string, unknown> {
+    if (!isRecord(tool.parameters)) throw new ToolSchemaUnavailableError()
     let projected = sanitizeNode(tool.parameters, 0)
     if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) {
-      projected = compactSchema(projected)
-      if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) return {}
+      for (const limit of SCHEMA_ANNOTATION_LIMITS) {
+        projected = abbreviateSchema(projected, limit)
+        if (Buffer.byteLength(JSON.stringify(projected), 'utf8') <= this.budgets.maxSchemaBytes) break
+      }
+      if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) {
+        projected = compactSchema(projected)
+      }
+      if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) throw new ToolSchemaUnavailableError()
     }
     try {
       assertSupportedJsonSchema(projected)
       return projected
     } catch {
-      return {}
+      throw new ToolSchemaUnavailableError()
     }
   }
 
@@ -498,6 +540,9 @@ function selectTargets(
     if (chosen === undefined) {
       throw new Error('that connection is not available; call connections_list and use one of its IDs')
     }
+    if (request.toolkit !== undefined && chosen.toolkit !== request.toolkit) {
+      throw new Error('the connection does not belong to the requested toolkit; call connections_list and select a matching account')
+    }
     return { targets: [chosen], ambiguous: [] }
   }
   const candidates = request.toolkit === undefined
@@ -530,7 +575,12 @@ function noteFor(outcome: Omit<DiscoveryOutcome, 'note'>): string {
   if (outcome.ambiguous.length > 0) {
     parts.push('Several accounts provide one of these services: ask the user which account to use, then search again with that connectionId.')
   }
-  if (outcome.failed.length > 0) parts.push('A service search failed; retry once, and tell the user if it fails again.')
+  if (outcome.failed.some(failure => failure.code !== 'schema_unavailable')) {
+    parts.push('A service search failed; retry once, and tell the user if it fails again.')
+  }
+  if (outcome.failed.some(failure => failure.code === 'schema_unavailable')) {
+    parts.push('A provider tool could not be registered because its argument schema is unavailable; do not guess its parameters.')
+  }
   if (outcome.notSearched.length > 0) {
     parts.push(`Not searched within this call's budget: ${outcome.notSearched.join(', ')}. Search one of them by toolkit.`)
   }
@@ -573,7 +623,8 @@ export async function discoverConnectionTools(options: {
     const target = queried[index] as ConnectionTarget
     if (result.status === 'rejected') {
       const code = (result.reason as { code?: unknown } | null)?.code
-      failed.push({ toolkit: target.toolkit, connectionId: target.id, code: typeof code === 'string' ? code : 'request_failed' })
+      failed.push({ toolkit: target.toolkit, connectionId: target.id,
+        code: typeof code === 'string' && SEARCH_FAILURE_CODES.has(code) ? code : 'request_failed' })
       continue
     }
     for (const tool of result.value.tools) {
@@ -583,8 +634,10 @@ export async function discoverConnectionTools(options: {
       let installed: { tool: string; status: ReadyTool['status'] }
       try {
         installed = registry.install(target, tool)
-      } catch {
-        failed.push({ toolkit: target.toolkit, connectionId: target.id, code: 'name_conflict' })
+      } catch (error) {
+        failed.push(error instanceof ToolSchemaUnavailableError
+          ? { toolkit: target.toolkit, connectionId: target.id, tool: tool.slug, code: 'schema_unavailable' }
+          : { toolkit: target.toolkit, connectionId: target.id, code: 'name_conflict' })
         continue
       }
       registered.add(key)

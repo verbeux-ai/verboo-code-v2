@@ -27,6 +27,7 @@ export const Config = Schema.object({
   apiOrigin: Schema.string().default('https://code.verboo.ai'),
   routerBaseURL: Schema.string().default('https://code.verboo.ai/router/v1'),
   allowLoopbackHttp: Schema.boolean().default(false),
+  connectionListTimeoutMs: Schema.number().min(1000).max(120_000).default(40_000),
   connectionSearchTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
   connectionExecutionTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
 })
@@ -38,6 +39,8 @@ export interface Config {
   routerBaseURL?: string
   /** Allow cleartext loopback endpoints for local integration fixtures. */
   allowLoopbackHttp?: boolean
+  /** Deadline for loading connected accounts and the provider catalog. */
+  connectionListTimeoutMs?: number
   /**
    * Deadline for one provider tool search. Semantic search over a toolkit's
    * catalog answers well past the general per-attempt ceiling, and the caller
@@ -147,6 +150,7 @@ export class VerbooProduct extends TypertRemoteService {
   private readonly deployment
   private readonly http
   private readonly trialCommerce
+  private readonly connectionListTimeoutMs: number
   /** Deadline for one provider tool search, which answers past the general ceiling. */
   private readonly connectionSearchTimeoutMs: number
   private readonly connectionExecutionTimeoutMs: number
@@ -154,6 +158,7 @@ export class VerbooProduct extends TypertRemoteService {
     super(ctx, 'verbooProduct', { namespace: 'verboo' })
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
+    this.connectionListTimeoutMs = config.connectionListTimeoutMs ?? 40_000
     // The Loader applies Config before construction; the default covers a
     // hand-constructed service.
     /* v8 ignore next -- the schema supplies this field before construction */
@@ -265,7 +270,7 @@ export class VerbooProduct extends TypertRemoteService {
  */
   async listAgentConnections(signal: AbortSignal): Promise<string> {
     const data = connections.parse(
-      await this.request('/api/me/connections?catalog=all', 'GET', undefined, signal),
+      await this.request('/api/me/connections?catalog=all', 'GET', undefined, signal, undefined, this.connectionListTimeoutMs),
     ).data
     return JSON.stringify({ available: data.available, accounts: data.accounts,
       publicServices: data.toolkits.filter(toolkit => toolkit.authType === 'none' && toolkit.available).map(toolkit => ({ id: `public_${toolkit.slug}`, toolkit: toolkit.slug, label: toolkit.name })),
@@ -514,7 +519,7 @@ export class VerbooProduct extends TypertRemoteService {
   getConnections(): Promise<Result<Connections>> {
     return this.result(
       async () =>
-        connections.parse(await this.request('/api/me/connections?catalog=all')).data,
+        connections.parse(await this.request('/api/me/connections?catalog=all', 'GET', undefined, undefined, undefined, this.connectionListTimeoutMs)).data,
     )
   }
   /**

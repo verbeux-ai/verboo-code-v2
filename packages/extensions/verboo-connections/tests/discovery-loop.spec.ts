@@ -134,6 +134,27 @@ async function send(agent: Agent, message: string): Promise<void> {
 }
 
 describe('dynamic connection tools in a real turn', () => {
+  it('reports missing required arguments to the model before calling the provider', async () => {
+    const execute = vi.fn(async () => '{"messages":[]}')
+    const adapter = new ScriptedAdapter([
+      toolCall('call-1', 'connections_search', { query: 'find email' }),
+      toolCall('call-2', 'connection__gmail__GMAIL_SEARCH_EMAILS', {}),
+      toolCall('call-3', 'connection__gmail__GMAIL_SEARCH_EMAILS', { query: 'in:inbox' }),
+      text('Finished.'),
+    ])
+    const { agent } = await harness(adapter, execute)
+    await send(agent, 'Find email')
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ arguments: { query: 'in:inbox' } }), expect.any(AbortSignal))
+    const result = agent.session.snapshotEvents()
+      .filter(event => event.type === 'tool/result')
+      .map(event => JSON.stringify(event.data))
+      .find(value => value.includes('call-2'))
+    expect(result).toContain('query')
+    expect(result).toContain('invalid arguments')
+  })
+
   it('declares the discovered tools on the next request and executes them in the same turn', async () => {
     const execute = vi.fn(async (input: { slug: string }) =>
       input.slug === 'GMAIL_SEARCH_EMAILS' ? '{"messages":[{"id":"m1"}]}' : '{"sent":true}')
@@ -190,5 +211,7 @@ describe('dynamic connection tools in a real turn', () => {
       ? content.map(block => (block as { text?: string }).text ?? '').join('\n')
       : ''
     expect(textOf(system?.content)).toContain('connections_search')
+    expect(textOf(system?.content)).toContain('never invent identifiers or use placeholder values')
+    expect(textOf(system?.content)).toContain('A failed provider action alone does not establish that the connection is unavailable')
   })
 })

@@ -24,6 +24,9 @@ const CONNECTIONS_GUIDANCE = [
   'When a request needs one of those services, run `connections_search` with the capability in plain words before concluding you cannot do it.',
   'The search registers the matching provider tools for this conversation with their real names and argument schemas; call them on your next step to do the work.',
   'Search again when a task needs a capability you do not have a tool for yet, and prefer one search that names both the read and the write action over two separate searches.',
+  'If a search returns no relevant tools, try a different capability description; call only tool names returned by discovery.',
+  'Resolve required project, account, and record identifiers from the user or a read tool; never invent identifiers or use placeholder values.',
+  'A failed provider action alone does not establish that the connection is unavailable; report the failure and inspect the service before retrying an action that may change data.',
 ].join(' ')
 /**
  * Register through the ordinary tool/permission/logging pipeline of each Agent preset.
