@@ -141,12 +141,12 @@ describe('web e2e: sidebar search alignment and row action targets', () => {
     try { await browser?.close() } finally { await scaffold?.close() }
   })
 
-/** Wait for the row's reveal transitions to finish before measuring geometry. */
-async function settleRowActions(row: Locator): Promise<void> {
-  await row.evaluate(async (element) => {
-    await Promise.all(element.getAnimations({ subtree: true }).map(async (item) => { await item.finished }))
-  })
-}
+  /** Wait for the row's reveal transitions to finish before measuring geometry. */
+  async function settleRowActions(row: Locator): Promise<void> {
+    await row.evaluate(async (element) => {
+      await Promise.all(element.getAnimations({ subtree: true }).map(async (item) => { await item.finished }))
+    })
+  }
 
   it('aligns the 32px expanded search with both edges of New session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-search-alignment'))
