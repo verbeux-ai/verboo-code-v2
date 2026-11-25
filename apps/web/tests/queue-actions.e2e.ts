@@ -270,7 +270,7 @@ describe('web e2e: queue row actions', () => {
       })
     }, { times: 1 })
     await input.press('Enter')
-    const writerHeld = page.getByRole('alert').filter({ hasText: 'This session is already in use' })
+    const writerHeld = page.getByRole('alert').filter({ hasText: 'This conversation is open in another window.' })
     await writerHeld.waitFor()
     await expect.poll(() => input.textContent()).toBe(FAILED)
     await compareOrRefreshGolden(WRITER_HELD_EXPECTED, [

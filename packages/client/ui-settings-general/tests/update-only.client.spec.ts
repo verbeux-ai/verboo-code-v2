@@ -21,7 +21,7 @@ it('registers only the localized desktop update row for a product-owned settings
   const ctx = new Context()
   Object.defineProperties(ctx, {
     locale: { value: { register: registerLocale } },
-    slots: { value: { inject: (_name: string, callback: () => void) => callback(), register: registerSlot } },
+    slots: { value: { inject: (_name: string, callback: () => void) => { callback() }, register: registerSlot } },
     effect: { value: (callback: () => (() => void) | undefined) => {
       const dispose = callback()
       if (dispose) disposers.push(dispose)

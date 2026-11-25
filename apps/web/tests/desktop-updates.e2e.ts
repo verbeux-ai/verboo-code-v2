@@ -73,7 +73,7 @@ describe('web e2e: Desktop update workspace chrome', () => {
         await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
         await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
         await expect.poll(() => page.evaluate(() => (window as FixtureWindow).updateFixture.listeners.size)).toBe(1)
-        const publish = (state: Presentation) => page.evaluate(value => (window as FixtureWindow).updateFixture.publish(value), state)
+        const publish = (state: Presentation) => page.evaluate((value) => { (window as FixtureWindow).updateFixture.publish(value) }, state)
         const restarts = () => page.evaluate(() => (window as FixtureWindow).updateFixture.restarts)
         const version = '0.2.2-alpha.37'
 
