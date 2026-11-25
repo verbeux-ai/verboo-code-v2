@@ -77,7 +77,10 @@ describe('web e2e: [OI] subscription sign-in and limit control', () => {
     // committed with a placeholder no launcher would substitute here.
     home = await mkdtemp(join(tmpdir(), 'dsh-openai-e2e-'))
     const overlay = join(home, 'cordis.patch.yml')
-    await writeFile(overlay, (await readFile(OVERLAY_TEMPLATE, 'utf8')).replaceAll('{{origin}}', origin))
+    const accountFixture = fileURLToPath(new URL('./fixtures/openai-subscription/account.mjs', import.meta.url))
+    await writeFile(overlay, (await readFile(OVERLAY_TEMPLATE, 'utf8'))
+      .replaceAll('{{origin}}', origin)
+      .replace('@deepseek-ai/dsh-openai-account', accountFixture))
 
     scaffold = await launchWebScaffold({ extraOverlayPath: overlay })
     browser = await chromium.launch()

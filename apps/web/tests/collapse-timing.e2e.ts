@@ -59,6 +59,7 @@ describe.skipIf(MODE === 'record')('web e2e: recorded collapse timing', () => {
       // This rendering borrows a completed turn and replays only its final response as a continuation.
       compareReplaySession: false,
     })
+    await scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed' })
     await seedSession(scaffold, fixture, SEED_ID, undefined, { createdAt: WEB_FIXTURE_TIME })
     browser = await chromium.launch({ headless: true })
     page = await newEnglishPage(browser)
