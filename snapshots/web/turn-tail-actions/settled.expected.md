@@ -11,9 +11,8 @@
 - button "Copy"
 - status: Stopped
 - button "Stopped" [disabled] [expanded]
-- button "Analysis completed"
+- button "1 action"
 - paragraph: Reading the workspace now.
-- button "Ran commands"
 - paragraph: partial
 - text: Stopped
 - button "Copy"

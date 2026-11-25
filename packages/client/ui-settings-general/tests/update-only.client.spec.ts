@@ -27,7 +27,7 @@ it('registers only the localized desktop update row for a product-owned settings
     },
   }
 
-  apply(ctx as unknown as Context, { updateOnly: true })
+  apply(ctx as Context, { updateOnly: true })
 
   expect(registerLocale).toHaveBeenCalledOnce()
   expect(registerSlot).toHaveBeenCalledOnce()
