@@ -605,7 +605,7 @@ try {
   state.accounts = state.accounts.filter(account => account.id !== 'ca_gmail')
   if (await page.locator('[data-verboo-execution]').count()) throw new Error('Idle composer occupies space')
   await capture('conversation-complete.png')
-  await page.locator('[data-chat-assistant-mark] img').first().waitFor()
+  await page.locator('[data-chat-assistant-mark] img').first().waitFor({ state: 'hidden' })
   if (await page.locator('[data-composer-stat]').count()) throw new Error('Diagnostic statistics remain in the product composer')
   if (await page.locator('[data-composer-dock]').getByRole('button', { name: /contexto|context used/i }).count()) throw new Error('Context diagnostics remain in the product composer')
   if (await page.getByRole('tab', { name: /Trajetória|Trajectory/ }).count()) throw new Error('Diagnostic views remain in the product header')
