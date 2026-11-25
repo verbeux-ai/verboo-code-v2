@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 <a id="summary"></a>
 ## Summary
 
-Use the Verboo Code onboarding, project navigation, connections and subscription pages. Neutral surfaces, a small Verboo accent, the official icon and Lucide replacements are owned here. Connection inventory errors show a mascot above the notice while retaining their retry action. When the Desktop bridge reports an update, the sidebar shows a circular download indicator and a confirmation before restarting.
+Use the Verboo Code onboarding, project navigation, connections and subscription pages. Neutral surfaces, a small Verboo accent, the official icon and Lucide replacements are owned here. Connection errors show a mascot and retain retry. When the Desktop bridge reports an update, the sidebar shows a circular download indicator and a confirmation before restarting.
 
 ChatGPT login and usage require the injected `remote.openaiAccountLogin` and `remote.llmOpenaiAccount` services. Successful login publishes the returned account status to the interface. Usage readings use the subscription route’s types re-exported by the Client Remote assembly; this package declares no separate subscription namespace.
 
