@@ -133,13 +133,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 // from the framework-derived shares. Conversation business state and actions arrive through
 // framework-standard hooks and each registrant's inject face, not owner props.
 
-/** Sidebar owner share: live column state from the frame's concession solve. */
 /** Geometry a sidebar footer row receives. */
 export interface SidebarFooterRowOwnerProps {
   /** Whether the sidebar renders wide content (false = collapsed rail). */
   wide: boolean
 }
 
+/** Sidebar owner share: live column state from the frame's concession solve. */
 export interface SidebarOwnerProps {
   /** True when closed; a drawer is hidden, while other browser columns retain a rail. */
   collapsed: boolean

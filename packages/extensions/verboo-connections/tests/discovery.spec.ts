@@ -90,6 +90,22 @@ describe('schema projection', () => {
     expect(sanitizeNode({ type: 'integer', const: 3 }, 0)).toEqual({ type: 'integer', const: 3 })
   })
 
+  it('resolves local provider definitions and nullable arguments', () => {
+    expect(sanitizeNode({
+      type: 'object',
+      properties: { recipient: { $ref: '#/$defs/Recipient' }, subject: { anyOf: [{ type: 'string' }, { type: 'null' }] } },
+      required: ['recipient'],
+      $defs: { Recipient: { type: 'object', properties: { address: { type: 'string' } }, required: ['address'] } },
+    }, 0)).toEqual({
+      type: 'object',
+      properties: {
+        recipient: { type: 'object', properties: { address: { type: 'string' } }, required: ['address'] },
+        subject: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      required: ['recipient'],
+    })
+  })
+
   it('stops constraining past the depth bound instead of recursing forever', () => {
     let deep: Record<string, unknown> = { type: 'string' }
     for (let level = 0; level < 20; level++) deep = { type: 'object', properties: { next: deep } }
@@ -189,6 +205,28 @@ describe('discoverConnectionTools', () => {
     })
     expect(outcome.tools.map(tool => tool.account)).toEqual(['Personal'])
     expect(outcome.ambiguous).toEqual([])
+  })
+
+  it('searches connected accounts before public services and does not mistake a public service for another account', async () => {
+    const ctx = await scope()
+    const listing = JSON.stringify({
+      available: true,
+      accounts: [{ id: 'ca_work', toolkit: 'gmail', label: 'Work', status: 'connected' }],
+      publicServices: [
+        ...Array.from({ length: 5 }, (_, index) => ({ id: `public_s${index}`, toolkit: `s${index}`, label: `Service ${index}` })),
+        { id: 'public_gmail', toolkit: 'gmail', label: 'Gmail' },
+      ],
+    })
+    const search = vi.fn(async (_id: string, _query: string, _signal: AbortSignal) => JSON.stringify([gmailSearch]))
+    const stub = product({ listAgentConnections: async () => listing, searchAgentConnections: search })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    const outcome = await discoverConnectionTools({
+      product: stub, registry, budgets, request: { query: 'find and reply to an email' }, signal: new AbortController().signal,
+    })
+    expect(search.mock.calls.map(call => call[0])).toEqual(['ca_work', 'public_s0'])
+    expect(outcome.tools[0]?.account).toBe('Work')
+    expect(outcome.ambiguous).toEqual([])
+    expect(outcome.notSearched).toEqual(['s1', 's2', 's3', 's4'])
   })
 
   it('refuses an account the listing does not offer', async () => {
@@ -302,6 +340,45 @@ describe('discoverConnectionTools', () => {
       signal: new AbortController().signal,
     })
     expect(ctx.tools.get('connection__gmail__GMAIL_HUGE')?.parameters).toEqual({})
+  })
+
+  it('counts multibyte text against the schema byte budget', async () => {
+    const ctx = await scope()
+    const smallBudget = { ...budgets, maxSchemaBytes: 100 }
+    const stub = product()
+    const registry = new ConnectionToolRegistry(ctx, stub, smallBudget)
+    registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
+      ...gmailSearch,
+      parameters: { type: 'object', properties: { ['é'.repeat(40)]: { type: 'string' } } },
+    })
+    expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')?.parameters).toEqual({})
+  })
+
+  it('keeps argument names and requirements when descriptions exceed the budget', async () => {
+    const ctx = await scope()
+    const smallBudget = { ...budgets, maxSchemaBytes: 180 }
+    const registry = new ConnectionToolRegistry(ctx, product(), smallBudget)
+    registry.install({ id: 'ca_work', toolkit: 'gmail', label: 'Work' }, {
+      ...gmailSearch,
+      parameters: { type: 'object', properties: { query: { type: 'string', description: 'x'.repeat(300) } }, required: ['query'] },
+    })
+    expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')?.parameters).toEqual({
+      type: 'object', properties: { query: { type: 'string' } }, required: ['query'],
+    })
+  })
+
+  it('does not register tools after a search is cancelled', async () => {
+    const ctx = await scope()
+    const controller = new AbortController()
+    const stub = product({ searchAgentConnections: async () => {
+      controller.abort()
+      return JSON.stringify([gmailSearch])
+    } })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    await expect(discoverConnectionTools({
+      product: stub, registry, budgets, request: { query: 'search email', connectionId: 'ca_work' }, signal: controller.signal,
+    })).rejects.toThrow()
+    expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')).toBeUndefined()
   })
 
   it('executes a registered tool against its own account and pinned version', async () => {

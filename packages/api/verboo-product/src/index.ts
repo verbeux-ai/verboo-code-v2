@@ -27,7 +27,8 @@ export const Config = Schema.object({
   apiOrigin: Schema.string().default('https://code.verboo.ai'),
   routerBaseURL: Schema.string().default('https://code.verboo.ai/router/v1'),
   allowLoopbackHttp: Schema.boolean().default(false),
-  connectionSearchTimeoutMs: Schema.number().min(1000).max(60_000).default(30_000),
+  connectionSearchTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
+  connectionExecutionTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
 })
 /** Public product deployment configuration; provider credentials remain server-side. */
 export interface Config {
@@ -43,6 +44,8 @@ export interface Config {
    * cannot retry a search that already spent its budget.
    */
   connectionSearchTimeoutMs?: number
+  /** Deadline for one provider execution, including the backend's ownership checks. */
+  connectionExecutionTimeoutMs?: number
 }
 const id = z
   .uuid()
@@ -146,6 +149,7 @@ export class VerbooProduct extends TypertRemoteService {
   private readonly trialCommerce
   /** Deadline for one provider tool search, which answers past the general ceiling. */
   private readonly connectionSearchTimeoutMs: number
+  private readonly connectionExecutionTimeoutMs: number
   constructor(ctx: Context, config: Config) {
     super(ctx, 'verbooProduct', { namespace: 'verboo' })
     this.deployment = deploymentOf(config)
@@ -153,7 +157,8 @@ export class VerbooProduct extends TypertRemoteService {
     // The Loader applies Config before construction; the default covers a
     // hand-constructed service.
     /* v8 ignore next -- the schema supplies this field before construction */
-    this.connectionSearchTimeoutMs = config.connectionSearchTimeoutMs ?? 30_000
+    this.connectionSearchTimeoutMs = config.connectionSearchTimeoutMs ?? 75_000
+    this.connectionExecutionTimeoutMs = config.connectionExecutionTimeoutMs ?? 75_000
     this.trialCommerce = new TrialCommerce(
       (path, method, body, correlationId) => this.request(path, method, body, undefined, correlationId),
       async () => {
@@ -333,6 +338,8 @@ export class VerbooProduct extends TypertRemoteService {
             'POST',
             input,
             signal,
+            undefined,
+            this.connectionExecutionTimeoutMs,
           ),
         ).data
       if (!result.successful)

@@ -239,6 +239,23 @@ const server = createServer(async (req, res) => {
     )
     return
   }
+  if (url.pathname === '/api/me/connections/tools/search') {
+    const input = JSON.parse(body)
+    if (input.connectionId !== 'ca_gmail') throw new Error('Discovery selected the wrong account')
+    res.end(JSON.stringify({ data: [
+      { slug: 'GMAIL_SEARCH_EMAILS', name: 'Search emails', description: 'Find messages.', version: '20240101_00', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+      { slug: 'GMAIL_REPLY_EMAIL', name: 'Reply to email', description: 'Reply to a message.', version: '20240101_00', parameters: { type: 'object', properties: { message_id: { type: 'string' }, body: { type: 'string' } }, required: ['message_id', 'body'] } },
+    ] }))
+    return
+  }
+  if (url.pathname === '/api/me/connections/tools/execute') {
+    const input = JSON.parse(body)
+    state.connectionExecutions ??= []
+    state.connectionExecutions.push(input)
+    const result = input.slug === 'GMAIL_SEARCH_EMAILS' ? '{"message_id":"message-1"}' : '{"sent":true}'
+    res.end(JSON.stringify({ data: { successful: true, result } }))
+    return
+  }
   if (url.pathname === '/api/me/connections/link') {
     const input = JSON.parse(body)
     state.accounts.push({
@@ -417,6 +434,8 @@ try {
     if (response.status() >= 400) resourceFailures.push(`${response.status()} ${response.url()}`)
   })
   page.on('console', (message) => {
+    // Linux's generic file manager has no extractable application icon.
+    if (message.location().url.endsWith('/open-in-app/icon/filemanager') && message.text().includes('404')) return
     if (['error', 'warning', 'warn'].includes(message.type()))
       errors.push(
         message
@@ -497,7 +516,8 @@ try {
     if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
     console.log('Screenshots:', dir)
   } else {
-  await page.getByRole('button', { name: 'Abrir navegação', exact: true }).click()
+  const expandNavigation = page.getByRole('button', { name: 'Abrir navegação', exact: true })
+  if (await expandNavigation.isVisible()) await expandNavigation.click()
   const composer = page.locator('[data-composer-card] [contenteditable=true]')
   const placeholderText = await composer.getAttribute('data-placeholder')
   if (!placeholderText) throw new Error('Composer placeholder is missing')
@@ -544,7 +564,7 @@ try {
   while (state.finishModel === null && Date.now() < inferenceDeadline) await new Promise(resolve => setTimeout(resolve, 50))
   const modelInput = JSON.stringify(state.modelRequests)
   if (!modelInput.includes('You are Verboo Code') || modelInput.includes('You are an AI agent powered by DeepSeek Harness')) throw new Error('Agent product identity mismatch')
-  for (const tool of ['connections_list', 'connections_search', 'connections_execute']) {
+  for (const tool of ['connections_list', 'connections_search']) {
     if (!modelInput.includes(tool)) throw new Error('Connection tool missing in the shipped Agent: ' + tool)
   }
   if (!state.finishModel) throw new Error('Chat did not reach the configured inference gateway')
@@ -552,6 +572,37 @@ try {
   await page.getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor()
   await page.locator('[data-chat-running]').waitFor({ state: 'hidden' })
   await page.locator('[data-verboo-session]:has([aria-current=page])[data-state=idle]').waitFor()
+  state.accounts.push({ id: 'ca_gmail', toolkit: 'gmail', label: 'Gmail QA', status: 'connected' })
+  state.connectionExecutions = []
+  state.agentFixture = (input, chunk, finish, response) => {
+    const start = input.messages.findLastIndex(message => message.role === 'user' && JSON.stringify(message.content).includes('QA_GMAIL_DISCOVERY'))
+    if (start < 0) return false
+    const results = input.messages.slice(start + 1).filter(message => message.role === 'tool')
+    const actions = [
+      ['connections_search', { query: 'find and reply to an email', toolkit: 'gmail' }],
+      ['connection__gmail__GMAIL_SEARCH_EMAILS', { query: 'from:ana' }],
+      ['connection__gmail__GMAIL_REPLY_EMAIL', { message_id: 'message-1', body: 'Obrigado!' }],
+    ]
+    if (results.length === 1) {
+      const declared = JSON.stringify(input.tools)
+      if (!declared.includes('GMAIL_SEARCH_EMAILS') || !declared.includes('GMAIL_REPLY_EMAIL') || !declared.includes('message_id')) throw new Error('Discovered Gmail tools or their parameters were not declared')
+    }
+    if (results.length >= actions.length) {
+      finish('QA_GMAIL_DONE')
+      return true
+    }
+    const [name, args] = actions[results.length]
+    chunk({ tool_calls: [{ index: 0, id: `call_gmail_${results.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }, 'tool_calls')
+    response.end('data: [DONE]\n\n')
+    return true
+  }
+  await composer.fill('QA_GMAIL_DISCOVERY')
+  await composer.press('Enter')
+  await page.getByText('QA_GMAIL_DONE', { exact: true }).waitFor()
+  if (state.connectionExecutions.length !== 2 || state.connectionExecutions[0].slug !== 'GMAIL_SEARCH_EMAILS' || state.connectionExecutions[1].slug !== 'GMAIL_REPLY_EMAIL' || state.connectionExecutions.some(call => call.connectionId !== 'ca_gmail')) throw new Error('Gmail discovery and execution did not use the selected account')
+  console.log('Connection QA: Gmail search and reply were declared and executed in one turn with the selected account.')
+  state.agentFixture = null
+  state.accounts = state.accounts.filter(account => account.id !== 'ca_gmail')
   if (await page.locator('[data-verboo-execution]').count()) throw new Error('Idle composer occupies space')
   await capture('conversation-complete.png')
   await page.locator('[data-chat-assistant-mark] img').first().waitFor()
@@ -676,8 +727,11 @@ try {
   if (!touchTargets.length) throw new Error('No connector actions were checked on mobile')
   if (touchTargets.some(item => item.width < 44 || item.height < 44)) throw new Error('Connector touch target is smaller than 44px')
   await capture('connections-mobile.png')
-  const catalogOverflow = await page.locator('[data-verboo-page=connections]').evaluate(el => el.scrollWidth > el.clientWidth)
-  if (catalogOverflow) throw new Error('Connector catalog overflows on mobile')
+  const catalogOverflow = await page.locator('[data-verboo-page=connections]').evaluate(el => ({
+    width: el.clientWidth, scrollWidth: el.scrollWidth,
+    overflowing: [...el.querySelectorAll('*')].filter(item => item.getBoundingClientRect().right > el.getBoundingClientRect().right + 1).slice(0, 8).map(item => ({ tag: item.tagName, className: item.className, right: item.getBoundingClientRect().right })),
+  }))
+  if (catalogOverflow.scrollWidth > catalogOverflow.width) throw new Error('Connector catalog overflows on mobile: ' + JSON.stringify(catalogOverflow))
   await catalogTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await catalogTouch.detach()
   await page.setViewportSize({ width: 1366, height: 900 })
