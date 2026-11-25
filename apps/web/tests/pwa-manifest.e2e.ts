@@ -56,6 +56,7 @@ it('ships install metadata with the built web application', async () => {
   // follows the resolved in-application theme, which a static media query
   // cannot. The manifest's `theme_color` covers the surrounding chrome before
   // the presenter runs, and `settings-chrome.e2e.ts` pins the live contract.
+  expect(index).not.toMatch(/<meta\s+name=["']theme-color["']/i)
 
   const manifest: unknown = JSON.parse(await readFile(join(DIST_ROOT, 'manifest.webmanifest'), 'utf8'))
   // No `id`: a browser resolves an explicit `id` against the start URL's origin,

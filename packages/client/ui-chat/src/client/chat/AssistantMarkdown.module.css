@@ -42,6 +42,16 @@
   padding-left: var(--dsh-table-lead);
 }
 
+/* At the minimum message-column width there is no breakout space. The
+   transcript's internal padding must not be mistaken for spare width. */
+@container (max-width: 680px) {
+  .body :global(.md-table-wide) {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+  }
+}
+
 /* Only the painted table outranks Conversation's z-index 0 width handle. The
    full-width scroll wrapper and its transparent alignment padding stay below,
    so a fitting four-column table does not disable the surrounding gutter. */

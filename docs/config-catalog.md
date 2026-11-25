@@ -370,7 +370,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-verboo-product`
 
 - `inject`: `deepseekAccount`
-- `source`: [`packages/api/verboo-product/src/index.ts:32`](../packages/api/verboo-product/src/index.ts)
+- `source`: [`packages/api/verboo-product/src/index.ts:34`](../packages/api/verboo-product/src/index.ts)
 
 ```ts config-catalog
 /** Public product deployment configuration; provider credentials remain server-side. */
@@ -381,6 +381,14 @@ export interface Config {
   routerBaseURL?: string
   /** Allow cleartext loopback endpoints for local integration fixtures. */
   allowLoopbackHttp?: boolean
+  /**
+   * Deadline for one provider tool search. Semantic search over a toolkit's
+   * catalog answers well past the general per-attempt ceiling, and the caller
+   * cannot retry a search that already spent its budget.
+   */
+  connectionSearchTimeoutMs?: number
+  /** Deadline for one provider execution, including the backend's ownership checks. */
+  connectionExecutionTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-product -->

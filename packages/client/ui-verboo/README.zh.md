@@ -53,7 +53,7 @@ ChatGPT 登录和用量功能需要注入 `remote.openaiAccountLogin` 与 `remot
 
 产品通过 `conversation.hero.intro` 显示简洁的开场问题，通过 `conversation.chat.running.indicator` 显示中性的脉动圆点。其他配置仍可使用共享 Chat 的默认界面。
 
-产品侧边栏声明自己的底部位置 `verboo.sidebar.foot`，并将其渲染在方案快捷入口上方；桌面更新行占据该位置。在第一次账号读取得到结果之前，入口页面只显示品牌和账号检查的旋转指示器，因为欢迎文案和登录按钮描述的状态尚未得到确认。
+窄屏下，页面标题与操作纵向排列并在视口内换行。产品侧栏声明自己的底部位置 `verboo.sidebar.foot`，并将其渲染在套餐快捷入口上方；桌面更新行使用该位置。首次账号读取完成前，入口页面只显示品牌和账号检查旋转指示器，因为欢迎文案与登录按钮描述的状态尚未确认。
 
 </details>
 

@@ -27,6 +27,8 @@ export const Config = Schema.object({
   apiOrigin: Schema.string().default('https://code.verboo.ai'),
   routerBaseURL: Schema.string().default('https://code.verboo.ai/router/v1'),
   allowLoopbackHttp: Schema.boolean().default(false),
+  connectionSearchTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
+  connectionExecutionTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
 })
 /** Public product deployment configuration; provider credentials remain server-side. */
 export interface Config {
@@ -36,6 +38,14 @@ export interface Config {
   routerBaseURL?: string
   /** Allow cleartext loopback endpoints for local integration fixtures. */
   allowLoopbackHttp?: boolean
+  /**
+   * Deadline for one provider tool search. Semantic search over a toolkit's
+   * catalog answers well past the general per-attempt ceiling, and the caller
+   * cannot retry a search that already spent its budget.
+   */
+  connectionSearchTimeoutMs?: number
+  /** Deadline for one provider execution, including the backend's ownership checks. */
+  connectionExecutionTimeoutMs?: number
 }
 const id = z
   .uuid()
@@ -137,10 +147,18 @@ export class VerbooProduct extends TypertRemoteService {
   private readonly deployment
   private readonly http
   private readonly trialCommerce
+  /** Deadline for one provider tool search, which answers past the general ceiling. */
+  private readonly connectionSearchTimeoutMs: number
+  private readonly connectionExecutionTimeoutMs: number
   constructor(ctx: Context, config: Config) {
     super(ctx, 'verbooProduct', { namespace: 'verboo' })
     this.deployment = deploymentOf(config)
     this.http = new VerbooHttp(this.deployment)
+    // The Loader applies Config before construction; the default covers a
+    // hand-constructed service.
+    /* v8 ignore next -- the schema supplies this field before construction */
+    this.connectionSearchTimeoutMs = config.connectionSearchTimeoutMs ?? 75_000
+    this.connectionExecutionTimeoutMs = config.connectionExecutionTimeoutMs ?? 75_000
     this.trialCommerce = new TrialCommerce(
       (path, method, body, correlationId) => this.request(path, method, body, undefined, correlationId),
       async () => {
@@ -156,6 +174,7 @@ export class VerbooProduct extends TypertRemoteService {
     body?: unknown,
     signal?: AbortSignal,
     correlationId?: string,
+    deadlineMs?: number,
   ): Promise<unknown> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
     if (session?.sessionId === undefined)
@@ -191,6 +210,8 @@ export class VerbooProduct extends TypertRemoteService {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         },
         identity,
+        false,
+        deadlineMs,
       )
       if (
         (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !==
@@ -285,6 +306,8 @@ export class VerbooProduct extends TypertRemoteService {
             query: z.string().min(1).max(200).parse(query),
           },
           signal,
+          undefined,
+          this.connectionSearchTimeoutMs,
         ),
       )
     return JSON.stringify(response.data)
@@ -315,6 +338,8 @@ export class VerbooProduct extends TypertRemoteService {
             'POST',
             input,
             signal,
+            undefined,
+            this.connectionExecutionTimeoutMs,
           ),
         ).data
       if (!result.successful)

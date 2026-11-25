@@ -1,2 +1,3 @@
-- 'button "Think The user wants me to write a single `run_code` program that:"'
+- button "Preparing to run code" [expanded]
+- button "Think"
 - text: Preparing tool call Code

@@ -20,7 +20,7 @@ export interface Config {
   discoveryMaxDescriptionChars: number
 }
 export const Config = Schema.object({
-  timeoutMs: Schema.number().min(1000).max(120000).default(45000),
+  timeoutMs: Schema.number().min(1000).max(120000).default(120000),
   discoveryMaxTools: Schema.number().min(1).max(40).default(12),
   discoveryMaxTargets: Schema.number().min(1).max(24).default(8),
   discoveryMaxSchemaBytes: Schema.number().min(512).max(65536).default(20000),

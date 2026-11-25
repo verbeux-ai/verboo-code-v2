@@ -12,6 +12,12 @@
       - heading "Testes" [level=3]
       - text: Ativo
       - 'button "Gerenciar assinatura: Testes"': Gerenciar assinatura
+  - region "Assinaturas externas":
+    - heading "Assinaturas externas" [level=2]
+    - article:
+      - heading "ChatGPT" [level=3]
+      - text: Não conectada
+      - button "Gerenciar"
   - region "Conheça os planos":
     - heading "Conheça os planos" [level=2]
     - paragraph: Nenhum plano disponível no momento.

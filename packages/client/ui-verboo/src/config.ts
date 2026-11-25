@@ -20,7 +20,7 @@ export interface Config {
 }
 /** Shared defaults; the Host exposes only diagnostics as a live preference. */
 export const ConfigFields = {
-  minimalist: Schema.boolean().default(false),
+  minimalist: Schema.boolean().default(true),
   paneLayout: Schema.string().default(''),
   minimumPaneWidth: Schema.number().min(320).max(800).default(360),
   minimumPaneHeight: Schema.number().min(240).max(600).default(280),

@@ -7,12 +7,15 @@ import z from '@deepseek-ai/schemastery'
 
 /** Runtime preferences projected to the browser. */
 export interface Config {
+  /** Register only the desktop update indicator in the product sidebar. */
+  updateOnly: boolean
   /** Last acknowledged welcome notice version. */
   welcomeNoticeVersion: Volatile<string | undefined>
 }
 
 /** Live welcome preference. */
 export const Config = z.object({
+  updateOnly: z.boolean().default(false),
   welcomeNoticeVersion: z.string().volatile(),
 })
 

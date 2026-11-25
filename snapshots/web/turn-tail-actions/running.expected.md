@@ -10,9 +10,8 @@
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy"
 - tooltip "Copy"
-- button "Think The user wants me to begin with \"Reading the workspace now.\" and call bash with \"echo alpha\" in the same message. Then after the tool result, reply with the single word DONE and stop."
+- button "Analyzing the request"
 - paragraph: Reading the workspace now.
-- button "Bash Print alpha to stdout"
 - paragraph: partial
 - status: Deep diving
 - text: Deep diving for {{duration}} ···

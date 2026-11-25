@@ -134,15 +134,13 @@ async function openSessionBySearch(page: Page, query: string): Promise<void> {
   await results.click()
 }
 
-async function choosePreferences(page: Page): Promise<void> {
+async function choosePreferences(page: Page, scaffold: WebScaffold): Promise<void> {
+  await scaffold.ctx.settings.update('ui-chat', { transcriptView: 'standard' })
   await openSettings(page, 'en')
   const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
   const timing = dialog.getByText('When to Collapse Work Details', { exact: true }).locator('../..')
   await timing.getByRole('button').click()
   await page.getByRole('menuitem', { name: 'On next message', exact: true }).click()
-  const details = dialog.getByText('Work details', { exact: true }).locator('../..')
-  await details.getByRole('button').click()
-  await page.getByRole('menuitem', { name: 'Standard', exact: true }).click()
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 }
 
@@ -254,7 +252,7 @@ async function sendFromOpenedGroup(browser: Browser, id: string, answerParagraph
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await openSessionBySearch(page, search)
     await page.locator(ROOT).getByText('OPENFOLD_ANSWER', { exact: false }).last().waitFor({ timeout: 30_000 })
-    await choosePreferences(page)
+    await choosePreferences(page, scaffold)
     await toBottom(page)
     await openLatestGroup(page)
     await toBottom(page)

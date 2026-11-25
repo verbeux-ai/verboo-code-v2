@@ -388,7 +388,7 @@ describe.skipIf(webSnapshotMode() === 'record').each([
     }
   })
 
-  it.runIf(engine === chromium)('scrolls to and selects the last reasoning effort after zooming', async () => {
+  it.runIf(engine === chromium)('selects the last reasoning effort after zooming', async () => {
     const cdp = await page.context().newCDPSession(page)
     try {
       await page.setViewportSize({ width: 402, height: 500 })
@@ -396,26 +396,20 @@ describe.skipIf(webSnapshotMode() === 'record').each([
       await page.getByRole('menuitem', { name: /^推理等级/ }).click()
       await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2.5 })
       const menu = page.getByRole('menu', { name: '模型与推理等级', exact: true })
-      const last = menu.getByRole('menuitemradio').last()
-      expect(await menu.getByRole('menuitemradio').count()).toBeGreaterThanOrEqual(7)
-      await expect.poll(() => last.evaluate((row) => {
-        const scroller = row.parentElement!
-        scroller.scrollTop = scroller.scrollHeight
-        return { overflow: getComputedStyle(scroller).overflowY, moved: scroller.scrollTop > 0 }
-      })).toEqual({ overflow: 'auto', moved: true })
-      await expect.poll(() => last.evaluate((row) => {
-        const rect = row.getBoundingClientRect()
-        const viewport = row.parentElement!.getBoundingClientRect()
-        return rect.top >= viewport.top - 1 && rect.bottom <= viewport.bottom + 1
-      })).toBe(true)
-      // Dispatch the touch at the now-visible row; locator.click would auto-scroll even hidden overflow.
-      const point = await last.evaluate((row) => {
-        const rect = row.getBoundingClientRect()
+      const slider = menu.getByRole('slider', { name: '推理等级' })
+      await slider.waitFor()
+      expect(Number(await slider.getAttribute('max'))).toBeGreaterThanOrEqual(6)
+      const point = await slider.evaluate((element) => {
+        const rect = element.getBoundingClientRect()
         const viewport = window.visualViewport!
-        return { x: rect.left + rect.width / 2 - viewport.offsetLeft,
-          y: rect.top + rect.height / 2 - viewport.offsetTop }
+        return { x: rect.right - 2 - viewport.offsetLeft, y: rect.top + rect.height / 2 - viewport.offsetTop,
+          width: viewport.width, height: viewport.height }
       })
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+      expect(point.x).toBeGreaterThan(0)
+      expect(point.y).toBeGreaterThan(0)
+      expect(point.x).toBeLessThan(point.width)
+      expect(point.y).toBeLessThan(point.height)
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: point.x, y: point.y }] })
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
       await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection()).toMatchObject({ reasoningEffort: 'max' })
     } finally {

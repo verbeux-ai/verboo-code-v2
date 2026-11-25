@@ -132,10 +132,10 @@ it('sends anonymous, bounded observations for actual project and split controls'
     } catch (error) {
       throw new Error(`No preference event; requests: ${requests.join(', ')}; errors: ${pageErrors.join(', ')}; page: ${(await page.locator('body').innerText()).slice(0, 700)}`, { cause: error })
     }
-    const defaults = ['preference_busy_queue', 'preference_minimalist_off', 'preference_coding_tools_on',
+    const defaults = ['preference_busy_queue', 'preference_minimalist_on', 'preference_coding_tools_on',
       'preference_theme_system', 'preference_language_en']
-    await expect.poll(() => defaults.filter(feature => events.some(event => event.feature === feature)).length,
-      { timeout: 10000 }).toBe(defaults.length)
+    await expect.poll(() => defaults.filter(feature => events.some(event => event.feature === feature)),
+      { timeout: 10000 }).toEqual(defaults)
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
     await page.getByRole('button', { name: /^(Add project|Adicionar projeto)$/ }).click()
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)

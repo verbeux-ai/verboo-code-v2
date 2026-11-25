@@ -36,11 +36,11 @@ Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖�
 
 ## 更新
 
-Tauri 更新器随应用一起发布，不会中断产品使用。Host 开始提供产品页面后，它每次启动读取一次更新源，并自动下载公布的更新。Linux 选择与已安装包类型匹配的已签名 AppImage、Debian 包或 RPM 包；Windows 以 `passive` 模式复用 NSIS 安装器，macOS 用归档的 `.app` 替换应用包。开发构建从不检查更新，因此检出目录不会自行安装发布版本。
+Tauri 更新器随应用一起发布，不会中断产品使用。Host 开始提供产品页面后，它每次启动读取一次更新源，并自动下载发布的版本。Linux 根据已安装的包类型选择签名的 AppImage、Debian 包或 RPM；Windows 以 `passive` 模式复用 NSIS 安装器，macOS 用归档的 `.app` 替换应用包。开发构建从不检查更新，因此检出目录不会自行安装发布版本。
 
-下载的安装包与版本标记一起暂存于应用配置目录中，`updates_status` 将阶段报告给产品侧边栏中方案快捷入口上方的行。确认该行会调用 `updates_restart`，安装暂存的更新并在原位置重启；即使用户一直不响应，下次启动时也会应用版本不同于当前版本的暂存安装包。`updates_dismiss` 记录用户拒绝的版本，使同一发布只询问一次。更新不会打开单独的窗口。
+下载的安装器与版本标记保存在应用配置目录中，`updates_status` 在产品侧栏的套餐快捷入口上方显示当前阶段。确认该行会调用 `updates_restart`，安装已准备的内容并在原位置重启；即使用户不回应，下次启动时也会应用尚未安装的版本。`updates_dismiss` 记录用户拒绝的版本，使同一版本只提示一次。不会打开更新窗口。
 
-`bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名；由于 RPM 包元数据使用规范化的预发布版本，发布工作流使用产品版本为 RPM 签名。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
+`bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名；由于 RPM 的包元数据使用规范化的预发布版本，发布工作流还用产品版本签署 RPM。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
 
 更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。拒绝某个版本的用户不会再被同一版本打扰。
 
@@ -48,7 +48,7 @@ Tauri 更新器随应用一起发布，不会中断产品使用。Host 开始提
 
 [发布工作流](../../../.github/workflows/verboo-desktop-release.yml) 会在 GitHub release 发布时运行，也支持手动创建首次发布。标签必须为 `v` 加上已提交的桌面版本。它会原生构建 macOS Apple Silicon 和 Intel DMG，以及 Linux x64 AppImage、Debian 和 RPM 安装包，并保留已有的 Windows x64 安装包。Linux 构建机需要 `musl-tools`；工作流会在打包运行时前构建完整的主机原生文件，包括 Landlock launcher。
 
-macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式也嵌入相同的显示名称。打包时会先校验 `CFBundleName`、`CFBundleDisplayName` 和 `CFBundleExecutable`，再检查签名，并通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。发布构建依赖项使用 `strip = false`，确保过程宏动态库在 macOS 27 上仍可加载，同时不更改应用的最低系统版本。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
+macOS 的可执行文件和应用显示名称均为 `Verboo Code`；开发模式也嵌入相同的显示名称。打包时会先校验 `CFBundleName`、`CFBundleDisplayName` 和 `CFBundleExecutable`，再检查签名，并通过原生 `hdiutil create` 和 `verify` 生成 DMG，无需挂载可写镜像来定制 Finder。临时文件归当前构建所有，完成或失败后都会删除。AppImage 打包使用 `NO_STRIP` 禁用打包器的符号剥离。
 
 每个平台记录精确的源代码 SHA、安装包大小和 SHA-256。发布前会检查完整文件集，将轻量标签或附注标签解析到该 SHA，并确认 GitHub 上传的摘要。已有 release 会被复用；相同文件会跳过，缺失文件可继续上传，已发布但字节不同的文件绝不覆盖。手动构建仅在校验后将草稿公开；release 触发的构建会附加到已有发布。下载保留在 GitHub Releases，校验值包含在 `SHA256SUMS` 中。
 

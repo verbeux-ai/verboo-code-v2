@@ -229,7 +229,7 @@ describe('web e2e: plan review takeover round trip', () => {
     // commit, and the review's automatic open runs before the Sidebar's own
     // effects. A crash there retires the opener for the rest of the page.
     await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-    await expect.poll(() => page.locator('[data-composer-input]').count()).toBe(0)
+    await expect.poll(() => page.locator('[data-composer-input]:visible').count()).toBe(0)
     const crashes: string[] = []
     const onConsole = (message: ConsoleMessage): void => {
       if (message.type() === 'error' && /slot entry crashed/i.test(message.text())) crashes.push(message.text())
@@ -309,7 +309,7 @@ describe.skipIf(MODE === 'record')('web e2e: pending plan review across Sidebar 
 
   async function showPlugins(): Promise<void> {
     await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-    await expect.poll(() => page.locator('[data-composer-input]').count(), { timeout: 10_000 }).toBe(0)
+    await expect.poll(() => page.locator('[data-composer-input]:visible').count(), { timeout: 10_000 }).toBe(0)
   }
 
   /** Deliver a plan review to one Session, run the scenario, and withdraw the review. */

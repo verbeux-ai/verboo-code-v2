@@ -4,11 +4,10 @@ import type { PageProps, ProductProps } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
 import { PageHead } from './PageParts.tsx'
 import { StaminaDebugToggle, type StaminaDebugProps } from './StaminaDebug.tsx'
-import { ConversationAppearance, type ConversationAppearanceProps } from './ConversationAppearance.tsx'
 import { paneShortcutKeys } from './panes/shortcut-labels.ts'
 import css from './Product.module.css'
 /** Preferences are an ordinary page. Destructive session changes use one accessible confirmation. */
-export function PreferencesPage(props: PageProps & StaminaDebugProps & ConversationAppearanceProps) {
+export function PreferencesPage(props: PageProps & StaminaDebugProps) {
   const state = props.useProduct(s => s)
   const preference = props.usePreferences(s => s)
   const [signOut, setSignOut] = useState(false)
@@ -66,7 +65,6 @@ export function PreferencesPage(props: PageProps & StaminaDebugProps & Conversat
             </button>
           ))}
         </div>
-        <ConversationAppearance {...props} />
       </section>
       <section className={css.preferenceCard}>
         <div className={css.preferenceRow}>

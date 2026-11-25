@@ -9,8 +9,8 @@
  * JSON Schema is projected onto the enforced tool-schema subset before
  * registration: keywords the harness does not enforce are dropped rather than
  * forwarded, so an upstream schema cannot change how arguments are validated. A
- * definition still too large to declare keeps an unconstrained argument schema
- * and stays callable.
+ * Oversized definitions lose annotations first; a definition still too large
+ * keeps an unconstrained argument schema and stays callable.
  *
  * @module
  */
@@ -194,11 +194,22 @@ function annotations(source: Record<string, unknown>, target: Record<string, unk
 }
 
 /** Project one provider property map; a non-record value yields no properties. */
-function propertiesOf(value: unknown, depth: number): Record<string, unknown> | undefined {
+function propertiesOf(value: unknown, depth: number, root: unknown): Record<string, unknown> | undefined {
   if (!isRecord(value)) return undefined
-  const out: Record<string, unknown> = {}
-  for (const [key, schema] of Object.entries(value)) out[key] = sanitizeNode(schema, depth + 1)
-  return out
+  return Object.fromEntries(Object.entries(value).map(([key, schema]) => [key, projectNode(schema, depth + 1, root)]))
+}
+
+/** Resolve a local JSON pointer in the provider's schema. */
+function resolveReference(root: unknown, reference: string): unknown {
+  if (!reference.startsWith('#/')) return undefined
+  let value = root
+  for (const segment of reference.slice(2).split('/')) {
+    if (!isRecord(value)) return undefined
+    const key = segment.replace(/~1/g, '/').replace(/~0/g, '~')
+    if (!Object.hasOwn(value, key)) return undefined
+    value = value[key]
+  }
+  return value
 }
 
 /**
@@ -208,12 +219,35 @@ function propertiesOf(value: unknown, depth: number): Record<string, unknown> | 
  * @returns the projected node; past the depth bound it constrains nothing.
  */
 export function sanitizeNode(candidate: unknown, depth: number): Record<string, unknown> {
+  return projectNode(candidate, depth, candidate)
+}
+
+/** Project a node while retaining the document used for local references. */
+function projectNode(candidate: unknown, depth: number, root: unknown): Record<string, unknown> {
   if (!isRecord(candidate) || depth > MAX_SCHEMA_DEPTH) return {}
+  if (typeof candidate.$ref === 'string') {
+    const resolved = resolveReference(root, candidate.$ref)
+    if (resolved !== undefined) {
+      const node = projectNode(resolved, depth + 1, root)
+      annotations(candidate, node)
+      return node
+    }
+  }
   const node: Record<string, unknown> = {}
   annotations(candidate, node)
   if (Array.isArray(candidate.oneOf)) {
-    const branches = candidate.oneOf.filter(entry => isRecord(entry)).map(entry => sanitizeNode(entry, depth + 1))
+    const branches = candidate.oneOf.filter(entry => isRecord(entry)).map(entry => projectNode(entry, depth + 1, root))
     if (branches.length >= 2) {
+      node.oneOf = branches
+      return node
+    }
+  }
+  if (Array.isArray(candidate.anyOf)) {
+    const branches = candidate.anyOf.filter(entry => isRecord(entry)).map(entry => projectNode(entry, depth + 1, root))
+    const types = branches.map(branch => branch.type)
+    // Disjoint JSON types make anyOf equivalent to the supported oneOf.
+    if (branches.length >= 2 && types.every(type => typeof type === 'string') && new Set(types).size === types.length &&
+      !(types.includes('number') && types.includes('integer'))) {
       node.oneOf = branches
       return node
     }
@@ -224,7 +258,7 @@ export function sanitizeNode(candidate: unknown, depth: number): Record<string, 
   if (declared === undefined) return node
   node.type = declared
   if (declared === 'object') {
-    const properties = propertiesOf(candidate.properties, depth)
+    const properties = propertiesOf(candidate.properties, depth, root)
     if (properties !== undefined) node.properties = properties
     if (Array.isArray(candidate.required) && properties !== undefined) {
       const declaredKeys = new Set(Object.keys(properties))
@@ -237,7 +271,7 @@ export function sanitizeNode(candidate: unknown, depth: number): Record<string, 
     return node
   }
   if (declared === 'array') {
-    if (candidate.items !== undefined) node.items = sanitizeNode(candidate.items, depth + 1)
+    if (candidate.items !== undefined) node.items = projectNode(candidate.items, depth + 1, root)
     return node
   }
   if (SCALAR_TYPES.includes(declared)) {
@@ -246,6 +280,20 @@ export function sanitizeNode(candidate: unknown, depth: number): Record<string, 
     if (matchesType(declared, candidate.const)) node.const = candidate.const
   }
   return node
+}
+
+/** Remove annotations before giving up on an oversized provider schema. */
+function compactSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const { description: _description, title: _title, ...compact } = schema
+  if (isRecord(compact.properties)) {
+    compact.properties = Object.fromEntries(Object.entries(compact.properties).map(([key, value]) =>
+      [key, isRecord(value) ? compactSchema(value) : value]))
+  }
+  if (isRecord(compact.items)) compact.items = compactSchema(compact.items)
+  if (Array.isArray(compact.oneOf)) {
+    compact.oneOf = compact.oneOf.map((value: unknown) => isRecord(value) ? compactSchema(value) : value)
+  }
+  return compact
 }
 
 /**
@@ -358,10 +406,13 @@ export class ConnectionToolRegistry {
     return { tool: name, status: held === undefined ? 'added' : 'updated' }
   }
 
-  /** Project the provider schema; past the byte budget the tool keeps an open argument schema. */
+  /** Project the provider schema, dropping annotations before using an open argument schema. */
   private declaredSchema(tool: DiscoveredTool): Record<string, unknown> {
-    const projected = sanitizeNode(tool.parameters, 0)
-    if (JSON.stringify(projected).length > this.budgets.maxSchemaBytes) return {}
+    let projected = sanitizeNode(tool.parameters, 0)
+    if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) {
+      projected = compactSchema(projected)
+      if (Buffer.byteLength(JSON.stringify(projected), 'utf8') > this.budgets.maxSchemaBytes) return {}
+    }
     try {
       assertSupportedJsonSchema(projected)
       return projected
@@ -435,9 +486,15 @@ function selectTargets(
   catalog: ConnectionCatalog,
   request: { connectionId?: string; toolkit?: string },
 ): TargetSelection {
-  const all = [...catalog.publicServices, ...catalog.accounts]
+  // Connected accounts take priority over the potentially large public catalog.
+  // A public entry for the same toolkit must not make an owned account ambiguous.
+  const connectedToolkits = new Set(catalog.accounts.map(target => target.toolkit))
+  const all = [
+    ...catalog.accounts,
+    ...catalog.publicServices.filter(target => !connectedToolkits.has(target.toolkit)),
+  ]
   if (request.connectionId !== undefined) {
-    const chosen = all.find(target => target.id === request.connectionId)
+    const chosen = [...catalog.accounts, ...catalog.publicServices].find(target => target.id === request.connectionId)
     if (chosen === undefined) {
       throw new Error('that connection is not available; call connections_list and use one of its IDs')
     }
@@ -508,6 +565,7 @@ export async function discoverConnectionTools(options: {
     target,
     tools: parseTools(await product.searchAgentConnections(target.id, request.query, signal)),
   })))
+  signal.throwIfAborted()
   const failed: FailedSearch[] = []
   const tools: ReadyTool[] = []
   const registered = new Set<string>()

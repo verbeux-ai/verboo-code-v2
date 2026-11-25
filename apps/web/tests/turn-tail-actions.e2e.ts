@@ -21,7 +21,7 @@ import {
   launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { createChatScrollFixture } from './chat-scroll-fixture.ts'
-import { openSettings, connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, WEB_FIXTURE_TIME } from './support.ts'
+import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot, WEB_FIXTURE_TIME } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/turn-tail-actions', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
@@ -261,61 +261,42 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
-  it.skipIf(MODE === 'record').each([
-    ['compact', 'Compact'], ['standard', 'Standard'], ['verbose', 'Verbose'],
-  ] as const)('applies whole-Turn presentation in %s mode', async (mode, label) => {
-    await launch()
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-process-setting'))
-    const { settled } = await sendPrompt()
-    await settled
-    const process = page.locator('[data-turn-process]')
-    const tool = page.getByRole('button', { name: 'Bash Print alpha to stdout' })
-    await process.waitFor({ timeout: 10_000 })
-    expect(await process.getAttribute('aria-expanded')).toBe('false')
-    expect(await tool.isVisible()).toBe(false)
-
-    await openSettings(page, 'en')
-    const dialog = page.getByRole('dialog', { name: 'Settings' })
-    await dialog.getByText('Work details', { exact: true }).locator('../..')
-      .getByRole('button', { name: 'Detailed', exact: true }).click()
-    await page.getByRole('menuitem', { name: label, exact: true }).click()
-    await page.keyboard.press('Escape')
-
-    expect(await process.count()).toBe(1)
-    await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
-      .toContain(`transcriptView: ${mode}`)
-
-    const group = page.locator('[data-sample="bash"]').first().locator('xpath=ancestor::*[@data-chat-group-key]')
-    const groupControl = group.locator('[data-process-activity]')
-    if (mode === 'verbose') {
-      expect(await process.isDisabled()).toBe(true)
-      expect(await process.getAttribute('aria-expanded')).toBe('true')
-      expect(await groupControl.isVisible()).toBe(false)
-      expect(await tool.isVisible()).toBe(true)
-    } else {
+  it.skipIf(MODE === 'record').each(['compact', 'standard', 'verbose'] as const)(
+    'restores the saved %s presentation preference', async (mode) => {
+      await launch()
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-process-setting'))
+      const { settled } = await sendPrompt()
+      await settled
+      const process = page.locator('[data-turn-process]')
+      const tool = page.getByRole('button', { name: 'Bash Print alpha to stdout' })
+      await process.waitFor({ timeout: 10_000 })
       expect(await process.getAttribute('aria-expanded')).toBe('false')
       expect(await tool.isVisible()).toBe(false)
-      await process.click()
-      expect(await groupControl.isVisible()).toBe(true)
-      expect(await groupControl.getAttribute('aria-expanded')).toBe('false')
-      expect(await tool.isVisible()).toBe(false)
-      await groupControl.click()
-      expect(await tool.isVisible()).toBe(true)
-      await process.click()
-    }
 
-    await openSettings(page, 'en')
-    const restored = page.getByRole('dialog', { name: 'Settings' })
-    await restored.getByText('Work details', { exact: true }).locator('../..')
-      .getByRole('button', { name: label, exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Standard', exact: true }).click()
-    await page.keyboard.press('Escape')
-    await process.waitFor({ timeout: 10_000 })
-    expect(await process.getAttribute('aria-expanded')).toBe('false')
-    expect(await tool.isVisible()).toBe(false)
-    expect(tripwire.pageErrors).toEqual([])
-    expect(tripwire.warnings).toEqual([])
-  }, 60_000)
+      // The current settings UI no longer offers a mode picker. Values saved
+      // by earlier versions must still drive the corresponding presentation.
+      await scaffold!.ctx.settings.update('ui-chat', { transcriptView: mode })
+      await expect.poll(async () => readFile(join(scaffold!.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
+        .toContain(`transcriptView: ${mode}`)
+      const group = page.locator('[data-sample="bash"]').first().locator('xpath=ancestor::*[@data-chat-group-key]')
+      const groupControl = group.locator('[data-process-activity]')
+      if (mode === 'verbose') {
+        await expect.poll(() => process.isDisabled()).toBe(true)
+        expect(await process.getAttribute('aria-expanded')).toBe('true')
+        expect(await groupControl.isVisible()).toBe(false)
+        expect(await tool.isVisible()).toBe(true)
+      } else {
+        await expect.poll(() => process.isEnabled()).toBe(true)
+        expect(await process.getAttribute('aria-expanded')).toBe('false')
+        expect(await tool.isVisible()).toBe(false)
+        await process.click()
+        expect(await groupControl.isVisible()).toBe(true)
+        await groupControl.click()
+        expect(await tool.isVisible()).toBe(true)
+      }
+      expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
+    }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps a focused process member open when the completed reply arrives', async () => {
     await launch(undefined, 200)

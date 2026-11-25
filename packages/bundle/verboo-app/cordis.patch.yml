@@ -26,7 +26,8 @@
 - id: ui-settings-models
   disabled: true
 - id: ui-settings-general
-  disabled: true
+  config:
+    updateOnly: true
 - id: entry-customization
   disabled: true
 - id: ui-agent-preset

@@ -1,5 +1,3 @@
 - menu "模型与推理等级":
-  - menuitemradio "Default" [checked]
-  - menuitemradio "Off"
-  - menuitemradio "High"
-  - menuitemradio "Max"
+  - text: 推理等级 Default
+  - slider "推理等级": "0"

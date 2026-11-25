@@ -12,6 +12,12 @@
       - heading "Testes" [level=3]
       - text: Active
       - 'button "Manage subscription: Testes"': Manage subscription
+  - region "External subscriptions":
+    - heading "External subscriptions" [level=2]
+    - article:
+      - heading "ChatGPT" [level=3]
+      - text: Not connected
+      - button "Manage"
   - region "Explore plans":
     - heading "Explore plans" [level=2]
     - paragraph: No plans are available right now.
