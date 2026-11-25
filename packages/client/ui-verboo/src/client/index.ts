@@ -53,7 +53,6 @@ import { ConnectionsPage } from './Connections.tsx'
 import { installPanes } from './panes/install.ts'
 import { leaves } from './panes/layout.ts'
 import { selectStaminaForModel } from './stamina-selection.ts'
-import type { ConversationAppearanceInjected } from './ConversationAppearance.tsx'
 
 /** Product replacement for optional diagnostic readouts. */
 function OmittedDiagnostic() { return null }
@@ -534,8 +533,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   const debugFace = (sessionId?: SessionId) => {
     const product = staminaFace(sessionId)
-    return { ...product, ...debugActions, ...appearanceActions,
-      hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks } }
+    return { ...product, ...debugActions,
+      hooks: { ...product.hooks, ...debugActions.hooks } }
   }
   // The pill reads the external subscription's own record; a Verboo route
   // leaves it absent, so the dock never shows a borrowed number.
@@ -545,14 +544,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ...product,
       hooks: { ...product.hooks, subscriptionUsageAddress: model.state },
     }
-  }
-  const appearanceConfig = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
-  const appearanceActions: ConversationAppearanceInjected = {
-    hooks: { conversationAppearance: appearanceConfig },
-    async setMinimalist(enabled) {
-      try { return await appearanceConfig.set('minimalist', enabled) }
-      catch (_error) { return false } // The preference reports an unsuccessful write inline.
-    },
   }
   ctx.remoteAccess.whenAccess('account/watch', function* () {
     const stream = ctx.remote.$stream<AccountView>({
