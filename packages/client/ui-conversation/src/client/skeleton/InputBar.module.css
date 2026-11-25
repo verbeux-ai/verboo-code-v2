@@ -88,11 +88,13 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Focus marks the card with the outer ring only. The tinted stroke stays at
-   rest neutral: recolouring the hairline as well drew a second, inset purple
-   line inside the ring, which read as the field being outlined twice. The ring
-   rises to 18% because it is now the sole focus signal. */
-.card:focus-within {
+/* The ring marks the draft field, not the card. Scoping it to the editor keeps
+   the card neutral while the reader uses the attachment, model, or access
+   controls inside it, which previously lit the ring as if the field were
+   selected. The tinted stroke stays neutral too: recolouring the hairline drew
+   a second, inset purple line that read as an outline twice. */
+.card:has(.input:focus-visible),
+.card:has(.input:focus) {
   --dsh-composer-focus-ring: 0 0 0 var(--dsh-composer-focus-ring-width, 0px) color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)) 18%, transparent);
 }
 
