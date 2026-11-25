@@ -17,8 +17,15 @@ declare global {
   var __VERBOO_UPDATE__: DesktopUpdateBridge | undefined
 }
 
-/** Create a source whose snapshot cannot be overwritten by a late initial read. */
-export function createUpdateSource() {
+/**
+ * Create a source whose snapshot cannot be overwritten by a late initial read.
+ * @returns The observable state, subscription lifecycle, and install action.
+ */
+export function createUpdateSource(): {
+  state: ReturnType<typeof createSnapshotStore<DesktopUpdateState>>
+  start(): () => void
+  install(): Promise<void>
+} {
   const state = createSnapshotStore<DesktopUpdateState>({ phase: 'idle', percent: null })
   let generation = 0
   let stopCurrent: (() => void) | undefined

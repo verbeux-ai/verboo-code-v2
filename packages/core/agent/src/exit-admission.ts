@@ -1,5 +1,6 @@
 /** Conservative process-exit admission shared by desktop work producers. */
 export type ExitActivity = 'idle' | 'busy' | 'unknown'
+/** Reservation outcome for a process-exit attempt. */
 export type ExitReservation = { readonly kind: 'reserved'; readonly id: number } | { readonly kind: 'busy' | 'unknown' }
 
 type Lease = { readonly id: number; readonly revision: number; readonly expiresAt: number; committed: boolean }
