@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { apply } from '../src/client/index.ts'
 
 const disposers: Array<() => void> = []
@@ -18,16 +18,17 @@ it('registers only the localized desktop update row for a product-owned settings
   })
   const registerLocale = vi.fn(() => vi.fn())
   const registerSlot = vi.fn((_options: unknown, _component: unknown) => undefined)
-  const ctx = {
-    locale: { register: registerLocale },
-    slots: { inject: (_name: string, callback: () => void) => callback(), register: registerSlot },
-    effect: (callback: () => (() => void) | undefined) => {
+  const ctx = new Context()
+  Object.defineProperties(ctx, {
+    locale: { value: { register: registerLocale } },
+    slots: { value: { inject: (_name: string, callback: () => void) => callback(), register: registerSlot } },
+    effect: { value: (callback: () => (() => void) | undefined) => {
       const dispose = callback()
       if (dispose) disposers.push(dispose)
-    },
-  }
+    } },
+  })
 
-  apply(ctx as Context, { updateOnly: true })
+  apply(ctx, { updateOnly: true })
 
   expect(registerLocale).toHaveBeenCalledOnce()
   expect(registerSlot).toHaveBeenCalledOnce()
