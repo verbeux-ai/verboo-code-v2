@@ -10,7 +10,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Wrote files, ran commands, called tools, etc." [expanded]
+- button "18 actions" [expanded]
 - button "Write site/report.html 1KB +1 -0":
   - text: Write
   - button "site/report.html"

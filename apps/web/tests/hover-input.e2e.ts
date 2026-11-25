@@ -76,7 +76,7 @@ it.each([false, true])('keeps workspace and archived search actions reachable wi
   const project = page.locator('[data-row-key^="workspace:"]').filter({ has: menu })
   await page.mouse.move(0, 0)
   expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(hasTouch)
-  expect(await menu.isVisible()).toBe(hasTouch)
+  await expect.poll(() => menu.isVisible()).toBe(hasTouch)
   if (!hasTouch) await project.hover()
   await activate(menu)
   await page.getByRole('menuitem', { name: 'Rename', exact: true }).waitFor()

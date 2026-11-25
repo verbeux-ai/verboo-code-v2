@@ -29,7 +29,7 @@ The `verboo` profile mounts this extension. It attaches its [tool contribution](
 
 `connections_list` returns owned accounts and public services that require no credentials. Public service IDs use `public_<toolkit>`; the backend checks the toolkit’s no-auth declaration and discovered tool version for each execution. OAuth and user-supplied credentials remain in Composio’s hosted authorization flow.
 
-`connections_search` is the entry point for integration work. It reads the account’s connections, asks the provider for the tools that match a capability, and registers each match in the calling Agent’s own tool registry as `connection__<toolkit>__<slug>`, with the provider’s own description and argument schema projected onto the enforced subset. The model calls those tools directly on its next step, so one request can search an inbox and then reply through the same conversation. A service with several connected accounts is reported as ambiguous instead of being guessed: the Agent asks which account to use and searches again with that `connectionId`. Repeating a search replaces an older provider version instead of duplicating the tool, and a name already serving another account is never reused. The registry is disposed with its Agent scope, so a later conversation starts with only the base tools.
+`connections_search` is the entry point for integration work. It reads the account’s connections, asks the provider for the tools that match a capability, and registers each match in the calling Agent’s own tool registry as `connection__<toolkit>__<slug>`, with the provider’s own description and argument schema projected onto the enforced subset. The model calls those tools directly on its next step, so one request can search an inbox and then reply through the same conversation. Connected accounts are searched before public services; a public service does not make its connected account ambiguous. A service with several connected accounts is reported as ambiguous instead of being guessed: the Agent asks which account to use and searches again with that `connectionId`. Repeating a search replaces an older provider version instead of duplicating the tool, and a name already serving another account is never reused. The registry is disposed with its Agent scope, so a later conversation starts with only the base tools.
 
 The same contribution installs the [MCP server tools](src/mcp-tools.ts) over `ctx.verbooMcp`. `mcp_servers_list` reads the account’s own servers with the tools each exposes and what blocks one that cannot connect. `mcp_server_save` and `mcp_server_remove` change that set, and both ask the human through `ctx.approval` first: a stdio server runs a command on the Host, and a removal withdraws tools mid-conversation. With no composed answerer, or with a session that answers anything but `allowed-once`, the write is refused and reports why so the Agent stops rather than retrying.
 
@@ -41,7 +41,7 @@ The same contribution installs the [MCP server tools](src/mcp-tools.ts) over `ct
 
 The Agent contribution is disposed with its owning fiber. The backend derives the actor from authenticated identity, verifies connection ownership and toolkit membership, and pins the tool version before executing once. Provider keys never become tool arguments. Ambiguous write failures instruct the Agent to inspect the service before retrying.
 
-Each discovered tool executes through the product API with the connection and version its own search resolved, so a later search cannot redirect an earlier call. The provider schema is projected onto the enforced tool-schema subset: unsupported keywords and undeclared `required` keys are dropped rather than forwarded, and a definition larger than `discoveryMaxSchemaBytes` keeps an open argument schema instead of failing. One search registers at most `discoveryMaxTools` tools across at most `discoveryMaxTargets` connections, so a broad query cannot flood the request with declarations.
+Each discovered tool executes through the product API with the connection and version its own search resolved, so a later search cannot redirect an earlier call. Local schema references and unions of distinct JSON types are projected onto the enforced tool-schema subset: unsupported keywords and undeclared `required` keys are dropped rather than forwarded, and a definition larger than `discoveryMaxSchemaBytes` first loses annotations, then keeps an open argument schema if it still exceeds the budget. One search registers at most `discoveryMaxTools` tools across at most `discoveryMaxTargets` connections, so a broad query cannot flood the request with declarations.
 
 </details>
 
@@ -62,7 +62,7 @@ Each discovered tool executes through the product API with the connection and ve
 
 #### Token effect
 
-Four stable tool schemas enter every request: `connections_list`, `connections_search`, `mcp_servers_list`, and the two MCP write tools when their service is mounted. Each search adds the declarations it registered — at most twelve, each bounded by its description and schema budgets — and those declarations stay for the rest of the conversation. Discovered results append to the transcript. Each enabled MCP server adds the tool schemas it advertises.
+Five stable tool schemas enter every request: `connections_list`, `connections_search`, `mcp_servers_list`, and the two MCP write tools when their service is mounted. Each search adds the declarations it registered — at most twelve, each bounded by its description and schema budgets — and those declarations stay for the rest of the conversation. Discovered results append to the transcript. Each enabled MCP server adds the tool schemas it advertises.
 
 #### KV Cache effect
 
@@ -74,7 +74,7 @@ The base tools and prompt prefixes remain unchanged. A search that registers new
 
 - OAuth providers without managed authorization need a product auth config on the server. A provider action can commit before a network failure; writes are never retried automatically.
 - Discovered tools are scoped to the conversation that searched for them, so a provider action the model needs later costs another search step.
-- A provider tool whose arguments exceed `discoveryMaxSchemaBytes` is still callable, but its declaration carries an open argument schema, so the model learns the fields from a refused call instead of a declared list.
+- A provider tool whose compacted arguments exceed `discoveryMaxSchemaBytes` remains callable with an open argument schema; the model does not receive the complete field list.
 - An MCP server added from a conversation is stored for the Host, not for that conversation, and stays enabled until the user switches it off or removes it.
 
 <a id="dev-note"></a>

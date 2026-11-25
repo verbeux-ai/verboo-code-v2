@@ -68,7 +68,9 @@ class ScriptedAdapter extends LlmAdapter {
 const catalog = JSON.stringify({
   available: true,
   accounts: [{ id: 'ca_work', toolkit: 'gmail', label: 'Work', status: 'connected' }],
-  publicServices: [],
+  publicServices: Array.from({ length: 10 }, (_, index) => ({
+    id: `public_service${index}`, toolkit: `service${index}`, label: `Service ${index}`,
+  })),
 })
 
 const searchEmail = {
@@ -110,7 +112,7 @@ async function harness(adapter: ScriptedAdapter, execute: ReturnType<typeof vi.f
   await ctx.plugin(AgentRegistry)
   ctx.provide('verbooProduct', {
     listAgentConnections: async () => catalog,
-    searchAgentConnections: async () => JSON.stringify([searchEmail, sendEmail]),
+    searchAgentConnections: async (id: string) => JSON.stringify(id === 'ca_work' ? [searchEmail, sendEmail] : []),
     executeAgentConnection: execute,
   } as never)
   ctx.provide('verbooMcp', {
@@ -145,6 +147,7 @@ describe('dynamic connection tools in a real turn', () => {
     await send(agent, 'Find Ana’s email and reply')
 
     // The first request cannot know the provider tools; the second one must.
+    expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toContain('connections_search')
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('connection__gmail__GMAIL_SEARCH_EMAILS')
     expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(expect.arrayContaining([
       'connection__gmail__GMAIL_SEARCH_EMAILS',

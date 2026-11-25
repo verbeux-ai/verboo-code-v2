@@ -429,6 +429,8 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
       { timeout: 10_000 },
     ).toEqual(expect.arrayContaining([expect.stringContaining('Use the read tool twice (2)')]))
     expect(await sourceRow.textContent()).toContain('Use the read tool twice (1)')
+    await page.mouse.move(0, 0)
+    await expect.poll(() => actionButton.isVisible()).toBe(false)
     const tree = await captureStableAria(
       page,
       '[role="tree"][aria-label="Sessions"]',

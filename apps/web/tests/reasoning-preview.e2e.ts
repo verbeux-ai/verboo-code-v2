@@ -45,7 +45,7 @@ class PausedReasoningAdapter extends LlmAdapter {
   }
 }
 
-it.each(['plain', 'signature'])('shows completed paragraph first lines with a right-edge fade (%s)', async (format) => {
+it.each(['plain', 'signature'])('keeps the opening reasoning line stable while streaming (%s)', async (format) => {
   const scaffold = await launchWebScaffold()
   const adapter = new PausedReasoningAdapter(format === 'signature' ? '<signature>metadata.payload</signature>\n\n' : '')
   try {
@@ -123,7 +123,7 @@ it.each(['plain', 'signature'])('shows completed paragraph first lines with a ri
       } finally {
         await page.emulateMedia({ reducedMotion: null, forcedColors: null })
       }
-      expect(await reasoning.getAttribute('data-preview')).toBeNull()
+      expect(await reasoning.getAttribute('data-preview')).toBe('true')
       expect(await reasoning.textContent()).not.toContain('metadata.payload')
 
       first.proceed.resolve(undefined)
@@ -135,10 +135,9 @@ it.each(['plain', 'signature'])('shows completed paragraph first lines with a ri
 
       second.proceed.resolve(undefined)
       await third.arrived.promise
-      await expect.poll(() => preview.textContent()).toBe(SUMMARY)
+      await expect.poll(() => preview.textContent()).toBe('First paragraph')
       expect(await preview.getAttribute('data-retained-preview')).toBe('true')
       expect(await preview.evaluate(element => getComputedStyle(element).maskImage)).toContain('linear-gradient')
-      expect(await preview.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
       expect(await reasoning.getByRole('button').getAttribute('aria-expanded')).toBe('false')
       await compareOrRefreshGolden(UI_EXPECTED,
         await captureStableAria(page, '[data-variant="think"]', scaffold.workspaceCwd), webSnapshotMode())

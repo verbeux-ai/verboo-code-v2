@@ -908,7 +908,7 @@ describe('web e2e: long Chat scroll contract', () => {
     }, 180_000)
   }
 
-    it.skipIf(MODE === 'record')('keeps a running Session stationary when returning with output held', async () => {
+  it.skipIf(MODE === 'record')('keeps a running Session stationary when returning with output held', async () => {
     const fixtureA = createChatScrollFixture({ markerPrefix: 'RETURN_A', title: 'CHAT_RUNNING_RETURN_A' })
     const fixtureB = createChatScrollFixture({ markerPrefix: 'RETURN_B', title: 'CHAT_RUNNING_RETURN_B', turns: 32 })
     const heldMarker = 'CHAT_RUNNING_RETURN_HELD'

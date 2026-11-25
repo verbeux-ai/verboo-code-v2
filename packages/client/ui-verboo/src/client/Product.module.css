@@ -197,7 +197,8 @@
   .welcomeDescription { font-size:13px; }
   .hero h1 { font-size:24px; }
   .page { padding:36px 20px 28px; }
-  .pageHead { margin-bottom:24px; }
+  .pageHead { flex-direction:column; margin-bottom:24px; }
+  .pageActions { flex-wrap:wrap; max-width:100%; margin-left:0; }
   .pageHead h1 { font-size:22px; }
   .pageHead p { font-size:12px; }
   .pageHead > .secondary { padding:7px; font-size:0; gap:0; }

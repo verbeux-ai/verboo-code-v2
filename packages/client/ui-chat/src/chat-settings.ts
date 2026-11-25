@@ -55,8 +55,8 @@ const TRANSCRIPT_VIEW_SETTING_VALUES = [
 /**
  * The one work-details presentation this product ships. The other modes stay
  * in the accepted-value union so a document written by an earlier build still
- * validates; the live policy ignores the saved choice and always reads this
- * mode, so every client shows the same transcript.
+ * validates. A previously saved choice remains effective, while new users get
+ * this mode and the current settings UI does not offer a mode picker.
  */
 export const TRANSCRIPT_VIEW_MODE: TranscriptViewMode = 'compact'
 

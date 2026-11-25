@@ -197,6 +197,7 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
     if (await workspaceRow.getAttribute('aria-expanded') !== 'true') await workspaceRow.click()
     await page.getByText(TITLE, { exact: true }).click()
     await page.getByText(REPLY, { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+    await expect.poll(() => workspaceRow.getByRole('button', { name: /^Workspace actions for /, includeHidden: true }).isVisible()).toBe(false)
     const tree = await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd)
     const conversation = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EXPECTED, `${tree}\n\n---\n\n${conversation}`, MODE)

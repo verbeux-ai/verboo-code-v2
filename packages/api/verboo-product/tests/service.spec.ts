@@ -241,6 +241,26 @@ describe('agent tool discovery and execution', () => {
     }, f.signal)).toBe(text)
   })
 
+  it('allows a slow execution to exceed the general request ceiling without retrying it', async () => {
+    const f = configured({ requestTimeoutMs: 40, connectionExecutionTimeoutMs: 2000 })
+    const fetch = vi.fn(delayed(120, Response.json({ data: { successful: true, result: '{"sent":true}' } })))
+    vi.stubGlobal('fetch', fetch)
+    expect(await f.product.executeAgentConnection({
+      connectionId: 'ca_work', slug: 'GMAIL_SEND_EMAIL', version: '20251105_01', arguments: {},
+    }, f.signal)).toBe('{"sent":true}')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an execution timeout as unconfirmed and does not retry', async () => {
+    const f = configured({ connectionExecutionTimeoutMs: 40 })
+    const fetch = vi.fn(delayed(120, Response.json({ data: { successful: true, result: '{}' } })))
+    vi.stubGlobal('fetch', fetch)
+    await expect(f.product.executeAgentConnection({
+      connectionId: 'ca_work', slug: 'GMAIL_SEND_EMAIL', version: '20251105_01', arguments: {},
+    }, f.signal)).rejects.toMatchObject({ code: 'execution_unconfirmed' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('reports a provider refusal as a failed action', async () => {
     const f = fixture(Response.json({ data: { successful: false, result: 'denied' } }))
     await expect(f.product.executeAgentConnection({
