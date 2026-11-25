@@ -169,7 +169,10 @@ export function Panes(props: PanesProps) {
   const { usePanes, SessionProvider, renderSlot, focusPane, focusPaneInput, resizePane, minimumWidth, minimumHeight, t } = props
   const snapshot = usePanes(s => s)
   const saveError = props.usePaneSaveError(value => value)
-  const minimalist = props.usePanePreferences(value => value.value?.minimalist === true)
+  // The minimalist conversation is the product's one presentation; the saved
+  // field stays readable so an older profile still validates, but the panes no
+  // longer vary with it.
+  const minimalist = true
   const restoredFocus = useRef(false)
   useEffect(() => {
     if (
@@ -209,7 +212,7 @@ export function Panes(props: PanesProps) {
   const boxes = rectangles(layout.root)
   return (
     <div className={css.workspace} data-verboo-panes="" data-pane-split={panes.length > 1 || undefined}
-      data-conversation-minimalist={minimalist || undefined}
+      data-conversation-minimalist={minimalist ? '' : undefined}
       aria-label={t('paneWorkspace')}>
       {saveError && (
         <div className={css.saveNotice} role="alert">
