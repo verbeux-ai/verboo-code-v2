@@ -95,6 +95,8 @@ Web 与桌面端的通用设置底部显示当前发布版本，使用构建注�
 
 宿主端在 `ui-settings-general` 条目的 Config 中把 `welcomeNoticeVersion` 声明为 volatile 字段。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`；外壳本身仍不持有产品策略。
 
+当产品拥有自己的设置界面但需要桌面更新指示器时，可将 `updateOnly` 设为 `true`。此模式仅注册更新指示器及其翻译，不注册设置外壳或其他设置行。默认值为 `false`。
+
 </details>
 
 -----

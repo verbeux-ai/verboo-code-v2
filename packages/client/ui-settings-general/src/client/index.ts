@@ -80,8 +80,23 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settin
  * Register the `settings` dictionaries, the chrome content, and the General
  * section, each once its slot declaration is on the ledger.
  * @param ctx - client root context.
+ * @param config - optional product configuration for the update indicator.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config?: { updateOnly?: boolean }): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-settings-general: dictionaries')
+  type Carrier = { protocolVersion: number; updates?: DesktopUpdateBridge }
+  const carrier = (globalThis as typeof globalThis & { __VERBOO_DESKTOP__?: Carrier }).__VERBOO_DESKTOP__
+  const desktopUpdate = new DesktopUpdateSource(carrier?.protocolVersion === 1 ? carrier.updates : undefined)
+  ctx.effect(() => () => { desktopUpdate.dispose() }, 'ui-settings-general: desktop update carrier')
+  ctx.slots.inject('sidebar.footer.row', () => ctx.slots.register({
+    name: 'sidebar.footer.row', locale: NS,
+    inject: () => ({
+      hooks: { desktopUpdate: desktopUpdate.store },
+      restartDesktopUpdate: () => { desktopUpdate.restart() },
+      dismissDesktopUpdate: () => { desktopUpdate.dismiss() },
+    }),
+  }, DesktopUpdateIndicator))
+  if (config?.updateOnly) return
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'developer-tools', order: 15, locale: NS,
     inject: (): DeveloperToolsRowInjected => ({
@@ -101,12 +116,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'current-version', order: 100, locale: NS,
   }, CurrentVersionRow))
-  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-settings-general: dictionaries')
   const connection = ctx.get('connection') as ConnectionHandle
-  type Carrier = { protocolVersion: number; updates?: DesktopUpdateBridge }
-  const carrier = (globalThis as typeof globalThis & { __VERBOO_DESKTOP__?: Carrier }).__VERBOO_DESKTOP__
-  const desktopUpdate = new DesktopUpdateSource(carrier?.protocolVersion === 1 ? carrier.updates : undefined)
-  ctx.effect(() => () => { desktopUpdate.dispose() }, 'ui-settings-general: desktop update carrier')
   const channelBridge = carrier?.protocolVersion === 1 ? carrier.updates?.channels : undefined
   if (channelBridge !== undefined) {
     const channel = new DesktopChannelSource(channelBridge)
@@ -121,16 +131,6 @@ export function apply(ctx: ClientContext): void {
         dismiss: (sequence: number) => { channel.dismissNotice(sequence) }, openConfiguration: () => { desktopUpdate.restart() } }),
     }, DesktopChannelToast))
   }
-
-  // The product sidebar footer owns the one update row, above the plan shortcut.
-  ctx.slots.inject('sidebar.footer.row', () => ctx.slots.register({
-    name: 'sidebar.footer.row', locale: NS,
-    inject: () => ({
-      hooks: { desktopUpdate: desktopUpdate.store },
-      restartDesktopUpdate: () => { desktopUpdate.restart() },
-      dismissDesktopUpdate: () => { desktopUpdate.dismiss() },
-    }),
-  }, DesktopUpdateIndicator))
 
   // Copy freshness is framework-owned: components read the standard `t`
   // seat, and the nav label is a thunk the owner resolves per render — no

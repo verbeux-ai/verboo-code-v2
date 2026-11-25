@@ -1,24 +1,53 @@
-/** Built workspace chrome with a controlled Desktop carrier; no Electron or installer is exercised. */
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+/** Built workspace chrome with a controlled native update carrier. */
 import { chromium } from 'playwright'
 import { describe, expect, it } from 'vitest'
-import { presentDesktopUpdate } from '../../desktop/src/update-presentation.ts'
+import { createServer } from 'node:http'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 
-// Mirrors the preload's presentation-only API; importing Client projects would mix compiler faces.
-type Presentation = ReturnType<typeof presentDesktopUpdate>
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+type Presentation = { phase: 'idle' | 'checking' | 'downloading' | 'ready' | 'error'; version?: string; percent?: number }
 interface CarrierFixture {
   publish(state: Presentation): void
-  opens: number
+  restarts: number
+  dismissed: string[]
   listeners: Set<(state: Presentation) => void>
 }
 type FixtureWindow = Window & typeof globalThis & { updateFixture: CarrierFixture }
 
 describe('web e2e: Desktop update workspace chrome', () => {
-  it.each(['zh-CN', 'en-US'])('renders update states and routes explicit actions in %s', async (locale) => {
-    const scaffold = await launchWebScaffold({})
+  it.each(['zh-CN', 'en-US'])('reports progress and confirms a staged restart in %s', async (locale) => {
+    const directory = await mkdtemp(join(tmpdir(), 'verboo-updates-'))
+    const platform = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [] }))
+    })
+    await new Promise<void>(resolve => platform.listen(0, '127.0.0.1', resolve))
+    const address = platform.address()
+    if (address === null || typeof address === 'string') throw new Error('Loopback API did not start')
+    const origin = `http://127.0.0.1:${address.port}`
+    const overlay = join(directory, 'updates.patch.yml')
+    await writeFile(overlay, `- id: verboo-account
+  disabled: true
+- id: verboo-product
+  config:
+    apiOrigin: ${JSON.stringify(origin)}
+    routerBaseURL: ${JSON.stringify(origin + '/router/v1')}
+    allowLoopbackHttp: true
+- insert:
+    - id: updates-fixture-account
+      name: ${JSON.stringify(fileURLToPath(new URL('./fixtures/verboo-stamina/account.mjs', import.meta.url)))}
+      config:
+        accountId: 00000000-0000-4000-8000-000000000002
+        apiOrigin: ${JSON.stringify(origin)}
+`)
+    const scaffold = await launchWebScaffold({
+      profile: { hmr: false, packages: [{ dir: join(ROOT, 'packages/bundle/verboo-app'), enabled: true }] },
+      welcomeNoticePending: true,
+      extraOverlayPath: [overlay],
+    })
     try {
       const browser = await chromium.launch()
       try {
@@ -27,119 +56,53 @@ describe('web e2e: Desktop update workspace chrome', () => {
           let current: Presentation = { phase: 'idle' }
           const listeners = new Set<(state: Presentation) => void>()
           const fixture: CarrierFixture = {
-            opens: 0, listeners,
+            restarts: 0, dismissed: [], listeners,
             publish(state) { current = state; for (const listener of listeners) listener(state) },
           }
           Object.assign(window, {
             updateFixture: fixture,
-            dshDesktop: { protocolVersion: 1, updates: {
+            __VERBOO_DESKTOP__: { protocolVersion: 1, updates: {
               status: async () => current,
-              open: async () => { fixture.opens += 1 },
+              restart: async () => { fixture.restarts += 1 },
+              dismiss: async (version: string) => { fixture.dismissed.push(version) },
               subscribe(listener: (state: Presentation) => void) { listeners.add(listener); return () => listeners.delete(listener) },
             } },
           })
         })
         const tripwire = watchConsole(page)
-        const evidenceRoot = fileURLToPath(new URL('../../desktop/.desktop-build/qualification/', import.meta.url))
-        await mkdir(evidenceRoot, { recursive: true })
-        const evidence = await mkdtemp(join(evidenceRoot, `workspace-updates-${locale}-`))
-        try {
-          await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-          await page.waitForSelector('[class*="frame"]')
-          await expect.poll(() => page.evaluate(() => (window as FixtureWindow).updateFixture.listeners.size)).toBe(1)
-          const availableLabel = locale === 'zh-CN' ? '新版本' : 'Update'
-          const retryLabel = locale === 'zh-CN' ? '重试更新' : 'Retry update'
-          const errorDetail = locale === 'zh-CN' ? '下载更新失败，请重试。' : 'Could not download the update. Please try again.'
-          const readyLabel = locale === 'zh-CN' ? '安装并重启' : 'Install and Restart'
-          const version = '0.1.5-nightly.20260911'
-          // The carrier exposes semantic states; Web copy follows its own locale.
-          const available = presentDesktopUpdate({ phase: 'available', version })
-          const publish = async (state: Presentation) => page.evaluate((value) => {
-            (window as FixtureWindow).updateFixture.publish(value)
-          }, state)
-          const opens = async () => page.evaluate(() => (window as FixtureWindow).updateFixture.opens)
-          await publish(available)
-          const update = page.getByRole('button', { name: availableLabel, exact: true })
-          await update.waitFor()
-          expect(await opens()).toBe(0)
-          const geometry = await update.boundingBox()
-          expect(geometry).not.toBeNull()
-          expect(geometry!.x).toBeLessThan(350)
-          expect(geometry!.y).toBeGreaterThan(650)
-          await page.screenshot({ path: join(evidence, 'available.png') })
-          await update.click()
-          await expect.poll(opens).toBe(1)
+        await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+        await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
+        await expect.poll(() => page.evaluate(() => (window as FixtureWindow).updateFixture.listeners.size)).toBe(1)
+        const publish = (state: Presentation) => page.evaluate(value => (window as FixtureWindow).updateFixture.publish(value), state)
+        const restarts = () => page.evaluate(() => (window as FixtureWindow).updateFixture.restarts)
+        const version = '0.2.2-alpha.37'
 
-          const progress = presentDesktopUpdate({ phase: 'downloading', version, percent: 58 })
-          await publish(progress)
-          const downloading = page.getByRole('button', { name: '58%', exact: true })
-          await downloading.waitFor()
-          expect(await downloading.getAttribute('aria-disabled')).toBe('true')
-          expect(await downloading.locator('svg').count()).toBe(1)
-          // Force dispatch past Playwright's aria-disabled guard to verify the product's click guard.
-          await downloading.click({ force: true })
-          expect(await opens()).toBe(1)
-          await page.screenshot({ path: join(evidence, 'downloading.png') })
+        await publish({ phase: 'downloading', version, percent: 58 })
+        const progress = page.getByRole('button', { name: '58%', exact: true })
+        await progress.waitFor()
+        expect(await progress.getAttribute('aria-disabled')).toBe('true')
+        await progress.click({ force: true })
+        expect(await restarts()).toBe(0)
 
-          const collapse = locale === 'zh-CN' ? '收起侧边栏' : 'Collapse sidebar'
-          const expand = locale === 'zh-CN' ? '打开侧边栏' : 'Open sidebar'
-          await page.getByRole('button', { name: collapse, exact: true }).click()
-          const toggle = page.getByRole('button', { name: expand, exact: true })
-          const badge = toggle.getByRole('img', { name: '58%', exact: true })
-          await badge.waitFor()
-          await expect.poll(() => downloading.count()).toBe(0)
-          expect(await page.getByRole('img', { name: '58%', exact: true }).count()).toBe(1)
-          const updateBackground = await badge.evaluate(element => getComputedStyle(element).backgroundColor)
-          await page.screenshot({ path: join(evidence, 'collapsed.png') })
+        await publish({ phase: 'ready', version })
+        const ready = page.getByRole('button', { name: locale === 'zh-CN' ? /更新已就绪/ : /Update ready/ })
+        await ready.waitFor()
+        await ready.click()
+        const dialog = page.getByRole('dialog', { name: locale === 'zh-CN' ? '重启以完成更新？' : 'Restart to finish updating?' })
+        await dialog.waitFor()
+        expect(await restarts()).toBe(0)
+        await dialog.getByRole('button', { name: locale === 'zh-CN' ? '立即重启' : 'Restart now', exact: true }).click()
+        await expect.poll(restarts).toBe(1)
 
-          const error = presentDesktopUpdate({ phase: 'error', version, failedOperation: 'download', message: 'HTTP 503' })
-          await publish(error)
-          const errorBadge = toggle.getByRole('img', { name: retryLabel, exact: true })
-          await errorBadge.waitFor()
-          // A failure keeps the update palette; only the label distinguishes it.
-          const failedBackground = await errorBadge.evaluate(element => getComputedStyle(element).backgroundColor)
-          expect(failedBackground).toBe(updateBackground)
-          await errorBadge.hover()
-          const tooltip = page.getByRole('tooltip', { name: errorDetail, exact: true })
-          await expect.poll(() => tooltip.evaluateAll(elements => elements.map(element => getComputedStyle(element).opacity))).toEqual(['1'])
-          await page.screenshot({ path: join(evidence, 'collapsed-error.png') })
-          await toggle.click()
-          const retry = page.getByRole('button', { name: retryLabel, exact: true })
-          await retry.waitFor()
-          await expect.poll(() => errorBadge.count()).toBe(0)
-          // The expanding ancestor can move the button after hover's element-only stability check.
-          await retry.evaluate(async (element) => {
-            const movements = document.getAnimations().filter(animation => animation.effect instanceof KeyframeEffect
-              && animation.effect.target instanceof Element && animation.effect.target.contains(element)
-              && animation.effect.getComputedTiming().endTime !== Infinity)
-            await Promise.all(movements.map(animation => animation.finished))
-          })
-          await retry.hover()
-          await expect.poll(() => tooltip.evaluateAll(elements => elements.map(element => getComputedStyle(element).opacity))).toEqual(['1'])
-          await page.screenshot({ path: join(evidence, 'retry.png') })
-          await retry.click()
-          await expect.poll(opens).toBe(2)
-
-          await publish(presentDesktopUpdate({ phase: 'ready', version }))
-          const ready = page.getByRole('button', { name: readyLabel, exact: true })
-          await ready.waitFor()
-          expect(await ready.getAttribute('aria-disabled')).toBe('false')
-          expect(await opens()).toBe(2)
-          await page.screenshot({ path: join(evidence, 'ready.png') })
-          await ready.click()
-          await expect.poll(opens).toBe(3)
-          expect(tripwire.pageErrors).toEqual([])
-          expect(tripwire.warnings).toEqual([])
-          expect(await page.evaluate(() => (window as FixtureWindow).updateFixture.listeners.size)).toBe(1)
-          await writeFile(join(evidence, 'result.json'), JSON.stringify({ locale, geometry, updateBackground, failedBackground,
-            passed: true, explicitActions: 3, carrier: 'substituted', host: 'real Web composition',
-            electron: false, installerExecuted: false }, null, 2) + '\n')
-          console.log(`Desktop workspace chrome evidence: ${evidence}`)
-        } catch (error) {
-          await page.screenshot({ path: join(evidence, 'failure.png') }).catch(() => undefined)
-          throw error
-        }
+        await publish({ phase: 'error', version })
+        await page.getByRole('button', { name: locale === 'zh-CN' ? '重试更新' : 'Retry update', exact: true }).click()
+        await expect.poll(() => page.evaluate(() => (window as FixtureWindow).updateFixture.dismissed)).toEqual([version])
+        expect(tripwire.pageErrors).toEqual([])
       } finally { await browser.close() }
-    } finally { await scaffold.close() }
+    } finally {
+      await scaffold.close()
+      await new Promise<void>(resolve => platform.close(() => { resolve() }))
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })
