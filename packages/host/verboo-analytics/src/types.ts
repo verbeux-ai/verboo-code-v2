@@ -39,6 +39,8 @@ export type ProductFeature = 'conversation' | 'model_switch' | 'tool' | 'browser
   | 'preference_theme_light' | 'preference_theme_dark' | 'preference_theme_system' | 'preference_minimalist_on' | 'preference_minimalist_off'
   | 'preference_language_en' | 'preference_language_pt' | 'preference_language_zh' | 'preference_language_ja'
   | 'preference_language_es' | 'preference_language_fr' | 'preference_language_de' | 'preference_language_ru' | 'preference_language_other'
+  | 'desktop_update_download' | 'desktop_update_install' | 'desktop_update_error'
+  | 'desktop_response_error' | 'desktop_connection_recovered'
 
 /** Bounded model dimensions from first-party or official account catalogs. */
 export interface ProductModelDetails {

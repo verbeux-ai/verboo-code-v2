@@ -31,6 +31,7 @@ it('sends anonymous, bounded observations for actual project and split controls'
         const serverOrder = String(++order)
         respond(200, { data: { subjectId: 'a'.repeat(64), decision: 'granted', revision: 1, policyVersion: 1,
           decisionOrder: '1', decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true,
+          region: 'outside_europe',
           serverTime: new Date().toISOString(), serverOrder, serverProof: `v1.${serverOrder}.${'b'.repeat(64)}` } })
         return
       }
@@ -116,7 +117,20 @@ it('sends anonymous, bounded observations for actual project and split controls'
     const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US', reducedMotion: 'reduce' })
     const pageErrors: string[] = []
     page.on('pageerror', (error) => { pageErrors.push(error.message) })
-    await page.addInitScript(() => { Object.assign(window, { __DSH_DIRECTORY_PICKER__: { pick: async () => null } }) })
+    await page.addInitScript(() => {
+      Object.assign(window, {
+        __DSH_DIRECTORY_PICKER__: { pick: async () => null },
+        __VERBOO_UPDATE__: {
+          getState: async () => ({ phase: 'idle', percent: null }),
+          subscribe: (listener: (state: unknown) => void) => {
+            const handle = (event: Event) => { listener((event as CustomEvent).detail) }
+            window.addEventListener('fixture-desktop-update', handle)
+            return () => { window.removeEventListener('fixture-desktop-update', handle) }
+          },
+          install: async () => {},
+        },
+      })
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
     await expect.poll(async () => (await scaffold!.ctx.verbooAnalytics.status()).consent?.decision, { timeout: 10000 }).toBe('granted')
@@ -136,6 +150,16 @@ it('sends anonymous, bounded observations for actual project and split controls'
       'preference_theme_system', 'preference_language_en']
     await expect.poll(() => defaults.filter(feature => events.some(event => event.feature === feature)),
       { timeout: 10000 }).toEqual(defaults)
+    await page.evaluate(() => {
+      for (const state of [{ phase: 'downloading', percent: 1 }, { phase: 'downloading', percent: 50 },
+        { phase: 'ready', percent: 100 }, { phase: 'installing', percent: null }, { phase: 'error', percent: null }]) {
+        window.dispatchEvent(new CustomEvent('fixture-desktop-update', { detail: state }))
+      }
+    })
+    await expect.poll(() => events.filter(event => String(event.feature).startsWith('desktop_update_')).length,
+      { timeout: 10000 }).toBe(4)
+    expect(events.filter(event => event.feature === 'desktop_update_download').map(event => event.outcome).sort()).toEqual(['completed', 'started'])
+    expect(events.filter(event => event.feature === 'desktop_update_install').map(event => event.outcome).sort()).toEqual(['failed', 'started'])
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
     await page.getByRole('button', { name: /^(Add project|Adicionar projeto)$/ }).click()
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)
@@ -188,6 +212,9 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await expect.poll(() => events.some(event => event.feature === 'pane_split_right'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Split below' }).last().click()
     await expect.poll(() => events.some(event => event.feature === 'pane_split_down'), { timeout: 10000 }).toBe(true)
+    await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')) })
+    await expect.poll(() => events.some(event => event.feature === 'desktop_connection_recovered' && event.outcome === 'completed'),
+      { timeout: 15000 }).toBe(true)
     expect(events.filter(event => event.feature === 'project_add' && event.outcome === 'started')).toHaveLength(1)
     expect(events.filter(event => event.feature === 'project_add' && event.outcome === 'cancelled')).toHaveLength(1)
     expect([...installationHeaders]).toHaveLength(1)

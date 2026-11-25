@@ -72,7 +72,9 @@ it('requires consent and sends only a completed root response through the real s
         consent = { ...consent, decision, revision: consent.revision + 1, decisionOrder: String(++serverOrder) }
       }
       const issued = String(++serverOrder)
-      res.end(JSON.stringify({ data: { ...consent, serverTime: new Date(serverNow).toISOString(), serverOrder: issued,
+      res.end(JSON.stringify({ data: { ...consent, region: 'outside_europe',
+        ...(consent.decision === 'unknown' && consent.revision === 0 ? { regionalDefault: true } : {}),
+        serverTime: new Date(serverNow).toISOString(), serverOrder: issued,
         ...(includeServerProof ? { serverProof: proof(issued) } : {}) } }))
       return
     }
@@ -111,7 +113,10 @@ it('requires consent and sends only a completed root response through the real s
     sessions: SessionStore, projections: SessionProjectionRegistry, analytics: VerbooAnalytics })
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()
-  expect((await ctx.verbooAnalytics.status()).consent?.decision).toBe('unknown')
+  const initialStatus = await ctx.verbooAnalytics.status()
+  expect(initialStatus.consent?.decision).toBe('unknown')
+  expect(initialStatus.consent).not.toHaveProperty('region')
+  expect(initialStatus.consent).not.toHaveProperty('regionalDefault')
   expect(events).toEqual([])
   expect((await ctx.verbooAnalytics.choose('granted')).ok).toBe(true)
   const session = ctx.sessions.create(SessionId('fixture-root'))
@@ -129,6 +134,21 @@ it('requires consent and sends only a completed root response through the real s
   expect([...installationSecrets]).toHaveLength(1)
   expect([...installationSecrets][0]).toMatch(/^[a-f0-9]{64}$/)
   expect(JSON.stringify(events)).not.toMatch(/SECRET|fixture-root/)
+  session.append('turn/start', { turn: 2 })
+  session.append('user/message', createMessage({ role: 'user', content: [{ type: 'text', text: 'SECRET FAILURE PROMPT' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+  session.append('step/start', { turn: 2, step: 1 })
+  session.append('turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'SECRET ERROR' } } })
+  await vi.waitFor(() => {
+    expect(events.filter(event => event.feature === 'desktop_response_error')).toHaveLength(1)
+  }, { timeout: 3000 })
+  expect(events.find(event => event.feature === 'desktop_response_error')).toMatchObject({ outcome: 'failed', surface: 'desktop' })
+  expect(JSON.stringify(events)).not.toMatch(/SECRET|fixture-root/)
+  session.append('turn/start', { turn: 3 })
+  session.append('user/message', createMessage({ role: 'user', content: [{ type: 'text', text: 'SECRET CANCELLED PROMPT' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+  session.append('step/start', { turn: 3, step: 1 })
+  session.append('turn/end', { turn: 3, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+  await delay(200)
+  expect(events.filter(event => event.feature === 'desktop_response_error')).toHaveLength(1)
   const oldProof = (await ctx.verbooAnalytics.status()).consent?.referenceProof ?? ''
   await ctx.verbooAnalytics.feature('message_enter', 'started', brandString<ProductAnalyticsSubject>(consent.subjectId), consent.revision, oldProof,
     { provider: 'verboo', model: 'max/qwen3.6-27b', effort: 'high' })

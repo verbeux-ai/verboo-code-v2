@@ -36,6 +36,8 @@ import { ProductModel } from './model.ts'
 import { TrialModel } from './trial-model.ts'
 import { TrialDock, TrialModal, type TrialInjected } from './Trial.tsx'
 import { createUpdateSource } from './update-source.ts'
+import { createUpdateAnalytics } from './update-analytics.ts'
+import { createConnectionAnalytics } from './connection-analytics.ts'
 import { createStaminaResource } from './stamina-resource.ts'
 import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
@@ -323,7 +325,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     return () => { stopPanes(); stopAccount(); stopModel?.() }
   }, 'Verboo: focused trial group')
   const desktopUpdate = createUpdateSource()
-  ctx.effect(() => desktopUpdate.start(), 'Verboo: desktop update status')
   const stamina = createStaminaResource(
     signal => ctx.remote.verboo.getStamina(signal),
     model.state,
@@ -384,6 +385,23 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const analyticsStatus = createSnapshotStore<ProductAnalyticsStatus | null>(null)
   let analyticsOwner: string | undefined
   let analyticsRevision = 0
+  ctx.effect(() => {
+    const observe = createUpdateAnalytics(captureProductConsent, observeFeature)
+    return desktopUpdate.state.subscribe(() => { observe(desktopUpdate.state.getSnapshot()) })
+  }, 'Verboo: desktop update analytics')
+  ctx.effect(() => desktopUpdate.start(), 'Verboo: desktop update status')
+  ctx.effect(() => {
+    if (globalThis.__VERBOO_UPDATE__ === undefined) return () => {}
+    const connection = (ctx.get('connection') as ConnectionHandle).state
+    let active = true
+    const observe = createConnectionAnalytics(captureProductConsent,
+      (consent) => { queueMicrotask(() => {
+        if (active && connection.getSnapshot() === 'connected') observeFeature('desktop_connection_recovered', 'completed', consent)
+      }) })
+    observe(connection.getSnapshot())
+    const unsubscribe = connection.subscribe(() => { observe(connection.getSnapshot()) })
+    return () => { active = false; unsubscribe() }
+  }, 'Verboo: connection recovery analytics')
   let analyticsReading = false
   let analyticsDisposed = false
   const featureObserver = (feature: 'model_switch' | 'plan' | 'goal' | 'mcp' | 'checkout') => {

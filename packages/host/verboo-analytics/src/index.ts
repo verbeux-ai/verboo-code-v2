@@ -48,7 +48,9 @@ declare module '@deepseek-ai/cordis' {
 const receiptSchema = z.object({ data: z.object({ status: z.literal('accepted'), receipt: z.object({ eventId: z.uuid(), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/) }) }) })
 const consentResponse = z.object({ data: consentSchema.extend({ serverTime: z.iso.datetime({ offset: true }).optional(),
   serverOrder: z.string().regex(/^(0|[1-9][0-9]{0,18})$/).optional(),
-  serverProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional() }) })
+  serverProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/).optional(),
+  region: z.enum(['europe', 'outside_europe', 'unknown']).optional(),
+  regionalDefault: z.boolean().optional() }) })
 
 interface Owner {
   identity: AnalyticsIdentity
@@ -194,6 +196,10 @@ export default class VerbooAnalytics extends TypertRemoteService {
       const capture = this.turnOwners.get(session)
       this.turnOwners.delete(session)
       this.turnCheckpoints.delete(session)
+      if (this.config.surface === 'desktop' && facts.root && facts.human && facts.stepped &&
+        event.data.reason.kind === 'error' && capture?.turn === event.data.turn) {
+        this.background(this.failedResponse(session, event.data.turn, facts.startedAt, event.time, capture))
+      }
       if (facts.completedTurn !== event.data.turn || this.config.surface === 'dashboard') return
       if (capture?.turn === event.data.turn) this.background(this.completed(session, facts, event.time, capture))
     })
@@ -272,7 +278,7 @@ export default class VerbooAnalytics extends TypertRemoteService {
         response = consentResponse.parse(await this.request(owner, '/api/analytics/product-consent', 'PUT', JSON.stringify({ decision, revision: decision === 'denied' ? response.revision : revision, policyVersion: 1 }))).data
       }
     }
-    const { serverTime, serverOrder, serverProof, ...consent } = response
+    const { serverTime, serverOrder, serverProof, region: _region, regionalDefault: _regionalDefault, ...consent } = response
     // The server supplies this separately from the persisted consent. Missing
     // or invalid references disable login observation on older backends.
     const order = positiveOrder(serverOrder)
@@ -482,6 +488,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
     if (current === undefined) return
     const id = responseOperationId(`tool:${session.id}`, seq)
     await this.enqueue('product_feature_used', { feature: 'tool', outcome: failed ? 'failed' : 'completed' },
+      at, id, startedAt, current, capture.reference?.proof)
+  }
+
+  private async failedResponse(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
+    const id = responseOperationId(`response-error:${session.id}`, turn)
+    await this.enqueue('product_feature_used', { feature: 'desktop_response_error', outcome: 'failed' },
       at, id, startedAt, current, capture.reference?.proof)
   }
 
