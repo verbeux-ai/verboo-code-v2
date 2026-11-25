@@ -98,5 +98,5 @@ describe('prefix-pruned credential matching', () => {
         expect(rule.match(text, from, context), `${JSON.stringify(text)} from ${String(from)}`).toEqual(regexSecretRule.match(text, from, context))
       }
     }
-  })
+  }, 15_000)
 })

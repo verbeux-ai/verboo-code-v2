@@ -10,6 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -36,7 +37,7 @@ function providePreview(ctx: Context) {
   const openResourceIn = vi.fn<Context['sidebarRight']['openResourceIn']>()
   const openResource = vi.fn<Context['sidebarRight']['openResource']>()
   const mounted = createSnapshotStore<SessionId | undefined>(undefined)
-  const subagentAddress = vi.fn<Context['sessions']['subagentAddress']>(() => undefined)
+  const subagentAddress = vi.fn<ISessions['subagentAddress']>(() => undefined)
   const binding = vi.fn<() => object | undefined>(() => ({}))
   const sessionRows = createSnapshotStore({ byId: { [SID]: { cwd: '/workspace' } } })
   ctx.provide('sessions', { subagentAddress, binding, list: sessionRows })
@@ -48,6 +49,22 @@ function providePreview(ctx: Context) {
 }
 
 const SID = 's-plan' as SessionId
+
+function isPlanChipInjected(value: unknown): value is PlanChipInjected {
+  return typeof value === 'object' && value !== null && 'exitPlanMode' in value &&
+    typeof value.exitPlanMode === 'function'
+}
+
+function isPlanChipInjector(value: unknown): value is (id: SessionId) => unknown {
+  return typeof value === 'function'
+}
+
+function injectPlanChip(entry: { inject?: unknown }): PlanChipInjected {
+  if (!isPlanChipInjector(entry.inject)) throw new Error('plan chip entry has no injector')
+  const injected: unknown = entry.inject(SID)
+  if (!isPlanChipInjected(injected)) throw new Error('plan chip injector returned an invalid face')
+  return injected
+}
 
 async function bench() {
   const ctx = new Context()
@@ -177,7 +194,7 @@ describe('ui-plan browser apply', () => {
     await fiber.await()
     const entry = b.slots.entries('conversation.input.plan')[0]!
     expect(entry.component).toBe(PlanChip)
-    const injected = (entry.inject as unknown as (id: SessionId) => PlanChipInjected)(SID)
+    const injected = injectPlanChip(entry)
 
     await expect(injected.exitPlanMode()).resolves.toBeNull()
     expect(b.execute).toHaveBeenLastCalledWith(SID, '/plan off', [])
@@ -200,6 +217,40 @@ describe('ui-plan browser apply', () => {
     expect(b.removeResources).toHaveBeenCalledOnce()
     expect(b.removeType).toHaveBeenCalledOnce()
     expect(b.slots.entries('conversation.input.plan')).toHaveLength(0)
+  })
+
+  it('observes the plan control with only the category and result', async () => {
+    const b = await bench()
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.ctx.provide('commandUi', { beginFeatureObservation: begin } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const entry = b.slots.entries('conversation.input.plan')[0]!
+      const injected = injectPlanChip(entry)
+      await expect(injected.exitPlanMode()).resolves.toBeNull()
+      expect(begin).toHaveBeenCalledExactlyOnceWith('plan', SID)
+      expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+      begin.mockClear(); finish.mockClear()
+      b.execute.mockResolvedValueOnce({ ok: true, value: undefined } as never)
+      await injected.exitPlanMode()
+      expect(begin).toHaveBeenCalledExactlyOnceWith('plan', SID)
+      expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+      begin.mockClear(); finish.mockClear()
+    } finally { await fiber.dispose() }
+  })
+
+  it('does not block the plan control when observation fails', async () => {
+    const b = await bench()
+    b.ctx.provide('commandUi', { beginFeatureObservation: () => { throw new Error('observer failure') } } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      const entry = b.slots.entries('conversation.input.plan')[0]!
+      const injected = injectPlanChip(entry)
+      await expect(injected.exitPlanMode()).resolves.toBeNull()
+    } finally { await fiber.dispose() }
   })
   it('binds both entry points to the same Session resource and removes the sidebar seats', async () => {
     const b = await bench()

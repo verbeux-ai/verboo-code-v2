@@ -697,6 +697,47 @@ The stored session was removed locally, whether by sign-out or by a rejected ref
 ```
 
 Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
+
+<a id="verboo-account-events"></a>
+
+### `verboo-account/*` events
+
+<a id="verboo-accountlogin-completed--emit"></a>
+
+#### `verboo-account/login-completed` — emit
+
+A local OAuth grant was committed; the opaque session ID stays in the Host.
+
+```ts cordis-catalog
+/**
+ * A local OAuth grant was committed; the opaque session ID stays in the Host.
+ * @param sessionId - local login identity.
+ * @param attemptId - local attempt identity.
+ * @param startedAt - UTC timestamp when the user started OAuth, in milliseconds.
+ * @param completedAt - UTC timestamp in milliseconds.
+ * @mode emit
+ */
+'verboo-account/login-completed'(sessionId: AccountSessionId, attemptId: SignInAttemptId, startedAt: number, completedAt: number): void
+```
+
+Source: [`packages/credentials/verboo-account/src/index.ts`](../../packages/credentials/verboo-account/src/index.ts)
+
+<a id="verboo-accountlogin-started--emit"></a>
+
+#### `verboo-account/login-started` — emit
+
+A new local OAuth attempt is starting.
+
+```ts cordis-catalog
+/**
+ * A new local OAuth attempt is starting.
+ * @param attemptId - opaque local attempt identity.
+ * @mode emit
+ */
+'verboo-account/login-started'(attemptId: SignInAttemptId): void
+```
+
+Source: [`packages/credentials/verboo-account/src/index.ts`](../../packages/credentials/verboo-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getProfile、getBalance、getUnnotifiedBonuses、ackBonusNotified、startSignIn、cancelSignIn、signOut、watch，以及仅限 Host 的 resolveToken、refreshRejectedToken、rejectToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。

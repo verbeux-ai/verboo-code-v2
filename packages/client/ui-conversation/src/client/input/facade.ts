@@ -46,6 +46,8 @@ export interface SessionInputDeps {
   submissionState?: () => MessageSubmissionState
   /** Notify one ordinary message attempt before reference serialization. */
   messageSubmitted?: (submission: MessageSubmission) => void
+  /** Capture an optional product observation before command adjudication. */
+  beginMessageObservation?: (source: 'click' | 'enter', mode: InputSubmitMode, running: boolean, model: MessageSubmissionState['model']) => (() => void) | undefined
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
@@ -130,6 +132,7 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
  * Lexical editor.
  */
 export class SessionInputShell implements SessionInput {
+  private readonly messageObservations = new WeakMap<MessageSubmission, () => void>()
   /** Published editor projection + submit-plane state + queue overlay (the InputZone currency source). */
   readonly state: SnapshotStore<InputState>
   /** Latest surfaced notice (null after clear); the bar renders errors as banners and information inline. */
@@ -398,6 +401,12 @@ export class SessionInputShell implements SessionInput {
     const submission: MessageSubmission = Object.freeze({
       timestamp, mode, ...source === undefined ? {} : { source }, ...state === undefined ? {} : { state },
     })
+    if (source !== undefined && state !== undefined) {
+      try {
+        const report = this.deps.beginMessageObservation?.(source, mode, state.running, state.model)
+        if (report !== undefined) this.messageObservations.set(submission, report)
+      } catch (_error) { /* Optional measurement cannot interrupt submission. */ }
+    }
     // Claimed pre-gate: a claim that does not declare attachment acceptance never
     // submits while attachments are present — one notice, everything retained.
     // Enter-time adjudication applies the same policy for unclaimed lines
@@ -734,6 +743,8 @@ export class SessionInputShell implements SessionInput {
 
   private notifySubmission(submission: MessageSubmission | undefined): void {
     if (submission === undefined) return
+    try { this.messageObservations.get(submission)?.() } catch (_error) { /* Measurement cannot interrupt submission. */ }
+    this.messageObservations.delete(submission)
     try { this.deps.messageSubmitted?.(submission) } catch (_error) { /* Notification consumers cannot interrupt submission. */ }
   }
 

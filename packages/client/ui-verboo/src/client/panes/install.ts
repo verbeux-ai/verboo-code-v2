@@ -11,8 +11,9 @@ import type { PaneAxis } from './layout.ts'
 /** Install one product-owned layout controller and its view registrations.
  * @param ctx - product Client context.
  * @param config - pane size constraints.
+ * @param onSplitClick - observe a split control without pane or session data.
  * @returns the owned pane state, for product-level composition. */
-export function installPanes(ctx: Context, config: Config): PaneController['state'] {
+export function installPanes(ctx: Context, config: Config, onSplitClick: (axis: PaneAxis) => void): PaneController['state'] {
   const form = ctx.configForms.get<Pick<Config, 'paneLayout' | 'minimalist'>>('ui-verboo')
   const saveError = createSnapshotStore(false)
   let pending: string | null = null
@@ -120,7 +121,10 @@ export function installPanes(ctx: Context, config: Config): PaneController['stat
         element.querySelector<HTMLElement>('[data-conversation-selector]')
       )
     },
-    splitPane: split,
+    splitPane: (id, axis) => {
+      try { onSplitClick(axis) } catch (_error) { /* Analytics must not block the control. */ }
+      split(id, axis)
+    },
     closePane: (id) => {
       controller.close(id)
     },

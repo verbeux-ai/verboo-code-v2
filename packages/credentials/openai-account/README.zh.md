@@ -60,11 +60,11 @@ kind: "package-reference"
 
 ## 模型体验
 
-None, as this package produces no model-visible text; it stores a credential and reports plan facts to the surfaces that show them. 订阅自身的模型是否应答由消费该令牌的路由决定。
+无。本包不产生模型可见文本，只存储凭据并向展示界面提供方案信息。
 
 #### KV Cache effect
 
-None. 本包不为任何请求添加前缀，也不更改消息内容，因此不影响路由发送的可缓存前缀。
+无。本包不为任何请求添加前缀，也不更改消息内容，因此不影响路由发送的可缓存前缀。
 
 
 <a id="known-limitations-and-deferred-work"></a>

@@ -10,6 +10,10 @@
   disabled: true
 - id: llm-deepseek
   disabled: true
+- id: desktop-product-telemetry
+  disabled: true
+- id: product-analytics
+  disabled: true
 - id: agent-default-model
   config:
     provider: deepseek-account
@@ -46,6 +50,14 @@
   disabled: true
 
 - insert:
+    - id: verboo-product-analytics
+      name: '@deepseek-ai/dsh-host-verboo-analytics'
+      config:
+        apiOrigin: !!js process.env.VERBOO_API_ORIGIN || 'https://code.verboo.ai'
+        routerBaseURL: !!js process.env.VERBOO_ROUTER_BASE_URL || 'https://code.verboo.ai/router/v1'
+        allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
+        surface: dashboard
+        appVersion: !!js process.env.DSH_CLIENT_VERSION || 'development'
     - id: verboo-account
       name: '@deepseek-ai/dsh-verboo-account'
       config:

@@ -1885,6 +1885,36 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-product-telemetry-otel -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
+<a id="deepseek-aidsh-host-verboo-analytics"></a>
+
+## `@deepseek-ai/dsh-host-verboo-analytics`
+
+- `inject`: `credentials` · `deepseekAccount` · `sessionProjections`
+- `source`: [`packages/host/verboo-analytics/src/index.ts:19`](../packages/host/verboo-analytics/src/index.ts)
+
+```ts config-catalog
+/** Public collector configuration; all destination credentials stay on the server. */
+export interface Config {
+  /** Origin of the Verboo API that owns product consent and event receipts. */
+  apiOrigin?: string
+  /** Origin of the account router used by the shared deployment configuration. */
+  routerBaseURL?: string
+  /** Permit an HTTP loopback origin for isolated local tests. */
+  allowLoopbackHttp?: boolean
+  /** Product surface recorded on admitted events. */
+  surface?: ProductSurface
+  /** Public build version attached to admitted events. */
+  appVersion?: string
+  /** Delay in milliseconds between retries of pending deliveries. */
+  retryIntervalMs?: number
+}
+
+/** Surfaces assigned by the application composition, never inferred from a UA. */
+export type ProductSurface = 'desktop' | 'cli' | 'dashboard'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 <a id="deepseek-aidsh-host-webserver"></a>
 

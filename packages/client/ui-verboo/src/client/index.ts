@@ -25,6 +25,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
 import { en, pt, zh, ja, es, fr, de, ru } from './locales.ts'
 import { Config } from '../config.ts'
+import type {} from '@deepseek-ai/dsh-host-verboo-analytics/remote'
+import type { ProductAnalyticsStatus, ProductFeature, ProductModelDetails } from '@deepseek-ai/dsh-host-verboo-analytics/types'
+import { modelDimensions } from './model-dimensions.ts'
+import { captureFeatureConsent, type FeatureConsent } from './feature-consent.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
 import { DesktopQuitHold } from './QuitHold.tsx'
@@ -37,6 +41,7 @@ import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
@@ -61,6 +66,7 @@ export const inject = [
   'slots',
   'configForms',
   'modelDirectories',
+  'commandUi',
   'layout',
   'uiWorkspace',
   'workspaces',
@@ -74,12 +80,14 @@ export const inject = [
   'remote.session',
   'remote.verboo',
   'remote.verbooMcp',
+  'remote.verbooAnalytics',
   'resources',
   'remoteAccess',
   'contextMenus',
   'connection',
   'sessions',
   'conversation',
+  'uiConversation',
 ]
 /**
  * Install product UI without changing the engine, Session persistence or chat transport.
@@ -98,7 +106,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     () => ctx.theme.overrideIcons('verboo-code', icons),
     'Verboo: icon family',
   )
-  const panes = installPanes(ctx, config)
+  const panes = installPanes(ctx, config, (axis) => {
+    const consent = captureProductConsent()
+    observeFeature(axis === 'x' ? 'pane_split_right' : 'pane_split_down', 'started', consent)
+  })
   const navigationEntries = createSnapshotStore<
     readonly { id: MainPanelId; label: string }[]
   >([])
@@ -141,6 +152,33 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const navigation = new ExternalNavigation(() => ctx.get('externalLinks'))
   const open = (url: string) => navigation.open(url)
   ctx.effect(() => () =>{  navigation.release() }, 'Verboo: browser reservations')
+  // Fixed categories only: never send a provider label, server name, or URL.
+  const captureProductConsent = (): FeatureConsent | undefined => captureFeatureConsent(analyticsStatus.getSnapshot())
+  const observeFeature = (feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', consent: FeatureConsent | undefined, model?: ProductModelDetails): void => {
+    if (!consent) return
+    try {
+      const request = ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision, consent.proof, model)
+      void request.catch(() => {})
+    } catch (_error) { /* Optional measurement cannot interrupt the product action. */ }
+  }
+  const trackFeatureOperation = async <T>(
+    feature: 'mcp' | 'checkout', request: () => Promise<T>, completed: (value: T) => boolean, enabled = true,
+  ): Promise<T> => {
+    if (!enabled) return request()
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return request()
+    const sameOwner = () => owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision
+    try {
+      const value = await request()
+      if (sameOwner()) observeFeature(feature, completed(value) ? 'completed' : 'failed', consent)
+      return value
+    } catch (error) {
+      if (sameOwner()) observeFeature(feature, 'failed', consent)
+      throw error
+    }
+  }
   const model = new ProductModel(
     {
       profile: async () => {
@@ -176,7 +214,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       connect: async (slug, label) => {
-        const r = await ctx.remote.verboo.connect(slug, label)
+        const r = await trackFeatureOperation('mcp', () => ctx.remote.verboo.connect(slug, label), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       disconnect: async (id) => {
@@ -188,7 +226,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       saveMcpServer: async (input) => {
-        const r = await ctx.remote.verbooMcp.save(input)
+        const r = await trackFeatureOperation('mcp', () => ctx.remote.verbooMcp.save(input), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       deleteMcpServer: async (name) => {
@@ -216,7 +254,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
-        const r = await ctx.remote.verboo.billingURL(id, purchase)
+        const r = await trackFeatureOperation('checkout', () => ctx.remote.verboo.billingURL(id, purchase), result => result.ok && result.value.ok, purchase)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       open,
@@ -340,6 +378,138 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     subscriptionUsage.refresh()
   }
   const externalStatus = createSnapshotStore<OpenAiStatus>({ signedIn: false })
+  const analyticsStatus = createSnapshotStore<ProductAnalyticsStatus | null>(null)
+  let analyticsOwner: string | undefined
+  let analyticsRevision = 0
+  let analyticsReading = false
+  let analyticsDisposed = false
+  const featureObserver = (feature: 'model_switch' | 'plan' | 'goal' | 'mcp' | 'checkout') => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    return (outcome: 'completed' | 'failed') => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(feature, outcome, consent)
+      }
+    }
+  }
+  ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => featureObserver('model_switch')), 'Verboo: model switch analytics')
+  ctx.effect(() => ctx.modelDirectories.observeModelChoices((selected) => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    const dimensions = modelDimensions(selected)
+    if (!owner || !consent || !dimensions) return undefined
+    return () => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature('model_choice', 'completed', consent, dimensions)
+      }
+    }
+  }), 'Verboo: model choice analytics')
+  ctx.effect(() => ctx.commandUi.observeFeatureCommands(featureObserver), 'Verboo: command feature analytics')
+  ctx.effect(() => ctx.uiConversation.observeControlClicks((control) => {
+    observeFeature(control, 'started', captureProductConsent())
+  }), 'Verboo: conversation control analytics')
+  ctx.effect(() => ctx.uiConversation.observeMessageSubmissions((feature, selected) => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    const dimensions = modelDimensions(selected)
+    if (!owner || !consent) return undefined
+    return () => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(feature, 'started', consent, dimensions)
+      }
+    }
+  }), 'Verboo: message submission analytics')
+  const analyticsStateMatches = (revision: number): boolean => revision === analyticsRevision && !analyticsDisposed
+  const refreshAnalytics = async (): Promise<void> => {
+    const snapshot = model.state.getSnapshot()
+    const owner = snapshot.profile?.id ?? undefined
+    if (owner !== analyticsOwner) {
+      analyticsOwner = owner
+      analyticsRevision++
+      analyticsStatus.set(null)
+    }
+    if (owner === undefined || analyticsReading || analyticsDisposed) return
+    const revision = analyticsRevision
+    analyticsReading = true
+    try {
+      const result = await ctx.remote.verbooAnalytics.status()
+      if (analyticsStateMatches(revision)) analyticsStatus.set(result.ok ? result.value : null)
+    } catch (_error) {
+      if (analyticsStateMatches(revision)) analyticsStatus.set(null)
+    } finally { analyticsReading = false }
+  }
+  ctx.effect(() => {
+    const unsubscribe = model.state.subscribe(() => { void refreshAnalytics() })
+    const timer = setInterval(() => { void refreshAnalytics() }, 15000)
+    void refreshAnalytics()
+    return () => { analyticsDisposed = true; analyticsRevision++; clearInterval(timer); unsubscribe() }
+  }, 'Verboo: analytics status')
+  ctx.effect(() => {
+    const busyForm = ctx.configForms.get<{ busyEnter: 'queue' | 'steer' }>('ui-conversation')
+    const appearanceForm = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
+    const toolsForm = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
+    const presetForm = ctx.configForms.get<{ selectedDefault: string }>('agent-preset-registry')
+    const last = new Map<string, string>()
+    const languages: Readonly<Record<string, ProductFeature>> = {
+      en: 'preference_language_en', pt: 'preference_language_pt', zh: 'preference_language_zh', ja: 'preference_language_ja',
+      es: 'preference_language_es', fr: 'preference_language_fr', de: 'preference_language_de', ru: 'preference_language_ru',
+    }
+    const themes: Readonly<Record<string, ProductFeature>> = {
+      light: 'preference_theme_light', dark: 'preference_theme_dark', system: 'preference_theme_system',
+    }
+    const presets = new Map<string, ProductFeature>([
+      ['cordis', 'preference_preset_cordis'], ['ptc', 'preference_preset_ptc'],
+      ['minimal', 'preference_preset_minimal'], ['standard', 'preference_preset_standard'],
+    ])
+    const report = () => {
+      const owner = model.state.getSnapshot().profile?.id
+      const consent = captureProductConsent()
+      if (!owner || !consent) return
+      const emit = (dimension: string, feature: ProductFeature | undefined) => {
+        if (feature === undefined) return
+        const key = `${owner}:${consent.revision}:${feature}`
+        if (last.get(dimension) === key) return
+        last.set(dimension, key)
+        observeFeature(feature, 'completed', consent)
+      }
+      const busy = busyForm.getSnapshot()
+      if (busy.status === 'ready') {
+        if (busy.value?.busyEnter === 'queue') emit('busy', 'preference_busy_queue')
+        else if (busy.value?.busyEnter === 'steer') emit('busy', 'preference_busy_steer')
+      }
+      const appearance = appearanceForm.getSnapshot()
+      if (appearance.status === 'ready' && typeof appearance.value?.minimalist === 'boolean') {
+        emit('minimalist', appearance.value.minimalist ? 'preference_minimalist_on' : 'preference_minimalist_off')
+      }
+      const tools = toolsForm.getSnapshot()
+      if (tools.status === 'ready' && typeof tools.value?.enabled === 'boolean') {
+        emit('coding_tools', tools.value.enabled ? 'preference_coding_tools_on' : 'preference_coding_tools_off')
+      }
+      const preset = presetForm.getSnapshot()
+      if (preset.status === 'ready' && typeof preset.value?.selectedDefault === 'string') {
+        emit('preset', presets.get(preset.value.selectedDefault) ?? 'preference_preset_other')
+      }
+      const preference = preferences.getSnapshot()
+      emit('theme', themes[preference.theme])
+      emit('language', languages[preference.locale.toLowerCase().split('-')[0] ?? ''] ?? 'preference_language_other')
+    }
+    const unsubscribeBusy = busyForm.subscribe(report)
+    const unsubscribeAppearance = appearanceForm.subscribe(report)
+    const unsubscribeTools = toolsForm.subscribe(report)
+    const unsubscribePreset = presetForm.subscribe(report)
+    const unsubscribePreferences = preferences.subscribe(report)
+    const unsubscribeStatus = analyticsStatus.subscribe(report)
+    const unsubscribeModel = model.state.subscribe(report)
+    report()
+    return () => {
+      unsubscribeBusy(); unsubscribeAppearance(); unsubscribeTools(); unsubscribePreset()
+      unsubscribePreferences(); unsubscribeStatus(); unsubscribeModel()
+    }
+  }, 'Verboo: preference analytics')
   const externalDialogOpen = createSnapshotStore({ open: false })
   const reloadExternalStatus = async (): Promise<void> => {
     externalStatus.set(await openAiStatus())
@@ -394,15 +564,25 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       void ctx.uiWorkspace.openWorkspace(id)
     },
     addProject: async () => {
+      const consent = captureProductConsent()
+      observeFeature('project_add', 'started', consent)
       const picker = globalThis as typeof globalThis & {
         __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> }
       }
-      const path = picker.__DSH_DIRECTORY_PICKER__
-        ? await picker.__DSH_DIRECTORY_PICKER__.pick()
-        : await ctx.uiWorkspace.pickDirectory()
-      if (path === null) return
-      const workspace = await ctx.workspaces.create({ path })
-      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
+      let created = false
+      try {
+        const path = picker.__DSH_DIRECTORY_PICKER__
+          ? await picker.__DSH_DIRECTORY_PICKER__.pick()
+          : await ctx.uiWorkspace.pickDirectory()
+        if (path === null) { observeFeature('project_add', 'cancelled', consent); return }
+        const workspace = await ctx.workspaces.create({ path })
+        created = true
+        observeFeature('project_add', 'completed', consent)
+        await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
+      } catch (error) {
+        if (!created) observeFeature('project_add', 'failed', consent)
+        throw error
+      }
     },
     renameProject: async (id, title) => {
       await ctx.workspaces.rename(id, title)
