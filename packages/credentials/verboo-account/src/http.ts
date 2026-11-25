@@ -83,6 +83,10 @@ export class VerbooHttp {
    * @param init - request body, authentication and cancellation captured by the caller.
    * @param context - immutable identity retained across attempts.
    * @param emptyResponse - accept a successful response without a JSON body.
+   * @param deadlineMs - ceiling for a call whose owner knows the endpoint
+   * answers slower than the deployment default; it replaces both the
+   * per-attempt ceiling and the total budget, because such a caller cannot
+   * retry.
    * @returns parsed JSON, or null for a successful empty response.
    */
   async request(
@@ -90,10 +94,11 @@ export class VerbooHttp {
     init: RequestInit = {},
     context: Operation = operation(),
     emptyResponse = false,
+    deadlineMs?: number,
   ): Promise<unknown> {
     const safe =
       init.method === undefined || ['GET', 'HEAD'].includes(init.method)
-    const budget = AbortSignal.timeout(35_000)
+    const budget = AbortSignal.timeout(deadlineMs ?? 35_000)
     const headers = new Headers(init.headers)
     headers.set('X-Verboo-Journey-Id', context.journeyId)
     headers.set('X-Verboo-Operation-Id', context.operationId)
@@ -104,7 +109,7 @@ export class VerbooHttp {
           ? []
           : [init.signal]),
         budget,
-        AbortSignal.timeout(this.deployment.requestTimeoutMs),
+        AbortSignal.timeout(deadlineMs ?? this.deployment.requestTimeoutMs),
       ])
       let response: Response
       try {
