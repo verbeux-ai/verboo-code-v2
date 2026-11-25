@@ -81,6 +81,8 @@ interface Attempt {
   removeRoute?: () => Promise<void>
 }
 
+class BrowserCallbackExpired extends Error {}
+
 /** Verboo's public PKCE client; encrypted grants remain exclusively on the Host. */
 export class VerbooAccount extends DeepSeekAccount {
   static inject = ['credentials', 'authorization']
@@ -195,7 +197,7 @@ export class VerbooAccount extends DeepSeekAccount {
   }
 
   /**
-   * Begin a PKCE authorization owned by the current installation.
+   * Begin or join a PKCE authorization owned by the current installation.
    * @param client - locale and release metadata for the operation.
    * @param callbackOrigin - authenticated Client origin initiating the login.
    * @param _source - Client surface initiating the authorization.
@@ -206,16 +208,24 @@ export class VerbooAccount extends DeepSeekAccount {
     callbackOrigin: string,
     _source: 'web' | 'desktop',
   ): Promise<AccountView> {
-    if (this.removing !== undefined) await this.removing
-    if (this.closed) throw new AccountRequestError('request_cancelled')
-    if (
-      this.attempt &&
-      ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(
-        this.attempt.view.phase,
+    let completed: Attempt | undefined
+    for (;;) {
+      if (this.closed) throw new AccountRequestError('request_cancelled')
+      if (this.removing !== undefined) {
+        await this.removing
+        continue
+      }
+      const existing = this.attempt
+      if (existing === undefined || existing === completed) break
+      if (
+        ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(
+          existing.view.phase,
+        )
       )
-    )
-      return this.getState()
-    if (this.attempt) await this.attempt.done
+        return this.getState()
+      await existing.done
+      completed = existing
+    }
     const origin = new URL(callbackOrigin)
     if (
       origin.protocol !== 'http:' ||
@@ -267,6 +277,11 @@ export class VerbooAccount extends DeepSeekAccount {
         this.finishCallback(attempt, outcome.status === 'authorized')
       })
       .catch((error: unknown) => {
+        if (error instanceof BrowserCallbackExpired) {
+          this.update(attempt, { phase: 'expired', errorCode: 'expired' })
+          this.journey.record(attempt.context, 'expired')
+          return
+        }
         const failure =
           error instanceof AccountRequestError
             ? error
@@ -310,12 +325,19 @@ export class VerbooAccount extends DeepSeekAccount {
     })
     const deadline = AbortSignal.timeout(this.deployment.attemptTimeoutMs)
     const signal = AbortSignal.any([session.signal, deadline])
+    const deadlineExpired = () =>
+      deadline.aborted && signal.reason === deadline.reason
     const abort = () => {
-      code.reject(
-        new AccountRequestError(
-          deadline.aborted ? 'request_timeout' : 'request_cancelled',
-        ),
-      )
+      const expired = deadlineExpired()
+      if (
+        expired &&
+        attempt.view.phase === 'waiting-browser' &&
+        attempt.response === undefined
+      ) {
+        code.reject(new BrowserCallbackExpired())
+      } else {
+        code.reject(new AccountRequestError(expired ? 'request_timeout' : 'request_cancelled'))
+      }
     }
     signal.addEventListener('abort', abort, { once: true })
     try {
@@ -410,7 +432,13 @@ export class VerbooAccount extends DeepSeekAccount {
         }),
       })
     } catch (error) {
-      if (deadline.aborted) throw new AccountRequestError('request_timeout')
+      if (
+        deadlineExpired() &&
+        (error === signal.reason ||
+          (error instanceof AccountRequestError && error.code === 'request_cancelled'))
+      ) {
+        throw new AccountRequestError('request_timeout')
+      }
       throw error
     } finally {
       signal.removeEventListener('abort', abort)
