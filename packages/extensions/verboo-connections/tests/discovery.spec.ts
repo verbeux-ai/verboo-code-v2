@@ -244,7 +244,7 @@ describe('discoverConnectionTools', () => {
   it('rejects a toolkit that does not match the specified connection', async () => {
     const ctx = await scope()
     const stub = product()
-    const search = vi.fn(stub.searchAgentConnections)
+    const search = vi.fn(async () => JSON.stringify([gmailSearch]))
     const registry = new ConnectionToolRegistry(ctx, { ...stub, searchAgentConnections: search }, budgets)
     await expect(discoverConnectionTools({
       product: { ...stub, searchAgentConnections: search }, registry, budgets,
@@ -274,7 +274,7 @@ describe('discoverConnectionTools', () => {
   it('does not query a service that is not connected', async () => {
     const ctx = await scope()
     const stub = product()
-    const search = vi.fn(stub.searchAgentConnections)
+    const search = vi.fn(async () => JSON.stringify([gmailSearch]))
     const registry = new ConnectionToolRegistry(ctx, { ...stub, searchAgentConnections: search }, budgets)
     await expect(discoverConnectionTools({
       product: { ...stub, searchAgentConnections: search }, registry, budgets,
@@ -479,15 +479,17 @@ describe('discoverConnectionTools', () => {
         required: ['command', 'context', 'llm_model'],
       },
     })
-    const schema = ctx.tools.get('connection__posthog_mcp__POSTHOG_MCP_EXEC')?.parameters
+    const schema = ctx.tools.get('connection__posthog_mcp__POSTHOG_MCP_EXEC')?.parameters as {
+      properties: Record<string, { description?: string }>
+    }
     expect(schema).toMatchObject({
       required: ['command', 'context', 'llm_model'],
       properties: {
-        command: { description: expect.stringContaining('Commands: search, info, schema, call.') },
         context: { description: 'Explain the abstract purpose without personal data.' },
         llm_model: { description: 'Exact model identifier or unknown.' },
       },
     })
+    expect(schema.properties.command?.description).toContain('Commands: search, info, schema, call.')
     expect(Buffer.byteLength(JSON.stringify(schema), 'utf8')).toBeLessThanOrEqual(budgets.maxSchemaBytes)
     const definition = ctx.tools.get('connection__posthog_mcp__POSTHOG_MCP_EXEC')!
     await expect(definition.execute({}, { signal: new AbortController().signal } as never))
