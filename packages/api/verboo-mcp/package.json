@@ -32,7 +32,8 @@
     "./remote": {
       "types": "./lib/typert.remote-client.d.ts",
       "default": "./lib/typert.remote-client.js"
-    }
+    },
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "locale/*.json",

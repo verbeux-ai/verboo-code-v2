@@ -71,6 +71,7 @@ type Grant = z.infer<typeof storedGrant>
 
 interface Attempt {
   view: SignInAttemptView
+  startedAt: number
   controller: AbortController
   running: Promise<void>
   done: Promise<void>
@@ -230,6 +231,7 @@ export class VerbooAccount extends DeepSeekAccount {
       throw new AccountRequestError('contract_error')
     }
     const attempt: Attempt = {
+      startedAt: Date.now(),
       view: {
         id: brandString<SignInAttemptId>(randomUUID()),
         phase: 'initializing',
@@ -242,6 +244,9 @@ export class VerbooAccount extends DeepSeekAccount {
       context: operation(),
     }
     this.attempt = attempt
+    try { this.ctx.emit('verboo-account/login-started', attempt.view.id) } catch (_error) {
+      // Optional local observers cannot change the OAuth outcome.
+    }
     this.journey.record(attempt.context, 'started')
     attempt.done = this.ctx.authorization
       .begin({
@@ -401,14 +406,18 @@ export class VerbooAccount extends DeepSeekAccount {
       )
       signal.throwIfAborted()
       this.update(attempt, { phase: 'committing' })
+      const sessionId = brandString<AccountSessionId>(randomUUID())
       await session.commit({
         kind: 'grant',
         payload: await this.vault.seal({
           ...grant,
           installationId,
-          sessionId: randomUUID(),
+          sessionId,
         }),
       })
+      try { this.ctx.emit('verboo-account/login-completed', sessionId, attempt.view.id, attempt.startedAt, Date.now()) } catch (_error) {
+        // Optional local observers cannot change the OAuth outcome.
+      }
     } catch (error) {
       if (deadline.aborted) throw new AccountRequestError('request_timeout')
       throw error

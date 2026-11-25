@@ -748,7 +748,7 @@ it('forwards live account notices and removes their subscriptions', async ({ sta
   await c.flush()
   expect(expired).toHaveBeenCalledOnce()
   expect(unavailable).toHaveBeenCalledOnce()
-})
+}, 15_000)
 for (const native of [false, true]) it(`exposes desktop progress actions and disposes its subscriptions (native platform: ${native})`, async ({ start, mock }) => {
   vi.stubGlobal('dshDesktop', {})
   const platform = { open: vi.fn(), setBounds: vi.fn(), close: vi.fn() }

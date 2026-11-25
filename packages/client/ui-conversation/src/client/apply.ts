@@ -578,7 +578,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               span: { ...selection, draftRev: snapshot.draftRev },
             })
           },
-        stop: () => { stop(sessionId) },
+        stop: () => { uiConversation.reportControlClick(sessionId, 'stop_button'); stop(sessionId) },
         promptHistoryActive: () => historyState.index >= 0 && shell.snapshot.draft === historyState.recalledText,
         promptHistory: (direction) => {
           const binding = sessions.binding(sessionId)

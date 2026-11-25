@@ -1,4 +1,11 @@
 # Native startup owns the chat window, after all user profile layers.
+- id: verboo-product-analytics
+  config:
+    apiOrigin: !!js process.env.VERBOO_API_ORIGIN || 'https://code.verboo.ai'
+    routerBaseURL: !!js process.env.VERBOO_ROUTER_BASE_URL || 'https://code.verboo.ai/router/v1'
+    allowLoopbackHttp: !!js process.env.VERBOO_ALLOW_LOOPBACK_HTTP === '1'
+    surface: desktop
+    appVersion: !!js process.env.DSH_CLIENT_VERSION || 'development'
 - id: web-runtime
   config:
     openBrowser: false

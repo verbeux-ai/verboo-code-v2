@@ -402,8 +402,12 @@ describe('Conversation inject API', () => {
     b.sessionFake.cancel.mockResolvedValueOnce({
       ok: false, error: new RemoteError('gateway/internal', 'stop failed', {}),
     })
+    const stopClick = vi.fn()
+    const unobserveStop = b.runtime.ctx.uiConversation.observeControlClicks(stopClick)
     b.composerApi(ROOT).stop!()
+    expect(stopClick).toHaveBeenCalledExactlyOnceWith('stop_button')
     await vi.waitFor(() => { expect(b.sessionFake.cancel).toHaveBeenCalledOnce() })
+    unobserveStop()
     await b.runtime.dispose()
   })
 

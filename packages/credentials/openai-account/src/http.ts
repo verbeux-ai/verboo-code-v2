@@ -86,7 +86,8 @@ export class AccountHttp {
     const text = await response.text()
     if (text.trim().length === 0) return { status: response.status, body: undefined }
     try {
-      return { status: response.status, body: JSON.parse(text) }
+      const body: unknown = JSON.parse(text)
+      return { status: response.status, body }
     } catch (cause) {
       throw new AccountRequestError('invalid_response', { cause })
     }

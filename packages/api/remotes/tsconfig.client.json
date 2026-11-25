@@ -57,6 +57,9 @@
       "path": "../../host/plugin-inventory"
     },
     {
+      "path": "../../host/verboo-analytics"
+    },
+    {
       "path": "../../interaction/commands"
     },
     {

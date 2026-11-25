@@ -108,6 +108,11 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'verbooAnalytics', pkg: 'host-verboo-analytics', title: 'Consented Verboo product analytics', mode: 'service',
+    consumers: ['client-ui-verboo'],
+    note: 'Owns product consent, metadata-only observations, and a durable receipt-checked delivery queue.',
+  },
+  {
     key: 'openaiAccount', pkg: 'openai-account', title: '[OI] ChatGPT account', mode: 'service',
     consumers: ['client-ui-verboo'],
     note: 'Stores the [OI] subscription grant and reports the plan facts product surfaces show.',

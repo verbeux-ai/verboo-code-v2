@@ -423,7 +423,10 @@ export const queueDockEntry = {
         const conversation = actx.get('conversation')
         if (conversation === undefined) throw new Error('queue dock: conversation service unavailable')
         return {
-          updateQueue: (itemId, action) => conversation.updateQueue(itemId, action),
+          updateQueue: (itemId, action) => {
+            if (action.kind === 'steer') ctx.uiConversation.reportControlClick(sessionId, 'queue_steer_button')
+            return conversation.updateQueue(itemId, action)
+          },
           notify: (level, text) => { conversation.input.for(actx).notify(level, text) },
           loadImage: attachment => ctx.uiConversation.imageUrl(sessionId, attachment),
         }

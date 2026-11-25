@@ -424,6 +424,21 @@ describe('package payload constraints', () => {
     expect(checkWorkspaceManifest({ dir: 'apps/other-tool', manifest })).not.toEqual([])
   })
 
+  it.each([
+    'packages/api/verboo-mcp',
+    'packages/api/verboo-product',
+    'packages/bundle/verboo-app',
+    'packages/client/ui-verboo',
+    'packages/credentials/openai-account',
+    'packages/credentials/verboo-account',
+    'packages/extensions/verboo-connections',
+  ])('keeps intentionally private product package %s out of npm release rules', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } })
+      .some(error => error.includes(`${manifest.name}: package.json must set "private": true`))).toBe(true)
+  })
+
   it('rejects locale publication entries without their resource exports', () => {
     const dir = 'packages/experimental/auto-review'
     const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']

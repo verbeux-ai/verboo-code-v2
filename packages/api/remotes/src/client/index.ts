@@ -17,6 +17,8 @@ export type {} from '@deepseek-ai/dsh-openai-account/remote'
 import llmOpenaiAccountRemote from '@deepseek-ai/dsh-llm-openai-account/remote'
 export type {} from '@deepseek-ai/dsh-llm-openai-account/remote'
 export type { SubscriptionUsage } from '@deepseek-ai/dsh-llm-openai-account/types'
+import verbooAnalyticsRemote from '@deepseek-ai/dsh-host-verboo-analytics/remote'
+export type {} from '@deepseek-ai/dsh-host-verboo-analytics/remote'
 import accountRemote from '@deepseek-ai/dsh-api-account-controller/remote'
 import settingsControllerRemote from '@deepseek-ai/dsh-api-settings-controller/remote'
 import officeToPdfRemote from '@deepseek-ai/dsh-office-to-pdf/remote'
@@ -207,7 +209,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   try {
     for (const contribution of [
       productAnalyticsRemote, agentPresetsRemote, commandsRemote, agentTeamsRemote, settingsControllerRemote,
-      accountRemote, verbooProductRemote, verbooMcpRemote, openaiAccountRemote, llmOpenaiAccountRemote,
+      accountRemote, verbooProductRemote, verbooMcpRemote, openaiAccountRemote, llmOpenaiAccountRemote, verbooAnalyticsRemote,
       goalsRemote, llmRemote, dynamicRemote, scheduleRemote,
       pluginInventoryRemote, pluginManagerRemote, mcpManagerRemote, pluginMarketRemote, pluginRegistryProbeRemote,
       toolResultsRemote,
