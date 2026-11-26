@@ -584,6 +584,9 @@ export default class VerbooAnalytics extends TypertRemoteService {
       await this.enqueue('product_first_open_observed', {}, now, id, now, owner, reference?.proof)
     }
     await this.enqueue('product_opened', {}, now, randomUUID(), now, owner, reference?.proof)
+    if (this.config.surface === 'desktop' && owner.sessionId !== undefined) {
+      await this.enqueue('product_authenticated_observed', {}, now, randomUUID(), now, owner, reference?.proof)
+    }
     return await this.current(owner)
   }
 

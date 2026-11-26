@@ -18,7 +18,7 @@ export const consentSchema = z.object({
 /** Queue JSON is validated again before transmission, without reconstructing it. */
 export const eventSchema = z.object({
   schemaVersion: z.literal(1), eventId: z.uuid(),
-  name: z.enum(['product_response_completed', 'product_first_text_observed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_feature_used']),
+  name: z.enum(['product_response_completed', 'product_first_text_observed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_authenticated_observed', 'product_feature_used']),
   consentRevision: z.number().int().positive(), occurredAt: z.iso.datetime({ offset: true }),
   consentProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/),
   surface: z.enum(['desktop', 'cli', 'dashboard']), os: z.enum(['macos', 'windows', 'linux', 'other']),

@@ -56,6 +56,8 @@ A projection records only bounded response facts for root human turns. Live comp
 
 The credential store holds a randomly generated installation secret independently of account contexts. The Host sends it to the collector over the collector transport; the collector derives a pseudonym for distinct-installation counts and does not send the account ID to PostHog. The Host does not link an anonymous context to an account. Existing stored records gain the optional secret on their next selection; queued event bytes and their receipts are unchanged. One person using several installations may be counted more than once.
 
+After an authorized desktop account is observed, `product_authenticated_observed` records that state at the observation time. It does not assert when sign-in occurred or reconstruct activity before authorization. It is emitted alongside the authorized opening observation and can recur after restart or an account change; reports count installations rather than treating occurrences as new users.
+
 For an authorized desktop root turn with human input, the first nonempty streamed text delta records elapsed time since turn start without its text. This observation can precede a failed or cancelled turn; turns without a text delta have no first-text observation. Completed response duration remains a separate measurement.
 
 Schedule tool calls in such turns record bounded creation, edit, pause, resume, and deletion categories. Only recognizable tool results produce a settled outcome; unknown results are not counted as successes or failures. Task instructions and tool arguments are never sent.

@@ -133,8 +133,12 @@ it('does not create a login event when consent is granted only after real OAuth'
   app.preference.granted = true
   app.preference.order = app.nextOrder()
   await app.ctx.verbooAnalytics.status()
-  await delay(1500)
+  await vi.waitFor(() => { expect(app.events.filter(event => event.name === 'product_authenticated_observed')).toHaveLength(1) }, { timeout: 10_000 })
+  await app.ctx.verbooAnalytics.status()
+  await delay(1200)
   expect(app.events.filter(event => event.name === 'product_login_completed')).toHaveLength(0)
+  expect(app.events.filter(event => event.name === 'product_authenticated_observed')).toHaveLength(1)
+  expect(JSON.stringify(app.events)).not.toMatch(/fixture-token|fixture-refresh|example\.invalid/)
 }, 20_000)
 
 it('does not borrow a grant made during OAuth when the device clock is ahead', async () => {
@@ -160,6 +164,7 @@ it('does not record a login when the server does not provide a prior time refere
   await app.login()
   await delay(1500)
   expect(app.events.filter(event => event.name === 'product_login_completed')).toHaveLength(0)
+  expect(app.events.filter(event => event.name === 'product_authenticated_observed')).toHaveLength(0)
 }, 20_000)
 
 it('does not record a login when consent is revoked while OAuth is completing', async () => {
@@ -174,6 +179,7 @@ it('does not record a login when consent is revoked while OAuth is completing', 
     await app.ctx.verbooAnalytics.status()
     await delay(1500)
     expect(app.events.filter(event => event.name === 'product_login_completed')).toHaveLength(0)
+    expect(app.events.filter(event => event.name === 'product_authenticated_observed')).toHaveLength(0)
   } finally { app.consentGate.release() }
 }, 20_000)
 
