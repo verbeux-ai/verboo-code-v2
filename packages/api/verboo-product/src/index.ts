@@ -458,11 +458,12 @@ export class VerbooProduct extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame> {
+    const stopped = () => signal.aborted
     const session = await this.ctx.deepseekAccount.getPlatformSession()
-    if (!session?.sessionId || signal.aborted) return
+    if (!session?.sessionId || stopped()) return
     const result = z.object({ data: z.object({ ticket: z.string().min(1).max(4096) }) })
       .parse(await this.request('/api/me/usage/live-ticket', 'POST', undefined, signal))
-    if (signal.aborted || (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId) return
+    if (stopped() || (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId) return
     const frontendOrigin = new URL(this.deployment.apiOrigin).origin
     const endpoint = new URL('/ws/me/usage', frontendOrigin)
     endpoint.protocol = endpoint.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -472,6 +473,8 @@ export class VerbooProduct extends TypertRemoteService {
     let lastAt = 0
     let wake: (() => void) | undefined
     let timeout: ReturnType<typeof setTimeout> | undefined
+    const takePending = (): SpeedFrame | null => pending
+    const isClosed = () => closed
     const notify = () => { wake?.(); wake = undefined }
     const stop = () => { closed = true; socket.close(); notify() }
     const watch = () => { clearTimeout(timeout); timeout = setTimeout(stop, 6000) }
@@ -497,11 +500,11 @@ export class VerbooProduct extends TypertRemoteService {
     socket.addEventListener('close', () => { closed = true; notify() })
     watch()
     try {
-      while (!signal.aborted && !closed) {
-        if (!pending) { await new Promise<void>((resolve) => { wake = resolve }); continue }
-        const next: SpeedFrame = pending
+      while (!stopped() && !isClosed()) {
+        const next = takePending()
+        if (next === null) { await new Promise<void>((resolve) => { wake = resolve }); continue }
         pending = null
-        if ((await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId || signal.aborted) return
+        if ((await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId || stopped()) return
         yield next
       }
     } finally {

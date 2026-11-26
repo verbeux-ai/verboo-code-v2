@@ -18,7 +18,9 @@ function fixture() {
     usePreferences: (selector: (value: { locale: string }) => unknown) => selector({ locale: 'pt-BR' }),
     useResource: () => ({ status: 'ready', value: [{ groupId: planId, groupName: 'Pro', remainingPercent: 75, recovering: false, fullAt: null, accountingPending: false }] }),
     loadPlans: vi.fn(), refreshStamina: vi.fn(), summary: summaryRead, activity,
-    speed: async function* (signal: AbortSignal) { await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })) },
+    speed: async function* (signal: AbortSignal) {
+      await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    },
   } as unknown as PageProps & AnalyticsActions
   return { props, summaryRead, activity }
 }
@@ -31,7 +33,7 @@ it('shows an account speed measurement and marks the last reading', async () => 
     yield { at: '2026-11-26T12:00:00Z', stale: false, measurement: { value: 123.4, quality: 'estimated', partial: false, at: '2026-11-26T12:00:00Z', previous: false } }
     await gate.promise
     if (!signal.aborted) yield { at: '2026-11-26T12:00:01Z', stale: false, measurement: null }
-    await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+    await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
   }
   render(<AnalyticsPage {...f.props} speed={speed} />)
   expect(await screen.findByText('123,4')).toBeTruthy()

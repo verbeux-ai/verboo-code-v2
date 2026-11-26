@@ -3,7 +3,7 @@ import type { SpeedFrame, SpeedMeasurement } from './types.ts'
 
 /** Only measured or estimated generation rates may be presented as speed. */
 const quality = z.enum(['measured', 'estimated', 'unavailable'])
-const rate = z.number().finite().nonnegative().nullable().optional()
+const rate = z.number().nonnegative().nullable().optional()
 const point = z.object({
   at: z.iso.datetime({ offset: true }), generationTokensPerSecond: rate,
   generationRateQuality: quality.optional(), generationRatePartial: z.boolean().optional(),

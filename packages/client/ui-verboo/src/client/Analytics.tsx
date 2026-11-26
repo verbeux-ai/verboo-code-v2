@@ -54,6 +54,7 @@ export function AnalyticsPage(props: Props) {
   useEffect(() => {
     if (!owner) return
     const controller = new AbortController()
+    const stopped = () => controller.signal.aborted
     const ids = JSON.parse(planKey) as PlanId[]
     const run = async () => {
       const safe = async (group: PlanId | null): Promise<Result<UsageSummary>> => {
@@ -63,11 +64,10 @@ export function AnalyticsPage(props: Props) {
       const byGroup: Record<string, Result<UsageSummary>> = {}
       let next = 0
       const worker = async () => {
-        while (!controller.signal.aborted && next < ids.length) {
+        while (!stopped() && next < ids.length) {
           const id = ids[next++]
-          if (id === undefined) return
           const value = await safe(id)
-          if (controller.signal.aborted) return
+          if (stopped()) return
           byGroup[id] = value
           setUsage(previous => previous?.owner === owner && previous.period === period
             ? { ...previous, groups: { ...previous.groups, [id]: value } } : previous)
@@ -93,19 +93,20 @@ export function AnalyticsPage(props: Props) {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let wake: (() => void) | undefined
+    const stopped = () => controller.signal.aborted
     const run = async () => {
       let retry = 0
-      while (!controller.signal.aborted) {
+      while (!stopped()) {
         try {
           for await (const frame of actions.current.speed(controller.signal)) {
-            if (controller.signal.aborted) return
+            if (stopped()) return
             retry = 0
             setSpeed(previous => ({ owner, online: !frame.stale, measurement: frame.stale ? null : frame.measurement ??
               (previous?.owner === owner && previous.online && previous.measurement
                 ? { ...previous.measurement, previous: true } : null) }))
           }
         } catch { /* A disconnected stream is retried without exposing transport details. */ }
-        if (controller.signal.aborted) return
+        if (stopped()) return
         setSpeed({ owner, online: false, measurement: null })
         await new Promise<void>((resolve) => { wake = resolve; timer = setTimeout(resolve, Math.min(1000 * 2 ** retry++, 30000)) })
       }
@@ -187,7 +188,7 @@ function ActivityGrid({ rows, locale, t }: { rows: UsageActivityDay[]; locale: s
     const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 364)
     const columns: ({ date: Date; count: number } | null)[][] = []
     const labels: { column: number; label: string }[] = []
-    let column: ({ date: Date; count: number } | null)[] = Array(start.getDay()).fill(null)
+    let column: ({ date: Date; count: number } | null)[] = Array<null>(start.getDay()).fill(null)
     let maximum = 0
     for (let offset = 0; offset < 365; offset++) {
       const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + offset)
@@ -197,7 +198,7 @@ function ActivityGrid({ rows, locale, t }: { rows: UsageActivityDay[]; locale: s
       column.push({ date, count })
       if (column.length === 7) { columns.push(column); column = [] }
     }
-    if (column.length) columns.push([...column, ...Array(7 - column.length).fill(null)])
+    if (column.length) columns.push([...column, ...Array<null>(7 - column.length).fill(null)])
     return { weeks: columns, months: labels, max: maximum }
   }, [rows, locale, today.getFullYear(), today.getMonth(), today.getDate()])
   const scroll = useRef<HTMLDivElement>(null)
