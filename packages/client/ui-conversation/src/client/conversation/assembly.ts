@@ -35,6 +35,13 @@ export type ProductMessageInteraction = 'message_enter' | 'message_button' | 'me
 export type ProductMessageModel = { readonly provider: string; readonly name: string; readonly effort?: string }
 /** Explicit Conversation controls observed without Session data. */
 export type ProductControlInteraction = 'stop_button' | 'queue_steer_button'
+/** Bounded action categories, without paths, commands, task contents, or account data. */
+export type ProductAction = 'terminal_open' | 'files_open' | 'document_open'
+  | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
+  | 'attachment_retry_image' | 'attachment_retry_file'
+  | 'schedule_create' | 'schedule_edit' | 'schedule_pause' | 'schedule_resume' | 'schedule_delete' | 'schedule_run'
+  | 'schedule_after' | 'schedule_at' | 'schedule_every' | 'schedule_daily' | 'schedule_weekly' | 'schedule_cron' | 'schedule_rrule'
+  | 'conversation_new' | 'conversation_open' | 'conversation_search' | 'command_submit' | 'integration_connect' | 'mcp_connect' | 'mcp_configure' | 'mcp_probe'
 
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
@@ -215,6 +222,34 @@ export class UiConversation extends Service {
     token: symbol
     begin: (feature: ProductMessageInteraction, model: ProductMessageModel | undefined) => (() => void) | undefined
   } | undefined
+  private actionObserver: { token: symbol; begin: (action: ProductAction) => ((outcome: 'completed' | 'failed' | 'cancelled') => void) | undefined } | undefined
+
+  /**
+   * Register an optional bounded interaction observer.
+   * @param begin - capture authorization when an action starts.
+   * @returns cleanup for this registration.
+   */
+  observeProductActions(begin: (action: ProductAction) => ((outcome: 'completed' | 'failed' | 'cancelled') => void) | undefined): () => void {
+    const token = Symbol('product-action-observer')
+    this.actionObserver = { token, begin }
+    return () => { if (this.actionObserver?.token === token) this.actionObserver = undefined }
+  }
+
+  /**
+   * Capture an action before it runs without exposing its arguments or identity.
+   * @param action - fixed action category.
+   * @returns a contained, at-most-once outcome callback.
+   */
+  beginProductAction(action: ProductAction): (outcome: 'completed' | 'failed' | 'cancelled') => void {
+    let finish: ReturnType<NonNullable<typeof this.actionObserver>['begin']>
+    try { finish = this.actionObserver?.begin(action) } catch (_error) { /* Optional observation cannot block the action. */ }
+    let settled = false
+    return (outcome) => {
+      if (settled) return
+      settled = true
+      try { finish?.(outcome) } catch (_error) { /* Optional observation cannot block the action. */ }
+    }
+  }
 
   /**
    * Capture permission when a message attempt starts, before command adjudication.

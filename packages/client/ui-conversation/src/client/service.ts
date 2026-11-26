@@ -356,6 +356,7 @@ export class ConversationController extends Service implements IConversation {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     if (this.fileUploads.getSnapshot()[id]?.status !== 'error') return
+    this.ctx.get('uiConversation')?.beginProductAction(attachment.kind === 'image' ? 'attachment_retry_image' : 'attachment_retry_file')('completed')
     this.beginFileUpload(sessionId, attachment)
   }
 
@@ -375,6 +376,7 @@ export class ConversationController extends Service implements IConversation {
   }
 
   private beginFileUpload(sessionId: SessionId, attachment: ComposerAttachment): void {
+    const observe = this.ctx.get('uiConversation')?.beginProductAction(attachment.kind === 'image' ? 'attachment_upload_image' : 'attachment_upload_file')
     this.fileUploadOperations.get(attachment.id)?.controller.abort()
     const controller = new AbortController()
     this.fileUploads.update((draft) => {
@@ -400,13 +402,14 @@ export class ConversationController extends Service implements IConversation {
     const run = async (): Promise<void> => {
       try {
         if (controller.signal.aborted
-          || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+          || this.fileUploadOperations.get(attachment.id)?.controller !== controller) { observe?.('cancelled'); return }
         const result = attachment.kind === 'image'
           ? await this.ctx.fileUpload.uploadImage(
             sessionId, attachment.file, imageMediaType(attachment.file.type), name, controller.signal, onProgress,
           )
           : await this.ctx.fileUpload.upload(sessionId, attachment.file, name, controller.signal, onProgress)
-        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) { observe?.('cancelled'); return }
+        observe?.(result.ok ? 'completed' : 'failed')
         this.fileUploads.update((draft) => {
           if (!(attachment.id in draft)) return
           if (result.ok) {
@@ -422,7 +425,8 @@ export class ConversationController extends Service implements IConversation {
             : { status: 'error', message: error.message }
         })
       } catch (error) {
-        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) { observe?.('cancelled'); return }
+        observe?.(controller.signal.aborted ? 'cancelled' : 'failed')
         this.fileUploads.update((draft) => {
           if (!(attachment.id in draft)) return
           draft[attachment.id] = {

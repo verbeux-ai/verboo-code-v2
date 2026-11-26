@@ -132,6 +132,8 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
 
 /** What the controller needs from the page around it: the viewport rule and focus continuity. */
 export interface SidebarRightHost {
+  /** Observe a completed local opening using only a bounded category. */
+  readonly onProductOpen?: (category: 'terminal_open' | 'files_open' | 'document_open') => void
   /**
    * Whether the viewport is narrow enough that an expanded panel is presented fullscreen.
    * @returns the rule's verdict for the frame width the seats last rendered at.
@@ -452,6 +454,7 @@ export class SidebarRightController implements ISidebarRight {
     const claim = this.tabs.claim(address, options.kind)
     if (options.destination === undefined) this.place(sessionId, actions, claim, address, options, options.params)
     else this.placeIn(sessionId, actions, claim, address, options.destination, options.params)
+    if (address.startsWith('dsh-resource://file/')) this.reportProductOpen('document_open')
   }
 
   /** Settle a claimed resource in an explicit host: one store intent, no close handler, and a flash only for a reveal. */
@@ -481,6 +484,12 @@ export class SidebarRightController implements ISidebarRight {
     if (definition === undefined) throw new Error(`sidebarRight: no tab type is registered as "${kind}"`)
     const address = definition.multiple === true ? `${pageAddress(kind)}/${randomUUID()}` : pageAddress(kind)
     this.place(sessionId, actions, { kind, contentId: address, title: definition.title(address) }, address, options, options.params)
+    if (kind === 'terminal') this.reportProductOpen('terminal_open')
+    if (kind === 'files') this.reportProductOpen('files_open')
+  }
+
+  private reportProductOpen(category: 'terminal_open' | 'files_open' | 'document_open'): void {
+    try { this.host.onProductOpen?.(category) } catch (_error) { /* Optional observation cannot interrupt navigation. */ }
   }
 
   /** The steps both opens share: one store intent, and the navigation record for the tab it settles on. */

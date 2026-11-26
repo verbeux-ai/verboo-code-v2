@@ -59,6 +59,10 @@ The product registers `conversation.hero.intro` for its quiet opening question a
 
 On narrow screens, page headings and their actions stack and wrap within the viewport. The product sidebar declares its own footer seat, `verboo.sidebar.foot`, and renders it above the plan shortcut; the Tauri update indicator sits nearby and opens a speech bubble when ready. Until the first account read answers, the entry screen shows only the brand and the account-check spinner, because the welcome copy and sign-in button describe a state nobody has observed yet.
 
+Desktop updater telemetry records bounded phase transitions only when measurement is authorized at the observed start. A previously established Host connection that enters the disconnected state is counted only if it later recovers; a pending disconnection does not survive UI disposal. Repeated progress notifications do not create additional starts, and a restored ready state is not counted as a completed download.
+
+Desktop product action observations cover openings of the terminal, file explorer and file previews, attachment intake and uploads, manual task management, conversation navigation and search, commands, and connection setup. They carry bounded categories and outcomes, not paths, attachment content, task instructions, command text, connection names, or credentials. A request failure does not establish whether a remote write happened.
+
 </details>
 
 <a id="further-exploration"></a>

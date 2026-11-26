@@ -1893,7 +1893,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-host-verboo-analytics`
 
 - `inject`: `credentials` · `deepseekAccount` · `sessionProjections`
-- `source`: [`packages/host/verboo-analytics/src/index.ts:19`](../packages/host/verboo-analytics/src/index.ts)
+- `source`: [`packages/host/verboo-analytics/src/index.ts:21`](../packages/host/verboo-analytics/src/index.ts)
 
 ```ts config-catalog
 /** Public collector configuration; all destination credentials stay on the server. */

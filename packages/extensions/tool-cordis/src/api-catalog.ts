@@ -265,6 +265,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain. Agent *creation* is provided by whichever plugin implements the AgentFactory (`@deepseek-ai/dsh-agent-loop`), registered via setFactory.\n\nInitiator methods provide same-process causal attribution only. Ambient presence is neither liveness proof nor authorization; subjects and owners remain explicit, as does identity at worker, process, persistence, and wire boundaries. Returned Promise boundaries drain during teardown, except a nested lineage that starts an owning-fiber unload is excluded from its own drain.',
     methods: [
       {
+        signature: 'readonly exitAdmission: ExitAdmission = new ExitAdmission()',
+        description: 'Global conservative admission for a desktop silent exit.',
+        parameters: [],
+      },
+      {
         signature: 'turnBoundaryOf(session: Session): TurnBoundaryProjection',
         description: 'Read the turn and step positions recorded in a Session.',
         parameters: [{ name: 'session', description: 'Session whose committed events are read.' }],
@@ -6711,6 +6716,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'ExitActivity',
+    declaration: 'export type ExitActivity = \'idle\' | \'busy\' | \'unknown\';',
+  },
+  {
+    name: 'ExitAdmission',
+    declaration: 'export class ExitAdmission {\n    get isFrozen(): boolean;\n    onReopen(listener: () => void): () => void;\n    registerRequired(name: \'agents\' | \'jobs\' | \'schedule\', read: () => ExitActivity): () => void;\n    registerOptional(read: () => ExitActivity): () => void;\n    assertAdmission(): void;\n    begin(): () => void;\n    tryReserve(): ExitReservation;\n    commit(id: number): boolean;\n    cancel(id: number): void;\n    finalize(id: number, shutdown: () => void): boolean;\n}',
+  },
+  {
+    name: 'ExitReservation',
+    declaration: 'export type ExitReservation = {\n    readonly kind: \'reserved\';\n    readonly id: number;\n} | {\n    readonly kind: \'busy\' | \'unknown\';\n};',
+  },
+  {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
   },
@@ -8080,7 +8097,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProductFeature',
-    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\' | \'pane_split_right\' | \'pane_split_down\' | \'stop_button\' | \'project_add\' | \'message_enter\' | \'message_button\' | \'message_queue_enter\' | \'message_queue_button\' | \'message_steer_enter\' | \'message_steer_button\' | \'preference_busy_queue\' | \'preference_busy_steer\' | \'model_choice\' | \'queue_steer_button\' | \'preference_coding_tools_on\' | \'preference_coding_tools_off\' | \'preference_preset_cordis\' | \'preference_preset_ptc\' | \'preference_preset_minimal\' | \'preference_preset_standard\' | \'preference_preset_other\' | \'preference_theme_light\' | \'preference_theme_dark\' | \'preference_theme_system\' | \'preference_minimalist_on\' | \'preference_minimalist_off\' | \'preference_language_en\' | \'preference_language_pt\' | \'preference_language_zh\' | \'preference_language_ja\' | \'preference_language_es\' | \'preference_language_fr\' | \'preference_language_de\' | \'preference_language_ru\' | \'preference_language_other\';',
+    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\' | \'pane_split_right\' | \'pane_split_down\' | \'stop_button\' | \'project_add\' | \'message_enter\' | \'message_button\' | \'message_queue_enter\' | \'message_queue_button\' | \'message_steer_enter\' | \'message_steer_button\' | \'preference_busy_queue\' | \'preference_busy_steer\' | \'model_choice\' | \'queue_steer_button\' | \'preference_coding_tools_on\' | \'preference_coding_tools_off\' | \'preference_preset_cordis\' | \'preference_preset_ptc\' | \'preference_preset_minimal\' | \'preference_preset_standard\' | \'preference_preset_other\' | \'preference_theme_light\' | \'preference_theme_dark\' | \'preference_theme_system\' | \'preference_minimalist_on\' | \'preference_minimalist_off\' | \'preference_language_en\' | \'preference_language_pt\' | \'preference_language_zh\' | \'preference_language_ja\' | \'preference_language_es\' | \'preference_language_fr\' | \'preference_language_de\' | \'preference_language_ru\' | \'preference_language_other\' | \'desktop_update_download\' | \'desktop_update_install\' | \'desktop_update_error\' | \'desktop_response_error\' | \'desktop_connection_recovered\' | \'terminal_open\' | \'files_open\' | \'document_open\' | \'attachment_image\' | \'attachment_file\' | \'attachment_folder\' | \'attachment_upload_image\' | \'attachment_upload_file\' | \'attachment_retry_image\' | \'attachment_retry_file\' | \'schedule_create\' | \'schedule_edit\' | \'schedule_pause\' | \'schedule_resume\' | \'schedule_delete\' | \'schedule_run\' | \'schedul /* …truncated — full shape in source */',
   },
   {
     name: 'ProductModelDetails',

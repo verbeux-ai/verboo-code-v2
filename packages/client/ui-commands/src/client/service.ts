@@ -17,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
 // (`commands/change` rides the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -452,14 +453,21 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     attachments: readonly SubmitAttachment[] = [],
   ): Promise<SubmitOutcome> {
     const name = submittedCommandName(line)
+    let action: ReturnType<NonNullable<Context['uiConversation']>['beginProductAction']> | undefined
+    try {
+      if (this.sessions().subagentAddress(session.sessionId) === undefined) action = this.ctx.get('uiConversation')?.beginProductAction('command_submit')
+    } catch (_error) { /* Optional observation cannot block command execution. */ }
     const observe = name === 'plan' || name === 'goal'
       ? this.beginFeatureObservation(name, session.sessionId) : () => {}
     let result: Awaited<ReturnType<typeof this.ctx.remote.commands.execute>>
     try { result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments) } catch (error) {
+      action?.('failed')
       observe('failed')
       throw error
     }
-    observe(result.ok && result.value !== undefined && result.value.result.kind !== 'error' ? 'completed' : 'failed')
+    const outcome = result.ok && result.value !== undefined && result.value.result.kind !== 'error' ? 'completed' : 'failed'
+    action?.(outcome)
+    observe(outcome)
     if (!result.ok) throw new Error(`command.execute failed: ${result.error.code}: ${result.error.message}`)
     if (result.value === undefined) return { kind: 'error', text: `unknown or malformed command: ${line}` }
     this.notifyExecuted(session.sessionId, name, result.value.result)

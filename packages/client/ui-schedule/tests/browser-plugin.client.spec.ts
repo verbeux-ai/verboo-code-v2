@@ -167,8 +167,9 @@ interface HostPage {
  * @param schedule - Schedule Remote methods that the case stubs.
  * @returns the page face and its teardown.
  */
-async function hostPage(schedule: object): Promise<HostPage> {
+async function hostPage(schedule: object, observe?: Parameters<UiConversation['observeProductActions']>[0]): Promise<HostPage> {
   const ctx = await baseContext({ schedule, $on: () => () => {} })
+  if (observe !== undefined) ctx.uiConversation.observeProductActions(observe)
   ctx.slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } } as never, Empty)
   await ctx.plugin({ inject: [...inject], apply }).await()
   const face = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
@@ -720,6 +721,31 @@ describe('Host task Remote injection', () => {
   const refreshed: Entry = { ...hostTask, title: 'Renamed', updatedAt: '2026-10-01T00:00:00.000Z' }
   const refusal = (code: ScheduleInputErrorCode): RemoteResult<never> => ({
     ok: false, error: new RemoteError('schedule/input-invalid', 'Refused', { code }),
+  })
+
+  it('observes task actions and recurrence without forwarding the task data', async () => {
+    const calls: string[] = []
+    const catalog = vi.fn().mockResolvedValue({ ok: true, value: [hostTask] })
+    const create = vi.fn().mockResolvedValue({ ok: true, value: hostTask })
+    const remoteEdit = vi.fn().mockResolvedValue({ ok: true, value: hostTask })
+    const run = vi.fn().mockResolvedValue({ ok: false, error })
+    const { face, close } = await hostPage({ catalog, create, edit: remoteEdit, run }, (action) => {
+      calls.push(`begin:${action}`)
+      return (outcome) => { calls.push(`${action}:${outcome}`) }
+    })
+    try {
+      await face.onCreateTask(createRequest)
+      await face.hostActions.edit(edit)
+      await face.hostActions.edit({ id: hostTask.id, action: 'update', patch: { active: false } })
+      await face.hostActions.edit({ id: hostTask.id, action: 'update', patch: { active: true } })
+      await face.hostActions.run(hostTask.id)
+      expect(calls).toEqual([
+        'begin:schedule_create', 'begin:schedule_rrule', 'schedule_create:completed', 'schedule_rrule:completed',
+        'begin:schedule_edit', 'schedule_edit:completed', 'begin:schedule_pause', 'schedule_pause:completed',
+        'begin:schedule_resume', 'schedule_resume:completed', 'begin:schedule_run', 'schedule_run:failed',
+      ])
+      expect(JSON.stringify(calls)).not.toContain(hostTask.prompt)
+    } finally { await close() }
   })
 
   it.each([

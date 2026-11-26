@@ -100,7 +100,11 @@ const sendEmail = {
 }
 
 /** Mount the shipped Host spine, this extension, and stub product services. */
-async function harness(adapter: ScriptedAdapter, execute: ReturnType<typeof vi.fn>) {
+async function harness(
+  adapter: ScriptedAdapter,
+  execute: ReturnType<typeof vi.fn>,
+  product: { catalog?: string; search?: (id: string, query: string) => Promise<string> } = {},
+) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
@@ -111,8 +115,8 @@ async function harness(adapter: ScriptedAdapter, execute: ReturnType<typeof vi.f
   await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   ctx.provide('verbooProduct', {
-    listAgentConnections: async () => catalog,
-    searchAgentConnections: async (id: string) => JSON.stringify(id === 'ca_work' ? [searchEmail, sendEmail] : []),
+    listAgentConnections: async () => product.catalog ?? catalog,
+    searchAgentConnections: product.search ?? (async (id: string) => JSON.stringify(id === 'ca_work' ? [searchEmail, sendEmail] : [])),
     executeAgentConnection: execute,
   } as never)
   ctx.provide('verbooMcp', {
@@ -134,6 +138,60 @@ async function send(agent: Agent, message: string): Promise<void> {
 }
 
 describe('dynamic connection tools in a real turn', () => {
+  it('discovers and uses an MCP dispatcher for nested tools in one turn', async () => {
+    const mcpCatalog = JSON.stringify({
+      available: true,
+      accounts: [{ id: 'ca_mcp', toolkit: 'posthog_mcp', label: 'PostHog', status: 'connected' }],
+      publicServices: [],
+    })
+    const dispatcher = {
+      slug: 'POSTHOG_MCP_EXEC', name: 'Exec', description: 'Find and call PostHog MCP tools.', version: '20260924_00',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'Use search, info and call commands.' },
+          context: { type: 'string', description: 'Explain the abstract purpose.' },
+          llm_model: { type: 'string', description: 'Exact model identifier or unknown.' },
+        },
+        required: ['command', 'context', 'llm_model'],
+      },
+    }
+    const search = vi.fn(async () => JSON.stringify([dispatcher]))
+    const execute = vi.fn(async (input: { arguments: { command: string } }) => {
+      if (input.arguments.command === 'search dashboard') return '{"matches":["dashboards-get-all"]}'
+      if (input.arguments.command === 'info dashboards-get-all') return '{"required":[]}'
+      return '{"dashboards":[{"name":"Example dashboard"}]}'
+    })
+    const args = (command: string) => ({ command, context: 'Finding dashboard tools for a requested read.', llm_model: 'unknown' })
+    const adapter = new ScriptedAdapter([
+      toolCall('mcp-1', 'connections_search', { query: 'list dashboards', toolkit: 'posthog_mcp' }),
+      toolCall('mcp-2', 'connection__posthog_mcp__POSTHOG_MCP_EXEC', {}),
+      toolCall('mcp-3', 'connection__posthog_mcp__POSTHOG_MCP_EXEC', args('search dashboard')),
+      toolCall('mcp-4', 'connection__posthog_mcp__POSTHOG_MCP_EXEC', args('info dashboards-get-all')),
+      toolCall('mcp-5', 'connection__posthog_mcp__POSTHOG_MCP_EXEC', args('call dashboards-get-all {}')),
+      text('Found the dashboard.'),
+    ])
+    const { agent } = await harness(adapter, execute, { catalog: mcpCatalog, search })
+    await send(agent, 'List dashboards')
+
+    expect(JSON.stringify(adapter.requests[0])).toContain('provider exposes a dispatcher')
+    expect(JSON.stringify(adapter.requests[0])).toContain('search results can include actions unrelated')
+    expect(search).toHaveBeenCalledWith('ca_mcp', 'list dashboards', expect.any(AbortSignal))
+    const declared = adapter.requests[1]?.tools?.find(tool => tool.name === 'connection__posthog_mcp__POSTHOG_MCP_EXEC')
+    expect(declared?.parameters).toMatchObject({ required: ['command', 'context', 'llm_model'] })
+    expect(execute).toHaveBeenCalledTimes(3)
+    expect(execute.mock.calls.map(call => call[0])).toEqual([
+      { connectionId: 'ca_mcp', slug: 'POSTHOG_MCP_EXEC', version: '20260924_00', arguments: args('search dashboard') },
+      { connectionId: 'ca_mcp', slug: 'POSTHOG_MCP_EXEC', version: '20260924_00', arguments: args('info dashboards-get-all') },
+      { connectionId: 'ca_mcp', slug: 'POSTHOG_MCP_EXEC', version: '20260924_00', arguments: args('call dashboards-get-all {}') },
+    ])
+    const results = agent.session.snapshotEvents()
+      .filter(event => event.type === 'tool/result')
+      .map(event => JSON.stringify(event.data))
+    expect(results.some(result => result.includes('invalid arguments') && result.includes('command'))).toBe(true)
+    expect(results.some(result => result.includes('Example dashboard'))).toBe(true)
+  })
+
   it('reports missing required arguments to the model before calling the provider', async () => {
     const execute = vi.fn(async () => '{"messages":[]}')
     const adapter = new ScriptedAdapter([

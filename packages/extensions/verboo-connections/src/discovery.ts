@@ -404,13 +404,14 @@ export class ConnectionToolRegistry {
     if (held !== undefined && held.connectionId !== target.id) {
       throw new Error(`connection tool name "${name}" already serves another account`)
     }
+    if (held !== undefined && held.version === tool.version) return { tool: name, status: 'ready' }
+    // Do not withdraw a working tool until the replacement schema is usable.
+    const schema = this.declaredSchema(tool)
+    assertSupportedJsonSchema(schema)
     if (held !== undefined) {
-      if (held.version === tool.version) return { tool: name, status: 'ready' }
       held.dispose()
       this.mounted.delete(name)
     }
-    const schema = this.declaredSchema(tool)
-    assertSupportedJsonSchema(schema)
     const definition: ToolDefinition = {
       name,
       description: boundedDescription(tool, target.toolkit, target.label, this.budgets.maxDescriptionChars),

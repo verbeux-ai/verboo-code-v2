@@ -18,7 +18,7 @@ export const consentSchema = z.object({
 /** Queue JSON is validated again before transmission, without reconstructing it. */
 export const eventSchema = z.object({
   schemaVersion: z.literal(1), eventId: z.uuid(),
-  name: z.enum(['product_response_completed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_feature_used']),
+  name: z.enum(['product_response_completed', 'product_first_text_observed', 'product_first_open_observed', 'product_opened', 'product_login_completed', 'product_authenticated_observed', 'product_feature_used']),
   consentRevision: z.number().int().positive(), occurredAt: z.iso.datetime({ offset: true }),
   consentProof: z.string().regex(/^v1\.[1-9][0-9]{0,18}\.[a-f0-9]{64}$/),
   surface: z.enum(['desktop', 'cli', 'dashboard']), os: z.enum(['macos', 'windows', 'linux', 'other']),
@@ -32,7 +32,13 @@ export const eventSchema = z.object({
     'preference_preset_cordis', 'preference_preset_ptc', 'preference_preset_minimal', 'preference_preset_standard', 'preference_preset_other',
     'preference_theme_light', 'preference_theme_dark', 'preference_theme_system', 'preference_minimalist_on', 'preference_minimalist_off',
     'preference_language_en', 'preference_language_pt', 'preference_language_zh', 'preference_language_ja',
-    'preference_language_es', 'preference_language_fr', 'preference_language_de', 'preference_language_ru', 'preference_language_other']).optional(),
+    'preference_language_es', 'preference_language_fr', 'preference_language_de', 'preference_language_ru', 'preference_language_other',
+    'desktop_update_download', 'desktop_update_install', 'desktop_update_error', 'desktop_response_error', 'desktop_connection_recovered',
+    'terminal_open', 'files_open', 'document_open', 'attachment_image', 'attachment_file', 'attachment_folder',
+    'attachment_upload_image', 'attachment_upload_file', 'attachment_retry_image', 'attachment_retry_file',
+    'schedule_create', 'schedule_edit', 'schedule_pause', 'schedule_resume', 'schedule_delete', 'schedule_run',
+    'schedule_after', 'schedule_at', 'schedule_every', 'schedule_daily', 'schedule_weekly', 'schedule_cron', 'schedule_rrule',
+    'conversation_new', 'conversation_open', 'conversation_search', 'command_submit', 'integration_connect', 'mcp_connect', 'mcp_configure', 'mcp_probe']).optional(),
   durationMs: z.number().int().min(0).max(604800000).optional(),
   modelProvider: z.enum(['verboo', 'openai', 'deepseek', 'other']).optional(),
   modelName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,79}$/).optional(),

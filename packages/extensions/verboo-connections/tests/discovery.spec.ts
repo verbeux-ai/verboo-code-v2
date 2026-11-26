@@ -361,6 +361,28 @@ describe('discoverConnectionTools', () => {
     expect(ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')).toBeDefined()
   })
 
+  it('keeps a previously usable version when a newer provider schema is invalid', async () => {
+    const ctx = await scope()
+    const execute = vi.fn(async () => '{"ok":true}')
+    const stub = product({ executeAgentConnection: execute })
+    const registry = new ConnectionToolRegistry(ctx, stub, budgets)
+    const signal = new AbortController().signal
+    const request = { query: 'search email', connectionId: 'ca_work' }
+    await discoverConnectionTools({ product: stub, registry, budgets, request, signal })
+    const newer = { ...gmailSearch, version: '20240202_00', parameters: null }
+    const failed = await discoverConnectionTools({
+      product: product({ searchAgentConnections: async () => JSON.stringify([newer]) }),
+      registry, budgets, request, signal,
+    })
+    expect(failed.failed).toEqual([{ toolkit: 'gmail', connectionId: 'ca_work', tool: 'GMAIL_SEARCH_EMAILS', code: 'schema_unavailable' }])
+    const retained = ctx.tools.get('connection__gmail__GMAIL_SEARCH_EMAILS')
+    expect(retained).toBeDefined()
+    await retained!.execute({ query: 'status' }, { signal } as never)
+    expect(execute).toHaveBeenCalledWith(
+      { connectionId: 'ca_work', slug: 'GMAIL_SEARCH_EMAILS', version: '20240101_00', arguments: { query: 'status' } }, signal,
+    )
+  })
+
   it('bounds one search to its tool budget', async () => {
     const ctx = await scope()
     const many = Array.from({ length: 6 }, (_entry, index) => ({

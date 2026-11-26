@@ -30,6 +30,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../core/agent"
+    },
+    {
       "path": "../../session/session-projection"
     },
     {

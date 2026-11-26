@@ -276,6 +276,17 @@ describe('agent tool discovery and execution', () => {
     })
   })
 
+  it('allows the full backend semantic search and cleanup budget by default', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      const f = fixture(Response.json({ data: [tool] }))
+      await f.product.searchAgentConnections('ca_work', 'list files', f.signal)
+      expect(timeout).toHaveBeenCalledWith(120_000)
+    } finally {
+      timeout.mockRestore()
+    }
+  })
+
   it('waits past the general per-attempt ceiling for a slow provider search', async () => {
     // Semantic search over a toolkit catalog answers far slower than the
     // account client's default 10-second attempt ceiling, and a search that
@@ -354,6 +365,29 @@ describe('agent tool discovery and execution', () => {
     await expect(f.product.executeAgentConnection({
       connectionId: 'ca_work', slug: 'GDRIVE_LIST', version: '20251105_01', arguments: {},
     }, f.signal)).rejects.toMatchObject({ code: 'action_failed' })
+  })
+
+  it.each([
+    ['connection_action_permission_denied', 'action_permission_denied'],
+    ['connection_action_not_found', 'action_not_found'],
+    ['connection_action_invalid_arguments', 'action_invalid_arguments'],
+    ['connection_action_rate_limited', 'action_rate_limited'],
+  ])('reports the bounded provider category %s without exposing its body', async (providerCode, expectedCode) => {
+    const f = fixture(Response.json({ data: { successful: false, result: JSON.stringify({ code: providerCode, detail: 'provider secret' }) } }))
+    const request = f.product.executeAgentConnection({
+      connectionId: 'ca_work', slug: 'GDRIVE_LIST', version: '20251105_01', arguments: {},
+    }, f.signal)
+    await expect(request).rejects.toMatchObject({ code: expectedCode })
+    await expect(request).rejects.not.toThrow('provider secret')
+  })
+
+  it('does not expose or accept an unknown provider error category', async () => {
+    const f = fixture(Response.json({ data: { successful: false, result: JSON.stringify({ code: 'private-provider-secret' }) } }))
+    const request = f.product.executeAgentConnection({
+      connectionId: 'ca_work', slug: 'GDRIVE_LIST', version: '20251105_01', arguments: {},
+    }, f.signal)
+    await expect(request).rejects.toMatchObject({ code: 'action_failed' })
+    await expect(request).rejects.not.toThrow('private-provider-secret')
   })
 
   it.each([400, 401, 403, 404, 422])('reports HTTP %s as a refused action', async (status) => {

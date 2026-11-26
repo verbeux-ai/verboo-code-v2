@@ -31,6 +31,7 @@ it('sends anonymous, bounded observations for actual project and split controls'
         const serverOrder = String(++order)
         respond(200, { data: { subjectId: 'a'.repeat(64), decision: 'granted', revision: 1, policyVersion: 1,
           decisionOrder: '1', decidedAt: '2020-01-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z', enabled: true,
+          region: 'outside_europe',
           serverTime: new Date().toISOString(), serverOrder, serverProof: `v1.${serverOrder}.${'b'.repeat(64)}` } })
         return
       }
@@ -112,11 +113,26 @@ it('sends anonymous, bounded observations for actual project and split controls'
       extraOverlayPath: overlay,
     })
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
+    await writeFile(join(scaffold.workspaceCwd, 'private-preview.txt'), 'private preview body')
     await seedSession(scaffold, await readFile(session, 'utf8'), 'analytics-history')
     const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US', reducedMotion: 'reduce' })
     const pageErrors: string[] = []
     page.on('pageerror', (error) => { pageErrors.push(error.message) })
-    await page.addInitScript(() => { Object.assign(window, { __DSH_DIRECTORY_PICKER__: { pick: async () => null } }) })
+    await page.addInitScript(() => {
+      Object.assign(window, {
+        __VERBOO_DESKTOP__: { framework: 'tauri', protocolVersion: 1, openExternal: async () => {} },
+        __DSH_DIRECTORY_PICKER__: { pick: async () => null },
+        __VERBOO_UPDATE__: {
+          getState: async () => ({ phase: 'idle', percent: null }),
+          subscribe: (listener: (state: unknown) => void) => {
+            const handle = (event: Event) => { listener((event as CustomEvent).detail) }
+            window.addEventListener('fixture-desktop-update', handle)
+            return () => { window.removeEventListener('fixture-desktop-update', handle) }
+          },
+          install: async () => {},
+        },
+      })
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
     await expect.poll(async () => (await scaffold!.ctx.verbooAnalytics.status()).consent?.decision, { timeout: 10000 }).toBe('granted')
@@ -136,11 +152,31 @@ it('sends anonymous, bounded observations for actual project and split controls'
       'preference_theme_system', 'preference_language_en']
     await expect.poll(() => defaults.filter(feature => events.some(event => event.feature === feature)),
       { timeout: 10000 }).toEqual(defaults)
+    await page.evaluate(() => {
+      for (const state of [{ phase: 'downloading', percent: 1 }, { phase: 'downloading', percent: 50 },
+        { phase: 'ready', percent: 100 }, { phase: 'installing', percent: null }, { phase: 'error', percent: null }]) {
+        window.dispatchEvent(new CustomEvent('fixture-desktop-update', { detail: state }))
+      }
+    })
+    await expect.poll(() => events.filter(event => String(event.feature).startsWith('desktop_update_')).length,
+      { timeout: 10000 }).toBe(4)
+    expect(events.filter(event => event.feature === 'desktop_update_download').map(event => event.outcome).sort()).toEqual(['completed', 'started'])
+    expect(events.filter(event => event.feature === 'desktop_update_install').map(event => event.outcome).sort()).toEqual(['failed', 'started'])
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
     await page.getByRole('button', { name: /^(Add project|Adicionar projeto)$/ }).click()
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'started'), { timeout: 10000 }).toBe(true)
     await page.locator('[data-verboo-session="analytics-history"]').getByRole('button').first().click()
+    await expect.poll(() => events.some(event => event.feature === 'conversation_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).first().click()
+    await page.locator('[data-sidebar-right-guide-entry="files"]').first().click()
+    await expect.poll(() => events.some(event => event.feature === 'files_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.locator('[data-files-navigator]:visible').getByRole('button', { name: 'private-preview.txt', exact: true }).click()
+    await expect.poll(() => events.some(event => event.feature === 'document_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.locator('[data-dockkit-add-tab]').first().click()
+    await page.locator('[data-sidebar-right-guide-entry="terminal"]').getByRole('button', { name: /^New terminal/u }).click()
+    await expect.poll(() => events.some(event => event.feature === 'terminal_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).first().click()
     await page.getByRole('button', { name: /^Select model/ }).click()
     await page.getByRole('menuitemradio', { name: 'Fixture model', exact: true }).click()
     await expect.poll(() => events.some(event => event.feature === 'model_choice'), { timeout: 10000 }).toBe(true)
@@ -184,12 +220,21 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await expect.poll(() => events.some(event => event.feature === 'message_enter'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Stop generating', exact: true }).click()
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating', exact: true }).count(), { timeout: 15000 }).toBe(0)
+    await page.locator('input[type="file"]').first().setInputFiles({ name: 'private-fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('private fixture bytes') })
+    await expect.poll(() => events.some(event => event.feature === 'attachment_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await expect.poll(() => events.some(event => event.feature === 'attachment_upload_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Split to the right' }).first().click()
     await expect.poll(() => events.some(event => event.feature === 'pane_split_right'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Split below' }).last().click()
     await expect.poll(() => events.some(event => event.feature === 'pane_split_down'), { timeout: 10000 }).toBe(true)
+    await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')) })
+    await expect.poll(() => events.some(event => event.feature === 'desktop_connection_recovered' && event.outcome === 'completed'),
+      { timeout: 15000 }).toBe(true)
     expect(events.filter(event => event.feature === 'project_add' && event.outcome === 'started')).toHaveLength(1)
     expect(events.filter(event => event.feature === 'project_add' && event.outcome === 'cancelled')).toHaveLength(1)
+    await expect.poll(() => events.some(event => event.name === 'product_first_open_observed'), { timeout: 10000 }).toBe(true)
+    await expect.poll(() => events.some(event => event.name === 'product_authenticated_observed'), { timeout: 10000 }).toBe(true)
+    expect(events.find(event => event.name === 'product_authenticated_observed')).toMatchObject({ surface: 'desktop', appVersion: 'e2e-fixture' })
     expect([...installationHeaders]).toHaveLength(1)
     expect([...installationHeaders][0]).toMatch(/^[a-f0-9]{64}$/)
     expect(events.filter(event => event.name === 'product_feature_used').every(event => event.surface === 'desktop' && event.appVersion === 'e2e-fixture')).toBe(true)
@@ -197,6 +242,10 @@ it('sends anonymous, bounded observations for actual project and split controls'
     expect(JSON.stringify(events)).not.toContain('Fixture message')
     expect(JSON.stringify(events)).not.toContain('Fixture queued')
     expect(JSON.stringify(events)).not.toContain('Fixture immediate')
+    expect(JSON.stringify(events)).not.toContain('private-fixture.txt')
+    expect(JSON.stringify(events)).not.toContain('private fixture bytes')
+    expect(JSON.stringify(events)).not.toContain('private-preview.txt')
+    expect(JSON.stringify(events)).not.toContain('private preview body')
     expect(fixtureErrors).toEqual([])
     expect(pageErrors).toEqual([])
   } catch (error) {

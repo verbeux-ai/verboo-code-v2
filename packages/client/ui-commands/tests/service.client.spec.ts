@@ -8,6 +8,7 @@
  * lifecycle, and the directory invalidation event subscriptions.
  */
 import { Context } from '@deepseek-ai/cordis'
+import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
@@ -879,6 +880,20 @@ describe('matchEnter envelope policy (images)', () => {
 })
 
 describe('execute payload', () => {
+  it('observes a command outcome without exposing its text', async () => {
+    const b = await bench({ execute: () => Promise.resolve({ matched: true }) })
+    const ui = new UiConversation(b.ctx, b.sessions)
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    ui.observeProductActions(begin)
+    await b.warm(proj('s1'))
+    const match = b.source.matchSpace!(proj('s1'), '/goal')
+    if (match === undefined || match === 'handled' || !('claim' in match)) throw new Error('expected claim')
+    await match.claim.submit('SECRET COMMAND', new Context(), [])
+    expect(begin).toHaveBeenCalledExactlyOnceWith('command_submit')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+  })
+
   it('observes only the fixed feature category without passing command text or blocking execution', async () => {
     let fail = false
     const b = await bench({ execute: () => Promise.resolve({ matched: true,
