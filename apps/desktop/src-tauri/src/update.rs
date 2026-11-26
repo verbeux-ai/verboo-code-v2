@@ -245,6 +245,7 @@ fn write_cache(
     if bytes.len() as u64 > CACHE_LIMIT {
         return Err("update_cache_too_large");
     }
+    fs::create_dir_all(root).map_err(|_| "update_cache_unavailable")?;
     let next = root.join("pending-update.tmp");
     let current = root.join(CACHE_DIR);
     if next.exists() {
@@ -1465,6 +1466,15 @@ mod tests {
         assert_eq!(saved, manifest);
         assert_eq!(package, b"signed bytes");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn creates_cache_root_on_first_download() {
+        let parent = cache_test_root();
+        let root = parent.join("new/cache");
+        write_cache(&root, &serde_json::json!({"version":"1"}), b"signed bytes").unwrap();
+        assert_eq!(read_cache(&root).unwrap().unwrap().1, b"signed bytes");
+        std::fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]
