@@ -148,7 +148,7 @@ export class ReactLoopAgent implements Agent {
     this.ctx = this.scope.ctx
     this.model = new AgentModel(projections.modelSelection, session, options)
     this.inbox = new ReactLoopInbox(projections.inbox, session, this.dispatch,
-      () => this.loopCtx.agents.exitAdmission.assertAdmission())
+      () => { this.loopCtx.agents.exitAdmission.assertAdmission() })
     this.phase = { kind: 'idle', lastTurn }
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
     this.systemPrompt = new SystemPromptProjection(session)
