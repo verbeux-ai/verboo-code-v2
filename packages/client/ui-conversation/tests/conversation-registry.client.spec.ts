@@ -143,6 +143,26 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
+  it('contains product action observers and settles an operation at most once', async () => {
+    const { uiConversation } = await bootRegistries()
+    const finish = vi.fn()
+    const first = uiConversation.observeProductActions(() => finish)
+    const begin = vi.fn(() => finish)
+    const second = uiConversation.observeProductActions(begin)
+    first()
+    const settle = uiConversation.beginProductAction('attachment_upload_file')
+    expect(begin).toHaveBeenCalledExactlyOnceWith('attachment_upload_file')
+    settle('failed'); settle('completed')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+    second()
+    uiConversation.beginProductAction('schedule_create')('completed')
+    expect(begin).toHaveBeenCalledTimes(1)
+    uiConversation.observeProductActions(() => { throw new Error('observer failed') })
+    expect(() => { uiConversation.beginProductAction('terminal_open')('completed') }).not.toThrow()
+    uiConversation.observeProductActions(() => () => { throw new Error('observer failed') })
+    expect(() => { uiConversation.beginProductAction('terminal_open')('completed') }).not.toThrow()
+  })
+
   it('classifies message gestures and delivery mode without passing a session or content', async () => {
     const { uiConversation } = await bootRegistries()
     const report = vi.fn()

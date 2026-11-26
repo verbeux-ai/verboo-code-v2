@@ -41,6 +41,12 @@ export type ProductFeature = 'conversation' | 'model_switch' | 'tool' | 'browser
   | 'preference_language_es' | 'preference_language_fr' | 'preference_language_de' | 'preference_language_ru' | 'preference_language_other'
   | 'desktop_update_download' | 'desktop_update_install' | 'desktop_update_error'
   | 'desktop_response_error' | 'desktop_connection_recovered'
+  | 'terminal_open' | 'files_open' | 'document_open'
+  | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
+  | 'attachment_retry_image' | 'attachment_retry_file'
+  | 'schedule_create' | 'schedule_edit' | 'schedule_pause' | 'schedule_resume' | 'schedule_delete' | 'schedule_run'
+  | 'schedule_after' | 'schedule_at' | 'schedule_every' | 'schedule_daily' | 'schedule_weekly' | 'schedule_cron' | 'schedule_rrule'
+  | 'conversation_new' | 'conversation_open' | 'conversation_search' | 'command_submit' | 'integration_connect' | 'mcp_connect' | 'mcp_configure' | 'mcp_probe'
 
 /** Bounded model dimensions from first-party or official account catalogs. */
 export interface ProductModelDetails {

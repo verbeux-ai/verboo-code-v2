@@ -57,6 +57,8 @@ On narrow screens, page headings and their actions stack and wrap within the vie
 
 Desktop updater telemetry records bounded phase transitions only when measurement is authorized at the observed start. A previously established Host connection that enters the disconnected state is counted only if it later recovers; a pending disconnection does not survive UI disposal. Repeated progress notifications do not create additional starts, and a restored ready state is not counted as a completed download.
 
+Desktop product action observations cover openings of the terminal, file explorer and file previews, attachment intake and uploads, manual task management, conversation navigation and search, commands, and connection setup. They carry bounded categories and outcomes, not paths, attachment content, task instructions, command text, connection names, or credentials. A request failure does not establish whether a remote write happened.
+
 </details>
 
 <a id="further-exploration"></a>

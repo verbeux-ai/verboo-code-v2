@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
  * packages/client/AGENTS.md.
  */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ISessions, SessionForkError } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -143,9 +144,16 @@ export function apply(ctx: Context): void {
   const shortcutControls = createWorkspaceShortcutControls()
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
-    const result = await sessions.search(query, signal)
-    if (!result.ok) throw new Error(result.error.message)
-    return result.value
+    const observe = ctx.get('uiConversation')?.beginProductAction('conversation_search')
+    try {
+      const result = await sessions.search(query, signal)
+      if (!result.ok) throw new Error(result.error.message)
+      observe?.(signal.aborted ? 'cancelled' : 'completed')
+      return result.value
+    } catch (error) {
+      observe?.(signal.aborted ? 'cancelled' : 'failed')
+      throw error
+    }
   }
 
   // Stable per-surface occupancy sources (the renderer's hook cache keys by

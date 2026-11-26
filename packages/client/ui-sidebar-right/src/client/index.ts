@@ -131,6 +131,7 @@ export function apply(ctx: ClientContext): void {
     (address, signal) => { ctx.resources.pin(address, signal) },
     {
       autoFullscreen: () => autoFullscreen,
+      onProductOpen: (category) => { ctx.get('uiConversation')?.beginProductAction(category)('completed') },
       openWithFocus: (sessionId, open) => { openWithPaneFocus(document, sessionId, open) },
       closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
     },

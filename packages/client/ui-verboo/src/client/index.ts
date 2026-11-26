@@ -45,6 +45,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { ProductAction } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
@@ -182,6 +183,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       throw error
     }
   }
+  const trackProductOperation = async <T>(
+    action: ProductAction, request: () => Promise<T>, completed: (value: T) => boolean,
+  ): Promise<T> => {
+    const observe = ctx.uiConversation.beginProductAction(action)
+    try {
+      const value = await request()
+      observe(completed(value) ? 'completed' : 'failed')
+      return value
+    } catch (error) {
+      observe('failed')
+      throw error
+    }
+  }
   const model = new ProductModel(
     {
       profile: async () => {
@@ -217,7 +231,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       connect: async (slug, label) => {
-        const r = await trackFeatureOperation('mcp', () => ctx.remote.verboo.connect(slug, label), result => result.ok && result.value.ok)
+        const r = await trackProductOperation('integration_connect', () => trackFeatureOperation('mcp', () => ctx.remote.verboo.connect(slug, label), result => result.ok && result.value.ok), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       disconnect: async (id) => {
@@ -229,7 +243,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       saveMcpServer: async (input) => {
-        const r = await trackFeatureOperation('mcp', () => ctx.remote.verbooMcp.save(input), result => result.ok && result.value.ok)
+        const r = await trackProductOperation('mcp_configure', () => trackFeatureOperation('mcp', () => ctx.remote.verbooMcp.save(input), result => result.ok && result.value.ok), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       deleteMcpServer: async (name) => {
@@ -241,11 +255,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       signInMcpServer: async (name) => {
-        const r = await ctx.remote.verbooMcp.signIn(name)
+        const r = await trackProductOperation('mcp_connect', () => ctx.remote.verbooMcp.signIn(name), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       setMcpToken: async (name, token) => {
-        const r = await ctx.remote.verbooMcp.setToken(name, token)
+        const r = await trackProductOperation('mcp_connect', () => ctx.remote.verbooMcp.setToken(name, token), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       signOutMcpServer: async (name) => {
@@ -253,7 +267,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       probeMcpServer: async (input, signal) => {
-        const r = await ctx.remote.verbooMcp.probe(input, signal)
+        const r = await trackProductOperation('mcp_probe', () => ctx.remote.verbooMcp.probe(input, signal), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
@@ -429,6 +443,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
   }), 'Verboo: model choice analytics')
   ctx.effect(() => ctx.commandUi.observeFeatureCommands(featureObserver), 'Verboo: command feature analytics')
+  ctx.effect(() => ctx.uiConversation.observeProductActions((action) => {
+    if (!globalThis.__VERBOO_DESKTOP__) return undefined
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    observeFeature(action, 'started', consent)
+    return (outcome) => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(action, outcome, consent)
+      }
+    }
+  }), 'Verboo: product action analytics')
   ctx.effect(() => ctx.uiConversation.observeControlClicks((control) => {
     observeFeature(control, 'started', captureProductConsent())
   }), 'Verboo: conversation control analytics')

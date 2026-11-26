@@ -9,8 +9,10 @@ import { VerbooHttp, deploymentOf, operation, AccountRequestError } from '@deeps
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { productResponseProjection, type ProductResponseState } from './projection.ts'
+import { scheduleObservation, scheduleOutcome, type ScheduleObservation } from './schedule-observation.ts'
 import { AnalyticsStorageStore, consentSchema, eventSchema, type AnalyticsIdentity, type AnalyticsStorage } from './storage.ts'
 import type { ProductAnalyticsStatus, ProductAnalyticsSubject, ProductConsentResult, ProductFeature, ProductModelDetails, ProductSurface } from './types.ts'
 export type * from './types.ts'
@@ -125,6 +127,12 @@ export default class VerbooAnalytics extends TypertRemoteService {
   private readonly openedOwners = new Set<string>()
   private readonly turnOwners = new WeakMap<Session, TurnOwner>()
   private readonly turnCheckpoints = new WeakMap<Session, TurnCheckpoint>()
+  private readonly firstTextTurns = new WeakMap<Session, { turn: number; attemptId?: string; revision?: number; reported: boolean }>()
+  private readonly scheduleCalls = new WeakMap<Session, Map<string, {
+    feature: ScheduleObservation
+    startedAt: number
+    capture: TurnOwner
+  }>>()
   private readonly loginOwners = new Set<string>()
   private lastReference: OrderReference | undefined
   private loginStart: { attemptId: string; reference: OrderReference | undefined } | undefined
@@ -169,6 +177,8 @@ export default class VerbooAnalytics extends TypertRemoteService {
       const facts = projection.stateOf(session)
       if (event.type === 'turn/start') {
         this.turnCheckpoints.set(session, { turn: event.data.turn, reference: this.lastReference })
+        this.firstTextTurns.set(session, { turn: event.data.turn, reported: false })
+        this.scheduleCalls.set(session, new Map())
         return
       }
       if (event.type === 'user/message' && event.data.source.kind === 'user' && facts.root && facts.turn !== null) {
@@ -185,7 +195,28 @@ export default class VerbooAnalytics extends TypertRemoteService {
         }
         return
       }
+      if (event.type === 'tool/call' && this.config.surface === 'desktop' && facts.root && facts.human && facts.stepped && event.data.turn === facts.turn) {
+        const feature = scheduleObservation(event.data.name, event.data.arguments)
+        const capture = this.turnOwners.get(session)
+        const calls = this.scheduleCalls.get(session)
+        if (feature !== undefined && capture?.turn === facts.turn && calls !== undefined &&
+          calls.size < 1000 && !calls.has(event.data.callId)) {
+          calls.set(event.data.callId, { feature, startedAt: facts.startedAt, capture })
+          this.background(this.scheduleEvent(session, event.seq, event.time, facts.startedAt, feature, 'started', capture))
+        }
+        return
+      }
       if (event.type === 'tool/result' && this.config.surface !== 'dashboard' && facts.root && facts.human && facts.stepped && event.data.turn === facts.turn) {
+        const calls = this.scheduleCalls.get(session)
+        const scheduled = calls?.get(event.data.message.toolCallId)
+        if (scheduled !== undefined) {
+          calls?.delete(event.data.message.toolCallId)
+          const outcome = scheduleOutcome(event.data.message)
+          if (outcome !== undefined) {
+            this.background(this.scheduleEvent(session, event.seq, event.time,
+              scheduled.startedAt, scheduled.feature, outcome, scheduled.capture))
+          }
+        }
         const capture = this.turnOwners.get(session)
         if (capture?.turn === event.data.turn) {
           this.background(this.completedTool(session, event.seq, event.time, facts.startedAt, event.data.message.isError === true, capture))
@@ -196,12 +227,30 @@ export default class VerbooAnalytics extends TypertRemoteService {
       const capture = this.turnOwners.get(session)
       this.turnOwners.delete(session)
       this.turnCheckpoints.delete(session)
+      this.firstTextTurns.delete(session)
+      this.scheduleCalls.delete(session)
       if (this.config.surface === 'desktop' && facts.root && facts.human && facts.stepped &&
         event.data.reason.kind === 'error' && capture?.turn === event.data.turn) {
         this.background(this.failedResponse(session, event.data.turn, facts.startedAt, event.time, capture))
       }
       if (facts.completedTurn !== event.data.turn || this.config.surface === 'dashboard') return
       if (capture?.turn === event.data.turn) this.background(this.completed(session, facts, event.time, capture))
+    })
+    this.ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+      if (this.config.surface !== 'desktop') return
+      const session = agent.session
+      const state = this.firstTextTurns.get(session)
+      if (state === undefined || state.reported) return
+      if (frame.type === 'start') {
+        if (frame.turn === state.turn) { state.attemptId = frame.attemptId; state.revision = frame.revision }
+        return
+      }
+      if (frame.type !== 'chunk' || frame.attemptId !== state.attemptId || frame.revision !== state.revision || frame.chunk.type !== 'text-delta' || frame.chunk.text.length === 0) return
+      const facts = projection.stateOf(session)
+      const capture = this.turnOwners.get(session)
+      if (!facts.root || !facts.human || !facts.stepped || facts.turn !== state.turn || capture?.turn !== state.turn) return
+      state.reported = true
+      this.background(this.firstText(session, state.turn, facts.startedAt, frame.time, capture))
     })
     this.ctx.effect(() => {
       const timer = setInterval(() => { this.background(this.tick()) }, this.config.retryIntervalMs)
@@ -481,6 +530,14 @@ export default class VerbooAnalytics extends TypertRemoteService {
     }, at, id, facts.startedAt, current, capture.reference?.proof)
   }
 
+  private async firstText(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
+    const id = responseOperationId(`first-text:${session.id}`, turn)
+    const durationMs = Math.min(604800000, Math.max(0, Math.trunc(at - startedAt)))
+    await this.enqueue('product_first_text_observed', { operationId: id, outcome: 'completed', durationMs }, at, id, startedAt, current, capture.reference?.proof)
+  }
+
   private async completedTool(
     session: Session, seq: number, at: number, startedAt: number, failed: boolean, capture: TurnOwner,
   ): Promise<void> {
@@ -489,6 +546,18 @@ export default class VerbooAnalytics extends TypertRemoteService {
     const id = responseOperationId(`tool:${session.id}`, seq)
     await this.enqueue('product_feature_used', { feature: 'tool', outcome: failed ? 'failed' : 'completed' },
       at, id, startedAt, current, capture.reference?.proof)
+  }
+
+  private async scheduleEvent(session: Session, seq: number, at: number, startedAt: number, feature: ScheduleObservation,
+    outcome: 'started' | 'completed' | 'failed', capture: TurnOwner): Promise<void> {
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
+    const id = responseOperationId(`schedule:${session.id}`, seq)
+    await this.enqueue('product_feature_used', { feature, outcome }, at, id, startedAt, current, capture.reference?.proof)
+    if (feature === 'schedule_create') {
+      const timingId = responseOperationId(`schedule-rrule:${session.id}`, seq)
+      await this.enqueue('product_feature_used', { feature: 'schedule_rrule', outcome }, at, timingId, startedAt, current, capture.reference?.proof)
+    }
   }
 
   private async failedResponse(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {

@@ -113,12 +113,14 @@ it('sends anonymous, bounded observations for actual project and split controls'
       extraOverlayPath: overlay,
     })
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
+    await writeFile(join(scaffold.workspaceCwd, 'private-preview.txt'), 'private preview body')
     await seedSession(scaffold, await readFile(session, 'utf8'), 'analytics-history')
     const page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US', reducedMotion: 'reduce' })
     const pageErrors: string[] = []
     page.on('pageerror', (error) => { pageErrors.push(error.message) })
     await page.addInitScript(() => {
       Object.assign(window, {
+        __VERBOO_DESKTOP__: { framework: 'tauri', protocolVersion: 1, openExternal: async () => {} },
         __DSH_DIRECTORY_PICKER__: { pick: async () => null },
         __VERBOO_UPDATE__: {
           getState: async () => ({ phase: 'idle', percent: null }),
@@ -165,6 +167,16 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'started'), { timeout: 10000 }).toBe(true)
     await page.locator('[data-verboo-session="analytics-history"]').getByRole('button').first().click()
+    await expect.poll(() => events.some(event => event.feature === 'conversation_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).first().click()
+    await page.locator('[data-sidebar-right-guide-entry="files"]').first().click()
+    await expect.poll(() => events.some(event => event.feature === 'files_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.locator('[data-files-navigator]:visible').getByRole('button', { name: 'private-preview.txt', exact: true }).click()
+    await expect.poll(() => events.some(event => event.feature === 'document_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.locator('[data-dockkit-add-tab]').first().click()
+    await page.locator('[data-sidebar-right-guide-entry="terminal"]').getByRole('button', { name: /^New terminal/u }).click()
+    await expect.poll(() => events.some(event => event.feature === 'terminal_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).first().click()
     await page.getByRole('button', { name: /^Select model/ }).click()
     await page.getByRole('menuitemradio', { name: 'Fixture model', exact: true }).click()
     await expect.poll(() => events.some(event => event.feature === 'model_choice'), { timeout: 10000 }).toBe(true)
@@ -208,6 +220,9 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await expect.poll(() => events.some(event => event.feature === 'message_enter'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Stop generating', exact: true }).click()
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating', exact: true }).count(), { timeout: 15000 }).toBe(0)
+    await page.locator('input[type="file"]').first().setInputFiles({ name: 'private-fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('private fixture bytes') })
+    await expect.poll(() => events.some(event => event.feature === 'attachment_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
+    await expect.poll(() => events.some(event => event.feature === 'attachment_upload_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Split to the right' }).first().click()
     await expect.poll(() => events.some(event => event.feature === 'pane_split_right'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Split below' }).last().click()
@@ -224,6 +239,10 @@ it('sends anonymous, bounded observations for actual project and split controls'
     expect(JSON.stringify(events)).not.toContain('Fixture message')
     expect(JSON.stringify(events)).not.toContain('Fixture queued')
     expect(JSON.stringify(events)).not.toContain('Fixture immediate')
+    expect(JSON.stringify(events)).not.toContain('private-fixture.txt')
+    expect(JSON.stringify(events)).not.toContain('private fixture bytes')
+    expect(JSON.stringify(events)).not.toContain('private-preview.txt')
+    expect(JSON.stringify(events)).not.toContain('private preview body')
     expect(fixtureErrors).toEqual([])
     expect(pageErrors).toEqual([])
   } catch (error) {

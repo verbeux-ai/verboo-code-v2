@@ -16,6 +16,7 @@ import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { reportMessageSubmission } from '../src/client/input/submission-analytics.ts'
 import { ConversationController } from '../src/client/service.ts'
+import { UiConversation } from '../src/client/conversation/assembly.ts'
 import { zh } from '../src/client/locales.ts'
 
 const IMAGE_REF = {
@@ -225,6 +226,12 @@ describe('ConversationController', () => {
 
   it('retries a failed image upload and aborts it with its draft', async () => {
     const b = await bench()
+    const uiConversation = new UiConversation(b.runtime.ctx, b.runtime.sessions)
+    const observed: string[] = []
+    uiConversation.observeProductActions((action) => {
+      observed.push(`begin:${action}`)
+      return (outcome) => { observed.push(`${action}:${outcome}`) }
+    })
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retry')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
     try {
@@ -252,6 +259,12 @@ describe('ConversationController', () => {
       expect(b.root.fileUploads.getSnapshot()[draft!.id]?.status).toBe('uploading')
       b.root.releaseDraftAttachment(draft!.id)
       expect(signals[1]?.aborted).toBe(true)
+      await vi.waitFor(() => { expect(observed).toContain('attachment_upload_image:cancelled') })
+      expect(observed).toEqual([
+        'begin:attachment_upload_image', 'attachment_upload_image:failed',
+        'begin:attachment_retry_image', 'attachment_retry_image:completed',
+        'begin:attachment_upload_image', 'attachment_upload_image:cancelled',
+      ])
       expect(b.root.fileUploads.getSnapshot()[draft!.id]).toBeUndefined()
       expect(revoked).toHaveBeenCalledWith('blob:retry')
     } finally {

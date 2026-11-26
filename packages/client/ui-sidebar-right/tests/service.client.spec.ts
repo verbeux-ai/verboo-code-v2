@@ -17,6 +17,22 @@ import { createSidebarRightStore } from '../src/client/stores.ts'
 import { controllerHarness as harness, SESSION } from './controller-harness.client.ts'
 
 describe('SidebarRightController — opening', () => {
+  it('reports bounded opening categories and contains observer failures', () => {
+    const opened = vi.fn()
+    const h = harness(opened)
+    h.tabs.register({ id: 'test/terminal', kind: 'terminal', multiple: true, title: () => 'terminal' })
+    h.tabs.register({ id: 'test/files', kind: 'files', title: () => 'files' })
+    h.publish()
+    h.controller.openTab('terminal')
+    h.controller.openTab('files')
+    h.controller.openResource('dsh-resource://file/session/s-test/private-name.txt')
+    expect(opened.mock.calls).toEqual([['terminal_open'], ['files_open'], ['document_open']])
+    const broken = harness(() => { throw new Error('observer failed') })
+    broken.tabs.register({ id: 'test/files', kind: 'files', title: () => 'files' })
+    broken.publish()
+    expect(() => { broken.controller.openTab('files') }).not.toThrow()
+  })
+
   it('keeps independently opened instances distinct when they return to the same pane', () => {
     const h = harness()
     h.tabs.register({ id: 'test/terminal', kind: 'terminal', multiple: true, title: () => 'terminal' })

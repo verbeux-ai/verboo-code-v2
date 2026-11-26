@@ -126,7 +126,11 @@ export function apply(ctx: ClientContext): void {
     const manager = createCatalogSource<ScheduleCatalogEntry>({
       list: () => ctx.remote.schedule.catalog(),
       remove: async (id): Promise<RemoteResult<ScheduleDeleteResult>> => {
-        const result = await ctx.remote.schedule.edit({ id, action: 'delete' })
+        const observe = ctx.uiConversation.beginProductAction('schedule_delete')
+        let result: Awaited<ReturnType<typeof ctx.remote.schedule.edit>>
+        try { result = await ctx.remote.schedule.edit({ id, action: 'delete' }) }
+        catch (error) { observe('failed'); throw error }
+        observe(result.ok && 'deleted' in result.value ? 'completed' : 'failed')
         if (!result.ok) return result
         return { ok: true, value: 'deleted' in result.value ? { id, deleted: true } : { id, deleted: false, code: 'schedule_not_found' } }
       },
@@ -175,7 +179,12 @@ export function apply(ctx: ClientContext): void {
       onOpenSession: openSession,
       hostActions: {
         edit: async (request) => {
+          const action = request.action === 'delete' ? 'schedule_delete'
+            : request.patch.active === false ? 'schedule_pause'
+              : request.patch.active === true ? 'schedule_resume' : 'schedule_edit'
+          const observe = ctx.uiConversation.beginProductAction(action)
           const result = await settle(() => ctx.remote.schedule.edit(request))
+          observe(result?.ok === true && !('code' in result.value) ? 'completed' : 'failed')
           if (result === undefined) return { failed: 'host.saveError' }
           if (!result.ok) return { failed: inputCorrection(result.error) ?? 'host.saveError' }
           await refresh()
@@ -183,7 +192,9 @@ export function apply(ctx: ClientContext): void {
           return { failed: result.value.code === 'schedule_conflict' ? 'host.conflict' : 'detail.missing' }
         },
         run: async (id) => {
+          const observe = ctx.uiConversation.beginProductAction('schedule_run')
           const result = await settle(() => ctx.remote.schedule.run({ id }))
+          observe(result?.ok === true && !('code' in result.value) ? 'completed' : 'failed')
           if (result === undefined || !result.ok) return { failed: 'host.runError' }
           await refresh()
           if (!('code' in result.value)) return 'queued'
@@ -228,7 +239,11 @@ export function apply(ctx: ClientContext): void {
           deleteToast.reportClear(outcome)
         },
         onCreateTask: async (request) => {
+          const observe = ctx.uiConversation.beginProductAction('schedule_create')
+          const timing = ctx.uiConversation.beginProductAction(`schedule_${request.timing.kind}`)
           const result = await settle(() => ctx.remote.schedule.create(request))
+          const outcome = result?.ok === true ? 'completed' : 'failed'
+          observe(outcome); timing(outcome)
           if (result === undefined) return { failed: 'host.createError' }
           if (!result.ok) return { failed: inputCorrection(result.error) ?? 'host.createError' }
           manager.retainCreated(result.value)

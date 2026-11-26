@@ -123,12 +123,29 @@ it('requires consent and sends only a completed root response through the real s
   session.append('turn/start', { turn: 1 })
   session.append('user/message', createMessage({ role: 'user', content: [{ type: 'text', text: 'SECRET PROMPT' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('step/start', { turn: 1, step: 1 })
+  const agent = { session } as never
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'start', attemptId: 'attempt' as never, revision: 1, turn: 1, step: 1 } })
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'chunk', attemptId: 'attempt' as never, revision: 1, index: 0,
+    time: Date.now(), chunk: { type: 'reasoning-delta', index: 0, text: 'SECRET THINKING' } } })
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'chunk', attemptId: 'attempt' as never, revision: 2, index: 1,
+    time: Date.now() + 200_000, chunk: { type: 'text-delta', index: 1, text: 'SECRET STALE TEXT' } } })
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'chunk', attemptId: 'attempt' as never, revision: 1, index: 1,
+    time: Date.now(), chunk: { type: 'text-delta', index: 1, text: '' } } })
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'chunk', attemptId: 'attempt' as never, revision: 1, index: 1,
+    time: Date.now(), chunk: { type: 'text-delta', index: 1, text: 'SECRET FIRST TEXT' } } })
+  ctx.emit('agent/assistant-stream', { agent, frame: { type: 'chunk', attemptId: 'attempt' as never, revision: 1, index: 2,
+    time: Date.now(), chunk: { type: 'text-delta', index: 1, text: 'SECRET MORE TEXT' } } })
   session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'fixture' as never, content: [], isError: false }) }, { surfaceOp: 'append' })
   session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createMessage({ role: 'assistant', content: [{ type: 'text', text: 'SECRET RESPONSE' }], source: { kind: 'model', provider: 'deepseek-account', model: 'SECRET MODEL' } }) }, { surfaceOp: 'append' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   for (let attempt = 0; attempt < 100 && !events.some(event => event.name === 'product_response_completed'); attempt++) await delay(50)
   const response = events.filter(event => event.name === 'product_response_completed')
   expect(response).toHaveLength(1)
+  await vi.waitFor(() => { expect(events.filter(event => event.name === 'product_first_text_observed')).toHaveLength(1) })
+  const firstText = events.find(event => event.name === 'product_first_text_observed')
+  expect(firstText).toMatchObject({ surface: 'desktop', outcome: 'completed' })
+  expect(typeof firstText?.durationMs).toBe('number')
+  expect(firstText?.durationMs).toBeLessThan(10_000)
   await vi.waitFor(() => { expect(events.filter(event => event.name === 'product_feature_used' && event.feature === 'tool')).toHaveLength(1) })
   expect(response[0]).toMatchObject({ surface: 'desktop', appVersion: 'fixture', modality: 'verboo_gateway', outcome: 'completed', consentRevision: 1 })
   expect([...installationSecrets]).toHaveLength(1)
@@ -137,9 +154,15 @@ it('requires consent and sends only a completed root response through the real s
   session.append('turn/start', { turn: 2 })
   session.append('user/message', createMessage({ role: 'user', content: [{ type: 'text', text: 'SECRET FAILURE PROMPT' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('step/start', { turn: 2, step: 1 })
+  session.append('tool/call', { turn: 2, step: 1, callId: 'schedule-call' as never, name: 'schedule_create', arguments: '{"title":"SECRET TASK"}' })
+  session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({ callId: 'schedule-call' as never,
+    content: [{ type: 'text', text: '{"kind":"rrule","title":"SECRET TASK"}' }], isError: false }) }, { surfaceOp: 'append' })
   session.append('turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'SECRET ERROR' } } })
   await vi.waitFor(() => {
     expect(events.filter(event => event.feature === 'desktop_response_error')).toHaveLength(1)
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'schedule_create', outcome: 'started' }))
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'schedule_create', outcome: 'completed' }))
+    expect(events).toContainEqual(expect.objectContaining({ feature: 'schedule_rrule', outcome: 'completed' }))
   }, { timeout: 3000 })
   expect(events.find(event => event.feature === 'desktop_response_error')).toMatchObject({ outcome: 'failed', surface: 'desktop' })
   expect(JSON.stringify(events)).not.toMatch(/SECRET|fixture-root/)
