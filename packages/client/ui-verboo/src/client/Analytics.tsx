@@ -65,7 +65,8 @@ export function AnalyticsPage(props: Props) {
       let next = 0
       const worker = async () => {
         while (!stopped() && next < ids.length) {
-          const id = ids[next++]
+          const id = ids.at(next++)
+          if (id === undefined) return
           const value = await safe(id)
           if (stopped()) return
           byGroup[id] = value
