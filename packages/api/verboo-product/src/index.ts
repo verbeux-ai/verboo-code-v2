@@ -28,7 +28,7 @@ export const Config = Schema.object({
   routerBaseURL: Schema.string().default('https://code.verboo.ai/router/v1'),
   allowLoopbackHttp: Schema.boolean().default(false),
   connectionListTimeoutMs: Schema.number().min(1000).max(120_000).default(40_000),
-  connectionSearchTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
+  connectionSearchTimeoutMs: Schema.number().min(1000).max(120_000).default(120_000),
   connectionExecutionTimeoutMs: Schema.number().min(1000).max(120_000).default(75_000),
 })
 /** Public product deployment configuration; provider credentials remain server-side. */
@@ -162,7 +162,7 @@ export class VerbooProduct extends TypertRemoteService {
     // The Loader applies Config before construction; the default covers a
     // hand-constructed service.
     /* v8 ignore next -- the schema supplies this field before construction */
-    this.connectionSearchTimeoutMs = config.connectionSearchTimeoutMs ?? 75_000
+    this.connectionSearchTimeoutMs = config.connectionSearchTimeoutMs ?? 120_000
     this.connectionExecutionTimeoutMs = config.connectionExecutionTimeoutMs ?? 75_000
     this.trialCommerce = new TrialCommerce(
       (path, method, body, correlationId) => this.request(path, method, body, undefined, correlationId),
@@ -348,7 +348,7 @@ export class VerbooProduct extends TypertRemoteService {
           ),
         ).data
       if (!result.successful)
-        throw new ConnectionExecutionError('action_failed')
+        throw connectionExecutionFailure(result.result)
       return result.result
     } catch (error) {
       if (error instanceof ConnectionExecutionError) throw error
@@ -624,16 +624,39 @@ function productRequestStage(path: string, method: string): Parameters<typeof ob
 function connectionIdSchema(value: string): string {
   return connectionId.parse(value)
 }
+/** Use only fixed backend categories; never expose a provider body to the model. */
+function connectionExecutionFailure(result: string): ConnectionExecutionError {
+  try {
+    const parsed: unknown = JSON.parse(result)
+    const value = z.object({ code: z.string() }).safeParse(parsed)
+    if (value.success) {
+      switch (value.data.code) {
+        case 'connection_action_permission_denied': return new ConnectionExecutionError('action_permission_denied')
+        case 'connection_action_not_found': return new ConnectionExecutionError('action_not_found')
+        case 'connection_action_invalid_arguments': return new ConnectionExecutionError('action_invalid_arguments')
+        case 'connection_action_rate_limited': return new ConnectionExecutionError('action_rate_limited')
+      }
+    }
+  } catch { /* Older backends may return non-JSON failure text. */ }
+  return new ConnectionExecutionError('action_failed')
+}
+
 /** A provider side effect may have committed before its response was lost. */
 class ConnectionExecutionError extends Error {
   constructor(
-    readonly code: 'action_failed' | 'action_refused' | 'execution_unconfirmed',
+    readonly code: 'action_failed' | 'action_refused' | 'execution_unconfirmed'
+      | 'action_permission_denied' | 'action_not_found' | 'action_invalid_arguments' | 'action_rate_limited',
   ) {
-    super(
-      code === 'execution_unconfirmed'
-        ? 'Connection action could not be confirmed. Check the service before repeating it.'
-        : `Connection action failed: ${code}. Check the service before repeating it.`,
-    )
+    const messages = {
+      action_failed: 'Connection action failed: action_failed. Check the service before repeating it.',
+      action_refused: 'Connection action failed: action_refused. Check the service before repeating it.',
+      execution_unconfirmed: 'Connection action could not be confirmed. Check the service before repeating it.',
+      action_permission_denied: 'The provider denied this action. Check the required permissions and supported credential type; this does not prove the connection is disconnected.',
+      action_not_found: 'The provider did not find the requested resource or action. Verify its identifier and access.',
+      action_invalid_arguments: 'The provider rejected the arguments. Check the tool schema and supplied values.',
+      action_rate_limited: 'The provider rate limited this action. Check the service before repeating it.',
+    }
+    super(messages[code])
   }
 }
 declare module '@deepseek-ai/cordis' {

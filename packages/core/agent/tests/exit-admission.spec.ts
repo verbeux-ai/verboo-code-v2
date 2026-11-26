@@ -49,7 +49,7 @@ describe('silent exit admission', () => {
     expect(gate.commit(reservation.id)).toBe(true)
     expect(() => gate.begin()).toThrow('shutting down')
     gate.cancel(reservation.id)
-    expect(() => gate.assertAdmission()).not.toThrow()
+    expect(() => { gate.assertAdmission() }).not.toThrow()
     const next = gate.tryReserve()
     if (next.kind !== 'reserved') throw new Error('expected reservation')
     gate.cancel(reservation.id)
@@ -67,12 +67,12 @@ describe('silent exit admission', () => {
       if (first.kind !== 'reserved') throw new Error('expected reservation')
       expect(gate.commit(first.id)).toBe(true)
       vi.advanceTimersByTime(10_001)
-      expect(() => gate.assertAdmission()).not.toThrow()
+      expect(() => { gate.assertAdmission() }).not.toThrow()
       const next = gate.tryReserve()
       if (next.kind !== 'reserved') throw new Error('expected reservation')
       expect(gate.commit(next.id)).toBe(true)
       expect(gate.finalize(next.id, () => { throw new Error('failed') })).toBe(false)
-      expect(() => gate.assertAdmission()).not.toThrow()
+      expect(() => { gate.assertAdmission() }).not.toThrow()
     } finally { vi.useRealTimers() }
   })
   it('invalidates a reservation when a required provider unloads and resumes listeners after rollback', () => {
