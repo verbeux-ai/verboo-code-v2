@@ -341,3 +341,29 @@ it('draws the shared boot page before Host injections and resumes without replac
     vi.unstubAllGlobals()
   }
 })
+
+it('waits for desktop layout hydration before starting client modules', async () => {
+  const gate = Promise.withResolvers<undefined>()
+  vi.stubGlobal('__VERBOO_LAYOUT_STORAGE__', { ready: gate.promise })
+  const container = document.createElement('div')
+  document.body.append(container)
+  const create = vi.fn(() => { throw new Error('layout consumed') })
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  installFacade(create)
+  const entry = new AppWebEntry(container)
+  const boot = entry.run()
+  try {
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(create).not.toHaveBeenCalled()
+    gate.resolve(undefined)
+    await boot
+    expect(create).toHaveBeenCalledOnce()
+    expect(error.mock.calls.flat().map(String).join(' ')).toContain('layout consumed')
+  } finally {
+    gate.resolve(undefined)
+    await boot
+    await entry.dispose()
+    vi.unstubAllGlobals()
+  }
+})

@@ -36,6 +36,37 @@ describe('createLayoutStore', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it('restores desktop sidebar and right-panel width across instances', () => {
+    vi.stubGlobal('__VERBOO_LAYOUT_STORAGE__', {})
+    localStorage.removeItem('dsh.verboo.layout.v1')
+    const a = createLayoutStore().create()
+    a.actions.setSidebar(360)
+    a.actions.setRightbar(480)
+    a.actions.toggleSidebar()
+    const b = createLayoutStore().create()
+    expect(b.getSnapshot().layoutInfo).toMatchObject({ sidebar: 0, rightbar: 480 })
+    localStorage.removeItem('dsh.verboo.layout.v1')
+  })
+
+  it('restores a narrow sidebar only when reopened in the same viewport mode', () => {
+    vi.stubGlobal('__VERBOO_LAYOUT_STORAGE__', {})
+    vi.stubGlobal('innerWidth', 900)
+    localStorage.removeItem('dsh.verboo.layout.v1')
+    const a = createLayoutStore().create()
+    a.actions.toggleSidebar()
+    expect(createLayoutStore().create().getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    vi.stubGlobal('innerWidth', 1920)
+    expect(createLayoutStore().create().getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    localStorage.removeItem('dsh.verboo.layout.v1')
+  })
+
+  it('ignores invalid saved desktop layout values', () => {
+    vi.stubGlobal('__VERBOO_LAYOUT_STORAGE__', {})
+    localStorage.setItem('dsh.verboo.layout.v1', '{"sidebar":-100,"rightbar":null,"narrow":false,"narrowExpanded":false}')
+    expect(createLayoutStore().create().getSnapshot().layoutInfo.sidebar).toBe(280)
+    localStorage.removeItem('dsh.verboo.layout.v1')
+  })
+
   it('clamps the sidebar to 264–420px', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setSidebar(1)

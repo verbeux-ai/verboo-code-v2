@@ -123,7 +123,11 @@ export type ProductProps = PropsLocale<'verboo'> & InjectFace<ProductInjected>
 export type PageProps = ProductProps & PropsRuntime<'main'>
 /** Product capabilities and the navigation renderer. */
 export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.footer.row'>
-  & InjectFace<ExecutionInjected & { hooks: { desktopUpdate: HostObservable<DesktopUpdateState> }; installDesktopUpdate(): Promise<void> }>
+  & InjectFace<ExecutionInjected & {
+    hooks: { desktopUpdate: HostObservable<DesktopUpdateState> }
+    installDesktopUpdate(confirmed: boolean): Promise<void>
+    retryDesktopUpdate(): Promise<void>
+  }>
 /** Product capabilities and the conversation introduction renderer. */
 export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
 declare module '@deepseek-ai/dsh-client-ui-slots' {

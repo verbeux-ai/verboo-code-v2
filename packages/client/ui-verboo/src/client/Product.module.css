@@ -400,6 +400,12 @@
 .desktopUpdateBubble::before { border-top:9px solid var(--verboo-border); }
 .desktopUpdateBubble::after { border-top:8px solid var(--verboo-surface); margin-top:-1px; }
 .desktopUpdateBubble p { margin:0 0 10px; font-size:12px; line-height:1.5; }
+.desktopUpdateMascot { float:right; width:38px; height:38px; margin:0 0 8px 10px; }
+.readFailure { display:flex; align-items:flex-start; gap:14px; margin:16px 0; padding:16px; border:1px solid var(--verboo-border); border-radius:12px; background:var(--verboo-surface); }
+.readFailure img { width:42px; height:42px; flex:none; }
+.readFailure strong { font-size:14px; }
+.readFailure p { margin:5px 0 0; color:var(--verboo-muted); font-size:12px; line-height:1.5; }
+.readFailureActions { display:flex; align-items:center; gap:12px; margin-top:12px; }
 .desktopUpdateRestart { border:0; border-radius:7px; padding:8px 11px; background:var(--verboo-accent-solid); color:var(--verboo-on-accent); font:inherit; font-size:12px; cursor:pointer; }
 .desktopUpdateRestart:disabled { opacity:.6; cursor:default; }
 .desktopUpdateToast { padding:6px 10px; border-radius:12px; font-size:11px; }

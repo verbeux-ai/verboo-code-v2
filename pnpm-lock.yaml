@@ -1958,6 +1958,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -1980,6 +1983,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/api/workspace-controller:
     dependencies:

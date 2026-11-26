@@ -66,6 +66,24 @@ type LayoutActions = {
   closeRightbar: (draft: LayoutState) => void
 }
 
+const DESKTOP_LAYOUT_KEY = 'dsh.verboo.layout.v1'
+type DesktopLayout = { sidebar: number; rightbar: number | null; narrow: boolean; narrowExpanded: boolean }
+
+/** Read only bounded, explicit preferences; responsive measurements stay transient. */
+function readDesktopLayout(): DesktopLayout | undefined {
+  if (!(globalThis as { __VERBOO_LAYOUT_STORAGE__?: unknown }).__VERBOO_LAYOUT_STORAGE__) return undefined
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(DESKTOP_LAYOUT_KEY) ?? 'null')
+    if (value === null || typeof value !== 'object') return undefined
+    const row = value as Partial<DesktopLayout>
+    if (typeof row.sidebar !== 'number' || !Number.isFinite(row.sidebar)
+      || (row.sidebar !== 0 && (row.sidebar < SIDEBAR_MIN || row.sidebar > SIDEBAR_MAX))
+      || (row.rightbar !== null && (typeof row.rightbar !== 'number' || !Number.isFinite(row.rightbar) || row.rightbar < RIGHTBAR_MIN))
+      || typeof row.narrow !== 'boolean' || typeof row.narrowExpanded !== 'boolean') return undefined
+    return row as DesktopLayout
+  } catch { return undefined }
+}
+
 /**
  * Create the layout panel store handle. For the sidebar the preference IS the
  * width, so closing it forgets its drag width — reopening restores the contract
@@ -77,19 +95,23 @@ type LayoutActions = {
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({
-      panelInfo: { activePanelId: null },
-      layoutInfo: {
-        sidebar: SIDEBAR_DEFAULT,
-        viewportWidth: window.innerWidth,
-        narrowExpanded: false,
-        rightbar: null,
-        rightbarShown: false,
-        rightbarTrack: false,
-        rightbarFullscreen: false,
-        rightbarInstant: false,
-      },
-    }),
+    init: (): LayoutState => {
+      const saved = readDesktopLayout()
+      const narrow = window.innerWidth < SIDEBAR_AUTO_COLLAPSE
+      return {
+        panelInfo: { activePanelId: null },
+        layoutInfo: {
+          sidebar: saved?.sidebar ?? SIDEBAR_DEFAULT,
+          viewportWidth: window.innerWidth,
+          narrowExpanded: saved?.narrow === narrow ? saved.narrowExpanded : false,
+          rightbar: saved?.rightbar ?? null,
+          rightbarShown: false,
+          rightbarTrack: false,
+          rightbarFullscreen: false,
+          rightbarInstant: false,
+        },
+      }
+    },
     actions: {
       selectPanel: (d, panelId: MainPanelId | null) => {
         d.panelInfo.activePanelId = panelId
@@ -144,5 +166,18 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
     },
   })
-  return handle
+  return { ...handle, create(scopeKey) {
+    const instance = handle.create(scopeKey)
+    if (!(globalThis as { __VERBOO_LAYOUT_STORAGE__?: unknown }).__VERBOO_LAYOUT_STORAGE__) return instance
+    let last = JSON.stringify(readDesktopLayout())
+    instance.subscribe(() => {
+      const { sidebar, rightbar, narrowExpanded, viewportWidth } = instance.getSnapshot().layoutInfo
+      const value: DesktopLayout = { sidebar, rightbar, narrowExpanded, narrow: viewportWidth < SIDEBAR_AUTO_COLLAPSE }
+      const next = JSON.stringify(value)
+      if (last === next) return
+      try { localStorage.setItem(DESKTOP_LAYOUT_KEY, next); last = next }
+      catch (_error) { /* A storage failure must not disrupt the current layout. */ }
+    })
+    return instance
+  } }
 }

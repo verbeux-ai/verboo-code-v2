@@ -2,7 +2,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** Desktop updater state contains only presentation-safe values. */
 export interface DesktopUpdateState {
-  readonly phase: 'idle' | 'downloading' | 'ready' | 'installing' | 'error'
+  readonly phase: 'idle' | 'checking' | 'downloading' | 'ready' | 'installing' | 'error'
   readonly percent: number | null
 }
 
@@ -10,7 +10,8 @@ export interface DesktopUpdateState {
 export interface DesktopUpdateBridge {
   getState(): Promise<DesktopUpdateState>
   subscribe(listener: (state: DesktopUpdateState) => void): () => void
-  install(): Promise<void>
+  install(confirmed: boolean): Promise<void>
+  retry(): Promise<void>
 }
 
 declare global {
@@ -24,7 +25,8 @@ declare global {
 export function createUpdateSource(): {
   state: ReturnType<typeof createSnapshotStore<DesktopUpdateState>>
   start(): () => void
-  install(): Promise<void>
+  install(confirmed: boolean): Promise<void>
+  retry(): Promise<void>
 } {
   const state = createSnapshotStore<DesktopUpdateState>({ phase: 'idle', percent: null })
   let generation = 0
@@ -54,10 +56,15 @@ export function createUpdateSource(): {
       }).catch(() => { /* A missing native response leaves the indicator hidden. */ })
       return stop
     },
-    async install(): Promise<void> {
+    async install(confirmed: boolean): Promise<void> {
       const bridge = globalThis.__VERBOO_UPDATE__
       if (bridge === undefined) throw new Error('desktop update bridge unavailable')
-      await bridge.install()
+      await bridge.install(confirmed)
+    },
+    async retry(): Promise<void> {
+      const bridge = globalThis.__VERBOO_UPDATE__
+      if (bridge === undefined) throw new Error('desktop update bridge unavailable')
+      await bridge.retry()
     },
   }
 }

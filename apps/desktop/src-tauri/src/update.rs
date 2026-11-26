@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_updater::{Error as UpdateError, Update, Updater, UpdaterExt};
 
 use logic::{APPLIED_FILE, DECLINED_FILE, UPDATED_WINDOW, UPDATE_WINDOW};
@@ -188,6 +188,14 @@ fn try_exclusive_lifetime(
         };
     }
     Ok((gate, lifetime))
+}
+
+/// Restore the running-instance lock before allowing another installer through the gate.
+fn restore_shared_lifetime((gate, lifetime): (File, File)) -> Result<File, &'static str> {
+    lifetime.unlock().map_err(|_| "update_lock_unavailable")?;
+    lifetime.lock_shared().map_err(|_| "update_lock_unavailable")?;
+    drop(gate);
+    Ok(lifetime)
 }
 
 fn cache_root(app: &tauri::AppHandle) -> Result<PathBuf, &'static str> {
@@ -462,16 +470,23 @@ fn show_update_wait(app: &tauri::AppHandle, host: &Arc<crate::HostState>) {
     });
 }
 
-fn confirm_closed_older_versions(app: &tauri::AppHandle) -> bool {
-    let (message, confirm, cancel) = locale::update_confirm_closed();
-    app.dialog()
-        .message(message)
-        .title("Verboo Code")
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            confirm.into(),
-            cancel.into(),
-        ))
-        .blocking_show()
+/// Finalize shutdown only after the Host has atomically reserved an idle state.
+fn shutdown_if_idle(host: &crate::HostState) -> Result<bool, String> {
+    match host.reserve_idle()? {
+        crate::host::QuitReservation::Reserved(lease) => host.finalize_idle(lease),
+        crate::host::QuitReservation::Confirm => Ok(false),
+    }
+}
+
+/// Check activity without stopping the Host; a later final check closes the race.
+fn can_restart_without_confirmation(host: &crate::HostState) -> Result<bool, String> {
+    match host.reserve_idle()? {
+        crate::host::QuitReservation::Reserved(lease) => {
+            host.cancel_idle(lease)?;
+            Ok(true)
+        }
+        crate::host::QuitReservation::Confirm => Ok(false),
+    }
 }
 
 /// Install a verified staged update after the owned Host has fully stopped.
@@ -481,8 +496,20 @@ pub async fn update_restart(
     window: WebviewWindow,
     host: State<'_, Arc<crate::HostState>>,
     state: State<'_, Background>,
+    confirmed: bool,
 ) -> Result<(), String> {
     crate::owned_window(&window, &host)?;
+    if !confirmed {
+        if state.0.lock().map_err(|_| "update_state_unavailable")?.snapshot.phase != "ready" {
+            return Err("update_not_ready".into());
+        }
+        let activity_host = Arc::clone(&host);
+        match tauri::async_runtime::spawn_blocking(move || can_restart_without_confirmation(&activity_host)).await {
+            Ok(Ok(true)) => (),
+            Ok(Ok(false)) => return Err("update_confirmation_required".into()),
+            _ => return Err("update_activity_unavailable".into()),
+        }
+    }
     let downloaded = {
         let mut inner = state.0.lock().map_err(|_| "update_state_unavailable")?;
         if inner.snapshot.phase != "ready" {
@@ -494,18 +521,6 @@ pub async fn update_restart(
         };
         inner.downloaded.take().ok_or("update_not_ready")?
     };
-    let confirm_app = app.clone();
-    let confirmed =
-        tauri::async_runtime::spawn_blocking(move || confirm_closed_older_versions(&confirm_app))
-            .await
-            .unwrap_or(false);
-    if !confirmed {
-        let mut inner = state.0.lock().map_err(|_| "update_state_unavailable")?;
-        inner.downloaded = Some(downloaded);
-        drop(inner);
-        set_snapshot(&app, "ready", Some(100));
-        return Err("update_confirmation_cancelled".into());
-    }
     let (_verification, bytes) = match cache_root(&app).and_then(|root| {
         let gate = lock_verification_gate(&coordination_root(&app)?)?;
         let bytes = read_verified_package(&root, &downloaded.update)?;
@@ -573,7 +588,7 @@ pub async fn update_restart(
             return Err(code.into());
         }
     };
-    let _exclusive = match try_exclusive_lifetime(&root, lifetime) {
+    let exclusive = match try_exclusive_lifetime(&root, lifetime) {
         Ok(guard) => guard,
         Err(failure @ (ExclusiveLockFailure::Busy(_) | ExclusiveLockFailure::Unavailable(_))) => {
             let (lifetime, code) = match failure {
@@ -602,6 +617,38 @@ pub async fn update_restart(
             return Err("update_lock_unavailable".into());
         }
     };
+    if !confirmed {
+        // Freeze new work and start an idle Host shutdown as one operation.
+        let admission_host = Arc::clone(&host);
+        let admission = tauri::async_runtime::spawn_blocking(move || shutdown_if_idle(&admission_host)).await;
+        if !matches!(admission, Ok(Ok(true))) {
+            // Keep the installation gate locked until this running instance is tracked again.
+            let lifetime = match restore_shared_lifetime(exclusive) {
+                Ok(lifetime) => lifetime,
+                Err(code) => {
+                    set_snapshot(&app, "error", None);
+                    crate::startup_failure(&app, &host, code);
+                    return Err(code.into());
+                }
+            };
+            let mut inner = state.0.lock().map_err(|_| "update_state_unavailable")?;
+            inner.lifetime_lock = Some(lifetime);
+            inner.downloaded = Some(downloaded);
+            drop(inner);
+            let cleared = config_file(&app, RECOVERY_MARKER)
+                .is_some_and(|path| remove_recovery_marker(&path).is_ok());
+            host.quitting.store(false, Ordering::SeqCst);
+            if !cleared {
+                set_snapshot(&app, "error", None);
+                return Err("update_recovery_unavailable".into());
+            }
+            set_snapshot(&app, "ready", Some(100));
+            return match admission {
+                Ok(Ok(false)) => Err("update_confirmation_required".into()),
+                _ => Err("update_activity_unavailable".into()),
+            };
+        }
+    }
     set_snapshot(&app, "installing", None);
     let host = Arc::clone(&host);
     let stop_host = Arc::clone(&host);
@@ -755,11 +802,6 @@ fn install_pending_inner(app: &tauri::AppHandle) -> bool {
     })();
     match result {
         Ok(Some(downloaded)) => {
-            // install_pending runs off the UI thread so the native dialog can respond.
-            // A cancellation leaves the verified staged generation untouched.
-            if !confirm_closed_older_versions(app) {
-                return false;
-            }
             if write_recovery_marker(app, &downloaded.update.version).is_err() {
                 set_snapshot(app, "error", None);
                 return false;
@@ -839,6 +881,7 @@ async fn download_in_background(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|_| "update_check_failed")?
     else {
+        set_snapshot(&app, "idle", None);
         return Ok(());
     };
     let root = cache_root(&app)?;
@@ -884,6 +927,21 @@ enum CacheAdoption {
     Ready,
 }
 
+/// Remove a corrupt generation only while holding both cache and verification locks.
+fn discard_invalid_generation(app: &tauri::AppHandle, root: &Path) -> Result<CacheAdoption, &'static str> {
+    let owns_cache = app.state::<Background>().0.lock()
+        .map_err(|_| "update_state_unavailable")?.cache_lock.is_some();
+    if !owns_cache {
+        match acquire_cache(app) {
+            Ok(()) => (),
+            Err("update_cache_busy") => return Ok(CacheAdoption::Busy),
+            Err(code) => return Err(code),
+        }
+    }
+    retire_failed_cache(root, None)?;
+    Ok(CacheAdoption::NoNew)
+}
+
 /// Read a committed generation only once, with one package buffer across instances.
 fn try_adopt_cache(
     app: &tauri::AppHandle,
@@ -893,7 +951,15 @@ fn try_adopt_cache(
     let Some(verification) = try_verification_gate(&coordination_root(app)?)? else {
         return Ok(CacheAdoption::Busy);
     };
-    let Some(stamp) = generation_stamp(&root)? else {
+    let stamp = match generation_stamp(&root) {
+        Ok(stamp) => stamp,
+        Err("update_cache_invalid") => {
+            *last = None;
+            return discard_invalid_generation(app, &root);
+        }
+        Err(code) => return Err(code),
+    };
+    let Some(stamp) = stamp else {
         *last = None;
         return Ok(CacheAdoption::NoNew);
     };
@@ -902,7 +968,15 @@ fn try_adopt_cache(
     }
     *last = Some(stamp);
     let updater = app.updater().map_err(|_| "update_cache_invalid")?;
-    let Some(downloaded) = read_verified_staged(&root, &updater)? else {
+    let staged = match read_verified_staged(&root, &updater) {
+        Ok(staged) => staged,
+        Err("update_cache_invalid") => {
+            *last = None;
+            return discard_invalid_generation(app, &root);
+        }
+        Err(code) => return Err(code),
+    };
+    let Some(downloaded) = staged else {
         return Ok(CacheAdoption::NoNew);
     };
     app.state::<Background>()
@@ -924,15 +998,14 @@ fn monitor_or_download(app: tauri::AppHandle) -> Result<(), String> {
             std::thread::sleep(SHARED_CACHE_POLL);
             continue;
         }
-        let is_idle = app
+        let can_check = app
             .state::<Background>()
             .0
             .lock()
             .map_err(|_| "update_state_unavailable")?
             .snapshot
-            .phase
-            == "idle";
-        if !is_idle {
+            .phase;
+        if can_check != "idle" && can_check != "checking" {
             return Ok(());
         }
         match try_adopt_cache(&app, &mut last)? {
@@ -959,6 +1032,40 @@ fn monitor_or_download(app: tauri::AppHandle) -> Result<(), String> {
             Err(code) => return Err(code.into()),
         }
     }
+}
+
+/// Admit only one retry of a failed update; other requests leave its state unchanged.
+fn begin_retry(state: &Background) -> Result<(), &'static str> {
+    let mut inner = state.0.lock().map_err(|_| "update_state_unavailable")?;
+    if inner.snapshot.phase != "error" { return Err("update_not_failed"); }
+    inner.snapshot = UpdateSnapshot { phase: "checking", percent: None };
+    inner.downloaded = None;
+    Ok(())
+}
+
+/// Restart a failed feed check or download without requiring an application restart.
+#[tauri::command]
+pub fn update_retry(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    host: State<'_, Arc<crate::HostState>>,
+    state: State<'_, Background>,
+) -> Result<(), String> {
+    crate::owned_window(&window, &host)?;
+    if host.quitting.load(Ordering::SeqCst) { return Err("update_busy".into()); }
+    begin_retry(&state).map_err(str::to_string)?;
+    set_snapshot(&app, "checking", None);
+    let worker = app.clone();
+    if std::thread::Builder::new().name("verboo-update-retry".into()).spawn(move || {
+        if let Err(error) = monitor_or_download(worker.clone()) {
+            eprintln!("Verboo Code: update_background_failed {error}");
+            set_snapshot(&worker, "error", None);
+        }
+    }).is_err() {
+        set_snapshot(&app, "error", None);
+        return Err("update_retry_unavailable".into());
+    }
+    Ok(())
 }
 
 /// Run the download the user confirmed, reporting its progress in the window.
@@ -1118,12 +1225,12 @@ pub fn spawn(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        generation_stamp, lock_install_gate, lock_install_gate_with_wait, lock_verification_gate,
+        begin_retry, can_restart_without_confirmation, generation_stamp, lock_install_gate, lock_install_gate_with_wait, lock_verification_gate,
         must_wait_for_update, open_coordination_lock, read_cache, read_verified_package,
         read_verified_staged, recovery_target_is_running, remove_recovery_marker,
-        requires_manual_recovery, retire_failed_cache, try_exclusive_lifetime,
+        requires_manual_recovery, restore_shared_lifetime, retire_failed_cache, shutdown_if_idle, try_exclusive_lifetime,
         try_verification_gate, update_failure_code, write_cache, write_recovery_marker_path,
-        ExclusiveLockFailure, INSTALL_GATE, LIFETIME_LOCK,
+        Background, ExclusiveLockFailure, UpdateSnapshot, INSTALL_GATE, LIFETIME_LOCK,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
@@ -1135,6 +1242,141 @@ mod tests {
         ));
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn activity_probe(mode: &str) -> (crate::HostState, std::sync::mpsc::Receiver<crate::host::HostEvent>, std::path::PathBuf) {
+        let root = cache_test_root();
+        let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap();
+        let config = crate::host::RuntimeConfig {
+            node: std::env::var_os("VERBOO_TEST_NODE").map(std::path::PathBuf::from).unwrap_or_else(|| "node".into()),
+            host: repository.join("apps/desktop/tauri/tests/fixtures/quit-host-probe.mjs"),
+            cli_manifest: mode.into(), working_directory: repository, home: None,
+        };
+        let (process, events) = crate::host::HostProcess::start(&config, &root, "0.0.0-test").unwrap();
+        assert!(matches!(events.recv_timeout(std::time::Duration::from_secs(5)), Ok(crate::host::HostEvent::Ready { .. })));
+        let host = crate::HostState::default();
+        *host.process.lock().unwrap() = Some(process);
+        (host, events, root)
+    }
+
+    #[test]
+    fn update_finalizes_idle_host_without_confirmation() {
+        let (host, events, root) = activity_probe("idle");
+        assert!(can_restart_without_confirmation(&host).unwrap());
+        assert!(shutdown_if_idle(&host).unwrap());
+        host.stop().unwrap();
+        assert!(matches!(events.recv_timeout(std::time::Duration::from_secs(2)), Ok(crate::host::HostEvent::Stopped)));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_does_not_stop_busy_or_uncertain_host() {
+        for mode in ["busy", "lost-finalize"] {
+            let (host, _events, root) = activity_probe(mode);
+            if mode == "busy" {
+                assert!(!can_restart_without_confirmation(&host).unwrap());
+                assert!(!shutdown_if_idle(&host).unwrap());
+                assert!(matches!(host.reserve_idle().unwrap(), crate::host::QuitReservation::Confirm));
+            } else {
+                assert!(shutdown_if_idle(&host).is_err());
+            }
+            host.stop().unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn update_rechecks_when_work_starts_after_the_first_check() {
+        let (host, _events, root) = activity_probe("race");
+        assert!(can_restart_without_confirmation(&host).unwrap());
+        assert!(!shutdown_if_idle(&host).unwrap());
+        assert!(matches!(host.reserve_idle().unwrap(), crate::host::QuitReservation::Confirm));
+        host.stop().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_restores_instance_lock_after_confirmation_is_required() {
+        let root = cache_test_root();
+        let lifetime = open_coordination_lock(&root, LIFETIME_LOCK).unwrap();
+        lifetime.lock_shared().unwrap();
+        let exclusive = match try_exclusive_lifetime(&root, lifetime) {
+            Ok(guard) => guard,
+            _ => panic!("the only instance should obtain the installer lock"),
+        };
+        let lifetime = restore_shared_lifetime(exclusive).unwrap();
+        let other = open_coordination_lock(&root, LIFETIME_LOCK).unwrap();
+        assert!(other.try_lock().is_err(), "another installer must see the running instance");
+        drop(lifetime);
+        other.try_lock().unwrap();
+        drop(other);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_retry_accepts_only_one_failed_attempt() {
+        let state = Background::default();
+        assert_eq!(begin_retry(&state), Err("update_not_failed"));
+        state.0.lock().unwrap().snapshot = UpdateSnapshot { phase: "error", percent: None };
+        assert_eq!(begin_retry(&state), Ok(()));
+        assert_eq!(state.0.lock().unwrap().snapshot.phase, "checking");
+        assert_eq!(begin_retry(&state), Err("update_not_failed"));
+    }
+
+    /// Real updater transport, signature and isolated AppImage replacement; never touches the installed app.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn signed_update_download_retry_and_offline_install_use_isolated_appimage() {
+        use std::io::{Read, Write};
+        use tauri_plugin_updater::UpdaterExt;
+        const KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGNzhFQ0Y2QTBBOEE4QTMKUldTanFLaWc5dXg0TDNuTjVUVGplNDljeSszRlZpa1Uwenp4YWhNeldXalEvUysyZ0h5MXhQQXEK";
+        const SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTanFLaWc5dXg0TDBxVUFZNkpmOFZVM1g5Z1J0SFNsTC8zT1lBTldWcXFzRk1ST0VBZkp0aTNDRWpsRVNrTU5PNFNhbkNmeWd6VWNRSmtiZXRBT0VwdFdBZHhEbTloSHdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjYwNjUxCWZpbGU6cGF5bG9hZAl2ZXJzaW9uOjIuMC4wCjBvUDVQRENvWk5kK0wyV2wzSlFLYWc0OHhHKzJVZmxtdVYrSytKSnR1TnlhbE03L1VoRERXRmc0d3MzL3ZlMGw4VnU2UnB0ZjUrQTFxNS95VWZtL0J3PT0K";
+        const PAYLOAD: &[u8] = b"\x7fELFVerboo test release 2.0.0 placeholder payload for installer test 0123456789\n";
+        let root = cache_test_root();
+        let appimage = root.join("test.AppImage");
+        std::fs::write(&appimage, b"\x7fELF previous version").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for index in 0..4 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]);
+                let (status, content_type, body) = if index == 1 {
+                    assert!(request.starts_with("GET /package"));
+                    ("503 Service Unavailable", "text/plain", b"temporary failure".to_vec())
+                } else if index == 0 || index == 2 {
+                    assert!(request.starts_with("GET /feed"));
+                    let manifest = serde_json::json!({"version":"2.0.0","platforms":{"test-target":{"url":format!("http://{addr}/package"),"signature":SIGNATURE}}});
+                    ("200 OK", "application/json", manifest.to_string().into_bytes())
+                } else {
+                    assert!(request.starts_with("GET /package"));
+                    ("200 OK", "application/octet-stream", PAYLOAD.to_vec())
+                };
+                write!(stream,"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                stream.write_all(&body).unwrap();
+            }
+        });
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert("updater".into(), serde_json::json!({"pubkey":KEY,"requireSignedVersion":true,"dangerousInsecureTransportProtocol":true}));
+        let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().target("test-target").build()).build(context).unwrap();
+        let updater = app.updater_builder().executable_path(&appimage).endpoints(vec![format!("http://{addr}/feed").parse().unwrap()]).unwrap().build().unwrap();
+        tauri::async_runtime::block_on(async {
+            let first = updater.check().await.unwrap().unwrap();
+            assert!(first.download(|_, _| {}, || {}).await.is_err());
+            let update = updater.check().await.unwrap().unwrap();
+            let bytes = update.download(|_, _| {}, || {}).await.unwrap();
+            assert_eq!(bytes, PAYLOAD);
+            write_cache(&root, &update.raw_json, &bytes).unwrap();
+        });
+        server.join().unwrap(); // The remaining verification and install run without a server.
+        let staged = read_verified_staged(&root, &updater).unwrap().unwrap();
+        let bytes = read_verified_package(&root, &staged.update).unwrap();
+        staged.update.install(bytes).unwrap();
+        assert_eq!(std::fs::read(&appimage).unwrap(), PAYLOAD);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

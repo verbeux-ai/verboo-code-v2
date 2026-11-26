@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom'
 import { Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ProductProps } from './contracts.ts'
 import type { DesktopUpdateState } from './update-source.ts'
+import thinkingBoo from './assets/boo-thinking.svg'
 import css from './Product.module.css'
 
-/** The native updater indicator and its user-initiated restart confirmation. */
-export function DesktopUpdate({ state, t, install }: {
+/** The native updater indicator and its activity-dependent restart confirmation. */
+export function DesktopUpdate({ state, t, install, retry }: {
   state: DesktopUpdateState
   t: ProductProps['t']
-  install: () => Promise<void>
+  install: (confirmed: boolean) => Promise<void>
+  retry: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [toast, setToast] = useState(false)
@@ -22,12 +24,13 @@ export function DesktopUpdate({ state, t, install }: {
   const previous = useRef<DesktopUpdateState['phase']>('idle')
   const visible = state.phase !== 'idle'
   const ready = state.phase === 'ready'
-  const label = t(state.phase === 'downloading' ? 'updateDownloading' : ready ? 'updateDownloaded' : state.phase === 'installing' ? 'updateInstalling' : 'updateError')
+  const failed = state.phase === 'error'
+  const label = t(state.phase === 'checking' ? 'updateChecking' : state.phase === 'downloading' ? 'updateDownloading' : ready ? 'updateDownloaded' : state.phase === 'installing' ? 'updateInstalling' : 'updateError')
 
   useEffect(() => {
     const notify = (state.phase === 'ready' || state.phase === 'error') && previous.current !== state.phase
     previous.current = state.phase
-    if (state.phase !== 'ready') { setOpen(false); setBusy(false) }
+    if (state.phase !== 'ready' && state.phase !== 'error') { setOpen(false); setBusy(false) }
     if (!notify) { setToast(false); return undefined }
     setToast(true)
     const timer = window.setTimeout(() => { setToast(false) }, 3500)
@@ -67,21 +70,27 @@ export function DesktopUpdate({ state, t, install }: {
   if (!visible) return null
   const percent = state.percent === null ? null : Math.max(0, Math.min(100, state.percent))
   const circle = ready ? 100 : percent ?? 25
-  const startInstall = () => {
+  const startInstall = (confirmed: boolean) => {
     setConfirm(false); setBusy(true); setFailure(null)
-    void install().catch((error: unknown) => {
+    void install(confirmed).catch((error: unknown) => {
       const code = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
       setBusy(false)
-      if (code === 'update_confirmation_cancelled') return
+      if (code === 'update_confirmation_required') { setConfirm(true); return }
       setFailure(code === 'update_other_instance_active' ? 'other-instance' : 'generic')
     })
   }
+  const retryUpdate = () => {
+    setBusy(true); setFailure(null)
+    void retry().catch(() => { setBusy(false); setFailure('generic') })
+  }
   const floating = { left: position.left, bottom: position.bottom, '--update-tail': `${position.tail}px` } as CSSProperties
-  return <div className={css.desktopUpdate} data-verboo-update={state.phase} data-indeterminate={state.phase === 'downloading' && percent === null || undefined}>
+  return <div className={css.desktopUpdate} data-verboo-update={state.phase} data-indeterminate={(state.phase === 'checking' || state.phase === 'downloading') && percent === null || undefined}>
     <Tooltip portal label={label} disabled={open}>
       <button ref={anchor} type="button" className={css.desktopUpdateButton} aria-label={label}
-        aria-haspopup={ready ? 'dialog' : undefined} aria-expanded={ready ? open : undefined}
-        aria-disabled={!ready || busy} onClick={() => { if (ready && !busy) { setToast(false); setOpen(!open); setFailure(null) } }}>
+        aria-haspopup={ready || failed ? 'dialog' : undefined} aria-expanded={ready || failed ? open : undefined}
+        aria-disabled={!(ready || failed) || busy} onClick={() => {
+          if ((ready || failed) && !busy) { setToast(false); setOpen(!open); setFailure(null) }
+        }}>
         <svg viewBox="0 0 36 36" aria-hidden="true">
           <circle className={css.desktopUpdateTrack} cx="18" cy="18" r="15" />
           <circle className={css.desktopUpdateRing} cx="18" cy="18" r="15" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - circle} />
@@ -91,18 +100,19 @@ export function DesktopUpdate({ state, t, install }: {
       </button>
     </Tooltip>
     {toast && !open && createPortal(<div className={css.desktopUpdateToast} style={floating} role={state.phase === 'error' ? 'alert' : 'status'}>{label}</div>, document.body)}
-    {open && createPortal(<div ref={bubble} role="dialog" aria-label={t('updateDownloaded')} className={css.desktopUpdateBubble} style={floating}>
-      <p>{t('updateReadyMessage')}</p>
-      <p>{t('updateRestartWarning')}</p>
+    {open && createPortal(<div ref={bubble} role="dialog" aria-label={label} className={css.desktopUpdateBubble} style={floating}>
+      {failed && <img className={css.desktopUpdateMascot} src={thinkingBoo} alt="" />}
+      <p>{t(failed ? 'updateErrorDetail' : 'updateReadyMessage')}</p>
       {failure !== null && <p role="alert">{t(failure === 'other-instance' ? 'updateOtherInstance' : 'updateError')}</p>}
       <button type="button" className={css.desktopUpdateRestart} disabled={busy} onClick={() => {
-        setConfirm(true)
-      }}>{t('updateRestart')}</button>
+        if (failed) retryUpdate()
+        else startInstall(false)
+      }}>{t(failed ? 'retry' : 'updateRestart')}</button>
     </div>, document.body)}
     <Modal open={confirm} onClose={() => { setConfirm(false) }} title={t('updateConfirmTitle')}
       description={t('updateConfirmDescription')} closeLabel={t('close')} footer={<>
         <button type="button" className={css.secondary} onClick={() => { setConfirm(false) }}>{t('cancel')}</button>
-        <button type="button" className={css.primary} onClick={startInstall}>{t('updateRestart')}</button>
+        <button type="button" className={css.primary} onClick={() => { startInstall(true) }}>{t('updateRestart')}</button>
       </>} />
   </div>
 }

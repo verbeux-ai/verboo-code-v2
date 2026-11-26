@@ -6,6 +6,11 @@ import type { AccountSessionId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { ConnectionId, PlanId } from '../src/types.ts'
 import { VerbooProduct } from '../src/index.ts'
 
+vi.mock('ws', () => ({ default: function mockSocket(url: string, options: unknown) {
+  const Socket = globalThis.WebSocket as unknown as new (url: string, options: unknown) => object
+  return new Socket(url, options)
+} }))
+
 class FixtureAccount extends DeepSeekAccount {
   getState = vi.fn<DeepSeekAccount['getState']>()
   getProfile = vi.fn<DeepSeekAccount['getProfile']>()
@@ -62,7 +67,7 @@ function configured(config: Record<string, unknown>, ...responses: Response[]) {
   })
   vi.stubGlobal('fetch', fetch)
   const product = new VerbooProduct(ctx, config)
-  return { product, fetch, signal: new AbortController().signal }
+  return { product, fetch, account, signal: new AbortController().signal }
 }
 
 /** Answer one request only after a delay, honoring the caller's cancellation. */
@@ -106,6 +111,53 @@ const plan = {
   id: '00000000-0000-4000-8000-000000000001', name: 'Pro', description: 'Pro',
   priceCents: 1000, currency: 'BRL', billingInterval: 'month',
 }
+
+describe('live account generation speed', () => {
+  it('subscribes with a private ticket and streams safe measurements', async () => {
+    let socket: FakeSocket | undefined
+    const register = (value: FakeSocket) => { socket = value }
+    class FakeSocket extends EventTarget {
+      sent: string[] = []
+      closed = false
+      constructor(readonly url: string, readonly options: { origin: string }) { super(); register(this) }
+      send(value: string) { this.sent.push(value) }
+      close() { this.closed = true; this.dispatchEvent(new Event('close')) }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket)
+    const f = fixture(Response.json({ data: { ticket: 'private-ticket', expiresAt: '2026-11-26T12:01:00Z' } }))
+    const abort = new AbortController()
+    const iterator = f.product.watchUsageSpeed(abort.signal)[Symbol.asyncIterator]()
+    const next = iterator.next()
+    await vi.waitFor(() => expect(socket).toBeDefined())
+    expect(socket!.url).toBe('wss://code.verboo.ai/ws/me/usage')
+    expect(socket!.options.origin).toBe('https://code.verboo.ai')
+    socket!.dispatchEvent(new Event('open'))
+    expect(JSON.parse(socket!.sent[0]!)).toEqual({ type: 'subscribe', ticket: 'private-ticket', billingMode: 'subscription' })
+    socket!.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'snapshot', generatedAt: '2026-11-26T12:00:00Z', points: [], generationRateContract: 2, generationTokensPerSecond: 90, generationRateQuality: 'measured', concurrent: 3 }) }))
+    expect((await next).value).toEqual({ at: '2026-11-26T12:00:00Z', stale: false, measurement: { value: 90, quality: 'measured', partial: false, at: '2026-11-26T12:00:00Z', previous: false } })
+    abort.abort()
+    await iterator.return?.()
+    expect(socket!.closed).toBe(true)
+  })
+  it('never publishes a frame after switching accounts', async () => {
+    let socket: FakeSocket | undefined
+    const register = (value: FakeSocket) => { socket = value }
+    class FakeSocket extends EventTarget {
+      constructor(_url: string) { super(); register(this) }
+      send(_value: string) {}
+      close() { this.dispatchEvent(new Event('close')) }
+    }
+    vi.stubGlobal('WebSocket', FakeSocket)
+    const f = fixture(Response.json({ data: { ticket: 'private-ticket' } }))
+    const iterator = f.product.watchUsageSpeed(new AbortController().signal)[Symbol.asyncIterator]()
+    const next = iterator.next()
+    await vi.waitFor(() => expect(socket).toBeDefined())
+    socket!.dispatchEvent(new Event('open'))
+    f.account.getPlatformSession.mockResolvedValue(session('account-b'))
+    socket!.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'snapshot', generatedAt: '2026-11-26T12:00:00Z', points: [], generationTokensPerSecond: 90, generationRateQuality: 'measured' }) }))
+    expect((await next).done).toBe(true)
+  })
+})
 
 describe('connection authorization handoff', () => {
   it('returns a trusted Composio link and names the created account', async () => {
@@ -419,4 +471,25 @@ it('keeps commercial reads available when the operational fallback logger fails'
   const logger = vi.spyOn(console, 'error').mockImplementation(() => { throw new Error('fixture collector unavailable') })
   try { expect(await f.product.getTrialStatus(f.signal)).toMatchObject({ ok: true, data: { trials: [] } }) }
   finally { logger.mockRestore() }
+})
+
+describe('usage analytics', () => {
+  const summary = { timezone: 'America/Sao_Paulo', bucket: 'day', reqTotal: 4, tokensInTotal: 1000, tokensOutTotal: 300, cachedTokens: 250, buckets: [{ bucket: '2026-11-25T00:00:00-03:00', reqCount: 4, tokensIn: 1000, tokensOut: 300, cachedTokens: 250 }] }
+  it('reads scoped subscription totals and activity through the authenticated API', async () => {
+    const f = fixture(Response.json({ data: summary }), Response.json({ data: summary }), Response.json({ data: [{ date: '2026-11-25', count: 4 }] }))
+    const group = '00000000-0000-4000-8000-000000000001' as PlanId
+    expect(await f.product.getUsageSummary('30d', null, f.signal)).toEqual({ ok: true, data: summary })
+    expect(await f.product.getUsageSummary('7d', group, f.signal)).toEqual({ ok: true, data: summary })
+    expect(await f.product.getUsageActivity(f.signal)).toEqual({ ok: true, data: [{ date: '2026-11-25', count: 4 }] })
+    expect(String(f.fetch.mock.calls[0]?.[0])).toContain('/api/me/usage/summary?period=30d&billingMode=subscription')
+    expect(String(f.fetch.mock.calls[1]?.[0])).toContain(`/api/me/groups/${group}/usage/summary?period=7d`)
+    expect(String(f.fetch.mock.calls[2]?.[0])).toContain('/api/me/usage/activity?days=365&billingMode=subscription')
+  })
+  it('rejects malformed metrics and invalid period or group without fabricating values', async () => {
+    const f = fixture(Response.json({ data: { ...summary, reqTotal: -1 } }))
+    expect((await f.product.getUsageSummary('30d', null, f.signal)).ok).toBe(false)
+    expect((await f.product.getUsageSummary('bad' as '30d', null, f.signal)).ok).toBe(false)
+    expect((await f.product.getUsageSummary('30d', 'bad' as PlanId, f.signal)).ok).toBe(false)
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
 })

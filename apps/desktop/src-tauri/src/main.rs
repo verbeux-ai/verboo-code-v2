@@ -2,6 +2,7 @@
 
 mod host;
 mod locale;
+mod layout_storage;
 mod menu;
 mod update;
 mod update_logic;
@@ -38,6 +39,7 @@ struct HostState {
     quit_hold_confirmed: AtomicBool,
     host_disconnected: AtomicBool,
     failure_reported: AtomicBool,
+    startup_retry_allowed: AtomicBool,
     // 0 = finished, 1 = installation/setup protected, 2 = waiting for another instance, 3 = cancelled.
     startup_install_phase: AtomicU8,
 }
@@ -141,6 +143,20 @@ fn desktop_info(
 }
 
 #[tauri::command]
+fn desktop_layout_read(window: WebviewWindow, state: tauri::State<'_, Arc<HostState>>) -> Result<std::collections::BTreeMap<String, String>, String> {
+    owned_window(&window, &state)?;
+    let root = window.app_handle().path().app_data_dir().map_err(|_| "layout_storage_unavailable")?;
+    layout_storage::read(&root).map_err(str::to_owned)
+}
+
+#[tauri::command]
+fn desktop_layout_write(window: WebviewWindow, state: tauri::State<'_, Arc<HostState>>, key: String, value: Option<String>) -> Result<(), String> {
+    owned_window(&window, &state)?;
+    let root = window.app_handle().path().app_data_dir().map_err(|_| "layout_storage_unavailable")?;
+    layout_storage::write(&root, &key, value).map_err(str::to_owned)
+}
+
+#[tauri::command]
 fn client_ready(
     window: WebviewWindow,
     state: tauri::State<'_, Arc<HostState>>,
@@ -199,15 +215,58 @@ fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
     if state.failure_reported.swap(true, Ordering::SeqCst) { return; }
     eprintln!("Verboo Code: {code}");
     state.quitting.store(true, Ordering::SeqCst);
-    if let Err(code) = state.stop() {
-        eprintln!("Verboo Code: {code}");
+    let app = app.clone();
+    let state = Arc::clone(&app.state::<Arc<HostState>>());
+    let code = code.to_owned();
+    thread::spawn(move || {
+        let stopped = match state.stop() {
+            Ok(()) => true,
+            Err(code) => { eprintln!("Verboo Code: {code}"); false }
+        };
+        state.startup_retry_allowed.store(stopped, Ordering::SeqCst);
+        state.exit_ready.store(true, Ordering::SeqCst);
+        let capability = CapabilityBuilder::new("startup-recovery")
+            .local(true).window("startup-error").permission("startup-recovery");
+        let safe_code = match code.as_str() {
+            "runtime_artifact_missing" | "host_home_unavailable" | "host_startup_failed"
+            | "host_disconnected" | "desktop_authentication_failed" | "desktop_navigation_failed"
+            | "update_lock_unavailable" | "update_recovery_unavailable" => code.as_str(),
+            _ => "startup_failed",
+        };
+        let config = serde_json::json!({ "code": safe_code, "canRetry": stopped });
+        let script = format!("window.__VERBOO_STARTUP_ERROR__ = {config};");
+        let recovery = app.add_capability(capability).and_then(|_| {
+            WebviewWindowBuilder::new(&app, "startup-error", WebviewUrl::App("startup-error.html".into()))
+                .title("Verboo Code")
+                .inner_size(720.0, 600.0)
+                .min_inner_size(480.0, 500.0)
+                .initialization_script(&script)
+                .on_navigation(|url| {
+                    let local = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
+                        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
+                    local && url.path() == "/startup-error.html" && url.query().is_none() && url.fragment().is_none()
+                })
+                .on_new_window(|_, _| NewWindowResponse::Deny)
+                .build()
+        });
+        if recovery.is_ok() {
+            if let Some(main) = app.get_webview_window("main") { let _ = main.hide(); }
+        } else {
+            app.dialog().message(locale::startup_failure()).title("Verboo Code").blocking_show();
+            app.exit(1);
+        }
+    });
+}
+
+/// Restart only the local recovery window after the Host was safely stopped.
+#[tauri::command]
+fn startup_retry(app: tauri::AppHandle, window: WebviewWindow, state: tauri::State<'_, Arc<HostState>>) -> Result<(), String> {
+    if window.label() != "startup-error" || !state.failure_reported.load(Ordering::SeqCst)
+        || !state.startup_retry_allowed.load(Ordering::SeqCst) {
+        return Err("startup_retry_denied".into());
     }
-    app.dialog()
-        .message(locale::startup_failure())
-        .title("Verboo Code")
-        .blocking_show();
-    state.exit_ready.store(true, Ordering::SeqCst);
-    app.exit(1);
+    app.request_restart();
+    Ok(())
 }
 
 /// A failed admission exchange never authorizes shutdown or claims the Host is available.
@@ -254,6 +313,10 @@ fn main() {
             }
         })
         .on_window_event(move |window, event| {
+            if window.label() == "startup-error" {
+                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) { window.app_handle().exit(1); }
+                return;
+            }
             if window.label() != "main" {
                 return;
             }
@@ -272,11 +335,15 @@ fn main() {
             pick_directory,
             desktop_info,
             client_ready,
+            desktop_layout_read,
+            desktop_layout_write,
             client_diagnostic,
             update::update_install,
             update::update_close,
             update::update_snapshot,
             update::update_restart,
+            update::update_retry,
+            startup_retry,
             quit_after_hold
         ])
         .setup(move |app| {
@@ -384,22 +451,22 @@ fn main() {
                 }
                 if setup_state.quitting.load(Ordering::SeqCst) { return; }
                 update::show_applied(&app);
-                let startup = || -> Result<(), Box<dyn std::error::Error>> {
-            let config_file = std::env::var_os("VERBOO_TAURI_RUNTIME_CONFIG")
-                .map(PathBuf::from)
-                .unwrap_or(app.path().resource_dir()?.join("runtime/manifest.json"));
-            let config = RuntimeConfig::read(&config_file).map_err(std::io::Error::other)?;
-            let home = std::env::var_os("DSH_HOME")
-                .map(PathBuf::from)
-                .or(config.home.clone())
-                .unwrap_or(app.path().app_data_dir()?.join("home"));
+                let startup = || -> Result<(), String> {
+            let config_file = match std::env::var_os("VERBOO_TAURI_RUNTIME_CONFIG") {
+                Some(path) => PathBuf::from(path),
+                None => app.path().resource_dir().map_err(|_| "runtime_config_unreadable")?.join("runtime/manifest.json"),
+            };
+            let config = RuntimeConfig::read(&config_file)?;
+            let home = match std::env::var_os("DSH_HOME").map(PathBuf::from).or(config.home.clone()) {
+                Some(home) => home,
+                None => app.path().app_data_dir().map_err(|_| "host_home_unavailable")?.join("home"),
+            };
             let (process, events) =
-                HostProcess::start(&config, &home, &app.package_info().version.to_string())
-                    .map_err(std::io::Error::other)?;
+                HostProcess::start(&config, &home, &app.package_info().version.to_string())?;
             *setup_state
                 .process
                 .lock()
-                .map_err(|_| std::io::Error::other("host_state_poisoned"))? = Some(process);
+                .map_err(|_| "host_state_poisoned")? = Some(process);
             let app = app.clone();
             let state = setup_state.clone();
             thread::spawn(move || {
@@ -449,8 +516,10 @@ fn main() {
             });
                     Ok(())
                 };
-                if startup().is_err() && !setup_state.quitting.load(Ordering::SeqCst) {
-                    startup_failure(&app, &setup_state, "host_startup_failed");
+                if let Err(code) = startup() {
+                    if !setup_state.quitting.load(Ordering::SeqCst) {
+                        startup_failure(&app, &setup_state, &code);
+                    }
                 }
             });
             Ok(())

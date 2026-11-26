@@ -111,28 +111,14 @@ pub fn quit_check_failure() -> &'static str {
 /// Startup failure copy.
 pub fn startup_failure() -> &'static str {
     match language().as_str() {
-        "pt" => "Não foi possível iniciar o Verboo Code. Feche o app e execute novamente o comando de desenvolvimento.",
-        "zh" => "无法启动 Verboo Code。请关闭应用，然后重新运行桌面启动命令。",
-        "ja" => "Verboo Code を起動できませんでした。アプリを閉じて、デスクトップの起動コマンドを再実行してください。",
-        "es" => "No se pudo iniciar Verboo Code. Cierra la aplicación y vuelve a ejecutar el comando de escritorio.",
-        "fr" => "Impossible de démarrer Verboo Code. Fermez l’application et relancez la commande de bureau.",
-        "de" => "Verboo Code konnte nicht gestartet werden. Schließen Sie die App und starten Sie den Desktop-Befehl erneut.",
-        "ru" => "Не удалось запустить Verboo Code. Закройте приложение и повторите команду запуска.",
-        _ => "Verboo Code could not start. Close the app and run the desktop command again.",
-    }
-}
-
-/// Ask the user to close other windows, including non-cooperating older versions.
-pub fn update_confirm_closed() -> (&'static str, &'static str, &'static str) {
-    match language().as_str() {
-        "pt" => ("Antes de instalar, feche todas as outras janelas do Verboo Code, inclusive as de versões anteriores. Você confirmou que elas estão fechadas?", "Estão fechadas", "Cancelar"),
-        "es" => ("Antes de instalar, cierra todas las demás ventanas de Verboo Code, incluidas las de versiones anteriores. ¿Confirmas que están cerradas?", "Están cerradas", "Cancelar"),
-        "fr" => ("Avant l’installation, fermez toutes les autres fenêtres de Verboo Code, y compris celles des anciennes versions. Confirmez-vous qu’elles sont fermées ?", "Elles sont fermées", "Annuler"),
-        "de" => ("Schließen Sie vor der Installation alle anderen Verboo-Code-Fenster, auch die älterer Versionen. Bestätigen Sie, dass sie geschlossen sind?", "Sie sind geschlossen", "Abbrechen"),
-        "zh" => ("安装前，请关闭所有其他 Verboo Code 窗口，包括旧版本的窗口。您确认它们已关闭吗？", "已关闭", "取消"),
-        "ja" => ("インストール前に、旧バージョンを含む他の Verboo Code ウィンドウをすべて閉じてください。閉じたことを確認しますか？", "閉じました", "キャンセル"),
-        "ru" => ("Перед установкой закройте все остальные окна Verboo Code, включая окна старых версий. Вы подтверждаете, что они закрыты?", "Они закрыты", "Отмена"),
-        _ => ("Before installing, close all other Verboo Code windows, including older versions. Can you confirm they are closed?", "They are closed", "Cancel"),
+        "pt" => "Não foi possível iniciar o Verboo Code. Feche o aplicativo e tente novamente.",
+        "zh" => "无法启动 Verboo Code。请关闭应用后重试。",
+        "ja" => "Verboo Code を起動できませんでした。アプリを閉じて再試行してください。",
+        "es" => "No se pudo iniciar Verboo Code. Cierra la aplicación y vuelve a intentarlo.",
+        "fr" => "Impossible de démarrer Verboo Code. Fermez l’application et réessayez.",
+        "de" => "Verboo Code konnte nicht gestartet werden. Schließen Sie die App und versuchen Sie es erneut.",
+        "ru" => "Не удалось запустить Verboo Code. Закройте приложение и попробуйте снова.",
+        _ => "Verboo Code could not start. Close the app and try again.",
     }
 }
 

@@ -4,6 +4,7 @@ const mode = process.argv[2]
 const send = event => process.stdout.write(`VERBOO_HOST_V1\t${JSON.stringify(event)}\n`)
 const input = createInterface({ input: process.stdin })
 let reservedRequest
+let reservations = 0
 send({ type: 'ready', url: `http://127.0.0.1:12345/?token=${'x'.repeat(32)}` })
 input.on('line', line => {
   const request = JSON.parse(line)
@@ -11,7 +12,8 @@ input.on('line', line => {
   switch (request.type) {
     case 'quit-reserve':
       reservedRequest = request.requestId
-      if (mode === 'busy') reply('busy')
+      reservations += 1
+      if (mode === 'busy' || (mode === 'race' && reservations > 1)) reply('busy')
       else if (mode !== 'lost-reserve') reply('reserved', 1)
       break
     case 'quit-commit': reply(mode === 'rejected' ? 'rejected' : 'committed'); break

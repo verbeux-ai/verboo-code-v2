@@ -4,12 +4,12 @@ import type { Plan, Subscription } from '@deepseek-ai/dsh-api-verboo-product/typ
 import type { PageProps, ProductProps } from './contracts.ts'
 import type { Key } from './locales.ts'
 import { Glyph } from './Glyph.tsx'
-import { Busy, Notice } from './PageParts.tsx'
+import { Busy, Notice, ReadFailure } from './PageParts.tsx'
 import css from './Product.module.css'
 import plansCss from './Plans.module.css'
 
 type PlanActions = Pick<ProductProps, 't' | 'billing'>
-type PlanPageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 't' | 'loadPlans' | 'billing'>
+type PlanPageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 't' | 'loadPlans' | 'billing' | 'start'>
   & Pick<PageProps, 'useExternalStatus' | 'openOpenAiDialog'>
 const money = (amount: number, currency: string, locale: string) =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount / 100)
@@ -73,6 +73,7 @@ function PlanCard({ plan, current, locale, t, billing }: PlanActions & {
 export function PlanPage(props: PlanPageProps) {
   const plans = props.useProduct(s => s.plans)
   const failed = props.useProduct(s => s.plansFailed)
+  const failureReason = props.useProduct(s => s.plansFailureReason)
   const loading = props.useProduct(s => s.loadingPlans)
   const handoff = props.useProduct(s => s.handoff)
   const locale = props.usePreferences(s => s.locale)
@@ -98,7 +99,7 @@ export function PlanPage(props: PlanPageProps) {
         <Glyph name="rotate-cw" size={16} className={loading ? css.spin : undefined} />
       </Button>
     </header>
-    {failed && <Notice error text={props.t('unavailable')} retry={props.loadPlans} label={props.t('retry')} />}
+    {failed && <ReadFailure kind="plans" reason={failureReason} hasPrevious={plans !== null} retry={props.loadPlans} signIn={props.start} t={props.t} />}
     {handoff === 'billing' && <Notice text={props.t('purchasePending')} retry={props.loadPlans} label={props.t('refresh')} />}
     {plans === null ? loading && <Busy label={props.t('loading')} /> : <>
       {owned.length > 0 ? <section className={plansCss.owned} aria-label={props.t('yourSubscriptions')}>

@@ -10,6 +10,7 @@ import { verifyPanes, verifySendLifecycle, verifyHeaderHover, verifyComposerActi
 const root = process.cwd(),
   require = createRequire(join(root, 'apps/web/package.json'))
 const { chromium, webkit } = require('playwright')
+const { WebSocketServer } = require('ws')
 const home = await mkdtemp(join(tmpdir(), 'verboo-redesign-qa-'))
 const dir =
   process.env.VERBOO_QA_OUTPUT ??
@@ -92,6 +93,10 @@ const server = createServer(async (req, res) => {
   requests.push(req.method + ' ' + url.pathname)
   if (req.headers.authorization === 'Bearer qa-access-only-1') state.refreshedRequests++
   res.setHeader('content-type', 'application/json')
+  if (url.pathname === '/api/me/usage/live-ticket' && req.method === 'POST') {
+    res.end(JSON.stringify({ data: { ticket: 'qa-live-ticket', expiresAt: new Date(Date.now() + 60000).toISOString() } }))
+    return
+  }
   if (url.pathname === '/oauth/authorize') {
     challenge = url.searchParams.get('code_challenge')
     const callback = new URL(url.searchParams.get('redirect_uri'))
@@ -209,7 +214,15 @@ const server = createServer(async (req, res) => {
     } else finish(`Acesso ao MCP GitHub via Composio e revisão completa do projeto ${++state.titleSequence}`)
     return
   }
-  if (url.pathname === '/api/me/stamina') { res.end(JSON.stringify({data:[]})); return }
+  if (url.pathname === '/api/me/stamina') { res.end(JSON.stringify({ data: [{ groupId: other, groupName: 'Verboo Pro', remainingPercent: 75, nextOutputTps: 100, recovering: false, fullAt: null, accountingPending: false, asOf: '2026-11-25T12:00:00Z' }] })); return }
+  if (url.pathname === '/api/me/usage/summary' || /^\/api\/me\/groups\/[^/]+\/usage\/summary$/.test(url.pathname)) {
+    res.end(JSON.stringify({ data: { timezone: 'America/Sao_Paulo', bucket: 'day', reqTotal: 4, tokensInTotal: 1000, tokensOutTotal: 300, cachedTokens: 250, buckets: [{ bucket: '2026-11-25T00:00:00-03:00', reqCount: 4, tokensIn: 1000, tokensOut: 300, cachedTokens: 250 }] } }))
+    return
+  }
+  if (url.pathname === '/api/me/usage/activity') {
+    res.end(JSON.stringify({ data: [{ date: '2026-11-25', count: 4 }] }))
+    return
+  }
   if (url.pathname === '/api/me/subscriptions') {
     res.end(JSON.stringify({ data: [subscription(), {
       ...subscription(), id: '00000000-0000-4000-8000-000000000007',
@@ -297,6 +310,23 @@ const server = createServer(async (req, res) => {
   }
   res.writeHead(404)
   res.end('{}')
+})
+const liveServer = new WebSocketServer({ noServer: true })
+server.on('upgrade', (req, socket, head) => {
+  if (req.url !== '/ws/me/usage') { socket.destroy(); return }
+  if (req.headers.origin !== `http://127.0.0.1:${server.address().port}`) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return }
+  liveServer.handleUpgrade(req, socket, head, ws => {
+    ws.on('message', payload => {
+      try {
+        const input = JSON.parse(payload.toString())
+        if (input.ticket !== 'qa-live-ticket' || input.billingMode !== 'subscription') { ws.close(); return }
+        const send = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'snapshot', generatedAt: new Date().toISOString(), generationRateContract: 2, generationTokensPerSecond: 123.4, generationRateQuality: 'measured', points: [] })) }
+        send()
+        const timer = setInterval(send, 2000)
+        ws.once('close', () => clearInterval(timer))
+      } catch { ws.close() }
+    })
+  })
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const origin = 'http://127.0.0.1:' + server.address().port
@@ -484,6 +514,23 @@ try {
     .locator('[data-verboo-onboarding]')
     .waitFor({ state: 'hidden', timeout: 20000 })
   if (state.refreshes !== 0) throw new Error('The QA login refreshed before the workspace was observed')
+  // New Conversation keeps the user's sidebar choice and exposes both controls.
+  if (await page.getByRole('button', { name: 'Abrir navegação', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Abrir navegação', exact: true }).click()
+  }
+  await page.getByRole('button', { name: 'Recolher navegação', exact: true }).click()
+  await page.getByRole('button', { name: 'Abrir navegação', exact: true }).click()
+  await page.getByRole('button', { name: 'Analytics', exact: true }).click()
+  await page.getByRole('heading', { name: 'Atividade', exact: true }).waitFor()
+  await page.getByText('1.000', { exact: true }).first().waitFor()
+  await page.getByRole('heading', { name: 'Stamina', exact: true }).waitFor()
+  await page.getByText('123,4', { exact: true }).waitFor()
+  await page.getByText('Medição atual', { exact: true }).waitFor()
+  const speedCard = page.getByRole('region', { name: 'Velocidade de geração', exact: true })
+  if (!(await speedCard.evaluate(element => element.scrollHeight <= element.clientHeight + 1))) throw new Error('Speed card content is clipped')
+  if (await page.getByText(/requisições simultâneas|concorrência|custo equivalente/i).count()) throw new Error('Unrequested concurrency metric is visible')
+  await capture('analytics.png')
+  await page.locator('button[aria-label="Área de trabalho"]').click()
   await page.evaluate(() => {
     const monitor = { flashes: 0, observer: null }
     monitor.observer = new MutationObserver(records => {
@@ -499,7 +546,10 @@ try {
   await page.waitForTimeout(700)
   await capture('workspace-light.png')
   await page.emulateMedia({colorScheme:'dark'}); await page.waitForTimeout(250); await capture('workspace-dark.png'); await page.emulateMedia({colorScheme:'light'})
-  if (process.env.VERBOO_QA_FOCUS === '1') {
+  if (process.env.VERBOO_QA_ANALYTICS === '1') {
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Analytics navigation and data passed. Screenshots:', dir)
+  } else if (process.env.VERBOO_QA_FOCUS === '1') {
     await verifyComposerActivation(page, state, dir)
     if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
     console.log('Screenshots:', dir)
@@ -859,7 +909,7 @@ try {
   }
 } catch (error) {
   await writeFile(join(dir, 'host-diagnostic.log'), hostLog)
-  if (page) {
+  if (page && !page.isClosed()) {
     await page.screenshot({ path: join(dir, 'failure.png') })
     console.log(
       'Failure surface:',
@@ -889,6 +939,8 @@ try {
   clearTimeout(stopHost)
   clearTimeout(killHost)
   await writeFile(join(dir, 'host-diagnostic.log'), hostLog)
+  for (const socket of liveServer.clients) socket.terminate()
+  liveServer.close()
   server.closeAllConnections()
   await new Promise((resolve) => server.close(resolve))
   try {

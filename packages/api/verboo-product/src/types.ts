@@ -50,6 +50,23 @@ export interface StaminaStatus {
   accountingPending: boolean
   asOf: string
 }
+/** Server-defined historical usage periods available in the account dashboard. */
+export type UsagePeriod = '24h' | '7d' | '30d' | 'current_month' | 'previous_month'
+/** One server-grouped usage bucket. */
+export interface UsageBucket { bucket: string; reqCount: number; tokensIn: number; tokensOut: number; cachedTokens: number }
+/** Historical subscription usage, preserving the server timezone and bucket. */
+export interface UsageSummary {
+  timezone: string
+  bucket: 'minute' | 'hour' | 'day'
+  reqTotal: number
+  tokensInTotal: number
+  tokensOutTotal: number
+  cachedTokens: number
+  buckets: UsageBucket[]
+}
+/** One activity day from the authoritative usage calendar. */
+export interface UsageActivityDay { date: string; count: number }
+
 /** Credential-free identity and authorization state for an external account. */
 export interface Connection {
   id: ConnectionId
@@ -128,3 +145,7 @@ export interface TrialPayment {
   attemptId: TrialAttemptId | null
   url: string | null
 }
+/** A server measurement of generation speed, scoped to the signed-in account. */
+export interface SpeedMeasurement { value: number; quality: 'measured' | 'estimated'; partial: boolean; at: string; previous: boolean }
+/** A safe live speed projection; account credentials and concurrency stay on the Host. */
+export interface SpeedFrame { at: string; stale: boolean; measurement: SpeedMeasurement | null }

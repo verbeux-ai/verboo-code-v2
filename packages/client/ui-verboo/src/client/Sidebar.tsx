@@ -1,5 +1,5 @@
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import {
   Menu,
   Modal,
@@ -18,6 +18,7 @@ import { Glyph } from './Glyph.tsx'
 import { DesktopUpdate } from './DesktopUpdate.tsx'
 import css from './Product.module.css'
 const panels = {
+  analytics: 'verboo.analytics' as MainPanelId,
   connections: 'verboo.connections' as MainPanelId,
   plan: 'verboo.plan' as MainPanelId,
   preferences: 'verboo.preferences' as MainPanelId,
@@ -299,24 +300,6 @@ export function Sidebar(props: SidebarProps) {
   const current = Object.values(sessions.byId).find(
     s => (s.retainedBy.mainView ?? 0) > 0,
   )?.id
-  // The New Conversation page keeps navigation on screen: no Session is
-  // selected yet, or the current one has never been prompted. There is nothing
-  // to give the width to, so the rail is not offered and a collapsed arrival
-  // expands once.
-  const newConversation = selected === null
-    && (current === undefined || sessions.byId[current]?.blank === true)
-  // The expand runs at most once per arrival on the New Conversation page: the
-  // injected toggle is a fresh closure per render, so an effect that depended
-  // on its identity would re-fire and could oscillate with the layout store.
-  const toggleRef = useRef(toggleSidebar)
-  toggleRef.current = toggleSidebar
-  const expandedForNewConversation = useRef(false)
-  useEffect(() => {
-    if (!newConversation) { expandedForNewConversation.current = false; return }
-    if (!collapsed || expandedForNewConversation.current) return
-    expandedForNewConversation.current = true
-    toggleRef.current()
-  }, [newConversation, collapsed])
   const [adding, setAdding] = useState(false)
   const [projectError, setProjectError] = useState(false)
   const [query, setQuery] = useState('')
@@ -369,21 +352,19 @@ export function Sidebar(props: SidebarProps) {
       style={wide ? { width: !drawer && collapsed ? lastWideWidth.current : props.width } : undefined}>
       <div className={css.sidebarHead}>
         {wide ? <Brand t={t} /> : <BrandMark />}
-        {newConversation ? null : (
-          <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
-            <button
-              className={css.iconButton}
-              aria-label={t(collapsed ? 'expand' : 'collapse')}
-              onClick={toggleSidebar}
-              data-sidebar-toggle
-            >
-              <Glyph
-                name={collapsed ? 'panel-left-open' : 'panel-left-close'}
-                size={17}
-              />
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
+          <button
+            className={css.iconButton}
+            aria-label={t(collapsed ? 'expand' : 'collapse')}
+            onClick={toggleSidebar}
+            data-sidebar-toggle
+          >
+            <Glyph
+              name={collapsed ? 'panel-left-open' : 'panel-left-close'}
+              size={17}
+            />
+          </button>
+        </Tooltip>
       </div>
       <Tooltip portal label={t('newTask')} disabled={wide}>
         <button
@@ -420,6 +401,13 @@ export function Sidebar(props: SidebarProps) {
           >
             <Glyph name="layout-grid" />
             {wide && <span>{t('workspace')}</span>}
+          </button>
+        </Tooltip>
+        <Tooltip portal label={t('analytics')} disabled={wide}>
+          <button className={css.navRow} data-active={selected === panels.analytics}
+            onClick={() => { go(panels.analytics) }} aria-label={t('analytics')}
+            aria-current={selected === panels.analytics ? 'page' : undefined}>
+            <Glyph name="chart-no-axes-combined" />{wide && <span>{t('analytics')}</span>}
           </button>
         </Tooltip>
         <Tooltip portal label={t('connections')} disabled={wide}>
@@ -559,7 +547,7 @@ export function Sidebar(props: SidebarProps) {
           </div>
         )}
       </div>
-      <DesktopUpdate state={desktopUpdate} t={t} install={props.installDesktopUpdate} />
+      <DesktopUpdate state={desktopUpdate} t={t} install={props.installDesktopUpdate} retry={props.retryDesktopUpdate} />
       <footer className={css.sidebarFoot}>
         {props.renderSlot('sidebar.footer.row', { wide })}
         <Tooltip portal label={t('plan')} disabled={wide}>

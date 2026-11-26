@@ -33,7 +33,7 @@ function fixture(locale = 'pt') {
   const props: ComponentProps<typeof PlanPage> = {
     useProduct: selector => selector(state),
     usePreferences: selector => selector({ locale, theme: 'system', languages: [] }),
-    billing: vi.fn(), loadPlans: vi.fn(),
+    billing: vi.fn(), loadPlans: vi.fn(), start: vi.fn(),
     // The external-subscription section reads a product store and opens its
     // dialog; these fixtures start signed out with the dialog closed.
     useExternalStatus: selector => selector({ signedIn: false }),
@@ -120,13 +120,26 @@ describe('subscription comparison', () => {
     state.plansFailed = true
     state.handoff = 'billing'
     render(<PlanPage {...props} />)
-    expect(screen.getByRole('alert').textContent).toContain(pt.unavailable)
+    expect(screen.getByRole('alert').textContent).toContain(pt.readPlansTitle)
+    expect(screen.getByRole('alert').textContent).toContain(pt.readStale)
     expect(screen.getByRole('status').textContent).toContain(pt.purchasePending)
     expect(screen.getByRole('button', { name: 'Escolher plano: Max' })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Atualizar' })[0]!)
     expect(props.loadPlans).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: pt.retry }))
     expect(props.loadPlans).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers sign-in and retry when the account is signed out', () => {
+    const { props, state } = fixture()
+    state.plansFailed = true
+    state.plansFailureReason = 'signed_out'
+    render(<PlanPage {...props} />)
+    expect(screen.getByRole('alert').textContent).toContain(pt.readAuthDescription)
+    fireEvent.click(screen.getByRole('button', { name: pt.readSignIn }))
+    expect(props.start).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: pt.retry }))
+    expect(props.loadPlans).toHaveBeenCalledOnce()
   })
 
   it('does not invent a plan before the first response and gives an empty catalog a working destination', () => {

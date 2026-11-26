@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-26-desktop-usage-analytics.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-26-desktop-usage-analytics.md
+/agent-note-desktop-usage-analytics:
+  en: a16857b807abd776
+  zh: ad276144bed6d89f
+/agent-note-desktop-usage-analytics/problem:
+  en: bfee9a5f5aed443b
+  zh: 555fac0df7808d41
+/agent-note-desktop-usage-analytics/decision:
+  en: 8145feb2c2b8827a
+  zh: 796030cd4eec788c
+/agent-note-desktop-usage-analytics/alternatives-considered:
+  en: b26b4550764a712e
+  zh: 98737c9123fc6f50
+/agent-note-desktop-usage-analytics/consequences:
+  en: ab0ff7555474ca5e
+  zh: 0d8b4e111ffc6502
+/agent-note-desktop-usage-analytics/related:
+  en: c4f67f3d0a6ef0cf
+  zh: 0e5a4a4c337a956a

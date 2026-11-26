@@ -53,7 +53,7 @@
     "build:electron": "tsc -b && pnpm run bundle:electron",
     "bundle:electron": "tsdown --config-loader native",
     "package:electron": "tsx scripts/package-target.ts",
-    "test:tauri": "node --test tauri/tests/bridge.test.mjs tauri/tests/host.test.mjs && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:tauri": "node --test tauri/tests/bridge.test.mjs tauri/tests/startup-error.test.mjs tauri/tests/host.test.mjs && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

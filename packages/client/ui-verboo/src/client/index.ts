@@ -31,6 +31,7 @@ import { modelDimensions } from './model-dimensions.ts'
 import { captureFeatureConsent, type FeatureConsent } from './feature-consent.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
+import { AnalyticsPage, type AnalyticsActions } from './Analytics.tsx'
 import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
 import { TrialModel } from './trial-model.ts'
@@ -772,7 +773,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         children: { 'sidebar.footer.row': { kind: 'single', scope: 'root' } },
         inject: () => {
           const product = face()
-          return { ...product, installDesktopUpdate: () => desktopUpdate.install(), hooks: { ...product.hooks, desktopUpdate: desktopUpdate.state, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
+          return { ...product, installDesktopUpdate: (confirmed: boolean) => desktopUpdate.install(confirmed), retryDesktopUpdate: () => desktopUpdate.retry(), hooks: { ...product.hooks, desktopUpdate: desktopUpdate.state, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
         } },
       Sidebar,
     ),
@@ -893,6 +894,22 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('main', function* () {
+    const analyticsFace = (): ProductInjected & AnalyticsActions => ({
+      ...face(),
+      summary: async (period, group, signal) => {
+        const result = await ctx.remote.verboo.getUsageSummary(period, group, signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
+      activity: async (signal) => {
+        const result = await ctx.remote.verboo.getUsageActivity(signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
+      speed: signal => ctx.remote.verboo.watchUsageSpeed(signal),
+    })
+    yield ctx.slots.register(
+      { name: 'main', key: 'verboo.analytics', locale: 'verboo', inject: analyticsFace },
+      AnalyticsPage,
+    )
     yield ctx.slots.register(
       {
         name: 'main',

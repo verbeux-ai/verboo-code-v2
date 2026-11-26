@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { z } from 'zod'
+import WebSocket from 'ws'
 import Schema from '@deepseek-ai/schemastery'
 import {
   AccountRequestError,
@@ -12,6 +13,7 @@ import {
 } from '@deepseek-ai/dsh-verboo-account'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import { TrialCommerce, trialStatus, paymentURL } from './trial.ts'
+import { parseSpeedFrame } from './live-speed.ts'
 import type { TrialStatus, TrialOffer, TrialPayment, TrialId, TrialOfferId, TrialAttemptId } from './types.ts'
 import type {
   ConnectionId,
@@ -20,6 +22,7 @@ import type {
   Connections,
   Result,
   StaminaStatus,
+  UsagePeriod, UsageSummary, UsageActivityDay, SpeedFrame,
 } from './types.ts'
 
 /** Public product API deployment addresses; no provider secret is accepted. */
@@ -100,6 +103,15 @@ const stamina = z.object({
     asOf: z.iso.datetime({ offset: true }),
   })).max(500).refine(rows => new Set(rows.map(row => row.groupId)).size === rows.length),
 })
+const usagePeriod = z.enum(['24h', '7d', '30d', 'current_month', 'previous_month'])
+const usageSummary = z.object({ data: z.object({
+  timezone: z.string().max(128), bucket: z.enum(['minute', 'hour', 'day']),
+  reqTotal: z.number().nonnegative(), tokensInTotal: z.number().nonnegative(),
+  tokensOutTotal: z.number().nonnegative(), cachedTokens: z.number().nonnegative(),
+  buckets: z.array(z.object({ bucket: z.string().max(128), reqCount: z.number().nonnegative(),
+    tokensIn: z.number().nonnegative(), tokensOut: z.number().nonnegative(), cachedTokens: z.number().nonnegative() })).max(1000),
+}) })
+const usageActivity = z.object({ data: z.array(z.object({ date: z.iso.date(), count: z.number().int().nonnegative() })).max(366) })
 const connectionId = z
   .string()
   .regex(/^[a-zA-Z0-9_-]{1,128}$/)
@@ -412,6 +424,79 @@ export class VerbooProduct extends TypertRemoteService {
       }
     })
   }
+  /** Read the selected historical subscription usage, without exposing account credentials. */
+  @Remote
+  getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>> {
+    return this.result(async () => {
+      const selected = usagePeriod.parse(period)
+      const query = new URLSearchParams({ period: selected, billingMode: 'subscription' })
+      const path = groupId === null ? '/api/me/usage/summary' : `/api/me/groups/${id.parse(groupId)}/usage/summary`
+      return usageSummary.parse(await this.request(`${path}?${query}`, 'GET', undefined, signal)).data
+    })
+  }
+
+  /** Read the subscription activity calendar independently of historical totals. */
+  @Remote
+  getUsageActivity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>> {
+    return this.result(async () => usageActivity.parse(await this.request('/api/me/usage/activity?days=365&billingMode=subscription', 'GET', undefined, signal)).data)
+  }
+
+  /** Stream account generation speed from the same service as the web dashboard. */
+  @Remote({ mode: 'stream' })
+  async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame> {
+    const session = await this.ctx.deepseekAccount.getPlatformSession()
+    if (!session?.sessionId || signal.aborted) return
+    const result = z.object({ data: z.object({ ticket: z.string().min(1).max(4096) }) })
+      .parse(await this.request('/api/me/usage/live-ticket', 'POST', undefined, signal))
+    if (signal.aborted || (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId) return
+    const frontendOrigin = new URL(this.deployment.apiOrigin).origin
+    const endpoint = new URL('/ws/me/usage', frontendOrigin)
+    endpoint.protocol = endpoint.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new WebSocket(endpoint.toString(), { origin: frontendOrigin, handshakeTimeout: 6000 })
+    let closed = false
+    let pending: SpeedFrame | null = null
+    let lastAt = 0
+    let wake: (() => void) | undefined
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const notify = () => { wake?.(); wake = undefined }
+    const stop = () => { closed = true; socket.close(); notify() }
+    const watch = () => { clearTimeout(timeout); timeout = setTimeout(stop, 6000) }
+    signal.addEventListener('abort', stop, { once: true })
+    socket.addEventListener('open', () => {
+      if (closed || signal.aborted) return
+      socket.send(JSON.stringify({ type: 'subscribe', ticket: result.data.ticket, billingMode: 'subscription' }))
+      watch()
+    })
+    socket.addEventListener('message', (event) => {
+      if (closed || typeof event.data !== 'string' || event.data.length > 262_144) return
+      try {
+        const frame = parseSpeedFrame(JSON.parse(event.data))
+        const at = frame && Date.parse(frame.at)
+        if (!frame || !at || at <= lastAt) return
+        lastAt = at
+        pending = frame
+        watch()
+        notify()
+      } catch { /* Discard invalid frames without extending their freshness. */ }
+    })
+    socket.addEventListener('error', stop)
+    socket.addEventListener('close', () => { closed = true; notify() })
+    watch()
+    try {
+      while (!signal.aborted && !closed) {
+        if (!pending) { await new Promise<void>((resolve) => { wake = resolve }); continue }
+        const next: SpeedFrame = pending
+        pending = null
+        if ((await this.ctx.deepseekAccount.getPlatformSession())?.sessionId !== session.sessionId || signal.aborted) return
+        yield next
+      }
+    } finally {
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', stop)
+      socket.close()
+    }
+  }
+
   /**
    * Read stamina only for plans where the server has enrolled this account.
    * @param signal - cancellation of the owning Client read.

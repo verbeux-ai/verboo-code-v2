@@ -5,7 +5,8 @@ import type { PropsLocale, PropsRenderFactories, PropsRuntime } from '@deepseek-
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconCloseOutlineRegular,
-  FileTypeIcon, fileSizeText, IconEditOutlineRegular, InlineEditor, IconQueueOutlineRegular, IconSendOutlineRegular,
+  FileTypeIcon, fileSizeText, IconEditOutlineRegular, InlineEditor, IconQueueOutlineRegular,
+  IconRefreshOutlineRegular, IconSendOutlineRegular,
   IconTrashOutlineRegular, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
@@ -73,24 +74,36 @@ function QueueFile({ attachment, label }: { attachment: FileAttachmentRef; label
   )
 }
 
-/** One durable queued image as a fixed-size thumbnail; a load failure keeps the empty placeholder. */
-function QueueThumb({ attachment, loadImage, label }: {
+/** One durable queued image as a fixed-size thumbnail with a retry for failed previews. */
+function QueueThumb({ attachment, loadImage, label, retryLabel }: {
   attachment: ImageAttachmentRef
   loadImage: QueueDockInjected['loadImage']
   label: string
+  retryLabel: string
 }) {
   const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let alive = true
+    setUrl(null)
+    setFailed(false)
     loadImage(attachment).then(
       (resolved) => { if (alive) setUrl(resolved) },
-      () => { /* placeholder retained; the durable transcript surfaces read errors */ },
+      () => { if (alive) setFailed(true) },
     )
     return () => { alive = false }
-  }, [attachment, loadImage])
+  }, [attachment, loadImage, attempt])
+  if (failed) return <FailedThumb label={retryLabel} retry={() => { setAttempt(value => value + 1) }} />
   return url === null
     ? <span className={`${css.thumb} ${css.thumbPlaceholder}`} aria-hidden />
-    : <img className={css.thumb} src={url} alt={label} />
+    : <img className={css.thumb} src={url} alt={label} onError={() => { setFailed(true) }} />
+}
+
+function FailedThumb({ label, retry }: { label: string; retry: () => void }) {
+  return <button type="button" className={`${css.thumb} ${css.thumbRetry}`} aria-label={label} title={label} onClick={retry}>
+    <IconRefreshOutlineRegular size={14} />
+  </button>
 }
 
 /**
@@ -99,15 +112,19 @@ function QueueThumb({ attachment, loadImage, label }: {
  * slot with the borderless skeleton until a frame actually paints: a broken
  * `img` would otherwise draw the browser's own empty box inside the row.
  */
-function PendingThumb({ src, alt }: { src: string; alt: string }) {
+function PendingThumb({ src, alt, retryLabel }: { src: string; alt: string; retryLabel: string }) {
   const [painted, setPainted] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  if (failed) return <FailedThumb label={retryLabel} retry={() => { setFailed(false); setAttempt(value => value + 1) }} />
   return (
     <img
+      key={attempt}
       className={painted ? css.thumb : `${css.thumb} ${css.thumbPlaceholder}`}
       src={src}
       alt={alt}
       onLoad={() => { setPainted(true) }}
-      onError={() => { setPainted(false) }}
+      onError={() => { setPainted(false); setFailed(true) }}
     />
   )
 }
@@ -235,6 +252,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                                 attachment={item.attachment}
                                 loadImage={loadImage}
                                 label={t('queue.image')}
+                                retryLabel={t('queue.imageRetry')}
                               />
                             )
                             : (
@@ -352,6 +370,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                           key={`${attachment.value.previewUrl}:${index}`}
                           src={attachment.value.previewUrl}
                           alt={t('queue.image')}
+                          retryLabel={t('queue.imageRetry')}
                         />
                       )
                       : (
