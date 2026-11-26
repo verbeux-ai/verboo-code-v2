@@ -16,7 +16,11 @@ const frame = z.object({
   generationRatePartial: z.boolean().optional(), points: z.array(point).max(61),
 })
 
-/** Drop legacy completion counts and invalid or unavailable speed readings. */
+/**
+ * Drop legacy completion counts and invalid or unavailable speed readings.
+ * @param input - untrusted frame from the live usage service.
+ * @returns the safe speed projection, or null when the frame is invalid.
+ */
 export function parseSpeedFrame(input: unknown): SpeedFrame | null {
   const parsed = frame.safeParse(input)
   if (!parsed.success) return null

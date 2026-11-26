@@ -370,7 +370,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-verboo-product`
 
 - `inject`: `deepseekAccount`
-- `source`: [`packages/api/verboo-product/src/index.ts:35`](../packages/api/verboo-product/src/index.ts)
+- `source`: [`packages/api/verboo-product/src/index.ts:38`](../packages/api/verboo-product/src/index.ts)
 
 ```ts config-catalog
 /** Public product deployment configuration; provider credentials remain server-side. */

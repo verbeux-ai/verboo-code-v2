@@ -4471,6 +4471,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'display-safe plan projections.',
       },
       {
+        signature: '@Remote getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>>',
+        description: 'Read historical subscription usage without exposing account credentials.',
+        parameters: [{ name: 'period', description: 'selected reporting period.' }, { name: 'groupId', description: 'plan group to read, or null for the account total.' }, { name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'validated request and token totals for the chosen scope.',
+      },
+      {
+        signature: '@Remote getUsageActivity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>>',
+        description: 'Read the subscription activity calendar independently of historical totals.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'validated daily activity counts for the past year.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame>',
+        description: 'Stream account generation speed from the same service as the web dashboard.',
+        parameters: [{ name: 'signal', description: 'lifetime of the authenticated speed stream.' }],
+        returns: 'server measurements without private credentials or concurrency data.',
+      },
+      {
         signature: '@Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>',
         description: 'Read stamina only for plans where the server has enrolled this account.',
         parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
@@ -9588,6 +9606,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpeechSpec extends SpeechInput {\n    readonly provider: SpeechProvider;\n}',
   },
   {
+    name: 'SpeedFrame',
+    declaration: 'export interface SpeedFrame {\n    at: string;\n    stale: boolean;\n    measurement: SpeedMeasurement | null;\n}',
+  },
+  {
+    name: 'SpeedMeasurement',
+    declaration: 'export interface SpeedMeasurement {\n    value: number;\n    quality: \'measured\' | \'estimated\';\n    partial: boolean;\n    at: string;\n    previous: boolean;\n}',
+  },
+  {
     name: 'SpillLocator',
     declaration: 'export type SpillLocator = Branded<\'SpillLocator\'>;',
   },
@@ -10422,6 +10448,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: SessionId;\n}',
+  },
+  {
+    name: 'UsageActivityDay',
+    declaration: 'export interface UsageActivityDay {\n    date: string;\n    count: number;\n}',
+  },
+  {
+    name: 'UsageBucket',
+    declaration: 'export interface UsageBucket {\n    bucket: string;\n    reqCount: number;\n    tokensIn: number;\n    tokensOut: number;\n    cachedTokens: number;\n}',
+  },
+  {
+    name: 'UsagePeriod',
+    declaration: 'export type UsagePeriod = \'24h\' | \'7d\' | \'30d\' | \'current_month\' | \'previous_month\';',
+  },
+  {
+    name: 'UsageSummary',
+    declaration: 'export interface UsageSummary {\n    timezone: string;\n    bucket: \'minute\' | \'hour\' | \'day\';\n    reqTotal: number;\n    tokensInTotal: number;\n    tokensOutTotal: number;\n    cachedTokens: number;\n    buckets: UsageBucket[];\n}',
   },
   {
     name: 'UserMessage',

@@ -424,7 +424,13 @@ export class VerbooProduct extends TypertRemoteService {
       }
     })
   }
-  /** Read the selected historical subscription usage, without exposing account credentials. */
+  /**
+   * Read historical subscription usage without exposing account credentials.
+   * @param period - selected reporting period.
+   * @param groupId - plan group to read, or null for the account total.
+   * @param signal - cancellation of the owning Client read.
+   * @returns validated request and token totals for the chosen scope.
+   */
   @Remote
   getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>> {
     return this.result(async () => {
@@ -435,13 +441,21 @@ export class VerbooProduct extends TypertRemoteService {
     })
   }
 
-  /** Read the subscription activity calendar independently of historical totals. */
+  /**
+   * Read the subscription activity calendar independently of historical totals.
+   * @param signal - cancellation of the owning Client read.
+   * @returns validated daily activity counts for the past year.
+   */
   @Remote
   getUsageActivity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>> {
     return this.result(async () => usageActivity.parse(await this.request('/api/me/usage/activity?days=365&billingMode=subscription', 'GET', undefined, signal)).data)
   }
 
-  /** Stream account generation speed from the same service as the web dashboard. */
+  /**
+   * Stream account generation speed from the same service as the web dashboard.
+   * @param signal - lifetime of the authenticated speed stream.
+   * @returns server measurements without private credentials or concurrency data.
+   */
   @Remote({ mode: 'stream' })
   async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
