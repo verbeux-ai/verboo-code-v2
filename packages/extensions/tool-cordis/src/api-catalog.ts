@@ -265,6 +265,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain. Agent *creation* is provided by whichever plugin implements the AgentFactory (`@deepseek-ai/dsh-agent-loop`), registered via setFactory.\n\nInitiator methods provide same-process causal attribution only. Ambient presence is neither liveness proof nor authorization; subjects and owners remain explicit, as does identity at worker, process, persistence, and wire boundaries. Returned Promise boundaries drain during teardown, except a nested lineage that starts an owning-fiber unload is excluded from its own drain.',
     methods: [
       {
+        signature: 'readonly exitAdmission: ExitAdmission = new ExitAdmission()',
+        description: 'Global conservative admission for a desktop silent exit.',
+        parameters: [],
+      },
+      {
         signature: 'turnBoundaryOf(session: Session): TurnBoundaryProjection',
         description: 'Read the turn and step positions recorded in a Session.',
         parameters: [{ name: 'session', description: 'Session whose committed events are read.' }],
@@ -6709,6 +6714,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EveryScheduleRecord',
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'ExitActivity',
+    declaration: 'export type ExitActivity = \'idle\' | \'busy\' | \'unknown\';',
+  },
+  {
+    name: 'ExitAdmission',
+    declaration: 'export class ExitAdmission {\n    get isFrozen(): boolean;\n    onReopen(listener: () => void): () => void;\n    registerRequired(name: \'agents\' | \'jobs\' | \'schedule\', read: () => ExitActivity): () => void;\n    registerOptional(read: () => ExitActivity): () => void;\n    assertAdmission(): void;\n    begin(): () => void;\n    tryReserve(): ExitReservation;\n    commit(id: number): boolean;\n    cancel(id: number): void;\n    finalize(id: number, shutdown: () => void): boolean;\n}',
+  },
+  {
+    name: 'ExitReservation',
+    declaration: 'export type ExitReservation = {\n    readonly kind: \'reserved\';\n    readonly id: number;\n} | {\n    readonly kind: \'busy\' | \'unknown\';\n};',
   },
   {
     name: 'FeedbackCategory',
