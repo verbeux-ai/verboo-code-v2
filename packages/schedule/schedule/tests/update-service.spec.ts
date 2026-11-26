@@ -46,7 +46,7 @@ it('rejects an edit without writing when exit admission fails', async () => {
   await expect(test.service.edit(request)).rejects.toBe(error)
   const cause = 'unexpected admission failure'
   begin.mockImplementationOnce(() => { throw cause })
-  await expect(test.service.edit(request)).rejects.toMatchObject({ message: 'Exit admission failed', cause })
+  await expect(test.service.edit(request)).rejects.toMatchObject({ message: 'Schedule admission failed', cause })
   expect(test.writes()).toBe(writesBefore)
   expect(await test.service.view({ id: test.created.id })).toEqual(test.created)
 })
