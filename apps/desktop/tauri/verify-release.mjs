@@ -95,7 +95,22 @@ const platformNote = omitted.length
   ? `\n\nEsta versão não inclui ${omitted.join(' e ')}; esses sistemas não receberão a atualização nesta versão.`
   : ''
 const appleSigningNote = omitAppleSilicon && omitIntel ? '' : 'O aplicativo e o instalador macOS são assinados com Developer ID e notarizados pela Apple. '
-const releaseNotes = 'Verboo Code v2 ' + configuration.version + '\n\n- Inicialização com a Boo, etapas de carregamento e nova tela de autenticação.\n- Confirmação de saída com a Boo quando houver conversas ou tarefas em andamento.\n- Correção da restauração de sessões e painéis durante a abertura.\n- Correção da criação do cache do atualizador e proteção contra bloqueios incompletos de credenciais.\n- Ajustes de confiabilidade na imagem da Boo e nos diagnósticos de inicialização.\n\nSe uma versão anterior não conseguir baixar atualizações, instale esta versão manualmente uma vez. Se o aplicativo continuar falhando ao abrir após a instalação, consulte o suporte.\n\nInstaladores para ' + availablePlatforms + '.' + platformNote + '\n\n' + appleSigningNote + 'O instalador Windows não é assinado. Confira a integridade em SHA256SUMS.\n\nSource: ' + source + '\n'
+const releaseNotes = [
+  'Verboo Code v2 ' + configuration.version,
+  '',
+  '- Tela de Planos redesenhada, com comparação de ofertas e indicação do uso limitado no Lite.',
+  '- Compra por cartão iniciada e acompanhada no app, com retomada da mesma tentativa.',
+  '- Troca de plano, cancelamento, reativação e histórico de faturas na tela de assinatura.',
+  '- Troca de cartão no modal nativo, com autenticação da Stripe quando necessária.',
+  '- Consulta e gestão do plano pela conversa, com revisão e confirmação das ações disponíveis.',
+  '',
+  'Instaladores para ' + availablePlatforms + '.' + platformNote,
+  '',
+  appleSigningNote + 'O instalador Windows não é assinado. Confira a integridade em SHA256SUMS.',
+  '',
+  'Source: ' + source,
+  '',
+].join('\n')
 await writeFile(join(directory, 'RELEASE.md'), releaseNotes)
 // The feed is a published index rather than a release asset, so it stays out of
 // the verified directory: publication regenerates it from the same manifests.
