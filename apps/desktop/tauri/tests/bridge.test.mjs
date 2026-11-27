@@ -190,3 +190,26 @@ test('bounds startup when desktop layout storage never answers', { timeout: 4000
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(calls.includes('desktop_layout_write'), false)
 })
+
+test('buffers a native quit request until the dialog subscribes and returns its decision', async (t) => {
+  const { dom, requests } = page(t, '<main>workspace</main>')
+  const bridge = dom.window.__VERBOO_QUIT_CONFIRMATION__
+  dom.window.dispatchEvent(new dom.window.Event('verboo-quit-confirmation'))
+  let count = 0
+  const unsubscribe = bridge.subscribe(() => { count++ })
+  assert.equal(count, 1)
+  await bridge.respond(false)
+  assert.deepEqual(JSON.parse(JSON.stringify(requests.at(-1))), { command: 'quit_confirmation_response', args: { confirmed: false } })
+  unsubscribe()
+  bridge.subscribe(() => { count++ })()
+  assert.equal(count, 1)
+})
+
+test('diagnostics include only safe names from a client boot audit', (t) => {
+  const { dom, requests } = page(t, '<main>workspace</main>')
+  const error = new dom.window.Error('web boot: 1 required entry did not activate\n@deepseek-ai/dsh-client-ui (required): failed: private-token\nnot-a-plugin: private-token')
+  dom.window.console.error(error)
+  const diagnostic = requests.find(request => request.command === 'client_diagnostic')
+  assert.deepEqual(JSON.parse(JSON.stringify(diagnostic.args.entries)), ['@deepseek-ai/dsh-client-ui'])
+  assert.equal(JSON.stringify(diagnostic.args).includes('private-token'), false)
+})

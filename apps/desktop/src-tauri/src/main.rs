@@ -12,7 +12,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc, Mutex, OnceLock,
+        mpsc, Arc, Mutex, OnceLock,
     },
     thread,
 };
@@ -36,7 +36,7 @@ struct HostState {
     client_ready: AtomicBool,
     quit_confirmation: AtomicBool,
     exit_ready: AtomicBool,
-    quit_hold_confirmed: AtomicBool,
+    quit_response: Mutex<Option<mpsc::Sender<bool>>>,
     host_disconnected: AtomicBool,
     failure_reported: AtomicBool,
     startup_retry_allowed: AtomicBool,
@@ -98,10 +98,21 @@ fn quit_after_hold(
     state: tauri::State<'_, Arc<HostState>>,
 ) -> Result<(), String> {
     owned_window(&window, &state)?;
-    state.quit_hold_confirmed.store(true, Ordering::SeqCst);
     eprintln!("Verboo Code: quit_hold_confirmed");
     window.app_handle().exit(0);
     Ok(())
+}
+
+#[tauri::command]
+fn quit_confirmation_response(
+    window: WebviewWindow,
+    state: tauri::State<'_, Arc<HostState>>,
+    confirmed: bool,
+) -> Result<(), String> {
+    owned_window(&window, &state)?;
+    let sender = state.quit_response.lock().map_err(|_| "quit_state_unavailable")?.take()
+        .ok_or("quit_confirmation_not_pending")?;
+    sender.send(confirmed).map_err(|_| "quit_confirmation_expired".into())
 }
 
 #[tauri::command]
@@ -215,6 +226,9 @@ fn startup_failure(app: &tauri::AppHandle, state: &HostState, code: &str) {
     if state.failure_reported.swap(true, Ordering::SeqCst) { return; }
     eprintln!("Verboo Code: {code}");
     state.quitting.store(true, Ordering::SeqCst);
+    if let Ok(mut pending) = state.quit_response.lock() {
+        if let Some(sender) = pending.take() { let _ = sender.send(false); }
+    }
     let app = app.clone();
     let state = Arc::clone(&app.state::<Arc<HostState>>());
     let code = code.to_owned();
@@ -344,7 +358,8 @@ fn main() {
             update::update_restart,
             update::update_retry,
             startup_retry,
-            quit_after_hold
+            quit_after_hold,
+            quit_confirmation_response
         ])
         .setup(move |app| {
             update::install(&app.handle());
@@ -376,6 +391,11 @@ fn main() {
                                 || state.origin.get() != Some(&payload.url().origin())
                             {
                                 return;
+                            }
+                            // A navigation invalidates any renderer-owned confirmation. Cancel it
+                            // rather than leaving the native exit worker waiting on a lost dialog.
+                            if let Ok(mut pending) = state.quit_response.lock() {
+                                if let Some(sender) = pending.take() { let _ = sender.send(false); }
                             }
                             let bootstrap =
                                 state.bootstrap.lock().ok().and_then(|mut url| url.take());
@@ -545,12 +565,11 @@ fn main() {
                 if state.quit_confirmation.swap(true, Ordering::SeqCst) {
                     return;
                 }
-                let held = state.quit_hold_confirmed.swap(false, Ordering::SeqCst);
                 let app = app.clone();
                 let state = state.clone();
                 thread::spawn(move || {
                     let mut finalized_idle = false;
-                    if code != Some(tauri::RESTART_EXIT_CODE) && !held {
+                    if code != Some(tauri::RESTART_EXIT_CODE) {
                         match state.reserve_idle() {
                             Ok(QuitReservation::Reserved(lease)) => {
                                 if state.quitting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
@@ -589,21 +608,31 @@ fn main() {
                             }
                         }
                     }
-                    if code != Some(tauri::RESTART_EXIT_CODE) && !held && !finalized_idle {
+                    if code != Some(tauri::RESTART_EXIT_CODE) && !finalized_idle {
                         eprintln!("Verboo Code: quit_confirmation_requested");
-                        let dialog = app
-                            .dialog()
-                            .message(locale::quit_message())
-                            .title(locale::quit_title())
-                            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                                locale::quit_confirm().to_string(),
-                                locale::quit_cancel().to_string(),
-                            ));
-                        let dialog = match app.get_webview_window("main") {
-                            Some(window) => dialog.parent(&window),
-                            None => dialog,
+                        let confirmed = if state.client_ready.load(Ordering::SeqCst) {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let (sender, receiver) = mpsc::channel();
+                                if let Ok(mut pending) = state.quit_response.lock() {
+                                    *pending = Some(sender);
+                                } else {
+                                    state.quit_confirmation.store(false, Ordering::SeqCst);
+                                    return;
+                                }
+                                if window.eval("window.dispatchEvent(new Event('verboo-quit-confirmation'))").is_err() {
+                                    if let Ok(mut pending) = state.quit_response.lock() { pending.take(); }
+                                    false
+                                } else {
+                                    receiver.recv().unwrap_or(false)
+                                }
+                            } else { false }
+                        } else {
+                            // Before the product UI is ready, retain a safe native fallback.
+                            app.dialog().message(locale::quit_message()).title(locale::quit_title())
+                                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                                    locale::quit_confirm().to_string(), locale::quit_cancel().to_string(),
+                                )).blocking_show()
                         };
-                        let confirmed = dialog.blocking_show();
                         if !confirmed {
                             eprintln!("Verboo Code: quit_cancelled");
                             state.quit_confirmation.store(false, Ordering::SeqCst);

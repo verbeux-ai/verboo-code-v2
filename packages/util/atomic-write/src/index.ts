@@ -4,7 +4,7 @@
  * the caller's permission bits, then renames it over the target, so readers
  * observe either the old or the new complete content and a replaced file ends
  * up with exactly the stated mode. `withFileLock` serializes cross-process
- * writers of one file through a `wx`-created `<file>.lock` sibling, so a
+ * writers of one file through an atomically linked `<file>.lock` sibling, so a
  * read-modify-write cycle can never resurrect a state another writer just
  * replaced; readers stay lock-free because the rename commit is atomic. A lock
  * whose recorded holder process no longer exists is taken over.
@@ -12,7 +12,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 
@@ -213,7 +213,7 @@ export interface FileLockOptions {
 
 /**
  * Hold the cross-process writer lock for `filename` around one operation. The
- * lock is a `wx`-created sibling (`<filename>.lock`); paired with the
+ * lock is a hard-linked sibling (`<filename>.lock`) containing a complete PID; paired with the
  * rename-based commit of {@link writeFileAtomic}, readers stay lock-free and
  * only writers contend. `EEXIST` is contention directly; an `EPERM` is
  * contention only when a fresh `lstat` confirms the lock path exists, covering
@@ -244,25 +244,43 @@ export async function withFileLock<T>(
   const deadline = Date.now() + (options?.waitMs ?? DEFAULT_LOCK_WAIT_MS)
   let delay = LOCK_RETRY_INITIAL_MS
   let retriedUnconfirmedPermissionError = false
-  for (;;) {
-    options?.signal?.throwIfAborted()
-    try {
-      await writeFile(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
-      break
-    } catch (error) {
-      if (!await isLockContention(error, lockPath)) {
-        // Windows can release the competing lock between exclusive create and lstat.
-        if (process.platform !== 'win32'
-          || (error as NodeJS.ErrnoException | null)?.code !== 'EPERM'
-          || retriedUnconfirmedPermissionError) throw error
-        retriedUnconfirmedPermissionError = true
-      } else if (await takeOverExitedLock(lockPath)) continue
+  // Publish a complete PID record in one filesystem operation. A process
+  // killed between exclusive creation and writing must never leave an empty
+  // lock that no successor can safely attribute to an exited owner.
+  const candidate = `${lockPath}.candidate-${randomBytes(16).toString('hex')}`
+  options?.signal?.throwIfAborted()
+  await writeFile(candidate, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
+  try {
+    for (;;) {
+      options?.signal?.throwIfAborted()
+      try {
+        await link(candidate, lockPath)
+        break
+      } catch (error) {
+        // Some filesystems do not support hard links. Preserve the previous
+        // exclusive-create behavior there instead of disabling all writes.
+        if (['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'].includes((error as NodeJS.ErrnoException | null)?.code ?? '')) {
+          try {
+            await writeFile(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
+            break
+          } catch (fallbackError) { error = fallbackError }
+        }
+        if (!await isLockContention(error, lockPath)) {
+          // Windows can release the competing lock between the link and lstat.
+          if (process.platform !== 'win32'
+            || (error as NodeJS.ErrnoException | null)?.code !== 'EPERM'
+            || retriedUnconfirmedPermissionError) throw error
+          retriedUnconfirmedPermissionError = true
+        } else if (await takeOverExitedLock(lockPath)) continue
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`atomic-write: timed out waiting for the writer lock at ${lockPath}`)
+      }
+      await wait(delay, undefined, { signal: options?.signal })
+      delay = Math.min(delay * 2, LOCK_RETRY_MAX_MS)
     }
-    if (Date.now() >= deadline) {
-      throw new Error(`atomic-write: timed out waiting for the writer lock at ${lockPath}`)
-    }
-    await wait(delay, undefined, { signal: options?.signal })
-    delay = Math.min(delay * 2, LOCK_RETRY_MAX_MS)
+  } finally {
+    await rm(candidate, { force: true }).catch(() => {})
   }
   try {
     options?.signal?.throwIfAborted()

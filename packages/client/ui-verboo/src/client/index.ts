@@ -2,6 +2,7 @@
 // The Desktop bridge's global declaration is owned by the link service that routes through it.
 import type {} from '@deepseek-ai/dsh-client-external-links/client'
 import type { Context } from '@deepseek-ai/cordis'
+import { focusedBinding } from './panes/focused-binding.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -61,7 +62,6 @@ import { PlanPage } from './Plans.tsx'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
 import { installPanes } from './panes/install.ts'
-import { leaves } from './panes/layout.ts'
 import { selectStaminaForModel } from './stamina-selection.ts'
 
 /** Product replacement for optional diagnostic readouts. */
@@ -320,24 +320,28 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
   }, 'Verboo: trial attention')
   ctx.effect(() => {
-    let selectedSession: SessionId | null = null
+    let selectedBinding: unknown
     let stopModel: (() => void) | undefined
     const sync = () => {
-      const layout = panes.getSnapshot().layout
-      const session = leaves(layout.root).find(pane => pane.id === layout.focused)?.sessionId ?? null
-      if (session !== selectedSession) {
+      // Restored pane IDs may precede their Session scope and retained binding.
+      const { session, binding } = focusedBinding(panes.getSnapshot(), ctx.sessions)
+      if (binding !== selectedBinding) {
         stopModel?.()
-        selectedSession = session
-        stopModel = session === null ? undefined : ctx.modelDirectories.directoryFor(session).store.subscribe(sync)
+        stopModel = undefined
+        selectedBinding = binding
+        if (binding !== undefined && session !== null)
+          stopModel = ctx.modelDirectories.directoryFor(session).store.subscribe(sync)
       }
-      const selected = session === null ? null : ctx.modelDirectories.directoryFor(session).store.getSnapshot().current
+      const selected = binding === undefined || session === null ? null
+        : ctx.modelDirectories.directoryFor(session).store.getSnapshot().current
       const group = selectStaminaForModel(model.state.getSnapshot().plans, selected, undefined).group
       trial.selectGroup(group?.id ?? null)
     }
     const stopPanes = panes.subscribe(sync)
     const stopAccount = model.state.subscribe(sync)
+    const stopSessions = ctx.sessions.list.subscribe(sync)
     sync()
-    return () => { stopPanes(); stopAccount(); stopModel?.() }
+    return () => { stopPanes(); stopAccount(); stopSessions(); stopModel?.() }
   }, 'Verboo: focused trial group')
   const desktopUpdate = createUpdateSource()
   const stamina = createStaminaResource(

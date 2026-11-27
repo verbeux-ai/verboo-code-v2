@@ -4,6 +4,8 @@ import { useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ProductProps } from './contracts.ts'
 import { Brand } from './Brand.tsx'
 import { Glyph } from './Glyph.tsx'
+import mascot from './assets/verboo-mascot.png'
+import { startupMascot } from './startup-mascot.ts'
 import css from './Product.module.css'
 /** One entry screen replaces the former multi-step credit onboarding. */
 export function Onboarding(props: ProductProps) {
@@ -31,6 +33,15 @@ export function Onboarding(props: ProductProps) {
     phase === 'failed' ||
     phase === 'expired'
   const stored = state.view?.status === 'credential-stored'
+  // Keep the desktop startup animation continuous while the initial account
+  // observation is pending. Never present sign-in before a signed-out result.
+  if (globalThis.__VERBOO_DESKTOP__ && !state.accountFailed && (booting || stored)) {
+    return createPortal(<div ref={ref} tabIndex={-1} role="dialog" aria-modal="true"
+      aria-label={props.t('product')} className={css.desktopStartup} data-verboo-onboarding>
+      <div className={css.startupOrbit}><img src={startupMascot} alt="" /></div>
+      <p className={css.startupMessage} role="status">{props.t('checking')}…</p>
+    </div>, document.body)
+  }
   return createPortal(
     <div
       ref={ref}
@@ -38,11 +49,11 @@ export function Onboarding(props: ProductProps) {
       role="dialog"
       aria-modal="true"
       aria-label={props.t('product')}
-      className={css.onboarding}
+      className={[css.onboarding, globalThis.__VERBOO_DESKTOP__ ? css.desktopOnboarding : ''].join(' ')}
       data-verboo-onboarding
     >
-      <section className={css.welcomeCopy}>
-        <Brand t={props.t} large />
+      <section className={[css.welcomeCopy, globalThis.__VERBOO_DESKTOP__ ? css.desktopWelcome : ''].join(' ')}>
+        {globalThis.__VERBOO_DESKTOP__ ? <div className={css.desktopWelcomeMascot}><img src={mascot} alt="" /></div> : <Brand t={props.t} large />}
         {booting ? (
           <div className={css.waiting} role="status">
             <Glyph name="loader-circle" className={css.spin} />
@@ -50,9 +61,9 @@ export function Onboarding(props: ProductProps) {
           </div>
         ) : (
           <div className={css.welcomeBody}>
-            <h1>{props.t('welcomeTitle')}</h1>
+            <h1>{props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthTitle' : 'welcomeTitle')}</h1>
             <p className={css.welcomeDescription}>
-              {props.t('welcomeDescription')}
+              {props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthDescription' : 'welcomeDescription')}
             </p>
             <div className={css.loginArea}>
               {stored ? (
@@ -107,7 +118,7 @@ export function Onboarding(props: ProductProps) {
                   disabled={!state.initialized}
                   onClick={props.start}
                 >
-                  {props.t('signIn')}
+                  {props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthSignIn' : 'signIn')}
                   <Glyph name="arrow-right" />
                 </button>
               )}
@@ -133,7 +144,7 @@ export function Onboarding(props: ProductProps) {
             </div>
           </div>
         )}
-        {!booting && <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>}
+        {!booting && !globalThis.__VERBOO_DESKTOP__ && <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>}
       </section>
 
     </div>,

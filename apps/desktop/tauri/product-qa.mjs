@@ -431,7 +431,7 @@ try {
     locale: 'pt-BR',
     colorScheme: 'light',
   })
-  if (process.env.VERBOO_QA_PANES === '1') await context.addInitScript(() => {
+  if ((process.env.VERBOO_QA_PANES === '1' || process.env.VERBOO_QA_RESTORE === '1')) await context.addInitScript(() => {
     // Native capabilities are the external boundary; the real product handles the gestures.
     Object.defineProperty(window, '__VERBOO_DESKTOP__', { value: Object.freeze({
       framework: 'tauri',
@@ -444,7 +444,7 @@ try {
   await context.route('**/favicon.ico', (route) =>
     route.fulfill({ status: 204, body: '' }),
   )
-  if (process.env.VERBOO_QA_PANES === '1') await context.route('**/open-in-app/icon/**', route =>
+  if ((process.env.VERBOO_QA_PANES === '1' || process.env.VERBOO_QA_RESTORE === '1')) await context.route('**/open-in-app/icon/**', route =>
     route.fulfill({ status: 204, body: '' }),
   )
   await context.route('https://connect.composio.dev/link/verboo-qa', route => route.fulfill({
@@ -497,7 +497,7 @@ try {
   await capture('onboarding-mobile.png')
   if (
     !(await page
-      .getByRole('button', { name: 'Continuar com Verboo', exact: true })
+      .getByRole('button', { name: (process.env.VERBOO_QA_PANES === '1' || process.env.VERBOO_QA_RESTORE === '1') ? 'Entrar com Verboo' : 'Continuar com Verboo', exact: true })
       .evaluate((el) => {
         const b = el.getBoundingClientRect()
         return el.contains(
@@ -508,7 +508,7 @@ try {
     throw new Error('Mobile onboarding CTA is covered')
   await page.setViewportSize({ width: 1366, height: 900 })
   await page
-    .getByRole('button', { name: 'Continuar com Verboo', exact: true })
+    .getByRole('button', { name: (process.env.VERBOO_QA_PANES === '1' || process.env.VERBOO_QA_RESTORE === '1') ? 'Entrar com Verboo' : 'Continuar com Verboo', exact: true })
     .click()
   await page
     .locator('[data-verboo-onboarding]')
@@ -546,7 +546,28 @@ try {
   await page.waitForTimeout(700)
   await capture('workspace-light.png')
   await page.emulateMedia({colorScheme:'dark'}); await page.waitForTimeout(250); await capture('workspace-dark.png'); await page.emulateMedia({colorScheme:'light'})
-  if (process.env.VERBOO_QA_ANALYTICS === '1') {
+  if (process.env.VERBOO_QA_RESTORE === '1') {
+    const panes = page.locator('[data-pane-id]')
+    const composer = panes.first().locator('[data-composer-card] [contenteditable=true]')
+    await composer.fill('Sessão de teste para restauração')
+    await composer.press('Enter')
+    await page.waitForFunction(() => document.querySelector('[data-conversation-header]') !== null)
+    const deadline = Date.now() + 20000
+    while (state.finishModel === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20))
+    if (state.finishModel === null) throw new Error('The fixture did not start the test session')
+    state.finishModel()
+    await panes.first().getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor()
+    const primary = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.platform) ? 'Meta' : 'Control')
+    const saved = page.waitForResponse(response => response.ok() && (response.request().postData() ?? '').includes('paneLayout'))
+    await composer.press(`${primary}+d`)
+    await page.waitForFunction(() => document.querySelectorAll('[data-pane-id]').length === 2)
+    await saved
+    await page.reload()
+    await page.waitForFunction(() => document.querySelectorAll('[data-pane-id]').length === 2, null, { timeout: 30000 })
+    await panes.first().getByText('Pronto. Podemos começar pelo seu projeto.', { exact: true }).waitFor({ timeout: 30000 })
+    if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
+    console.log('Restored signed-in session and panes after reload without startup errors.')
+  } else if (process.env.VERBOO_QA_ANALYTICS === '1') {
     if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
     console.log('Analytics navigation and data passed. Screenshots:', dir)
   } else if (process.env.VERBOO_QA_FOCUS === '1') {
@@ -561,7 +582,7 @@ try {
     await verifySendLifecycle(page, state, dir)
     if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
     console.log('Screenshots:', dir)
-  } else if (process.env.VERBOO_QA_PANES === '1') {
+  } else if ((process.env.VERBOO_QA_PANES === '1' || process.env.VERBOO_QA_RESTORE === '1')) {
     await verifyPanes(page, context, state, dir)
     if (errors.length) throw new Error('Browser runtime error: ' + errors[0])
     console.log('Screenshots:', dir)

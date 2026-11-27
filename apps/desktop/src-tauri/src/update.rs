@@ -1380,6 +1380,41 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Opt-in smoke test using a real signed Linux release as an isolated update.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires a downloaded release and its matching feed"]
+    fn real_signed_appimage_installs_and_runs_in_isolation() {
+        use tauri_plugin_updater::UpdaterExt;
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let root = Scratch(cache_test_root());
+        let package_path = std::env::var_os("VERBOO_TEST_SIGNED_APPIMAGE").expect("test package path");
+        let feed_path = std::env::var_os("VERBOO_TEST_SIGNED_FEED").expect("matching feed path");
+        let feed: serde_json::Value = serde_json::from_slice(&std::fs::read(feed_path).unwrap()).unwrap();
+        let package = std::fs::read(package_path).unwrap();
+        let target = root.0.join("isolated.AppImage");
+        std::fs::write(&target, b"old isolated release").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert("updater".into(), config["plugins"]["updater"].clone());
+        let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().target("linux-x86_64-appimage").build()).build(context).unwrap();
+        let updater = app.updater_builder().executable_path(&target)
+            .endpoints(vec!["https://example.invalid/feed".parse().unwrap()]).unwrap().build().unwrap();
+        let cache = root.0.join("fresh/cache");
+        write_cache(&cache, &feed, &package).unwrap();
+        let staged = read_verified_staged(&cache, &updater).unwrap().expect("signed update must be staged");
+        let verified = read_verified_package(&cache, &staged.update).unwrap();
+        staged.update.install(verified).unwrap();
+        assert_eq!(std::fs::metadata(&target).unwrap().len(), package.len() as u64);
+        let output = std::process::Command::new(&target).arg("--appimage-version").output().unwrap();
+        assert!(output.status.success(), "installed AppImage did not execute");
+    }
+
     #[test]
     fn cached_signed_release_is_verified_offline_and_tampering_is_rejected() {
         use tauri_plugin_updater::UpdaterExt;

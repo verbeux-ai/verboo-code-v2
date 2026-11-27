@@ -54,8 +54,17 @@
       frames.push({ asset: url.pathname.slice(0, 160), line: Number(match[2]), column: Number(match[3]) })
       if (frames.length === 5) break
     }
+    // Audit errors may name required plugins, but can also contain private
+    // exception text. Forward only well-formed names at the start of audit lines.
     const entries = []
-    void invoke('client_diagnostic', { frames, entries }).catch((_error) => {
+    if (error.message.startsWith('web boot: ')) {
+      for (const line of error.message.split('\n').slice(1)) {
+        const match = line.match(/^(@deepseek-ai\/[a-z0-9-]+)(?: \(required\))?: /)
+        if (match && !entries.includes(match[1])) entries.push(match[1])
+        if (entries.length >= 32) break
+      }
+    }
+    void invoke('client_diagnostic', { frames, entries: entries.slice(0, 32) }).catch((_error) => {
       // Native shutdown may close IPC before the browser finishes reporting.
     })
   }
@@ -90,6 +99,26 @@
       },
       install: confirmed => invoke('update_restart', { confirmed }),
       retry: () => invoke('update_retry'),
+    }),
+  })
+  // Buffer requests until the React overlay has subscribed.
+  let quitPending = false
+  const quitListeners = new Set()
+  window.addEventListener('verboo-quit-confirmation', () => {
+    quitPending = true
+    for (const listener of quitListeners) listener()
+  })
+  Object.defineProperty(window, '__VERBOO_QUIT_CONFIRMATION__', {
+    value: Object.freeze({
+      subscribe(listener) {
+        quitListeners.add(listener)
+        if (quitPending) listener()
+        return () => quitListeners.delete(listener)
+      },
+      async respond(confirmed) {
+        await invoke('quit_confirmation_response', { confirmed })
+        quitPending = false
+      },
     }),
   })
   Object.defineProperty(window, '__VERBOO_DESKTOP__', {
