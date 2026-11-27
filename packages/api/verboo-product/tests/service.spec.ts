@@ -12,9 +12,10 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 
-vi.mock('ws', () => ({ default: function mockSocket(url: string, options: unknown) {
-  const Socket = globalThis.WebSocket as unknown as new (url: string, options: unknown) => object
-  return new Socket(url, options)
+type SocketOptions = { origin: string; handshakeTimeout: number }
+const sockets = vi.hoisted(() => ({ create: vi.fn<(url: string, options: SocketOptions) => EventTarget>() }))
+vi.mock('ws', () => ({ default: function mockSocket(url: string, options: SocketOptions) {
+  return sockets.create(url, options)
 } }))
 
 class FixtureAccount extends DeepSeekAccount {
@@ -38,9 +39,15 @@ const session = (id: string): PlatformSession => ({
   sessionId: id as AccountSessionId,
 })
 
+function requestBody(body: RequestInit['body']): unknown {
+  if (typeof body !== 'string') throw new Error('Expected a JSON request body')
+  return JSON.parse(body)
+}
+
 const contexts: Context[] = []
 const roots: string[] = []
 afterEach(async () => {
+  sockets.create.mockReset()
   vi.unstubAllGlobals()
   while (contexts.length) await contexts.pop()!.fiber.dispose()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -140,7 +147,7 @@ describe('live account generation speed', () => {
       send(value: string) { this.sent.push(value) }
       close() { this.closed = true; this.dispatchEvent(new Event('close')) }
     }
-    vi.stubGlobal('WebSocket', FakeSocket)
+    sockets.create.mockImplementation((url, options) => new FakeSocket(url, options))
     const f = fixture(Response.json({ data: { ticket: 'private-ticket', expiresAt: '2026-11-26T12:01:00Z' } }))
     const abort = new AbortController()
     const iterator = f.product.watchUsageSpeed(abort.signal)[Symbol.asyncIterator]()
@@ -164,7 +171,7 @@ describe('live account generation speed', () => {
       send(_value: string) {}
       close() { this.dispatchEvent(new Event('close')) }
     }
-    vi.stubGlobal('WebSocket', FakeSocket)
+    sockets.create.mockImplementation(url => new FakeSocket(url))
     const f = fixture(Response.json({ data: { ticket: 'private-ticket' } }))
     const iterator = f.product.watchUsageSpeed(new AbortController().signal)[Symbol.asyncIterator]()
     const next = iterator.next()
@@ -680,8 +687,8 @@ describe('subscription billing', () => {
       expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/portal')
       expect(options?.method).toBe('POST')
       const headers = new Headers(options?.headers)
-      const records = output.mock.calls.filter(([tag]) => tag === '[verboo-journey]').map(([, value]) => JSON.parse(String(value)))
-      expect(records.map(record => record.outcome)).toEqual(['started', expected])
+      const records = output.mock.calls.filter(([tag]) => tag === '[verboo-journey]').map(([, value]): unknown => JSON.parse(String(value)))
+      expect(records).toMatchObject([{ outcome: 'started' }, { outcome: expected }])
       for (const record of records) {
         expect(record).toMatchObject({
           stage: 'payment_portal',
@@ -708,7 +715,7 @@ describe('subscription billing', () => {
     const [address, write] = f.fetch.mock.calls[0] ?? []
     expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/card-update')
     expect(write?.method).toBe('POST')
-    expect(JSON.parse(String(write?.body))).toEqual({ requestId: id })
+    expect(requestBody(write?.body)).toEqual({ requestId: id })
     expect(new Headers(write?.headers).get('x-verboo-operation-id')).toBe(id)
     await expect(f.product.currentBillingCardUpdate(subscription, f.signal))
       .resolves.toEqual({ ok: true, data: { id, status: 'confirmed', url: null } })
@@ -730,7 +737,7 @@ describe('subscription billing', () => {
         embedded: { ...embedded, url: 'https://code.verboo.ai/api/desktop/card-setup' },
       },
     })
-    expect(JSON.parse(String(f.fetch.mock.calls[0]?.[1]?.body))).toEqual({ requestId: id, presentation: 'embedded' })
+    expect(requestBody(f.fetch.mock.calls[0]?.[1]?.body)).toEqual({ requestId: id, presentation: 'embedded' })
     await expect(f.product.startBillingCardUpdate(subscription, id)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
     await expect(f.product.startBillingCardUpdate(subscription, id, true)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
     await expect(f.product.currentBillingCardUpdate(subscription, f.signal))

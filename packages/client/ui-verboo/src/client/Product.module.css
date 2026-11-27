@@ -387,30 +387,30 @@
 .noticeCard p { flex:1; margin:0; font-size:12px; line-height:1.6; }
 
 .desktopUpdate { display:flex; align-items:center; padding:5px 9px 10px; }
-.desktopUpdateButton { position:relative; display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:50%; background:var(--verboo-accent-wash); color:var(--verboo-accent); cursor:pointer; }
+.desktopUpdateButton { position:relative; display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:50%; corner-shape:round; background:var(--verboo-accent-wash); color:var(--verboo-accent); cursor:pointer; }
 .desktopUpdateButton[aria-disabled='true'] { cursor:default; }
-.desktopUpdateButton:focus-visible { outline:2px solid var(--verboo-accent); outline-offset:3px; }
+.desktopUpdateButton:focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary)); outline-offset:3px; }
 .desktopUpdateButton svg { display:block; width:28px; height:28px; overflow:visible; }
 .desktopUpdateTrack,.desktopUpdateRing { fill:none; stroke-width:2; }
 .desktopUpdateTrack { stroke:var(--verboo-border); }
 .desktopUpdateRing { stroke:var(--verboo-accent); transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset .2s ease; }
 .desktopUpdateArrow { fill:none; stroke:var(--verboo-accent); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-.desktopUpdateDot { position:absolute; right:0; top:0; width:6px; height:6px; border-radius:50%; background:var(--verboo-accent); box-shadow:0 0 0 2px var(--verboo-bg); }
+.desktopUpdateDot { position:absolute; right:0; top:0; width:6px; height:6px; border-radius:50%; corner-shape:round; background:var(--verboo-accent); box-shadow:0 0 0 2px var(--verboo-bg); }
 .desktopUpdateBubble,.desktopUpdateToast { position:fixed; z-index:3000; color:var(--verboo-ink); background:var(--verboo-surface); border:1px solid var(--verboo-border); box-shadow:0 10px 28px #0006; animation:desktop-update-in .2s ease-out; }
-.desktopUpdateBubble { width:min(252px,calc(100vw - 16px)); padding:13px 14px; border-radius:14px; }
+.desktopUpdateBubble { width:min(252px,calc(100vw - 16px)); padding:13px 14px; border-radius:var(--dsw-radius-lg); }
 .desktopUpdateBubble::before,.desktopUpdateBubble::after { content:''; position:absolute; left:var(--update-tail); top:100%; transform:translateX(-50%); width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; }
 .desktopUpdateBubble::before { border-top:9px solid var(--verboo-border); }
 .desktopUpdateBubble::after { border-top:8px solid var(--verboo-surface); margin-top:-1px; }
 .desktopUpdateBubble p { margin:0 0 10px; font-size:12px; line-height:1.5; }
 .desktopUpdateMascot { float:right; width:38px; height:38px; margin:0 0 8px 10px; }
-.readFailure { display:flex; align-items:flex-start; gap:14px; margin:16px 0; padding:16px; border:1px solid var(--verboo-border); border-radius:12px; background:var(--verboo-surface); }
+.readFailure { display:flex; align-items:flex-start; gap:14px; margin:16px 0; padding:16px; border:1px solid var(--verboo-border); border-radius:var(--dsw-radius-md); background:var(--verboo-surface); }
 .readFailure img { width:42px; height:42px; flex:none; }
 .readFailure strong { font-size:14px; }
 .readFailure p { margin:5px 0 0; color:var(--verboo-muted); font-size:12px; line-height:1.5; }
 .readFailureActions { display:flex; align-items:center; gap:12px; margin-top:12px; }
-.desktopUpdateRestart { border:0; border-radius:7px; padding:8px 11px; background:var(--verboo-accent-solid); color:var(--verboo-on-accent); font:inherit; font-size:12px; cursor:pointer; }
+.desktopUpdateRestart { border:0; border-radius:var(--dsw-radius-sm); padding:8px 11px; background:var(--verboo-accent-solid); color:var(--verboo-on-accent); font:inherit; font-size:12px; cursor:pointer; }
 .desktopUpdateRestart:disabled { opacity:.6; cursor:default; }
-.desktopUpdateToast { padding:6px 10px; border-radius:12px; font-size:11px; }
+.desktopUpdateToast { padding:6px 10px; border-radius:var(--dsw-radius-md); font-size:11px; }
 .sidebar[data-wide='false'] .desktopUpdate { justify-content:center; padding-inline:0; }
 @keyframes desktop-update-in { from { opacity:0; transform:translateY(5px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
 @media (prefers-reduced-motion:reduce) { .desktopUpdateRing { transition:none; } .desktopUpdateBubble,.desktopUpdateToast { animation:none; } }
@@ -419,8 +419,8 @@
 @media (prefers-reduced-motion:reduce) { .desktopUpdate[data-indeterminate='true'] .desktopUpdateRing { animation:none; } }
 
 .desktopStartup { position:fixed; inset:0; z-index:1100; display:grid; place-items:center; background:#09090b; color:#aaa5b2; outline:none; }
-.startupOrbit { position:relative; width:128px; height:128px; display:grid; place-items:center; border:1px solid #ad34fe66; border-radius:50%; box-shadow:0 0 55px #ad34fe35; }
-.startupOrbit::after { content:''; position:absolute; inset:-5px; border-radius:50%; background:radial-gradient(circle at 50% 4px,#e5bcff 0 4px,transparent 5px); animation:startupOrbit 3s linear infinite; }
+.startupOrbit { position:relative; width:128px; height:128px; display:grid; place-items:center; border:1px solid #ad34fe66; border-radius:50%; corner-shape:round; box-shadow:0 0 55px #ad34fe35; }
+.startupOrbit::after { content:''; position:absolute; inset:-5px; border-radius:50%; corner-shape:round; background:radial-gradient(circle at 50% 4px,#e5bcff 0 4px,transparent 5px); animation:startupOrbit 3s linear infinite; }
 .startupOrbit img { width:76px; height:76px; filter:drop-shadow(0 0 16px #ad34fe66); }
 .startupMessage { position:absolute; top:calc(50% + 84px); left:50%; transform:translateX(-50%); margin:0; width:260px; text-align:center; font:13px system-ui,sans-serif; }
 @keyframes startupOrbit { to { transform:rotate(360deg); } }

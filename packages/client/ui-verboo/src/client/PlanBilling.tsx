@@ -212,7 +212,7 @@ function LifecycleResult({ state, subscription, locale, t }: Pick<SubscriptionPr
     (accessUntil ? ' · ' + t('billingAccessUntil', { date: day(accessUntil, locale) }) : '')} />
 }
 
-function ChangeForm(props: SubscriptionProps & { candidatePlans: Plan[]; canChoose: boolean; onBack(): void }) {
+function ChangeForm(props: SubscriptionProps & { candidatePlans: Plan[]; canChoose: boolean; onBack(this: void): void }) {
   const { state, subscription, candidatePlans, canChoose, locale, t } = props
   const [removeTier, setRemoveTier] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -316,8 +316,8 @@ function SubscriptionActionDialog(props: SubscriptionProps & {
   candidatePlans: Plan[]
   canChoosePlan: boolean
   accessUntil: string | null
-  close(): void
-  onBack(): void
+  close(this: void): void
+  onBack(this: void): void
 }) {
   const { action, state, subscription, accessUntil, t, locale } = props
   const id = subscription.id as BillingSubscriptionId

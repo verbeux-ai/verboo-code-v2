@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentBilling, PreparedAgentPlanChange } from '@deepseek-ai/dsh-api-verboo-product'
 import type {
-  BillingSubscriptionId, PlanChangeId, PlanChangeProgress, PlanChangeQuote, Subscription, SubscriptionLifecycleProgress,
+  BillingSubscriptionId, PlanChangeId, PlanChangeProgress, PlanChangeQuote, Result, Subscription, SubscriptionLifecycleProgress,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -67,6 +67,20 @@ function cancellationView(result: SubscriptionLifecycleProgress) {
     operationId: result.cancellation?.operationId ?? null,
     accessUntil: date(result.cancellation?.accessUntil),
   }
+}
+
+async function readOwnedSubscription(
+  ctx: Context, id: string, signal: AbortSignal, mode: 'inspect' | 'cancel',
+): Promise<Result<{ account: AgentBilling; subscription: Subscription }> | { ok: false; code: 'not_allowed' }> {
+  const billing = await ctx.verbooProduct.agentBilling()
+  if (!billing.ok) return billing
+  const plans = await billing.data.plans(signal)
+  if (!plans.ok) return plans
+  const subscription = plans.data.subscriptions.find(row => row.id === id)
+  if (!subscription || (mode === 'cancel' && (!subscription.permissions?.cancel || subscription.cancelAtEnd))) {
+    return { ok: false, code: mode === 'cancel' ? 'not_allowed' : 'not_found' }
+  }
+  return { ok: true, data: { account: billing.data, subscription } }
 }
 
 function money(amountMinor: number, currency: string, locale: string) {
@@ -245,15 +259,12 @@ export function apply(ctx: Context, timeoutMs: number): void {
       output,
       timeoutMs,
       execute: async (args, exec) => {
-        const billing = await ctx.verbooProduct.agentBilling()
-        if (!billing.ok) return refusal(billing.code)
-        const plans = await billing.data.plans(exec.signal)
-        if (!plans.ok) return refusal(plans.code)
-        const subscription = plans.data.subscriptions.find(row => row.id === args.subscriptionId)
-        if (!subscription?.permissions?.cancel || subscription.cancelAtEnd) return refusal('not_allowed')
+        const owned = await readOwnedSubscription(ctx, args.subscriptionId, exec.signal, 'cancel')
+        if (!owned.ok) return refusal(owned.code)
+        const { account, subscription } = owned.data
         const accessUntil = date(subscription.renewsAt)
         if (accessUntil === null) return refusal('access_end_unavailable')
-        const original = await billing.data.cancellationStatus(subscription.id as BillingSubscriptionId, exec.signal)
+        const original = await account.cancellationStatus(subscription.id as BillingSubscriptionId, exec.signal)
         if (!original.ok) return refusal(original.code)
         if (original.data && original.data.status !== 'confirmed') {
           return {
@@ -261,12 +272,12 @@ export function apply(ctx: Context, timeoutMs: number): void {
             ...(original.data.action === 'cancel' ? { operation: cancellationView(original.data) } : {}),
           }
         }
-        const refused = await approvalFor(ctx, exec, billing.data, Date.now() + timeoutMs, {
+        const refused = await approvalFor(ctx, exec, account, Date.now() + timeoutMs, {
           en: cancellationReason(subscription, accessUntil, false),
           pt: cancellationReason(subscription, accessUntil, true),
         })
         if (refused) return refusal(refused)
-        const result = await billing.data.cancel(subscription, undefined, exec.signal)
+        const result = await account.cancel(subscription, undefined, exec.signal)
         if (!result.ok) return refusal(result.code)
         if (result.data.action !== 'cancel') return refusal('operation_pending')
         return { ok: true, operation: cancellationView(result.data) }
@@ -283,18 +294,15 @@ export function apply(ctx: Context, timeoutMs: number): void {
       output,
       timeoutMs,
       execute: async (args, exec) => {
-        const billing = await ctx.verbooProduct.agentBilling()
-        if (!billing.ok) return refusal(billing.code)
-        const plans = await billing.data.plans(exec.signal)
-        if (!plans.ok) return refusal(plans.code)
-        const subscription = plans.data.subscriptions.find(row => row.id === args.subscriptionId)
-        if (!subscription) return refusal('not_found')
+        const owned = await readOwnedSubscription(ctx, args.subscriptionId, exec.signal, 'inspect')
+        if (!owned.ok) return refusal(owned.code)
+        const { account, subscription } = owned.data
         if (args.kind === 'plan_change') {
-          const result = await billing.data.changeStatus(subscription, args.operationId as PlanChangeId | undefined, exec.signal)
+          const result = await account.changeStatus(subscription, args.operationId as PlanChangeId | undefined, exec.signal)
           if (!result.ok) return refusal(result.code)
           return { ok: true, operation: result.data && changeView(result.data) }
         }
-        const result = await billing.data.cancellationStatus(subscription.id as BillingSubscriptionId, exec.signal)
+        const result = await account.cancellationStatus(subscription.id as BillingSubscriptionId, exec.signal)
         if (!result.ok) return refusal(result.code)
         const operation = result.data?.action === 'cancel' ? cancellationView(result.data) : null
         if (args.operationId !== undefined && operation?.operationId !== args.operationId) return refusal('not_found')

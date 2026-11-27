@@ -1,28 +1,55 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ComponentProps } from 'react'
+import type { PlanId, Subscription, UsageSummary } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { AnalyticsPage, type AnalyticsActions } from '../src/client/Analytics.tsx'
-import type { PageProps } from '../src/client/contracts.ts'
+import { createProductSnapshot, type ProductSnapshot } from '../src/client/model.ts'
 import { pt } from '../src/client/locales.ts'
 
-const summary = { timezone: 'America/Sao_Paulo', bucket: 'day' as const, reqTotal: 4, tokensInTotal: 1000, tokensOutTotal: 300, cachedTokens: 250, buckets: [{ bucket: '2026-11-25T00:00:00-03:00', reqCount: 4, tokensIn: 1000, tokensOut: 300, cachedTokens: 250 }] }
-const planId = '00000000-0000-4000-8000-000000000001'
-const product = { view: { status: 'credential-stored', credentialRevision: 'revision' }, profile: { id: 'account-a' }, plans: { subscriptions: [{ planId, name: 'Pro', status: 'active', renewsAt: null }], catalog: [] }, plansFailed: false }
+const summary: UsageSummary = { timezone: 'America/Sao_Paulo', bucket: 'day', reqTotal: 4, tokensInTotal: 1000, tokensOutTotal: 300, cachedTokens: 250, buckets: [{ bucket: '2026-11-25T00:00:00-03:00', reqCount: 4, tokensIn: 1000, tokensOut: 300, cachedTokens: 250 }] }
+const planId = '00000000-0000-4000-8000-000000000001' as PlanId
+const subscriptions: Subscription[] = [{
+  id: 'subscription-a', planId, name: 'Pro', status: 'active', renewsAt: null,
+  cancelAtEnd: false, canUpgrade: true, billing: null,
+}]
+const product: ProductSnapshot = {
+  ...createProductSnapshot(),
+  initialized: true,
+  view: {
+    status: 'credential-stored', credentialRevision: 'revision' as AccountCredentialRevision,
+    links: { usageUrl: '', topUpUrl: '' }, attempt: null,
+  },
+  profile: { id: 'account-a' as AccountUserId, name: null, contact: null },
+  plans: { subscriptions, catalog: [] },
+}
+const nextProduct: ProductSnapshot = {
+  ...product,
+  view: product.view && { ...product.view, credentialRevision: 'next-revision' as AccountCredentialRevision },
+  profile: product.profile && { ...product.profile, id: 'account-b' as AccountUserId },
+}
 const copy: Record<string, string> = pt
-function fixture() {
+type AnalyticsProps = ComponentProps<typeof AnalyticsPage>
+function untilAborted(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+}
+function fixture(read: () => ProductSnapshot = () => product) {
   const summaryRead = vi.fn<AnalyticsActions['summary']>().mockResolvedValue({ ok: true, data: summary })
   const activity = vi.fn<AnalyticsActions['activity']>().mockResolvedValue({ ok: true, data: [{ date: '2026-11-25', count: 4 }] })
-  const props = {
-    t: (key: string, args?: Record<string, string>) => Object.entries(args ?? {}).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), copy[key] ?? key),
-    useProduct: (selector: (value: typeof product) => unknown) => selector(product),
-    usePreferences: (selector: (value: { locale: string }) => unknown) => selector({ locale: 'pt-BR' }),
-    useResource: () => ({ status: 'ready', value: [{ groupId: planId, groupName: 'Pro', remainingPercent: 75, recovering: false, fullAt: null, accountingPending: false }] }),
-    loadPlans: vi.fn(), refreshStamina: vi.fn(), summary: summaryRead, activity,
-    subscriptions: vi.fn().mockResolvedValue({ ok: true, data: product.plans.subscriptions }),
-    speed: async function* (signal: AbortSignal) {
-      await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
-    },
-  } as unknown as PageProps & AnalyticsActions
+  const props: AnalyticsProps = {
+    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match: string, name: string) => {
+      const value = values?.[name]
+      return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+    }),
+    useProduct: selector => selector(read()),
+    usePreferences: selector => selector({ locale: 'pt-BR', theme: 'system', languages: [] }),
+    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
+    start: vi.fn(), retryAccount: vi.fn(), refreshStamina: vi.fn(), summary: summaryRead, activity,
+    subscriptions: vi.fn<AnalyticsActions['subscriptions']>().mockResolvedValue({ ok: true, data: subscriptions }),
+    speed: async function* (signal) { await untilAborted(signal) },
+  }
   return { props, summaryRead, activity }
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -34,7 +61,7 @@ it('shows an account speed measurement and marks the last reading', async () => 
     yield { at: '2026-11-26T12:00:00Z', stale: false, measurement: { value: 123.4, quality: 'estimated', partial: false, at: '2026-11-26T12:00:00Z', previous: false } }
     await gate.promise
     if (!signal.aborted) yield { at: '2026-11-26T12:00:01Z', stale: false, measurement: null }
-    await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    await untilAborted(signal)
   }
   render(<AnalyticsPage {...f.props} speed={speed} />)
   expect(await screen.findByText('123,4')).toBeTruthy()
@@ -81,16 +108,14 @@ it('does not show a previous period after a slower request finishes', async () =
 })
 
 it('discards results belonging to the previous account', async () => {
-  const f = fixture()
-  const delayed = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['summary']>>>()
   let current = product
-  f.summaryRead.mockImplementation(async () => current.profile.id === 'account-a' ? delayed.promise : { ok: true, data: { ...summary, tokensInTotal: 9000 } })
-  const props = {
-    ...f.props, useProduct: (select: (value: typeof product) => unknown) => select(current),
-  } as unknown as PageProps & AnalyticsActions
-  const view = render(<AnalyticsPage {...props} />)
-  current = { ...product, view: { ...product.view, credentialRevision: 'next-revision' }, profile: { id: 'account-b' } }
-  view.rerender(<AnalyticsPage {...props} />)
+  const f = fixture(() => current)
+  const delayed = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['summary']>>>()
+  f.summaryRead.mockImplementation(async () => current === product
+    ? delayed.promise : { ok: true, data: { ...summary, tokensInTotal: 9000 } })
+  const view = render(<AnalyticsPage {...f.props} />)
+  current = nextProduct
+  view.rerender(<AnalyticsPage {...f.props} />)
   expect(await screen.findByText('9.000')).toBeTruthy()
   delayed.resolve({ ok: true, data: summary })
   await waitFor(() => { expect(screen.getByText('9.000')).toBeTruthy() })
@@ -120,10 +145,10 @@ it('does not restart account totals when subscriptions arrive and renders plans 
   const f = fixture()
   const plans = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['subscriptions']>>>()
   const total = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['summary']>>>()
-  const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockReturnValue(plans.promise)
+  const readSubscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockReturnValue(plans.promise)
   f.summaryRead.mockImplementation(async (_period, group) => group === null ? total.promise : { ok: true, data: summary })
-  render(<AnalyticsPage {...f.props} subscriptions={subscriptions} />)
-  plans.resolve({ ok: true, data: product.plans.subscriptions as never })
+  render(<AnalyticsPage {...f.props} subscriptions={readSubscriptions} />)
+  plans.resolve({ ok: true, data: subscriptions })
   expect(await screen.findByText(/1\.000.*300/)).toBeTruthy()
   expect(f.summaryRead.mock.calls.filter(([, group]) => group === null)).toHaveLength(1)
   expect(screen.queryByText('1.000')).toBeNull()
@@ -141,31 +166,24 @@ it('keeps account totals available when the subscription list fails', async () =
 })
 
 it('does not display subscriptions returned after an account change', async () => {
-  const f = fixture()
-  const delayed = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['subscriptions']>>>()
   let current = product
-  const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockImplementation(async () => current.profile.id === 'account-a'
+  const f = fixture(() => current)
+  const delayed = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['subscriptions']>>>()
+  const readSubscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockImplementation(async () => current === product
     ? delayed.promise : { ok: true, data: [] })
-  const props = {
-    ...f.props, subscriptions, useProduct: (select: (value: typeof product) => unknown) => select(current),
-  } as unknown as PageProps & AnalyticsActions
-  const view = render(<AnalyticsPage {...props} />)
-  current = { ...product, view: { ...product.view, credentialRevision: 'next-revision' }, profile: { id: 'account-b' } }
-  view.rerender(<AnalyticsPage {...props} />)
+  const view = render(<AnalyticsPage {...f.props} subscriptions={readSubscriptions} />)
+  current = nextProduct
+  view.rerender(<AnalyticsPage {...f.props} subscriptions={readSubscriptions} />)
   expect(await screen.findByText(pt.analyticsNoPlans)).toBeTruthy()
-  delayed.resolve({ ok: true, data: product.plans.subscriptions as never })
+  delayed.resolve({ ok: true, data: subscriptions })
   await waitFor(() => { expect(screen.getByText(pt.analyticsNoPlans)).toBeTruthy() })
   expect(f.summaryRead.mock.calls.some(([, group]) => group === planId)).toBe(false)
 })
 
 it('offers account retry when the owner cannot be verified', () => {
-  const f = fixture()
-  const account = { ...product, accountFailed: true, profile: null }
+  const f = fixture(() => ({ ...product, accountFailed: true, profile: null }))
   const retryAccount = vi.fn()
-  const props = {
-    ...f.props, retryAccount, useProduct: (select: (value: typeof account) => unknown) => select(account),
-  } as unknown as PageProps & AnalyticsActions
-  render(<AnalyticsPage {...props} />)
+  render(<AnalyticsPage {...f.props} retryAccount={retryAccount} />)
   expect(screen.getByText('Não foi possível carregar o uso.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
   expect(retryAccount).toHaveBeenCalledOnce()

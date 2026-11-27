@@ -27,7 +27,7 @@ const subscriptionKey = (status: string): Key =>
 
 function SubscriptionRow({ subscription, locale, t, manage, expanded, panelId }: PlanActions & {
   subscription: Subscription
-  manage(): void
+  manage(this: void): void
   locale: string
   expanded: boolean
   panelId: string
@@ -103,7 +103,7 @@ function PlanCard({ plan, current, locale, t, choose, busy, hasSubscription }: P
   current: boolean
   busy: boolean
   hasSubscription: boolean
-  choose(plan: Plan, trigger: HTMLButtonElement): void
+  choose(this: void, plan: Plan, trigger: HTMLButtonElement): void
   locale: string
 }) {
   return <article className={plansCss.card} data-plan-id={plan.id} data-current={current}>

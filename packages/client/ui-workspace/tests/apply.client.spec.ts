@@ -75,7 +75,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   const menuRegistry = new MenuRegistry(vi.fn())
   onTestFinished(() => { menuRegistry.dispose() })
   ctx.provide('contextMenus', { register: menuRegistry.register.bind(menuRegistry), resolve: menuRegistry.resolve.bind(menuRegistry), active: createSnapshotStore(null), open: vi.fn(), close: vi.fn() } as never)
-  ctx.provide('uiConversation', {})
+  ctx.provide('uiConversation', { beginProductAction: vi.fn(() => vi.fn()) })
   await ctx.plugin(SlotRegistry).await()
   const accessSource = vi.fn((_kind: string, _id: string, _action: string): HostObservable<boolean> => ALLOWED)
   const stopGuard = vi.fn()
