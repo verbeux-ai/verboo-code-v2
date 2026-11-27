@@ -27,7 +27,7 @@ kind: "package-reference"
 
 将 `dsh-agent` 与 `dsh-session-projection` 一起挂载：它提供 `ctx.agents`、`Agent` 句柄，以及读取已记录轮次和步骤位置的 `turnBoundaryOf(session)`。创建或恢复 Agent 还需要驱动器注册工厂；随附驱动器是 `dsh-agent-loop`。 [Session 模型选择](#model-selection) 通过每个句柄的 `agent.model` 提供。
 
-`ctx.agents.exitAdmission` 协调可撤销的静默退出预留。Agent、任务和计划提供者必须全部报告空闲；提供者缺失、读取失败、没有 `exitActivity` 的自定义 Agent 以及持久终端均视为未知，需要确认。新工作会使预留失效；提交后的预留会暂时拒绝新工作，直至取消、过期或最终关闭。默认循环的活动报告包括维护工作和排队输入。
+`ctx.agents.exitAdmission` 协调可撤销的静默退出预留。Agent、任务和计划提供者必须全部报告空闲；提供者缺失、读取失败、没有 `exitActivity` 的自定义 Agent 以及持久终端均视为未知，需要确认。新工作会使预留失效；提交后的预留会暂时拒绝新工作，直至取消、过期或最终关闭。默认循环会报告正在运行的轮次和维护工作。已暂存或暂停的输入保存在会话日志中，空闲退出时可继续留在队列中。
 
 ### 创建或恢复 agent
 

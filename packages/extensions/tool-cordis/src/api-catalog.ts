@@ -6879,7 +6879,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ExitAdmission',
-    declaration: 'export class ExitAdmission {\n    get isFrozen(): boolean;\n    onReopen(listener: () => void): () => void;\n    registerRequired(name: \'agents\' | \'jobs\' | \'schedule\', read: () => ExitActivity): () => void;\n    registerOptional(read: () => ExitActivity): () => void;\n    assertAdmission(): void;\n    begin(): () => void;\n    tryReserve(): ExitReservation;\n    commit(id: number): boolean;\n    cancel(id: number): void;\n    finalize(id: number, shutdown: () => void): boolean;\n}',
+    declaration: 'export class ExitAdmission {\n    get isFrozen(): boolean;\n    get isFinalized(): boolean;\n    onReopen(listener: () => void): () => void;\n    registerRequired(name: \'agents\' | \'jobs\' | \'schedule\', read: () => ExitActivity): () => void;\n    registerOptional(read: () => ExitActivity): () => void;\n    assertAdmission(): void;\n    begin(): () => void;\n    tryReserve(): ExitReservation;\n    commit(id: number): boolean;\n    cancel(id: number): void;\n    finalize(id: number, shutdown: () => void): boolean;\n}',
   },
   {
     name: 'ExitReservation',

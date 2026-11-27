@@ -54,9 +54,11 @@ describe('silent exit admission', () => {
     if (next.kind !== 'reserved') throw new Error('expected reservation')
     gate.cancel(reservation.id)
     expect(gate.commit(next.id)).toBe(true)
+    expect(gate.isFinalized).toBe(false)
     const shutdown = vi.fn()
     expect(gate.finalize(next.id, shutdown)).toBe(true)
     expect(shutdown).toHaveBeenCalledOnce()
+    expect(gate.isFinalized).toBe(true)
     expect(() => gate.begin()).toThrow('shutting down')
   })
   it('unfreezes on expiry or synchronous failure', () => {

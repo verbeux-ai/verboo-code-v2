@@ -468,6 +468,7 @@ export class AgentLoop extends Service implements AgentFactory {
     const { session, agentOptions, source, stored, setup, signal: callerSignal } = options
     const id = session.id
     const loopCtx = this.runtime.ctx
+    const exitAdmission = loopCtx.agents.exitAdmission
 
     // Deactivation fuses three owners, each with its own reason: the caller's
     // cancellation signal, the owner fiber's unload, and factory teardown.
@@ -514,7 +515,7 @@ export class AgentLoop extends Service implements AgentFactory {
         if (machine === undefined) await machineReady.promise
         /* v8 ignore next -- setup failure untracks this disposer before resolving without a machine. */
         if (machine !== undefined) {
-          machine.cancel({ kind: 'disposed' }, { keepInbox: !ready })
+          machine.cancel({ kind: 'disposed' }, { keepInbox: !ready || exitAdmission.isFinalized })
           await machine.whenIdle()
         }
       } catch (error: unknown) {

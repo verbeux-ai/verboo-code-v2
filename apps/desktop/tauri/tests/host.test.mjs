@@ -14,9 +14,9 @@ const host = process.env.VERBOO_TEST_HOST_MODULE ?? join(repository, 'apps/deskt
 const manifest = process.env.VERBOO_TEST_CLI_MANIFEST ?? join(repository, 'apps/cli/package.json')
 const prefix = 'VERBOO_HOST_V1\t'
 
-async function start(t, cli = manifest, browserOverride = false) {
+async function start(t, cli = manifest, profilePatch) {
   const home = await mkdtemp(join(tmpdir(), 'verboo-tauri-host-'))
-  if (browserOverride) await writeFile(join(home, 'cordis.patch.yml'), '- id: web-runtime\n  config:\n    openBrowser: true\n    printUrl: false\n    surfaceContext: true\n')
+  if (profilePatch !== undefined) await writeFile(join(home, 'cordis.patch.yml'), profilePatch)
   const probe = pathToFileURL(fileURLToPath(new URL('./fixtures/browser-opener-probe.mjs', import.meta.url))).href
   const child = spawn(process.execPath, ['--import', probe, host, cli], {
     cwd: repository, env: { ...process.env, DSH_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'],
@@ -55,7 +55,7 @@ async function start(t, cli = manifest, browserOverride = false) {
       exit.then(() => { clearTimeout(deadline); reject(new Error(`Host exited before ${type}`)) })
     })
   }
-  return { child, event, exit, events, browserRequests }
+  return { child, event, exit, events, browserRequests, home }
 }
 
 test('idle exit admission can be cancelled without terminating the Host', { timeout: 45_000 }, async (t) => {
@@ -74,9 +74,12 @@ test('idle exit admission can be cancelled without terminating the Host', { time
   assert.equal((await exit)[0], 0)
 })
 
-test('committed idle exit finalizes and stops the real Host once', { timeout: 45_000 }, async (t) => {
-  const { child, event, exit, events } = await start(t)
+test('committed idle exit stops the real Host with saved context waiting for a turn', { timeout: 45_000 }, async (t) => {
+  const fixture = new URL('./fixtures/idle-queued-context.mjs', import.meta.url)
+  const patch = `- insert:\n    - id: idle-context-fixture\n      name: ${JSON.stringify(fixture.href)}\n`
+  const { child, event, exit, events, home } = await start(t, manifest, patch)
   await event('ready')
+  assert.equal(await readFile(join(home, 'idle-context-ready'), 'utf8'), 'ready')
   child.stdin.write('{"type":"quit-reserve","requestId":1}\n')
   const reservation = await event('quit-response', event => event.requestId === 1)
   assert.equal(reservation.kind, 'reserved')
@@ -85,11 +88,13 @@ test('committed idle exit finalizes and stops the real Host once', { timeout: 45
   child.stdin.write(`${JSON.stringify({ type: 'quit-finalize', requestId: 3, lease: reservation.lease })}\n`)
   assert.equal((await event('quit-response', event => event.requestId === 3)).kind, 'finalized')
   assert.equal((await exit)[0], 0)
+  assert.equal(await readFile(join(home, 'idle-context-after-stop'), 'utf8'), '1')
   assert.equal(events.filter(event => event.type === 'stopped').length, 1)
 })
 
 test('keeps chat in the native window even when a user patch enables browser startup', { timeout: 45_000 }, async (t) => {
-  const { child, event, exit, browserRequests } = await start(t, manifest, true)
+  const patch = '- id: web-runtime\n  config:\n    openBrowser: true\n    printUrl: false\n    surfaceContext: true\n'
+  const { child, event, exit, browserRequests } = await start(t, manifest, patch)
   const { url } = await event('ready')
   const response = await fetch(new URL(url).origin)
   assert.equal(response.status, 401)

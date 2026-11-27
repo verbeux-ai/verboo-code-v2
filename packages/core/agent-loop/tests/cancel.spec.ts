@@ -204,9 +204,11 @@ describe('Agent.cancel()', () => {
     send(agent, 'active')
     await new Promise(resolve => setTimeout(resolve, 30))
     send(agent, 'preserved')
+    expect(agent.exitActivity).toBe('busy')
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     await agent.whenIdle()
 
+    expect(agent.exitActivity).toBe('idle')
     expect(userTexts(agent)).toEqual(['active'])
     expect(agent.inbox.nextTurn).toHaveLength(1)
     expect(adapter.requests).toHaveLength(1)

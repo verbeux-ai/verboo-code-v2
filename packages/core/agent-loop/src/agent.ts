@@ -154,9 +154,9 @@ export class ReactLoopAgent implements Agent {
     this.systemPrompt = new SystemPromptProjection(session)
   }
 
-  /** Include maintenance and queued input in conservative exit admission. */
+  /** Report work that exit can interrupt. The Session retains staged input. */
   get exitActivity(): 'idle' | 'busy' {
-    return this.phase.kind === 'idle' && !this.inbox.hasPending ? 'idle' : 'busy'
+    return this.phase.kind === 'idle' ? 'idle' : 'busy'
   }
 
   get status(): AgentStatus {

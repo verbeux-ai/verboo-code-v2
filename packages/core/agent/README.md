@@ -27,7 +27,7 @@ Use `dsh-agent` to create or resume live agents, send follow-up or steering inpu
 
 Mount `dsh-agent` with `dsh-session-projection`: it provides `ctx.agents`, the `Agent` handle, and `turnBoundaryOf(session)` for recorded turn and step positions. Creating or resuming an Agent also requires a driver to register a factory; the shipped driver is `dsh-agent-loop`. [Session model selection](#model-selection) is available on each handle as `agent.model`.
 
-`ctx.agents.exitAdmission` coordinates a reversible silent-exit reservation. Agent, jobs, and schedule providers must all report idle; missing providers, failed observations, custom agents without `exitActivity`, and persistent terminals are unknown and require confirmation. New work invalidates a reservation; a committed reservation temporarily rejects admissions until cancellation, expiration, or final shutdown. The default loop includes maintenance and queued input in its activity report.
+`ctx.agents.exitAdmission` coordinates a reversible silent-exit reservation. Agent, jobs, and schedule providers must all report idle; missing providers, failed observations, custom agents without `exitActivity`, and persistent terminals are unknown and require confirmation. New work invalidates a reservation; a committed reservation temporarily rejects admissions until cancellation, expiration, or final shutdown. The default loop reports active turns and maintenance. Staged and paused input stays in the Session log and can remain queued during idle exit.
 
 ### Create or resume an agent
 

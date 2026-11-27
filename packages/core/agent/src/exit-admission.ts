@@ -26,6 +26,11 @@ export class ExitAdmission {
     return this.final || this.lease?.committed === true
   }
 
+  /** Whether a committed idle exit has begun Host shutdown. */
+  get isFinalized(): boolean {
+    return this.final
+  }
+
   /** Subscribe to release of a committed lease.
    * @param listener - Called synchronously when admissions reopen.
    * @returns A disposer for this listener.
