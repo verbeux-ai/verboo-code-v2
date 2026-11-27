@@ -30,7 +30,7 @@ function decode(raw: string | undefined) {
   }
 }
 
-function message(data: Record<string, unknown> | null): Key {
+function resultKey(data: Record<string, unknown> | null): Key {
   const operation = record(data?.operation)
   if (operation?.requiresCustomerAction === true) return 'billingConversationPayment'
   switch (operation?.status) {
@@ -68,7 +68,7 @@ export function BillingToolRow({ toolName, phase, block, t }: ToolCallViewProps 
   const title = titles[toolName as keyof typeof titles]
   const settled = phase === 'result'
   const text = settled ? block.content.find(item => item.type === 'text')?.text : undefined
-  const detail = settled ? message(decode(text)) : 'loading'
+  const detail = settled ? resultKey(decode(text)) : 'loading'
   return <div className={css.billingToolRow} data-tool={toolName} data-state={settled ? 'settled' : 'pending'}>
     <Glyph name="credit-card" size={15} />
     <span><strong>{t(title)}</strong><span>{t(detail)}</span></span>
