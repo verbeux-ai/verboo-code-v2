@@ -136,7 +136,7 @@ it('keeps account totals available when the subscription list fails', async () =
   const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockResolvedValue({ ok: false, code: 'request_failed' })
   render(<AnalyticsPage {...f.props} subscriptions={subscriptions} />)
   expect(await screen.findByText('1.000')).toBeTruthy()
-  expect(screen.getByText(copy.planUnavailable)).toBeTruthy()
+  expect(screen.getByText(pt.planUnavailable)).toBeTruthy()
   expect(f.summaryRead).toHaveBeenCalledWith('30d', null, expect.any(AbortSignal))
 })
 
@@ -152,9 +152,9 @@ it('does not display subscriptions returned after an account change', async () =
   const view = render(<AnalyticsPage {...props} />)
   current = { ...product, view: { ...product.view, credentialRevision: 'next-revision' }, profile: { id: 'account-b' } }
   view.rerender(<AnalyticsPage {...props} />)
-  expect(await screen.findByText(copy.analyticsNoPlans)).toBeTruthy()
+  expect(await screen.findByText(pt.analyticsNoPlans)).toBeTruthy()
   delayed.resolve({ ok: true, data: product.plans.subscriptions as never })
-  await waitFor(() => { expect(screen.getByText(copy.analyticsNoPlans)).toBeTruthy() })
+  await waitFor(() => { expect(screen.getByText(pt.analyticsNoPlans)).toBeTruthy() })
   expect(f.summaryRead.mock.calls.some(([, group]) => group === planId)).toBe(false)
 })
 
