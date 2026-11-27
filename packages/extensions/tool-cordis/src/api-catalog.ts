@@ -4471,6 +4471,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'display-safe plan projections.',
       },
       {
+        signature: '@Remote getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>',
+        description: 'Read owned subscriptions independently of the commercial catalog.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'display-safe subscriptions for the current account.',
+      },
+      {
         signature: '@Remote getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>>',
         description: 'Read historical subscription usage without exposing account credentials.',
         parameters: [{ name: 'period', description: 'selected reporting period.' }, { name: 'groupId', description: 'plan group to read, or null for the account total.' }, { name: 'signal', description: 'cancellation of the owning Client read.' }],

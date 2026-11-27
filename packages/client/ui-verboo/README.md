@@ -47,9 +47,9 @@ Trial attention uses the server's commercial snapshot: the composer notice appea
 
 Offers show USD catalog prices and require explicit payment authorization. Saved cards show only brand and last four digits. Pix selection fetches a separate, expiring BRL quote and shows the recurring amount and bank authorization ceiling before confirmation. Browser steps handle card setup, payment collection or additional authentication; returning from them never grants access. Recovery keeps the original account and attempt, including across restarts. Deploy the backend trial-status/card-summary changes and migration 0386 before this client; Pix also requires the backend's Brazilian primary-account capability and fresh official FX cache. Trial attention does not alter model prompts, token budgets or KV cache.
 
-<a id="understand-the-implementation"></a>
 The Plans page opens an inline card checkout and shows the original payment status after the app reopens. Lite is labeled as limited in the catalog and plan chooser. My subscription shows the price and renewal or access date for each subscription. Plan changes, card updates, cancellation, reactivation and invoices each open in a dialog. Payment entry and authentication open the provider’s secure page.
 
+<a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 <details>
