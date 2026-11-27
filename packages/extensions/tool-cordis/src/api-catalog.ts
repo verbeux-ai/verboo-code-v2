@@ -4525,6 +4525,126 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the existing handoff or persisted completion of that same attempt.',
       },
       {
+        signature: 'agentBilling(): Promise<Result<AgentBilling>>',
+        description: 'Open the canonical billing operations for the current host login. The capability is Host-only and all of its I/O uses the same login.',
+        parameters: [],
+        returns: 'operations bound to the current authenticated account, or a safe refusal.',
+      },
+      {
+        signature: '@Remote billingOptions(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseRecommendation>>',
+        description: 'Verify the next action for a plan under the current login.',
+        parameters: [{ name: 'plan', description: 'selected catalog plan.' }, { name: 'interval', description: 'selected billing period.' }],
+        returns: 'server-authorized actions for the account.',
+      },
+      {
+        signature: '@Remote quotePurchase(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseQuote>>',
+        description: 'Prepare a card quote without starting a purchase.',
+        parameters: [{ name: 'plan', description: 'selected catalog plan.' }, { name: 'interval', description: 'selected billing period.' }],
+        returns: 'the amounts and currency to review.',
+      },
+      {
+        signature: '@Remote confirmPurchase(quoteId: BillingQuoteId): Promise<Result<PurchaseProgress>>',
+        description: 'Confirm one reviewed card quote and retain its identity before sending it.',
+        parameters: [{ name: 'quoteId', description: 'identifier of the reviewed Host offer.' }],
+        returns: 'the attempt and any provider handoff.',
+      },
+      {
+        signature: '@Remote retryPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<PurchaseProgress>>',
+        description: 'Retry the identical authorization only when no server attempt is visible.',
+        parameters: [{ name: 'attempt', description: 'exact unresolved operation owned by the signed-in account.' }],
+        returns: 'the reconciliation result or the repeated original request.',
+      },
+      {
+        signature: '@Remote currentPurchase(signal: AbortSignal): Promise<Result<PurchaseProgress | null>>',
+        description: 'Reconcile the account\'s original checkout against the server record.',
+        parameters: [{ name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'the original purchase, or null if no local operation exists.',
+      },
+      {
+        signature: '@Remote resumePurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<string>>',
+        description: 'Open the provider\'s existing session for an eligible original checkout.',
+        parameters: [{ name: 'attempt', description: 'exact attempt owned by the current account.' }],
+        returns: 'a validated provider URL.',
+      },
+      {
+        signature: '@Remote abandonPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<PurchaseProgress>>',
+        description: 'Close the saved provider attempt after the user explicitly requests it.',
+        parameters: [{ name: 'attempt', description: 'exact open card checkout to abandon.' }],
+        returns: 'persisted status after the provider closes the attempt.',
+      },
+      {
+        signature: '@Remote dismissPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<boolean>>',
+        description: 'Clear a resolved operation after verifying that exact attempt.',
+        parameters: [{ name: 'attempt', description: 'completed or terminal attempt being dismissed.' }],
+        returns: 'whether its durable recovery record was removed.',
+      },
+      {
+        signature: '@Remote quotePlanChange( subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, removeTier: boolean, ): Promise<Result<PlanChangeQuote>>',
+        description: 'Quote an exact change for one owned subscription.',
+        parameters: [{ name: 'subscription', description: 'existing subscription.' }, { name: 'plan', description: 'target plan.' }, { name: 'interval', description: 'target billing period.' }, { name: 'removeTier', description: 'explicit acceptance that the existing add-on is removed.' }],
+        returns: 'amounts, effective date, and the opaque confirmation handle.',
+      },
+      {
+        signature: '@Remote confirmPlanChange(quoteId: BillingQuoteId): Promise<Result<PlanChangeProgress>>',
+        description: 'Confirm only the last reviewed change for the current login.',
+        parameters: [{ name: 'quoteId', description: 'opaque handle of the reviewed change.' }],
+        returns: 'the exact operation, even when acceptance is unconfirmed.',
+      },
+      {
+        signature: '@Remote billingChangeStatus(change: PlanChangeId, signal: AbortSignal): Promise<Result<PlanChangeProgress>>',
+        description: 'Read the status of the exact change previously requested.',
+        parameters: [{ name: 'change', description: 'issued plan-change operation.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'persisted progress and any safe continuation URL.',
+      },
+      {
+        signature: '@Remote currentBillingChange(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>',
+        description: 'Restore a change submitted through this Host, including lost responses.',
+        parameters: [{ name: 'subscription', description: 'exact subscription that was updated.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'persisted progress for the exact submitted operation.',
+      },
+      {
+        signature: '@Remote updateSubscription( subscription: BillingSubscriptionId, action: \'cancel\' | \'reactivate\', locale?: string, ): Promise<Result<SubscriptionLifecycleProgress>>',
+        description: 'Request one lifecycle action and persist its identity before sending it.',
+        parameters: [{ name: 'subscription', description: 'exact subscription to mutate.' }, { name: 'action', description: 'explicit lifecycle action.' }, { name: 'locale', description: 'current presentation locale for cancellation notices.' }],
+        returns: 'immediate progress, including an unconfirmed response.',
+      },
+      {
+        signature: '@Remote currentSubscriptionLifecycle( subscription: BillingSubscriptionId, checkCancellation: boolean, signal: AbortSignal, ): Promise<Result<SubscriptionLifecycleProgress | null>>',
+        description: 'Reconcile the saved lifecycle action against the exact subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription selected in Plans.' }, { name: 'signal', description: 'lifetime of the visible account read.' }, { name: 'checkCancellation', description: 'also refresh a pending cancellation started elsewhere.' }],
+        returns: 'authoritative progress or null if nothing is being reconciled.',
+      },
+      {
+        signature: '@Remote billingInvoices(subscription: BillingSubscriptionId): Promise<Result<SubscriptionInvoice[]>>',
+        description: 'Read invoices scoped to the selected subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription whose invoices are requested.' }],
+        returns: 'display fields and an optional safe invoice link.',
+      },
+      {
+        signature: '@Remote async billingTermsURL(): Promise<Result<string>>',
+        description: 'Open the current published terms for an account that needs to accept them.',
+        parameters: [],
+        returns: 'the official acceptance page for this deployment.',
+      },
+      {
+        signature: '@Remote startBillingCardUpdate( subscription: BillingSubscriptionId, requestId: string, embedded?: boolean, ): Promise<Result<SubscriptionCardUpdate>>',
+        description: 'Start or resume the secure card setup for one subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription whose renewal card will change.' }, { name: 'requestId', description: 'retry identity for this explicit action.' }, { name: 'embedded', description: 'use the isolated native card form.' }],
+        returns: 'the operation and its account-bound Stripe setup.',
+      },
+      {
+        signature: '@Remote currentBillingCardUpdate(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionCardUpdate | null>>',
+        description: 'Read the latest card setup result proved by the server.',
+        parameters: [{ name: 'subscription', description: 'exact subscription selected in Plans.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'the operation or null when this subscription has no card update.',
+      },
+      {
+        signature: '@Remote billingPortal(subscription: BillingSubscriptionId): Promise<Result<string>>',
+        description: 'Request the payment portal for one subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription to manage.' }],
+        returns: 'a validated provider URL.',
+      },
+      {
         signature: '@Remote getConnections(): Promise<Result<Connections>>',
         description: 'Read only this authenticated user\'s connections.',
         parameters: [],
@@ -5854,6 +5974,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
   },
   {
+    name: 'AgentBilling',
+    declaration: 'export interface AgentBilling {\n    isCurrent(): Promise<boolean>;\n    watchOwner(signal: AbortSignal): Promise<boolean>;\n    plans(signal: AbortSignal): Promise<Result<Plans>>;\n    quoteChange(subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, signal: AbortSignal): Promise<Result<PreparedAgentPlanChange>>;\n    cancel(reviewed: Subscription, locale: string | undefined, signal: AbortSignal): Promise<Result<SubscriptionLifecycleProgress>>;\n    changeStatus(subscription: Subscription, operation: PlanChangeId | undefined, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>;\n    cancellationStatus(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionLifecycleProgress | null>>;\n}',
+  },
+  {
     name: 'AgentCancelCause',
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
@@ -6104,6 +6228,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BillingInterval',
+    declaration: 'export type BillingInterval = \'month\' | \'year\';',
+  },
+  {
+    name: 'BillingQuoteId',
+    declaration: 'export type BillingQuoteId = Branded<\'BillingQuoteId\'>;',
+  },
+  {
+    name: 'BillingSubscriptionId',
+    declaration: 'export type BillingSubscriptionId = Branded<\'BillingSubscriptionId\'>;',
   },
   {
     name: 'BindingOrigin',
@@ -6704,6 +6840,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EditGoalRequest',
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
+  },
+  {
+    name: 'EmbeddedCardSetup',
+    declaration: 'export interface EmbeddedCardSetup {\n    url: string;\n    clientSecret: string;\n    publishableKey: string;\n}',
   },
   {
     name: 'EncodedFileAttachment',
@@ -7910,6 +8050,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    slug?: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
   },
   {
+    name: 'PlanChangeId',
+    declaration: 'export type PlanChangeId = Branded<\'PlanChangeId\'>;',
+  },
+  {
+    name: 'PlanChangeProgress',
+    declaration: 'export interface PlanChangeProgress {\n    id: PlanChangeId;\n    status: string;\n    effectiveAt: string | null;\n    url: string | null;\n}',
+  },
+  {
+    name: 'PlanChangeQuote',
+    declaration: 'export interface PlanChangeQuote {\n    id: BillingQuoteId;\n    subscriptionId: BillingSubscriptionId;\n    targetPlanId: PlanId;\n    interval: BillingInterval;\n    currency: string;\n    amountDueNowCents: number;\n    creditNowCents: number;\n    nextRenewalAmountCents: number;\n    nextRenewalAt: string;\n    effectiveAt: string;\n    expiresAt: string;\n    undoesCancellation: boolean;\n    removesConcurrencyTier: boolean;\n    pixMandateAmountCents?: number;\n}',
+  },
+  {
     name: 'PlanId',
     declaration: 'export type PlanId = Branded<\'VerbooPlanId\'>;',
   },
@@ -8034,6 +8186,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'PreparedAgentPlanChange',
+    declaration: 'export interface PreparedAgentPlanChange {\n    readonly quote: PlanChangeQuote;\n    confirm(signal: AbortSignal): Promise<Result<{\n        progress: PlanChangeProgress;\n        submitted: boolean;\n    }>>;\n}',
+  },
+  {
     name: 'PreparedDeepSeekLlmApiExtension',
     declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
   },
@@ -8103,7 +8259,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProductError',
-    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'quote_changed\' | \'contract_error\';',
+    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'terms_required\' | \'request_failed\' | \'quote_changed\' | \'checkout_rejected\' | \'contract_error\';',
   },
   {
     name: 'ProductEvent',
@@ -8260,6 +8416,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PtcRunSpec',
     declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number | null;\n}',
+  },
+  {
+    name: 'PurchaseAttemptId',
+    declaration: 'export type PurchaseAttemptId = Branded<\'PurchaseAttemptId\'>;',
+  },
+  {
+    name: 'PurchaseProgress',
+    declaration: 'export interface PurchaseProgress {\n    id: PurchaseAttemptId;\n    planId: PlanId;\n    interval: BillingInterval;\n    status: \'unconfirmed\' | \'pending\' | \'requires_action\' | \'succeeded\' | \'failed\' | \'expired\' | \'review\' | \'reactivated\' | \'abandoned\';\n    url: string | null;\n    canRetry?: boolean;\n    canAbandon?: boolean;\n    closedUnstarted?: boolean;\n    declined?: boolean;\n}',
+  },
+  {
+    name: 'PurchaseQuote',
+    declaration: 'export interface PurchaseQuote {\n    id: BillingQuoteId;\n    planId: PlanId;\n    interval: BillingInterval;\n    initialAmountMinor: number;\n    renewalAmountMinor: number;\n    currency: string;\n    expiresAt: string;\n}',
+  },
+  {
+    name: 'PurchaseRecommendation',
+    declaration: 'export interface PurchaseRecommendation {\n    action: \'checkout\' | \'choose\' | \'change\' | \'manage\' | \'convert\' | \'resume\' | \'recover\' | \'support\';\n    subscriptions: {\n        subscriptionId: BillingSubscriptionId;\n        action: PurchaseRecommendation[\'action\'];\n        attemptId?: PurchaseAttemptId;\n    }[];\n}',
   },
   {
     name: 'QueueAction',
@@ -9823,15 +9995,35 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Subscription',
-    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
+    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    permissions?: SubscriptionPermissions;\n    activeChangeId?: PlanChangeId;\n    canRemoveTier?: boolean;\n    cancellation?: SubscriptionCancellation;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
     name: 'SubscriptionAdditionalLimit',
     declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
   },
   {
+    name: 'SubscriptionCancellation',
+    declaration: 'export interface SubscriptionCancellation {\n    collectionStatus: string;\n    localStatus: string;\n    accessUntil: string | null;\n    operationId?: string | undefined;\n}',
+  },
+  {
+    name: 'SubscriptionCardUpdate',
+    declaration: 'export interface SubscriptionCardUpdate {\n    id: string;\n    status: \'pending\' | \'confirmed\' | \'failed\' | \'expired\';\n    url: string | null;\n    embedded?: EmbeddedCardSetup;\n}',
+  },
+  {
+    name: 'SubscriptionInvoice',
+    declaration: 'export interface SubscriptionInvoice {\n    id: string;\n    number: string;\n    created: string;\n    amountDue: number;\n    amountPaid: number;\n    currency: string;\n    status: string;\n    url: string | null;\n}',
+  },
+  {
+    name: 'SubscriptionLifecycleProgress',
+    declaration: 'export interface SubscriptionLifecycleProgress {\n    action: \'cancel\' | \'reactivate\';\n    status: \'unconfirmed\' | \'pending\' | \'confirmed\' | \'reconciliation_required\';\n    cancellation: SubscriptionCancellation | null;\n}',
+  },
+  {
     name: 'SubscriptionLimitWindow',
     declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionPermissions',
+    declaration: 'export interface SubscriptionPermissions {\n    cancel: boolean;\n    reactivate: boolean;\n    invoices: boolean;\n    paymentMethod: boolean;\n    cardUpdate?: boolean;\n}',
   },
   {
     name: 'SubscriptionUsage',

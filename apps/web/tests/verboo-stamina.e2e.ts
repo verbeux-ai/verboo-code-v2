@@ -215,6 +215,25 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       expect(await region.textContent()).not.toMatch(/Stamina|tok\/s/)
       expect(await page.locator('[data-verboo-stamina-liquid]:visible').count()).toBe(0)
       await compareOrRefreshGolden(join(EXPECTED, `plan-${locale}.expected.md`), await captureStableAria(page, '[data-verboo-page="plan"]', scaffold.workspaceCwd), MODE)
+      const detailsButton = locale === 'pt' ? 'Ver detalhes da assinatura: Unlimited' : 'View subscription details: Unlimited'
+      const disclosure = region.getByRole('button', { name: detailsButton })
+      const panelId = await disclosure.getAttribute('aria-controls')
+      const panel = region.locator(`[id="${panelId}"]`)
+      await disclosure.click()
+      const details = region.getByRole('region', { name: 'Unlimited', exact: true })
+      const readOnly = locale === 'pt'
+        ? 'Esta assinatura não tem ações de cobrança disponíveis para sua conta.'
+        : 'This subscription has no billing actions available for your account.'
+      await details.getByText(readOnly, { exact: true }).waitFor()
+      expect(await details.getByRole('button', { name: locale === 'pt' ? 'Fechar' : 'Close', exact: true }).count()).toBe(0)
+      expect(await panel.evaluate(element => getComputedStyle(element).transitionProperty)).toContain('grid-template-rows')
+      await disclosure.click()
+      await details.waitFor({ state: 'hidden' })
+      expect(await disclosure.evaluate(element => element === document.activeElement)).toBe(true)
+      expect(await panel.getAttribute('inert')).toBe('')
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      expect(await panel.evaluate(element => getComputedStyle(element).transitionProperty)).toBe('none')
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
       for (const theme of ['light', 'dark'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         for (const width of [1280, 390]) {

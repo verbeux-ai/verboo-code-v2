@@ -8,10 +8,15 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { BillingState, CardSetupLabels, LifecycleAction } from './billing-model.ts'
 import type { ProductSnapshot } from './model.ts'
 import type { DesktopUpdateState } from './update-source.ts'
 import type {
+  BillingSubscriptionId,
   ConnectionId,
+  Plan,
+  PurchaseAttemptId,
+  Subscription,
   PlanId,
   StaminaStatus,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
@@ -141,4 +146,27 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Usage reading of the external subscription serving the account's ChatGPT route. */
     'verboo-subscription-usage': SubscriptionUsage
   }
+}
+
+
+/** Inline billing actions bound to the current product account. */
+export interface BillingInjected {
+  hooks: { billingPanel: HostObservable<BillingState> }
+  choosePurchase(plan: Plan): void
+  manageSubscription(subscription: Subscription | null): void
+  confirmPurchase(): void
+  reopenPurchase(id: PurchaseAttemptId): void
+  retryPurchase(id: PurchaseAttemptId): void
+  abandonPurchase(id: PurchaseAttemptId): void
+  openBillingTerms(): void
+  closePurchase(): void
+  refreshBilling(): void
+  previewPlanChange(id: BillingSubscriptionId, plan: Plan, removeTier?: boolean): void
+  confirmPlanChange(): void
+  reviewSubscriptionAction(action: LifecycleAction | null): void
+  updateSubscription(id: BillingSubscriptionId): void
+  loadBillingInvoices(id: BillingSubscriptionId): void
+  updateBillingCard(id: BillingSubscriptionId, labels?: CardSetupLabels): void
+  openBillingPortal(id: BillingSubscriptionId): void
+  openBillingLink(url: string): void
 }

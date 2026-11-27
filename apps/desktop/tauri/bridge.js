@@ -125,6 +125,8 @@
     value: Object.freeze({
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
       quit: () => invoke('quit_after_hold'),
+      openCardSetup: setup => invoke('open_card_setup', { setup }),
+      closeCardSetup: operation => invoke('close_card_setup', { operation }),
       openExternal(url) {
         const target = new URL(url)
         // Same allowlist the native navigation hook applies: a browsable page on

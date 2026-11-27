@@ -534,6 +534,140 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>>
 
 /**
+ * Open the canonical billing operations for the current host login.
+ * The capability is Host-only and all of its I/O uses the same login.
+ * @returns operations bound to the current authenticated account, or a safe refusal.
+ */
+agentBilling(): Promise<Result<AgentBilling>>
+
+/** Verify the next action for a plan under the current login.
+ * @param plan - selected catalog plan.
+ * @param interval - selected billing period.
+ * @returns server-authorized actions for the account.
+ */
+@Remote billingOptions(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseRecommendation>>
+
+/** Prepare a card quote without starting a purchase.
+ * @param plan - selected catalog plan.
+ * @param interval - selected billing period.
+ * @returns the amounts and currency to review.
+ */
+@Remote quotePurchase(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseQuote>>
+
+/** Confirm one reviewed card quote and retain its identity before sending it.
+ * @param quoteId - identifier of the reviewed Host offer.
+ * @returns the attempt and any provider handoff.
+ */
+@Remote confirmPurchase(quoteId: BillingQuoteId): Promise<Result<PurchaseProgress>>
+
+/** Retry the identical authorization only when no server attempt is visible.
+ * @param attempt - exact unresolved operation owned by the signed-in account.
+ * @returns the reconciliation result or the repeated original request.
+ */
+@Remote retryPurchase(attempt: PurchaseProgress['id']): Promise<Result<PurchaseProgress>>
+
+/** Reconcile the account's original checkout against the server record.
+ * @param signal - lifetime of the visible account read.
+ * @returns the original purchase, or null if no local operation exists.
+ */
+@Remote currentPurchase(signal: AbortSignal): Promise<Result<PurchaseProgress | null>>
+
+/** Open the provider's existing session for an eligible original checkout.
+ * @param attempt - exact attempt owned by the current account.
+ * @returns a validated provider URL.
+ */
+@Remote resumePurchase(attempt: PurchaseProgress['id']): Promise<Result<string>>
+
+/** Close the saved provider attempt after the user explicitly requests it.
+ * @param attempt - exact open card checkout to abandon.
+ * @returns persisted status after the provider closes the attempt.
+ */
+@Remote abandonPurchase(attempt: PurchaseProgress['id']): Promise<Result<PurchaseProgress>>
+
+/** Clear a resolved operation after verifying that exact attempt.
+ * @param attempt - completed or terminal attempt being dismissed.
+ * @returns whether its durable recovery record was removed.
+ */
+@Remote dismissPurchase(attempt: PurchaseProgress['id']): Promise<Result<boolean>>
+
+/** Quote an exact change for one owned subscription.
+ * @param subscription - existing subscription.
+ * @param plan - target plan.
+ * @param interval - target billing period.
+ * @param removeTier - explicit acceptance that the existing add-on is removed.
+ * @returns amounts, effective date, and the opaque confirmation handle.
+ */
+@Remote quotePlanChange( subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, removeTier: boolean, ): Promise<Result<PlanChangeQuote>>
+
+/** Confirm only the last reviewed change for the current login.
+ * @param quoteId - opaque handle of the reviewed change.
+ * @returns the exact operation, even when acceptance is unconfirmed.
+ */
+@Remote confirmPlanChange(quoteId: BillingQuoteId): Promise<Result<PlanChangeProgress>>
+
+/** Read the status of the exact change previously requested.
+ * @param change - issued plan-change operation.
+ * @param signal - lifetime of the visible account read.
+ * @returns persisted progress and any safe continuation URL.
+ */
+@Remote billingChangeStatus(change: PlanChangeId, signal: AbortSignal): Promise<Result<PlanChangeProgress>>
+
+/** Restore a change submitted through this Host, including lost responses.
+ * @param subscription - exact subscription that was updated.
+ * @param signal - lifetime of the visible account read.
+ * @returns persisted progress for the exact submitted operation.
+ */
+@Remote currentBillingChange(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>
+
+/** Request one lifecycle action and persist its identity before sending it.
+ * @param subscription - exact subscription to mutate.
+ * @param action - explicit lifecycle action.
+ * @param locale - current presentation locale for cancellation notices.
+ * @returns immediate progress, including an unconfirmed response.
+ */
+@Remote updateSubscription( subscription: BillingSubscriptionId, action: 'cancel' | 'reactivate', locale?: string, ): Promise<Result<SubscriptionLifecycleProgress>>
+
+/** Reconcile the saved lifecycle action against the exact subscription.
+ * @param subscription - exact subscription selected in Plans.
+ * @param signal - lifetime of the visible account read.
+ * @param checkCancellation - also refresh a pending cancellation started elsewhere.
+ * @returns authoritative progress or null if nothing is being reconciled.
+ */
+@Remote currentSubscriptionLifecycle( subscription: BillingSubscriptionId, checkCancellation: boolean, signal: AbortSignal, ): Promise<Result<SubscriptionLifecycleProgress | null>>
+
+/** Read invoices scoped to the selected subscription.
+ * @param subscription - exact subscription whose invoices are requested.
+ * @returns display fields and an optional safe invoice link.
+ */
+@Remote billingInvoices(subscription: BillingSubscriptionId): Promise<Result<SubscriptionInvoice[]>>
+
+/** Open the current published terms for an account that needs to accept them.
+ * @returns the official acceptance page for this deployment.
+ */
+@Remote async billingTermsURL(): Promise<Result<string>>
+
+/** Start or resume the secure card setup for one subscription.
+ * @param subscription - exact subscription whose renewal card will change.
+ * @param requestId - retry identity for this explicit action.
+ * @param embedded - use the isolated native card form.
+ * @returns the operation and its account-bound Stripe setup.
+ */
+@Remote startBillingCardUpdate( subscription: BillingSubscriptionId, requestId: string, embedded?: boolean, ): Promise<Result<SubscriptionCardUpdate>>
+
+/** Read the latest card setup result proved by the server.
+ * @param subscription - exact subscription selected in Plans.
+ * @param signal - lifetime of the visible account read.
+ * @returns the operation or null when this subscription has no card update.
+ */
+@Remote currentBillingCardUpdate(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionCardUpdate | null>>
+
+/** Request the payment portal for one subscription.
+ * @param subscription - exact subscription to manage.
+ * @returns a validated provider URL.
+ */
+@Remote billingPortal(subscription: BillingSubscriptionId): Promise<Result<string>>
+
+/**
  * Read only this authenticated user's connections.
  * @returns credential-free states and configured toolkits.
  */

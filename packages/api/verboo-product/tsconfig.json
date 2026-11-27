@@ -15,6 +15,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../storage/storage-domain"
+    },
+    {
       "path": "../../credentials/deepseek-account"
     },
     {

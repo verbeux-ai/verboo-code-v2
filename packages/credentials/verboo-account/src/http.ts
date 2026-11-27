@@ -15,6 +15,8 @@ export class AccountRequestError extends Error {
       | 'request_cancelled'
       | 'contract_error'
       | 'quote_rejected'
+      | 'checkout_not_started'
+      | 'lifecycle_not_started'
       | 'authentication_invalid'
       | 'authorization_denied'
       | 'unknown',
@@ -52,7 +54,7 @@ export function operation(): Operation {
  */
 export function observe(
   context: Operation,
-  stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return',
+  stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return' | 'payment_portal' | 'payment_method_change' | 'cancellation' | 'reactivation',
   outcome: 'started' | 'succeeded' | 'failed',
   error?: AccountRequestError,
 ): void {
@@ -60,7 +62,9 @@ export function observe(
     '[verboo-journey]',
     JSON.stringify({
       schemaVersion: 2,
-      ...context,
+      journeyId: context.journeyId,
+      operationId: context.operationId,
+      requestId: context.requestId,
       stage,
       outcome,
       ...(error === undefined
@@ -169,9 +173,17 @@ export class VerbooHttp {
       if (!response.ok) {
         const status = response.status
         // This server marker is emitted only before a financial write is started.
-        if ([409, 422].includes(status) && response.headers.get('x-verboo-quote-rejected') === 'true') {
+        if ([400, 409, 410, 422].includes(status) && response.headers.get('x-verboo-quote-rejected') === 'true') {
           await response.body?.cancel()
           throw new AccountRequestError('quote_rejected', status)
+        }
+        if (response.headers.get('x-verboo-checkout-not-started') === 'true') {
+          await response.body?.cancel()
+          throw new AccountRequestError('checkout_not_started', status)
+        }
+        if (response.headers.get('x-verboo-lifecycle-not-started') === 'true') {
+          await response.body?.cancel()
+          throw new AccountRequestError('lifecycle_not_started', status)
         }
         let rejectedGrant = false
         if (

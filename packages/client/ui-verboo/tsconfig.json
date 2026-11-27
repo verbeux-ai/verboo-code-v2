@@ -92,6 +92,9 @@
       "path": "../ui-context-menu"
     },
     {
+      "path": "../ui-tool"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {

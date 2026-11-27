@@ -37,6 +37,8 @@ Provider search results may be imperfect. The Agent is instructed to inspect eac
 
 The same contribution installs the [MCP server tools](src/mcp-tools.ts) over `ctx.verbooMcp`. `mcp_servers_list` reads the account’s own servers with the tools each exposes and what blocks one that cannot connect. `mcp_server_save` and `mcp_server_remove` change that set, and both ask the human through `ctx.approval` first: a stdio server runs a command on the Host, and a removal withdraws tools mid-conversation. With no composed answerer, or with a session that answers anything but `allowed-once`, the write is refused and reports why so the Agent stops rather than retrying.
 
+The first-party [plan tools](src/plan-tools.ts) let a user check their subscriptions, review an exact server quote, confirm a plan change, cancel renewal, and check the original operation in the conversation. The Host binds each approval to the login that prepared it. A plan change uses its signed, expiring quote once. Cancellation checks the displayed period and current permission again before submission. The tools share the Plans page's canonical API, recovery records and Revenue Journey identity. Payment authorization, when required, continues from Plans.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -64,9 +66,11 @@ Each discovered tool validates its arguments against the projected schema before
 
 `connections_list` lists accounts and credential-free public services; `connections_search` turns a capability into callable tools. Each match becomes a `connection__<toolkit>__<slug>` declaration on the next request, carrying the provider’s name, description, and projected argument schema, and its result returns the provider’s JSON. `mcp_servers_list`, `mcp_server_save` and `mcp_server_remove` read and change the account’s own MCP servers. A save or removal reaches the model only after the human approves it; a refusal returns an actionable code instead of the change. A prompt section tells the model that connected services exist and that `connections_search` is how to reach them. Tool schemas and results are recorded by the existing tool pipeline.
 
+The plan tools return only display amounts, dates, action permissions, fixed statuses and opaque IDs. The transcript keeps the tool calls and the one-shot approval decision. Provider URLs, signed tokens and account credentials stay out of model requests and tool results.
+
 #### Token effect
 
-Five stable tool schemas enter every request: `connections_list`, `connections_search`, `mcp_servers_list`, and the two MCP write tools when their service is mounted. Each search adds the declarations it registered — at most twelve, each bounded by its description and schema budgets — and those declarations stay for the rest of the conversation. Discovered results append to the transcript. Each enabled MCP server adds the tool schemas it advertises.
+The stable schemas cover connection discovery, MCP server management and the five product plan actions. Each search adds the declarations it registered — at most twelve, each bounded by its description and schema budgets — and those declarations stay for the rest of the conversation. Discovered results append to the transcript. Each enabled MCP server adds the tool schemas it advertises.
 
 #### KV Cache effect
 

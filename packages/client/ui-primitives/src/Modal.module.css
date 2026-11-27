@@ -52,8 +52,44 @@
   to { opacity: 1; transform: translate(0, 0); }
 }
 
+.root[data-motion] > .mask::after {
+  animation: maskFade var(--modal-motion-duration) ease-out both;
+}
+
+.root[data-motion] > .dialog {
+  animation: dialogSlide var(--modal-motion-duration) var(--ds-ease-in-out) both;
+}
+
+.root[data-motion='exit'] {
+  pointer-events: none;
+}
+
+.root[data-motion='exit'] > .mask::after {
+  animation-name: maskDismiss;
+}
+
+.root[data-motion='exit'] > .dialog {
+  animation-name: dialogDismiss;
+}
+
+@keyframes maskFade {
+  from { opacity: 0; }
+}
+
+@keyframes maskDismiss {
+  to { opacity: 0; }
+}
+
+@keyframes dialogSlide {
+  from { opacity: 0; transform: translateY(8px) scale(.99); }
+}
+
+@keyframes dialogDismiss {
+  to { opacity: 0; transform: translateY(6px) scale(.99); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .mask::after, .dialog { animation: none; }
+  .mask::after, .dialog, .root[data-motion] > .mask::after, .root[data-motion] > .dialog { animation: none; }
 }
 
 .dialog:focus {

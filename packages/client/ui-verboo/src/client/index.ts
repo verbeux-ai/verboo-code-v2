@@ -59,6 +59,10 @@ import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
 import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
+import { BillingModel, type BillingApi } from './billing-model.ts'
+import { BillingToolRow, billingToolNames } from './BillingToolRow.tsx'
+import type { BillingInjected } from './contracts.ts'
+import type { Result } from '@deepseek-ai/dsh-api-verboo-product/types'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
 import { installPanes } from './panes/install.ts'
@@ -343,6 +347,83 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     sync()
     return () => { stopPanes(); stopAccount(); stopSessions(); stopModel?.() }
   }, 'Verboo: focused trial group')
+  const billingResult = async <T>(response: Promise<{ ok: true; value: Result<T> } | { ok: false }>): Promise<Result<T>> => {
+    const result = await response
+    if (result.ok) return result.value
+    return { ok: false, code: 'request_failed' }
+  }
+  const desktopPayments = globalThis.__VERBOO_DESKTOP__
+  const presentCardSetup = desktopPayments?.openCardSetup
+  const openCardSetup: BillingApi['openCardSetup'] = presentCardSetup && (async (operation, setup, labels, signal) => {
+    if (signal.aborted) return false
+    const close = () => { void desktopPayments?.closeCardSetup?.(operation).catch(() => {}) }
+    signal.addEventListener('abort', close, { once: true })
+    try {
+      return await presentCardSetup({
+        ...setup, operation, labels, locale: ctx.locale.getLocale().active,
+        theme: ctx.theme.getTheme().active.colorScheme,
+      })
+    } finally {
+      signal.removeEventListener('abort', close)
+    }
+  })
+  const billing = new BillingModel({
+    options: (id, interval) => billingResult(ctx.remote.verboo.billingOptions(id, interval)),
+    quote: (id, interval) => billingResult(ctx.remote.verboo.quotePurchase(id, interval)),
+    confirm: id => billingResult(ctx.remote.verboo.confirmPurchase(id)),
+    current: signal => billingResult(ctx.remote.verboo.currentPurchase(signal)),
+    reopen: id => billingResult(ctx.remote.verboo.resumePurchase(id)),
+    retry: id => billingResult(ctx.remote.verboo.retryPurchase(id)),
+    abandon: id => billingResult(ctx.remote.verboo.abandonPurchase(id)),
+    terms: () => billingResult(ctx.remote.verboo.billingTermsURL()),
+    dismiss: id => billingResult(ctx.remote.verboo.dismissPurchase(id)),
+    quoteChange: (id, plan, interval, removeTier) => billingResult(ctx.remote.verboo.quotePlanChange(id, plan, interval, removeTier)),
+    confirmChange: id => billingResult(ctx.remote.verboo.confirmPlanChange(id)),
+    currentChange: (id, signal) => billingResult(ctx.remote.verboo.currentBillingChange(id, signal)),
+    changeStatus: (id, signal) => billingResult(ctx.remote.verboo.billingChangeStatus(id, signal)),
+    update: (id, action) => billingResult(ctx.remote.verboo.updateSubscription(id, action, ctx.locale.getLocale().active)),
+    currentLifecycle: (id, signal, check) => billingResult(ctx.remote.verboo.currentSubscriptionLifecycle(id, check, signal)),
+    invoices: id => billingResult(ctx.remote.verboo.billingInvoices(id)),
+    portal: id => billingResult(ctx.remote.verboo.billingPortal(id)),
+    startCardUpdate: (id, request, embedded) => billingResult(ctx.remote.verboo.startBillingCardUpdate(id, request, embedded)),
+    currentCardUpdate: (id, signal) => billingResult(ctx.remote.verboo.currentBillingCardUpdate(id, signal)),
+    ...(openCardSetup && { openCardSetup }),
+    open, refreshPlans: async () => { await model.loadPlans() },
+  }, model.state)
+  ctx.effect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void billing.refresh()
+      else billing.pause()
+    }
+    const returnFromPortal = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void billing.refresh(true)
+      else billing.pause()
+    }
+    const adopt = () => { billing.adopt(); refresh() }
+    const stop = model.state.subscribe(adopt)
+    const timer = setInterval(refresh, config.refreshIntervalMs)
+    document.addEventListener('visibilitychange', returnFromPortal)
+    window.addEventListener('online', refresh)
+    window.addEventListener('offline', refresh)
+    window.addEventListener('focus', returnFromPortal)
+    adopt()
+    return () => {
+      billing.dispose()
+      clearInterval(timer)
+      stop()
+      document.removeEventListener('visibilitychange', returnFromPortal)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('offline', refresh)
+      window.removeEventListener('focus', returnFromPortal)
+    }
+  }, 'Verboo: billing reconciliation')
+  const inBrowser = (work: () => Promise<void>) => {
+    if (billing.state.getSnapshot().busy) return
+    try {
+      navigation.reserve()
+      void work().finally(() => { navigation.release() })
+    } catch (_error) { model.reportNavigationFailure(true) }
+  }
   const desktopUpdate = createUpdateSource()
   const stamina = createStaminaResource(
     signal => ctx.remote.verboo.getStamina(signal),
@@ -711,6 +792,31 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       )
     },
   })
+  const billingFace = (): ProductInjected & BillingInjected => {
+    const product = face()
+    return { ...product, hooks: { ...product.hooks, billingPanel: billing.state },
+      choosePurchase: (plan) => { void billing.choose(plan) },
+      manageSubscription: (subscription) => { billing.manage(subscription); void billing.refresh() },
+      confirmPurchase: () => { inBrowser(() => billing.confirm()) },
+      retryPurchase: (id) => { inBrowser(() => billing.retryPurchase(id)) },
+      abandonPurchase: (id) => { void billing.abandonPurchase(id) },
+      openBillingTerms: () => { inBrowser(() => billing.openTerms()) },
+      reopenPurchase: (id) => { inBrowser(() => billing.reopen(id)) },
+      closePurchase: () => { void billing.closePurchase() },
+      refreshBilling: () => { void billing.refresh(true) },
+      previewPlanChange: (id, plan, removeTier) => { void billing.preview(id, plan, removeTier) },
+      confirmPlanChange: () => { void billing.confirmChange() },
+      reviewSubscriptionAction: (action) => { billing.reviewLifecycle(action) },
+      updateSubscription: (id) => { void billing.update(id) },
+      loadBillingInvoices: (id) => { void billing.loadInvoices(id) },
+      updateBillingCard: (id, labels) => {
+        if (labels && desktopPayments?.openCardSetup) void billing.updateCard(id, labels)
+        else inBrowser(() => billing.updateCard(id))
+      },
+      openBillingPortal: (id) => { inBrowser(() => billing.portal(id)) },
+      openBillingLink: (url) => { inBrowser(() => billing.open(url)) },
+    }
+  }
   const noStaminaModel = createSnapshotStore<StaminaModelState>({ current: null })
   const trialFace = (): ProductInjected & TrialInjected => {
     const product = face()
@@ -902,6 +1008,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.slots.inject('conversation.chat.assistant.mark', () =>
     ctx.slots.register({ name: 'conversation.chat.assistant.mark' }, AssistantMark),
   )
+  ctx.slots.inject('tool.call.toolview', function* () {
+    for (const key of billingToolNames) {
+      yield ctx.slots.register({ name: 'tool.call.toolview', key, locale: 'verboo' }, BillingToolRow)
+    }
+  })
   ctx.slots.inject('conversation.input.context', () =>
     ctx.slots.register({ name: 'conversation.input.context' }, OmittedDiagnostic),
   )
@@ -969,7 +1080,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ConnectionsPage,
     )
     yield ctx.slots.register(
-      { name: 'main', key: 'verboo.plan', locale: 'verboo', inject: face },
+      { name: 'main', key: 'verboo.plan', locale: 'verboo', inject: billingFace },
       PlanPage,
     )
     yield ctx.slots.register(

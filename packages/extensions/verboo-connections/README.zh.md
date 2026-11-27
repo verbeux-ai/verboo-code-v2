@@ -37,6 +37,8 @@ kind: "package-reference"
 
 同一贡献还通过 `ctx.verbooMcp` 安装 [MCP 服务器工具](src/mcp-tools.ts)。`mcp_servers_list` 读取账号自己的服务器、各自暴露的工具，以及无法连接时的阻塞原因。`mcp_server_save` 与 `mcp_server_remove` 修改该集合，二者都会先通过 `ctx.approval` 询问人类：stdio 服务器会在 Host 上运行命令，移除则会在对话中途撤回工具。未组合应答器，或会话的回答不是 `allowed-once` 时，写入会被拒绝并说明原因，使 Agent 停止而不是重试。
 
+第一方[方案工具](src/plan-tools.ts)允许用户在对话中查询订阅、查看服务端报价、确认变更方案、取消续订和查询原操作。Host 将每次批准绑定到生成预览的登录。方案变更的签名报价有有效期且只能使用一次。提交取消前会重新检查所展示的计费周期和当前权限。工具与方案页面共用正式 API、恢复记录和 Revenue Journey 标识。需要支付授权时，用户从方案页面继续。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 
@@ -64,9 +66,11 @@ Agent 贡献随所属 fiber 释放。后端从认证身份确定用户，检查�
 
 `connections_list` 列出账号和无需凭据的公共服务；`connections_search` 把一项能力转换为可调用的工具。每个匹配项都会在下一个请求中成为 `connection__<toolkit>__<slug>` 声明，携带提供方的名称、描述和投影后的参数 schema，其结果返回提供方的 JSON。`mcp_servers_list`、`mcp_server_save` 与 `mcp_server_remove` 用于读取和修改账号自己的 MCP 服务器。保存或移除只有经人类批准后才会到达模型；被拒绝时返回可操作的代码而不是改动结果。一段提示词章节会告知模型存在已连接的服务，并说明 `connections_search` 是到达它们的途径。工具定义与结果由现有工具管道记录。
 
+方案工具仅返回显示用的金额、日期、操作权限、固定状态和不透明标识。会话记录工具调用和单次批准结果。支付服务的链接、签名令牌及账号凭据保留在模型请求与工具结果之外。
+
 #### Token 影响
 
-每个请求包含五个稳定的工具定义：`connections_list`、`connections_search`、`mcp_servers_list`，以及在其服务已挂载时的两个 MCP 写入工具。每次搜索会添加它注册的声明——最多十二个，每个都受其描述与 schema 预算约束——这些声明在本次对话余下部分保留。发现结果追加到对话记录。每个已启用的 MCP 服务器会增加它公布的工具定义。
+稳定的工具定义覆盖连接发现、MCP 服务器管理和五个产品方案操作。每次搜索会添加它注册的声明——最多十二个，每个都受其描述与 schema 预算约束——这些声明在本次对话余下部分保留。发现结果追加到对话记录。每个已启用的 MCP 服务器会增加它公布的工具定义。
 
 #### KV Cache 影响
 

@@ -7,6 +7,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { ConnectionToolRegistry, discoverConnectionTools } from './discovery.ts'
 import type { DiscoveryBudgets } from './discovery.ts'
 import { installMcpTools } from './mcp-tools.ts'
+import * as PlanTools from './plan-tools.ts'
 import type { Config } from './index.ts'
 export const inject = ['tools', 'verbooProduct', 'verbooMcp']
 const output = {
@@ -35,7 +36,7 @@ const CONNECTIONS_GUIDANCE = [
  * @param ctx - Agent scope.
  * @param config - validated request and discovery budgets.
  */
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const budgets: DiscoveryBudgets = {
     maxTools: config.discoveryMaxTools,
     maxTargets: config.discoveryMaxTargets,
@@ -109,4 +110,5 @@ export function apply(ctx: Context, config: Config): void {
   }, 'Verboo: connected service tools')
   ctx.effect(() => () => { registry.dispose() }, 'Verboo: discovered connection tools')
   installMcpTools(ctx, config.timeoutMs)
+  await ctx.plugin(PlanTools, config.timeoutMs).await()
 }

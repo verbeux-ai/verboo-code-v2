@@ -3,10 +3,11 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { verifyPanes, verifySendLifecycle, verifyHeaderHover, verifyComposerActivation } from './panes-qa.mjs'
+import { billingConversationFixture } from './billing-qa.mjs'
 const root = process.cwd(),
   require = createRequire(join(root, 'apps/web/package.json'))
 const { chromium, webkit } = require('playwright')
@@ -76,7 +77,7 @@ const state = {
   refreshedRequests: 0,
 }
 const subscription = () => ({
-  id: '00000000-0000-4000-8000-000000000003',
+  id: state.nativeBilling ? '00000000-0000-4000-8000-000000000008' : '00000000-0000-4000-8000-000000000003',
   groupId: id,
   group: { name: 'Verboo Pro' },
   status: 'active',
@@ -85,6 +86,10 @@ const subscription = () => ({
   management: { changePlan: true },
   billing: { amountMinor: 14900, currency: 'BRL', billingInterval: 'month' },
 })
+const newBillingConversation = (native = false) => billingConversationFixture({
+  subscriptionId: subscription().id, targetPlanId: other, native,
+})
+let billingConversation = newBillingConversation()
 let challenge
 const server = createServer(async (req, res) => {
   let body = ''
@@ -208,7 +213,11 @@ const server = createServer(async (req, res) => {
       chunk({}, 'stop', { prompt_tokens: 200, completion_tokens: 10, total_tokens: 210 })
       res.end('data: [DONE]\n\n')
     }
-    if (state.agentFixture?.(input, chunk, finish, res)) return
+    if (billingConversation.model(input, chunk, finish, res) || state.agentFixture?.(input, chunk, finish, res)) return
+    if (state.nativeBilling) {
+      finish('QA_NATIVE_UNRECOGNIZED_PROMPT')
+      return
+    }
     if (JSON.stringify(input).includes('connections_list')) {
       state.finishModel = () => { finish('Pronto. Podemos começar pelo seu projeto.'); state.finishModel = null }
     } else finish(`Acesso ao MCP GitHub via Composio e revisão completa do projeto ${++state.titleSequence}`)
@@ -224,10 +233,26 @@ const server = createServer(async (req, res) => {
     return
   }
   if (url.pathname === '/api/me/subscriptions') {
-    res.end(JSON.stringify({ data: [subscription(), {
+    res.end(JSON.stringify({ data: [billingConversation.project(subscription()), {
       ...subscription(), id: '00000000-0000-4000-8000-000000000007',
       group: { name: 'Plano anterior' }, status: 'canceled',
     }] }))
+    return
+  }
+  if (billingConversation.route(req, res, url, body)) return
+  if (url.pathname === '/api/me/groups/' + other + '/purchase-options') {
+    res.end(JSON.stringify({ data: { version: 1, groupId: other, billingInterval: 'month',
+      additionalAllowed: true, recommendation: 'checkout', subscriptions: [] } }))
+    return
+  }
+  if (url.pathname === '/api/me/checkout/quotes' && req.method === 'POST') {
+    const request = JSON.parse(body)
+    if (request.groupId !== other || request.paymentMethod !== 'card') throw new Error('Wrong checkout quote selection')
+    res.end(JSON.stringify({ data: {
+      available: true, groupId: other, billingInterval: 'month', purchaseType: 'individual', offer: 'subscription',
+      quantity: 1, quoteId: 'qa-card-preview', initialAmountMinor: 29900, renewalAmountMinor: 29900,
+      currency: 'BRL', paymentMethods: ['card'], expiresAt: new Date(Date.now() + 60000).toISOString(),
+    } }))
     return
   }
   if (url.pathname === '/api/marketplace') {
@@ -401,7 +426,8 @@ async function waitForQaHost(hostChild) {
     })
   })
 }
-async function restartQaHost() {
+async function stopQaHost() {
+  if (child.exitCode !== null || child.signalCode !== null) return
   let timer
   const exited = new Promise((resolve, reject) => {
     child.once('exit', resolve)
@@ -409,10 +435,67 @@ async function restartQaHost() {
   })
   child.stdin.write('{"type":"shutdown"}\n')
   try { await exited } finally { clearTimeout(timer) }
+}
+async function restartQaHost() {
+  await stopQaHost()
   child = launchQaHost()
   return await waitForQaHost(child)
 }
-try {
+
+async function verifyNativeBilling() {
+  if (process.platform !== 'linux') throw new Error('The native accessibility QA runner currently requires Linux')
+  const tauri = join(root, 'apps/desktop/.desktop-build/tauri')
+  const runtime = JSON.parse(await readFile(join(tauri, 'development.json'), 'utf8'))
+  const configFile = join(home, 'native-runtime.json')
+  await writeFile(configFile, JSON.stringify({ ...runtime, home }))
+  state.nativeBilling = true
+  billingConversation = newBillingConversation(true)
+  const nativeRequestsStart = requests.length
+  const env = {
+    ...process.env, DSH_HOME: home, VERBOO_TAURI_RUNTIME_CONFIG: configFile,
+    VERBOO_API_ORIGIN: origin, VERBOO_ROUTER_BASE_URL: origin + '/router/v1', VERBOO_ALLOW_LOOPBACK_HTTP: '1',
+  }
+  // Invoke the desktop's accessibility bridge even when the test shell has it disabled.
+  delete env.NO_AT_BRIDGE
+  const native = spawn(join(tauri, 'target/debug/verboo-code-desktop'), [], {
+    cwd: root, env,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let nativeLog = ''
+  native.stderr.on('data', chunk => { nativeLog = (nativeLog + chunk.toString()).slice(-24000) })
+  const exited = new Promise(resolve => native.once('exit', resolve))
+  try {
+    await new Promise((resolve, reject) => {
+      native.once('error', reject)
+      native.once('spawn', resolve)
+    })
+    const probe = spawn('python3', [join(root, 'apps/desktop/tauri/billing-native-qa.py'), String(native.pid)], {
+      stdio: 'inherit',
+    })
+    await new Promise((resolve, reject) => {
+      probe.once('error', reject)
+      probe.once('exit', code => code === 0 ? resolve() : reject(new Error('Tauri conversation QA failed')))
+    })
+    if (billingConversation.writes.map(write => write.kind).join(',') !== 'change,cancel' ||
+      !billingConversation.reads.includes('plan_change') || !billingConversation.reads.includes('cancellation')) {
+      throw new Error('Tauri QA did not observe exactly one plan change and cancellation on the API')
+    }
+    await writeFile(join(dir, 'conversation-billing-native.json'), JSON.stringify({
+      writes: billingConversation.writes.map(write => write.kind), confirmations: billingConversation.reads,
+    }, null, 2) + '\n')
+    console.log('Tauri billing conversation QA passed.')
+  } finally {
+    if (native.pid !== undefined) {
+      native.kill('SIGTERM')
+      const force = setTimeout(() => native.kill('SIGKILL'), 5000).unref()
+      await exited
+      clearTimeout(force)
+    }
+    await writeFile(join(dir, 'native-diagnostic.log'), nativeLog)
+    await writeFile(join(dir, 'native-requests.json'), JSON.stringify(requests.slice(nativeRequestsStart), null, 2) + '\n')
+  }
+}
+async function runQa() {
   const ready = await waitForQaHost(child)
   const useWebkit = process.env.VERBOO_QA_BROWSER === 'webkit'
   browser = await (useWebkit ? webkit : chromium).launch({
@@ -676,6 +759,41 @@ try {
   console.log('Connection QA: Gmail search and reply were declared and executed in one turn with the selected account.')
   state.agentFixture = null
   state.accounts = state.accounts.filter(account => account.id !== 'ca_gmail')
+  const requestPlanTool = async command => {
+    await composer.fill(command)
+    await composer.press('Enter')
+  }
+  const completedPlanTool = command => page.getByText(command + '_OK', { exact: true }).waitFor()
+  for (const command of ['QA_PLAN_STATUS', 'QA_PLAN_FOREIGN', 'QA_PLAN_PREVIEW']) {
+    await requestPlanTool(command)
+    await completedPlanTool(command)
+  }
+  if (billingConversation.writes.length) throw new Error('A plan tool wrote without approval')
+  await requestPlanTool('QA_PLAN_DENY')
+  await page.getByText(/Trocar «Verboo Pro» por «Verboo Max»\?.*BRL.*Vigência/).waitFor()
+  await capture('conversation-plan-approval.png')
+  await page.getByRole('button', { name: 'Rejeitar', exact: true }).click()
+  await completedPlanTool('QA_PLAN_DENY')
+  if (billingConversation.writes.length) throw new Error('Rejected plan change reached the server')
+  await requestPlanTool('QA_PLAN_CHANGE')
+  await page.getByRole('button', { name: 'Permitir uma vez', exact: true }).dblclick()
+  await completedPlanTool('QA_PLAN_CHANGE')
+  if (billingConversation.writes.map(write => write.kind).join(',') !== 'change' ||
+      !billingConversation.reads.includes('plan_change')) throw new Error('Plan change was duplicated or never recovered')
+  await capture('conversation-plan-reconciled.png')
+  await requestPlanTool('QA_PLAN_CANCEL')
+  await page.getByText(/Cancelar a renovação de «Verboo Pro»\?.*mantém o acesso/).waitFor()
+  await page.getByRole('button', { name: 'Permitir uma vez', exact: true }).click()
+  await completedPlanTool('QA_PLAN_CANCEL')
+  if (billingConversation.writes.map(write => write.kind).join(',') !== 'change,cancel' ||
+      !billingConversation.reads.includes('cancellation')) throw new Error('Cancellation did not reconcile exactly once')
+  console.log('Conversation billing QA: read, foreign subscription, quote, rejection, double click, lost response, replay and cancellation passed.')
+  if (process.env.VERBOO_QA_NATIVE_BILLING === '1') {
+    await browser.close()
+    await stopQaHost()
+    await verifyNativeBilling()
+    return
+  }
   if (await page.locator('[data-verboo-execution]').count()) throw new Error('Idle composer occupies space')
   await capture('conversation-complete.png')
   await page.locator('[data-chat-assistant-mark] img').first().waitFor({ state: 'hidden' })
@@ -858,14 +976,17 @@ try {
   if (await page.getByText('Conexão removida.', { exact: true }).count()) throw new Error('Connection feedback survived page navigation')
   await capture('plan-light.png')
   const planPage = page.locator('[data-verboo-page=plan]')
-  const planButtonColors = await planPage.locator('[data-current=false] button').evaluateAll(items => items.map(el => ({
-    foreground: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor,
-  })))
+  const planButtonColors = await planPage.locator('[data-current=false] button').evaluateAll(items => items.map(el => {
+    const foreground = getComputedStyle(el).color
+    let ancestor = el
+    while (ancestor && getComputedStyle(ancestor).backgroundColor === 'rgba(0, 0, 0, 0)') ancestor = ancestor.parentElement
+    return { foreground, background: ancestor && getComputedStyle(ancestor).backgroundColor }
+  }))
   contrastReadings.planButtons = Math.min(...planButtonColors.map(colors => contrastRatio(colors.foreground, colors.background)))
   if (!planButtonColors.length || contrastReadings.planButtons < 4.5) throw new Error('Plan action contrast is below 4.5:1')
   if (await planPage.getByRole('tablist').count()) throw new Error('Billing switch is shown without annual offers')
   if (!await planPage.getByRole('button', { name: 'Plano atual: Verboo Pro', exact: true }).isDisabled()) throw new Error('Current plan can be repurchased')
-  if (await planPage.locator('details').evaluate(el => el.open)) throw new Error('Subscription history is expanded by default')
+  if (await planPage.getByRole('button', { name: /^Assinaturas anteriores/ }).getAttribute('aria-expanded') !== 'false') throw new Error('Subscription history is expanded by default')
   const cards = await planPage.locator('[data-current]').evaluateAll(items => items.map(el => {
     const box = el.getBoundingClientRect(), button = el.querySelector('button').getBoundingClientRect()
     return { top: box.top, right: box.right, left: box.left, width: box.width, buttonTop: button.top, buttonRight: button.right }
@@ -891,19 +1012,21 @@ try {
   await planTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await planTouch.detach()
   await page.setViewportSize({ width: 1366, height: 900 })
-  const managementPopup = page.waitForEvent('popup')
+  const tabsBeforeBilling = context.pages().length
   await planPage.getByRole('button', { name: 'Gerenciar assinatura: Verboo Pro', exact: true }).click()
-  const management = await managementPopup
-  await management.waitForURL(u => u.pathname === '/pt/plans')
-  await management.close()
-  const popup = page.waitForEvent('popup')
+  const changePlan = planPage.getByRole('button', { name: 'Trocar plano', exact: true })
+  await changePlan.click()
+  const management = page.getByRole('dialog', { name: 'Trocar plano' })
+  await management.getByText('Uso limitado', { exact: true }).waitFor()
+  await capture('plan-management-dialog.png')
+  await page.keyboard.press('Escape')
+  await management.waitFor({ state: 'hidden' })
+  if (!await changePlan.evaluate(element => document.activeElement === element)) throw new Error('Closing the plan dialog lost focus')
   await planPage.getByRole('button', { name: 'Escolher plano: Verboo Max', exact: true }).click()
-  const checkout = await popup
-  await checkout.waitForURL((u) => u.pathname === '/pt/plans')
-  await checkout.waitForLoadState('domcontentloaded')
-  if (new URL(checkout.url()).pathname !== '/pt/plans')
-    throw new Error('Billing handoff destination mismatch')
-  await checkout.close()
+  const checkout = planPage.getByRole('region', { name: /Verboo Max/ })
+  await checkout.getByRole('button', { name: 'Confirmar compra com cartão', exact: true }).waitFor()
+  if (context.pages().length !== tabsBeforeBilling) throw new Error('Billing review unexpectedly opened another tab')
+  await capture('plan-inline-checkout.png')
   await page.getByRole('button', { name: 'Preferências', exact: true }).click()
   await page.locator('[data-verboo-page=preferences]').waitFor()
   await capture('preferences-light.png')
@@ -928,6 +1051,9 @@ try {
   )
   console.log('Screenshots:', dir)
   }
+}
+try {
+  await runQa()
 } catch (error) {
   await writeFile(join(dir, 'host-diagnostic.log'), hostLog)
   if (page && !page.isClosed()) {
@@ -953,7 +1079,7 @@ try {
   const exited = child.exitCode !== null || child.signalCode !== null
     ? Promise.resolve()
     : new Promise(resolve => child.once('exit', resolve))
-  child.stdin.write('{"type":"shutdown"}\n')
+  if (child.exitCode === null && child.signalCode === null) child.stdin.write('{"type":"shutdown"}\n')
   const stopHost = setTimeout(() => child.kill('SIGTERM'), 16000).unref()
   const killHost = setTimeout(() => child.kill('SIGKILL'), 19000).unref()
   await exited

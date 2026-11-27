@@ -2,9 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DeepSeekAccount } from '@deepseek-ai/dsh-deepseek-account'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
-import type { AccountSessionId } from '@deepseek-ai/dsh-deepseek-account/types'
-import type { ConnectionId, PlanId } from '../src/types.ts'
+import type { AccountSessionId, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { BillingSubscriptionId, ConnectionId, PlanChangeId, PlanId } from '../src/types.ts'
 import { VerbooProduct } from '../src/index.ts'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 
 vi.mock('ws', () => ({ default: function mockSocket(url: string, options: unknown) {
   const Socket = globalThis.WebSocket as unknown as new (url: string, options: unknown) => object
@@ -33,9 +39,11 @@ const session = (id: string): PlatformSession => ({
 })
 
 const contexts: Context[] = []
+const roots: string[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()
   while (contexts.length) await contexts.pop()!.fiber.dispose()
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
 /**
@@ -67,7 +75,16 @@ function configured(config: Record<string, unknown>, ...responses: Response[]) {
   })
   vi.stubGlobal('fetch', fetch)
   const product = new VerbooProduct(ctx, config)
-  return { product, fetch, account, signal: new AbortController().signal }
+  return { ctx, product, fetch, account, signal: new AbortController().signal }
+}
+
+async function mountBillingStorage(ctx: Context) {
+  const root = await mkdtemp(join(tmpdir(), 'verboo-agent-billing-test-'))
+  roots.push(root)
+  await ctx.plugin(Storage)
+  await ctx.plugin(StorageJson, { root })
+  await ctx.plugin(StorageDomain, { backend: 'json' })
+  expect(ctx.get('storageDomain')).toBeDefined()
 }
 
 /** Answer one request only after a delay, honoring the caller's cancellation. */
@@ -468,6 +485,17 @@ describe('failure classification', () => {
     }, new AbortController().signal)).rejects.toMatchObject({ code: 'execution_unconfirmed' })
   })
 
+  it('retains explicitly granted billing actions when invoice permission is omitted', async () => {
+    const f = fixture(Response.json({ data: [{
+      id: '00000000-0000-4000-8000-000000000003', groupId: plan.id, status: 'active',
+      cancelAtPeriodEnd: false, management: { changePlan: false, cancelSubscription: true },
+    }] }), Response.json({ data: [plan] }))
+
+    expect(await f.product.getPlans()).toMatchObject({ ok: true, data: { subscriptions: [{
+      canUpgrade: false, permissions: { cancel: true, reactivate: false, invoices: false, paymentMethod: false },
+    }] } })
+  })
+
   it('projects a priced subscription and an unpriced one', async () => {
     const billed = {
       id: '00000000-0000-4000-8000-000000000003', groupId: plan.id, group: { name: 'Pro' },
@@ -525,5 +553,193 @@ describe('usage analytics', () => {
     expect((await f.product.getUsageSummary('bad' as '30d', null, f.signal)).ok).toBe(false)
     expect((await f.product.getUsageSummary('30d', 'bad' as PlanId, f.signal)).ok).toBe(false)
     expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('subscription billing', () => {
+  const subscription = '00000000-0000-4000-8000-000000000030' as BillingSubscriptionId
+  const change = '00000000-0000-4000-8000-000000000031' as PlanChangeId
+  const ownerSession = { ...session('account-a'), userId: 'billing-owner' as AccountUserId }
+  const accessEnd = '2026-12-24T12:00:00Z'
+  const ownedSubscription = {
+    id: subscription, groupId: plan.id, group: { name: 'Pro' }, status: 'active',
+    currentPeriodEnd: accessEnd, cancelAtPeriodEnd: false,
+    management: { changePlan: true, cancelSubscription: true },
+  }
+  const quoteResponse = () => Response.json({ data: {
+    policyVersion: 2, operationId: change, previewToken: 'signed-private-agent-preview', billingInterval: 'month',
+    currency: 'USD', amountDueNowCents: 1200, creditNowCents: 0, nextRenewalAmountCents: 6900,
+    nextRenewalAt: accessEnd, effectiveAt: accessEnd,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    undoesCancellation: false, removesConcurrencyTier: false, pixAuthorizationRequired: false,
+  } })
+
+  it('binds the Agent commercial capability to the original login before network I/O', async () => {
+    const f = fixture(quoteResponse())
+    f.account.getPlatformSession.mockResolvedValue(ownerSession)
+    const bound = await f.product.agentBilling()
+    if (!bound.ok) throw new Error('Expected authenticated commerce')
+    const prepared = await bound.data.quoteChange(subscription, plan.id as PlanId, 'month', f.signal)
+    if (!prepared.ok) throw new Error('Expected a reviewed plan change')
+    f.account.getPlatformSession.mockResolvedValue({ ...session('account-b'), userId: 'other-owner' as AccountUserId })
+    expect(await bound.data.plans(f.signal)).toEqual({ ok: false, code: 'account_changed' })
+    expect(await prepared.data.confirm(f.signal)).toEqual({ ok: false, code: 'account_changed' })
+    expect(f.fetch).toHaveBeenCalledOnce()
+  })
+
+  it('uses the signed quote once, recovering the same lost operation and Revenue Journey identity', async () => {
+    const f = fixture(quoteResponse(),
+      Response.json({ error: 'synthetic lost response' }, { status: 503 }),
+      Response.json({ data: { operationId: change, status: 'scheduled', effectiveAt: accessEnd } }),
+    )
+    await mountBillingStorage(f.ctx)
+    f.account.getPlatformSession.mockResolvedValue(ownerSession)
+    const bound = await f.product.agentBilling()
+    if (!bound.ok) throw new Error('Expected authenticated commerce')
+    const preview = await bound.data.quoteChange(subscription, plan.id as PlanId, 'month', f.signal)
+    if (!preview.ok) throw new Error('Expected quote')
+    expect(JSON.stringify(preview)).not.toContain('signed-private-agent-preview')
+    expect(await preview.data.confirm(f.signal)).toMatchObject({
+      ok: true, data: { submitted: true, progress: { id: change, status: 'unconfirmed' } },
+    })
+    expect(await preview.data.confirm(f.signal)).toEqual({ ok: false, code: 'quote_changed' })
+    expect(await bound.data.changeStatus({
+      id: subscription, planId: plan.id as PlanId, name: 'Pro', status: 'active',
+      renewsAt: accessEnd, cancelAtEnd: false, canUpgrade: true, billing: null,
+    }, change, f.signal)).toMatchObject({ ok: true, data: { id: change, status: 'scheduled' } })
+    const [quote, write, check] = f.fetch.mock.calls
+    expect(f.fetch).toHaveBeenCalledTimes(3)
+    expect(write?.[1]?.method).toBe('POST')
+    expect(check?.[0]).toBe('https://code.verboo.ai/api/me/plan-changes/' + change)
+    const previewHeaders = new Headers(quote?.[1]?.headers)
+    const writeHeaders = new Headers(write?.[1]?.headers)
+    const checkHeaders = new Headers(check?.[1]?.headers)
+    expect(writeHeaders.get('x-verboo-journey-id')).toBe(previewHeaders.get('x-verboo-journey-id'))
+    for (const key of ['x-verboo-journey-id', 'x-verboo-operation-id', 'x-request-id']) {
+      expect(writeHeaders.get(key)).not.toBeNull()
+      expect(checkHeaders.get(key)).toBe(writeHeaders.get(key))
+    }
+    expect(writeHeaders.get('x-verboo-operation-id')).toBe(change)
+  })
+
+  it('rejects changed cancellation terms or revoked permission before the write', async () => {
+    const f = fixture(Response.json({ data: [ownedSubscription] }), Response.json({ data: [] }),
+      Response.json({ data: [{ ...ownedSubscription, currentPeriodEnd: '2027-01-24T12:00:00Z' }] }),
+      Response.json({ data: [{ ...ownedSubscription, management: { changePlan: true, cancelSubscription: false } }] }),
+    )
+    await mountBillingStorage(f.ctx)
+    f.account.getPlatformSession.mockResolvedValue(ownerSession)
+    const bound = await f.product.agentBilling()
+    if (!bound.ok) throw new Error('Expected authenticated commerce')
+    const plans = await bound.data.plans(f.signal)
+    if (!plans.ok || !plans.data.subscriptions[0]) throw new Error('Expected owned subscription')
+    const reviewed = plans.data.subscriptions[0]
+    expect(await bound.data.cancel(reviewed, 'pt', f.signal)).toEqual({ ok: false, code: 'quote_changed' })
+    expect(await bound.data.cancel(reviewed, 'pt', f.signal)).toEqual({ ok: false, code: 'request_failed' })
+    expect(f.fetch.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true)
+  })
+
+  it('keeps signed plan changes on the Host and returns the amounts and exact scheduled operation', async () => {
+    const effectiveAt = '2026-12-04T12:00:00Z'
+    const f = fixture(Response.json({ data: {
+      policyVersion: 2, operationId: change, previewToken: 'signed-private-preview', billingInterval: 'month',
+      currency: 'USD', amountDueNowCents: 1400, creditNowCents: 300, nextRenewalAmountCents: 8000,
+      nextRenewalAt: effectiveAt, effectiveAt, expiresAt: '2026-12-03T12:00:00Z',
+      undoesCancellation: true, removesConcurrencyTier: false, pixAuthorizationRequired: false,
+    } }), Response.json({ data: { operationId: change, status: 'scheduled', effectiveAt } }))
+    f.account.getPlatformSession.mockResolvedValue({
+      ...session('account-a'), userId: 'billing-owner' as AccountUserId,
+    })
+    const preview = await f.product.quotePlanChange(subscription, plan.id as PlanId, 'month', false)
+    expect(preview).toMatchObject({ ok: true, data: { currency: 'USD', amountDueNowCents: 1400, effectiveAt } })
+    expect(JSON.stringify(preview)).not.toContain('signed-private-preview')
+    expect(await f.product.billingChangeStatus(change, f.signal))
+      .toEqual({ ok: true, data: { id: change, status: 'scheduled', effectiveAt, url: null } })
+    expect(f.fetch.mock.lastCall?.[0]).toBe('https://code.verboo.ai/api/me/plan-changes/' + change)
+  })
+
+  it.each([
+    { url: 'https://billing.stripe.com/p/session_private', status: 200, expected: 'succeeded' },
+    { url: 'https://checkout.stripe.com/p/session_private', status: 200, expected: 'failed' },
+    { url: 'https://billing.stripe.com/p/session_private', status: 503, expected: 'failed' },
+  ])('records the portal request and its $expected outcome once', async ({ url, status, expected }) => {
+    const f = fixture(Response.json({ data: { url } }, { status }))
+    const output = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await f.product.billingPortal(subscription)
+      expect(result.ok).toBe(expected === 'succeeded')
+      if (result.ok) expect(result.data).toBe(url)
+      expect(f.fetch).toHaveBeenCalledTimes(1)
+      const [address, options] = f.fetch.mock.lastCall ?? []
+      expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/portal')
+      expect(options?.method).toBe('POST')
+      const headers = new Headers(options?.headers)
+      const records = output.mock.calls.filter(([tag]) => tag === '[verboo-journey]').map(([, value]) => JSON.parse(String(value)))
+      expect(records.map(record => record.outcome)).toEqual(['started', expected])
+      for (const record of records) {
+        expect(record).toMatchObject({
+          stage: 'payment_portal',
+          journeyId: headers.get('x-verboo-journey-id'),
+          operationId: headers.get('x-verboo-operation-id'),
+          requestId: headers.get('x-request-id'),
+        })
+      }
+      expect(JSON.stringify(records)).not.toMatch(/session_private|fixture-token|stripe\.com/)
+    } finally {
+      output.mockRestore()
+    }
+  })
+
+  it('opens card setup and only reports the change after the server confirms it', async () => {
+    const id = '00000000-0000-4000-8000-000000000040'
+    const url = 'https://checkout.stripe.com/c/pay/test_card_setup'
+    const f = fixture(
+      Response.json({ data: { id, status: 'pending', url } }),
+      Response.json({ data: { id, status: 'confirmed' } }),
+    )
+    await expect(f.product.startBillingCardUpdate(subscription, id))
+      .resolves.toEqual({ ok: true, data: { id, status: 'pending', url } })
+    const [address, write] = f.fetch.mock.calls[0] ?? []
+    expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/card-update')
+    expect(write?.method).toBe('POST')
+    expect(JSON.parse(String(write?.body))).toEqual({ requestId: id })
+    expect(new Headers(write?.headers).get('x-verboo-operation-id')).toBe(id)
+    await expect(f.product.currentBillingCardUpdate(subscription, f.signal))
+      .resolves.toEqual({ ok: true, data: { id, status: 'confirmed', url: null } })
+  })
+
+  it('binds the native card form to this deployment and releases its secret only to the native start flow', async () => {
+    const id = '00000000-0000-4000-8000-000000000040'
+    const embedded = { clientSecret: 'cs_test_fixture_secret_fixture%2Bencoded%3D', publishableKey: 'pk_test_fixture' }
+    const pending = { id, status: 'pending', embedded }
+    const f = fixture(
+      Response.json({ data: pending }),
+      Response.json({ data: pending }),
+      Response.json({ data: { ...pending, embedded: { ...embedded, publishableKey: 'pk_live_fixture' } } }),
+      Response.json({ data: pending }),
+    )
+    await expect(f.product.startBillingCardUpdate(subscription, id, true)).resolves.toEqual({
+      ok: true, data: {
+        id, status: 'pending', url: null,
+        embedded: { ...embedded, url: 'https://code.verboo.ai/api/desktop/card-setup' },
+      },
+    })
+    expect(JSON.parse(String(f.fetch.mock.calls[0]?.[1]?.body))).toEqual({ requestId: id, presentation: 'embedded' })
+    await expect(f.product.startBillingCardUpdate(subscription, id)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
+    await expect(f.product.startBillingCardUpdate(subscription, id, true)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
+    await expect(f.product.currentBillingCardUpdate(subscription, f.signal))
+      .resolves.toEqual({ ok: true, data: { id, status: 'pending', url: null } })
+  })
+
+  it('reads invoices for the exact subscription', async () => {
+    const created = '2026-12-04T12:00:00Z'
+    const f = fixture(Response.json({ data: [{
+      id: 'invoice', number: '001', created, amountDue: 1000, amountPaid: 1000,
+      currency: 'BRL', status: 'paid', hostedInvoiceUrl: 'https://invoice.stripe.com/test',
+    }] }))
+    expect(await f.product.billingInvoices(subscription)).toMatchObject({
+      ok: true, data: [{ status: 'paid', url: 'https://invoice.stripe.com/test' }],
+    })
+    expect(f.fetch.mock.lastCall?.[0]).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/invoices')
   })
 })

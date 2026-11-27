@@ -20,6 +20,9 @@ url = "2"
 sys-locale = "0.3"
 dunce = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2"
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 

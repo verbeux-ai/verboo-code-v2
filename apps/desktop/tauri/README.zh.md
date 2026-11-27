@@ -88,3 +88,5 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 桥接测试覆盖缓存和异步客户端挂载，并确认不设置 Electron 标记。Node 集成测试覆盖真实配置的认证 HTML 和资源、重复关闭、启动失败以及父进程断开。Rust 测试拒绝远程或无效的启动 URL。
 
 产品 Client 条目在启动时为必需项，原生就绪状态要求 Verboo 导航已挂载。普通 Harness 根节点不能报告产品启动成功。构建后，在仓库根目录运行 `node apps/desktop/tauri/product-qa.mjs`，使用临时配置与操作系统凭据、外部 HTTP 测试服务，验证 OAuth PKCE、令牌实时刷新时不闪现引导页且保留草稿、焦点和运行中的对话、模型选择、方案、连接、对话框及两种主题。`VERBOO_QA_OUTPUT` 指定截图目录，`VERBOO_QA_CHROME` 指定浏览器可执行文件。
+
+浏览器验证在真实对话流程中覆盖订阅工具，包括拒绝批准、响应丢失和取消续订。在 Linux 上设置 `VERBOO_QA_NATIVE_BILLING=1`，可在调试版 Tauri 应用中使用同一个回环测试服务重复验证。原生检查通过 Python GI 和 AT-SPI 输入提示并操作应用内的批准卡片，然后确认服务端仅收到一次获批的操作。若 Wayland 上的 AT-SPI 无法向编辑器输入，还需要有当前用户输入设备权限的 `ydotool`。运行器只在独立的测试窗口及输入框获得焦点时输入。

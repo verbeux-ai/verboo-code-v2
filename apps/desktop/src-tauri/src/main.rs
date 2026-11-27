@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod card_setup;
 mod host;
 mod locale;
 mod layout_storage;
@@ -352,6 +353,8 @@ fn main() {
             desktop_layout_read,
             desktop_layout_write,
             client_diagnostic,
+            card_setup::open_card_setup,
+            card_setup::close_card_setup,
             update::update_install,
             update::update_close,
             update::update_snapshot,
@@ -436,9 +439,8 @@ fn main() {
                         let state = setup_state.clone();
                         let app = app.handle().clone();
                         move |url, _features| {
-                            // The product is one window. A destination that asks
-                            // for its own window either leaves the application or
-                            // is dropped; a second Webview is never created.
+                            // Navigation cannot create another product window.
+                            // The isolated card dialog has its own explicit command.
                             match navigation_decision(&url, state.origin.get()) {
                                 NavigationDecision::OpenExternally => open_externally(&app, &url),
                                 NavigationDecision::NavigateHere | NavigationDecision::Deny => {
