@@ -24,6 +24,37 @@ const panels = {
   preferences: 'verboo.preferences' as MainPanelId,
 }
 
+/**
+ * Open account navigation above the sidebar control in expanded and collapsed layouts.
+ * @param options - profile identity, sidebar layout and navigation actions.
+ * @returns the account control and its navigation menu.
+ */
+export function AccountMenu({ name, wide, selected, go, t }: {
+  name: string | null | undefined
+  wide: boolean
+  selected: MainPanelId | null
+  go: (id: MainPanelId) => void
+  t: SidebarProps['t']
+}) {
+  const [open, setOpen] = useState(false)
+  return <Menu
+    open={open} onClose={() => { setOpen(false) }} side="top" portal align="start" autoFocus
+    className={css.profileMenu} listClassName={css.profileMenuList}
+    anchor={<Tooltip portal label={t('account')} disabled={wide}>
+      <button className={css.profileShortcut} data-active={selected === panels.preferences || selected === panels.analytics}
+        aria-label={t('account')} aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+        <span className={css.avatar}>{name?.slice(0, 1).toLocaleUpperCase() ?? <Glyph name="circle-user-round" size={18} />}</span>
+        {wide && <><span className={css.profileName}>{name ?? t('account')}</span><Glyph name="settings-2" size={17} /></>}
+      </button>
+    </Tooltip>}
+    items={[
+      { id: 'preferences', label: t('preferences'), icon: <Glyph name="settings-2" size={16} /> },
+      { id: 'analytics', label: t('analytics'), icon: <Glyph name="chart-no-axes-combined" size={16} /> },
+    ]}
+    onSelect={(id) => { setOpen(false); if (id === 'preferences' || id === 'analytics') go(panels[id]) }}
+  />
+}
+
 function ConversationRow({
   session,
   active,
@@ -403,13 +434,6 @@ export function Sidebar(props: SidebarProps) {
             {wide && <span>{t('workspace')}</span>}
           </button>
         </Tooltip>
-        <Tooltip portal label={t('analytics')} disabled={wide}>
-          <button className={css.navRow} data-active={selected === panels.analytics}
-            onClick={() => { go(panels.analytics) }} aria-label={t('analytics')}
-            aria-current={selected === panels.analytics ? 'page' : undefined}>
-            <Glyph name="chart-no-axes-combined" />{wide && <span>{t('analytics')}</span>}
-          </button>
-        </Tooltip>
         <Tooltip portal label={t('connections')} disabled={wide}>
           <button
             className={css.navRow}
@@ -570,29 +594,7 @@ export function Sidebar(props: SidebarProps) {
             )}
           </button>
         </Tooltip>
-        <Tooltip portal label={t('preferences')} disabled={wide}>
-          <button
-            className={css.profileShortcut}
-            data-active={selected === panels.preferences}
-            onClick={() =>{  go(panels.preferences) }}
-            aria-label={t('preferences')}
-            aria-current={selected === panels.preferences ? 'page' : undefined}
-          >
-            <span className={css.avatar}>
-              {state.profile?.name?.slice(0, 1).toLocaleUpperCase() ?? (
-                <Glyph name="circle-user-round" size={18} />
-              )}
-            </span>
-            {wide && (
-              <>
-                <span className={css.profileName}>
-                  {state.profile?.name ?? t('account')}
-                </span>
-                <Glyph name="settings-2" size={17} />
-              </>
-            )}
-          </button>
-        </Tooltip>
+        <AccountMenu name={state.profile?.name} wide={wide} selected={selected} go={go} t={t} />
       </footer>
     </div>
   )
