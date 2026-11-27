@@ -4,6 +4,22 @@ English | [中文](README.zh.md)
 
 Verboo Code is a Tauri desktop coding app with Verboo login, account models, projects and connected tools. It uses the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) engine and its Cordis plugin architecture.
 
+[Get Verboo Code](https://verboo.ai/?utm_source=github&utm_medium=referral&utm_campaign=readme) · [Download for macOS, Windows or Linux](https://verboo.ai/download?utm_source=github&utm_medium=referral&utm_campaign=readme) · [Release notes](https://verboo.ai/updates)
+
+[![Discord community](https://img.shields.io/badge/Community-Discord-5865F2?logo=discord)](https://discord.gg/e2tcxmDd7h)
+
+![The Verboo Code desktop agent works through a project task](.github/assets/verboo-code-demo.gif)
+
+## Models and benchmarks
+
+| Model examples | Context window |
+| --- | ---: |
+| DeepSeek V4.1 Flash | 1,048,576 tokens |
+| HY4 Flash | 1,048,576 tokens |
+| Qwen 3.8 27b | 262,144 tokens |
+
+Model access depends on your plan. See the [live model catalog](https://verboo.ai/en/api) and the repository's [long-session benchmark](benchmarks/long-session-browser/README.md) and [stream reconnection benchmark](benchmarks/active-stream-reconnect/README.md).
+
 <a id="run"></a>
 
 <a id="run-from-source"></a>
