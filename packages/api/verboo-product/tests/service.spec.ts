@@ -536,6 +536,12 @@ it('keeps commercial reads available when the operational fallback logger fails'
 })
 
 describe('usage analytics', () => {
+  it('loads subscriptions without requesting the marketplace catalog', async () => {
+    const f = fixture(Response.json({ data: [] }))
+    expect(await f.product.getUsageSubscriptions(f.signal)).toEqual({ ok: true, data: [] })
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+    expect(f.fetch.mock.calls[0]?.[0]).toContain('/api/me/subscriptions')
+  })
   const summary = { timezone: 'America/Sao_Paulo', bucket: 'day', reqTotal: 4, tokensInTotal: 1000, tokensOutTotal: 300, cachedTokens: 250, buckets: [{ bucket: '2026-11-25T00:00:00-03:00', reqCount: 4, tokensIn: 1000, tokensOut: 300, cachedTokens: 250 }] }
   it('reads scoped subscription totals and activity through the authenticated API', async () => {
     const f = fixture(Response.json({ data: summary }), Response.json({ data: summary }), Response.json({ data: [{ date: '2026-11-25', count: 4 }] }))

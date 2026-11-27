@@ -119,6 +119,39 @@ const subscriptions = z.object({
     )
     .max(500),
 })
+function projectSubscriptions(value: unknown): Subscription[] {
+  return subscriptions
+    .parse(value)
+    .data.map(s => ({
+      id: s.id,
+      planId: s.groupId,
+      name: s.group?.name ?? s.groupId,
+      ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
+      status: s.status,
+      renewsAt: s.currentPeriodEnd ?? null,
+      cancelAtEnd: s.cancelAtPeriodEnd,
+      canUpgrade: s.management.changePlan,
+      ...([s.management.cancelSubscription, s.management.reactivateSubscription,
+        s.management.viewInvoices, s.management.updatePaymentMethod, s.management.updateCard].some(flag => flag !== undefined)
+        ? { permissions: {
+          cancel: s.management.cancelSubscription === true,
+          reactivate: s.management.reactivateSubscription === true,
+          invoices: s.management.viewInvoices === true,
+          paymentMethod: s.management.updatePaymentMethod === true,
+          ...(s.management.updateCard === true ? { cardUpdate: true } : {}),
+        } } : {}),
+      ...(s.activePlanChangeId ? { activeChangeId: s.activePlanChangeId } : {}),
+      ...(s.management.removeConcurrencyTier ? { canRemoveTier: true } : {}),
+      ...(s.cancellation ? { cancellation: s.cancellation } : {}),
+      billing: s.billing
+        ? {
+          amountMinor: s.billing.amountMinor,
+          currency: s.billing.currency,
+          interval: s.billing.billingInterval,
+        }
+        : null,
+    }))
+}
 const catalog = z.object({ data: z.array(plan).max(500) })
 const stamina = z.object({
   data: z.array(z.object({
@@ -450,37 +483,7 @@ export class VerbooProduct extends TypertRemoteService {
       this.request('/api/marketplace?includeMetrics=false', 'GET', undefined, signal, undefined, undefined, session),
     ])
     return {
-      subscriptions: subscriptions
-        .parse(owned)
-        .data.map(s => ({
-          id: s.id,
-          planId: s.groupId,
-          name: s.group?.name ?? s.groupId,
-          ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
-          status: s.status,
-          renewsAt: s.currentPeriodEnd ?? null,
-          cancelAtEnd: s.cancelAtPeriodEnd,
-          canUpgrade: s.management.changePlan,
-          ...([s.management.cancelSubscription, s.management.reactivateSubscription,
-            s.management.viewInvoices, s.management.updatePaymentMethod, s.management.updateCard].some(flag => flag !== undefined)
-            ? { permissions: {
-              cancel: s.management.cancelSubscription === true,
-              reactivate: s.management.reactivateSubscription === true,
-              invoices: s.management.viewInvoices === true,
-              paymentMethod: s.management.updatePaymentMethod === true,
-              ...(s.management.updateCard === true ? { cardUpdate: true } : {}),
-            } } : {}),
-          ...(s.activePlanChangeId ? { activeChangeId: s.activePlanChangeId } : {}),
-          ...(s.management.removeConcurrencyTier ? { canRemoveTier: true } : {}),
-          ...(s.cancellation ? { cancellation: s.cancellation } : {}),
-          billing: s.billing
-            ? {
-              amountMinor: s.billing.amountMinor,
-              currency: s.billing.currency,
-              interval: s.billing.billingInterval,
-            }
-            : null,
-        })),
+      subscriptions: projectSubscriptions(owned),
       catalog: catalog
         .parse(available)
         .data.filter(
@@ -500,6 +503,15 @@ export class VerbooProduct extends TypertRemoteService {
           interval: p.billingInterval,
         })),
     }
+  }
+  /**
+   * Read owned subscriptions independently of the commercial catalog.
+   * @param signal - cancellation of the owning Client read.
+   * @returns display-safe subscriptions for the current account.
+   */
+  @Remote
+  getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>> {
+    return this.result(async () => projectSubscriptions(await this.request('/api/me/subscriptions', 'GET', undefined, signal)))
   }
   /**
    * Read historical subscription usage without exposing account credentials.

@@ -1056,6 +1056,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.slots.inject('main', function* () {
     const analyticsFace = (): ProductInjected & AnalyticsActions => ({
       ...face(),
+      subscriptions: async (signal) => {
+        const result = await ctx.remote.verboo.getUsageSubscriptions(signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
       summary: async (period, group, signal) => {
         const result = await ctx.remote.verboo.getUsageSummary(period, group, signal)
         return result.ok ? result.value : { ok: false, code: 'request_failed' }

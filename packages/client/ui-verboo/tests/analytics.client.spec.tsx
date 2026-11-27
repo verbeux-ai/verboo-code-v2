@@ -18,6 +18,7 @@ function fixture() {
     usePreferences: (selector: (value: { locale: string }) => unknown) => selector({ locale: 'pt-BR' }),
     useResource: () => ({ status: 'ready', value: [{ groupId: planId, groupName: 'Pro', remainingPercent: 75, recovering: false, fullAt: null, accountingPending: false }] }),
     loadPlans: vi.fn(), refreshStamina: vi.fn(), summary: summaryRead, activity,
+    subscriptions: vi.fn().mockResolvedValue({ ok: true, data: product.plans.subscriptions }),
     speed: async function* (signal: AbortSignal) {
       await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
     },
@@ -113,6 +114,48 @@ it('shows totals without waiting for a slow plan read', async () => {
   expect(screen.getAllByText('Carregando uso…').length).toBeGreaterThan(0)
   delayed.resolve({ ok: true, data: summary })
   await waitFor(() => { expect(screen.queryByText('Carregando uso…')).toBeNull() })
+})
+
+it('does not restart account totals when subscriptions arrive and renders plans independently', async () => {
+  const f = fixture()
+  const plans = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['subscriptions']>>>()
+  const total = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['summary']>>>()
+  const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockReturnValue(plans.promise)
+  f.summaryRead.mockImplementation(async (_period, group) => group === null ? total.promise : { ok: true, data: summary })
+  render(<AnalyticsPage {...f.props} subscriptions={subscriptions} />)
+  plans.resolve({ ok: true, data: product.plans.subscriptions as never })
+  expect(await screen.findByText(/1\.000.*300/)).toBeTruthy()
+  expect(f.summaryRead.mock.calls.filter(([, group]) => group === null)).toHaveLength(1)
+  expect(screen.queryByText('1.000')).toBeNull()
+  total.resolve({ ok: true, data: summary })
+  expect(await screen.findByText('1.000')).toBeTruthy()
+})
+
+it('keeps account totals available when the subscription list fails', async () => {
+  const f = fixture()
+  const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockResolvedValue({ ok: false, code: 'request_failed' })
+  render(<AnalyticsPage {...f.props} subscriptions={subscriptions} />)
+  expect(await screen.findByText('1.000')).toBeTruthy()
+  expect(screen.getByText(copy.planUnavailable)).toBeTruthy()
+  expect(f.summaryRead).toHaveBeenCalledWith('30d', null, expect.any(AbortSignal))
+})
+
+it('does not display subscriptions returned after an account change', async () => {
+  const f = fixture()
+  const delayed = Promise.withResolvers<Awaited<ReturnType<AnalyticsActions['subscriptions']>>>()
+  let current = product
+  const subscriptions = vi.fn<AnalyticsActions['subscriptions']>().mockImplementation(async () => current.profile.id === 'account-a'
+    ? delayed.promise : { ok: true, data: [] })
+  const props = {
+    ...f.props, subscriptions, useProduct: (select: (value: typeof product) => unknown) => select(current),
+  } as unknown as PageProps & AnalyticsActions
+  const view = render(<AnalyticsPage {...props} />)
+  current = { ...product, view: { ...product.view, credentialRevision: 'next-revision' }, profile: { id: 'account-b' } }
+  view.rerender(<AnalyticsPage {...props} />)
+  expect(await screen.findByText(copy.analyticsNoPlans)).toBeTruthy()
+  delayed.resolve({ ok: true, data: product.plans.subscriptions as never })
+  await waitFor(() => { expect(screen.getByText(copy.analyticsNoPlans)).toBeTruthy() })
+  expect(f.summaryRead.mock.calls.some(([, group]) => group === planId)).toBe(false)
 })
 
 it('offers account retry when the owner cannot be verified', () => {

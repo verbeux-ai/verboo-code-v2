@@ -10,6 +10,7 @@ import css from './Analytics.module.css'
 
 /** Authenticated, account-fenced Host readers; no access token reaches this page. */
 export interface AnalyticsActions {
+  subscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>
   summary(period: UsagePeriod, group: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>>
   activity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>>
   speed(signal: AbortSignal): AsyncIterable<SpeedFrame>
@@ -20,7 +21,9 @@ const periods: readonly { id: UsagePeriod; key: Key }[] = [
   { id: '30d', key: 'analytics30d' }, { id: 'current_month', key: 'analyticsCurrentMonth' },
   { id: 'previous_month', key: 'analyticsPreviousMonth' },
 ]
-type UsageRead = { owner: string; period: UsagePeriod; total: Result<UsageSummary>; groups: Record<string, Result<UsageSummary>> }
+type UsageRead = { owner: string; period: UsagePeriod; total: Result<UsageSummary> }
+type GroupRead = { owner: string; period: UsagePeriod; groups: Record<string, Result<UsageSummary>> }
+type SubscriptionRead = { owner: string; value: Result<Subscription[]> }
 type ActivityRead = { owner: string; value: Result<UsageActivityDay[]> }
 
 function activeSubscriptions(rows: Subscription[]): Subscription[] {
@@ -44,40 +47,48 @@ export function AnalyticsPage(props: Props) {
   const [period, setPeriod] = useState<UsagePeriod>('30d')
   const [revision, setRevision] = useState(0)
   const [usage, setUsage] = useState<UsageRead | null>(null)
+  const [groupUsage, setGroupUsage] = useState<GroupRead | null>(null)
+  const [subscriptionRead, setSubscriptionRead] = useState<SubscriptionRead | null>(null)
   const [activity, setActivity] = useState<ActivityRead | null>(null)
   const [speed, setSpeed] = useState<{ owner: string; online: boolean; measurement: SpeedMeasurement | null } | null>(null)
   const actions = useRef(props)
   actions.current = props
-  const subscriptions = activeSubscriptions(account.plans?.subscriptions ?? [])
+  const subscriptionResult = subscriptionRead?.owner === owner ? subscriptionRead.value : null
+  const subscriptions = activeSubscriptions(subscriptionResult?.ok ? subscriptionResult.data : [])
   const planKey = JSON.stringify(subscriptions.map(row => row.planId))
-  useEffect(() => { if (owner) actions.current.loadPlans() }, [owner])
+  useEffect(() => {
+    if (!owner) return
+    const controller = new AbortController()
+    void actions.current.subscriptions(controller.signal).catch((): Result<Subscription[]> => ({ ok: false, code: 'request_failed' }))
+      .then((value) => { if (!controller.signal.aborted) setSubscriptionRead({ owner, value }) })
+    return () => { controller.abort() }
+  }, [owner, revision])
+  useEffect(() => {
+    if (!owner) return
+    const controller = new AbortController()
+    void actions.current.summary(period, null, controller.signal).catch((): Result<UsageSummary> => ({ ok: false, code: 'request_failed' }))
+      .then((total) => { if (!controller.signal.aborted) setUsage({ owner, period, total }) })
+    return () => { controller.abort() }
+  }, [owner, period, revision])
   useEffect(() => {
     if (!owner) return
     const controller = new AbortController()
     const stopped = () => controller.signal.aborted
     const ids = JSON.parse(planKey) as PlanId[]
     const run = async () => {
-      const safe = async (group: PlanId | null): Promise<Result<UsageSummary>> => {
-        try { return await actions.current.summary(period, group, controller.signal) }
-        catch { return { ok: false, code: 'request_failed' } }
-      }
-      const byGroup: Record<string, Result<UsageSummary>> = {}
       let next = 0
       const worker = async () => {
         while (!stopped() && next < ids.length) {
           const id = ids.at(next++)
           if (id === undefined) return
-          const value = await safe(id)
+          const value = await actions.current.summary(period, id, controller.signal).catch((): Result<UsageSummary> => ({ ok: false, code: 'request_failed' }))
           if (stopped()) return
-          byGroup[id] = value
-          setUsage(previous => previous?.owner === owner && previous.period === period
-            ? { ...previous, groups: { ...previous.groups, [id]: value } } : previous)
+          setGroupUsage(previous => ({ owner, period, groups: {
+            ...(previous?.owner === owner && previous.period === period ? previous.groups : {}), [id]: value,
+          } }))
         }
       }
-      const total = safe(null).then((value) => {
-        if (!controller.signal.aborted) setUsage({ owner, period, total: value, groups: { ...byGroup } })
-      })
-      await Promise.all([total, ...Array.from({ length: Math.min(4, ids.length) }, worker)])
+      await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker))
     }
     void run()
     return () => { controller.abort() }
@@ -116,10 +127,11 @@ export function AnalyticsPage(props: Props) {
     return () => { controller.abort(); clearTimeout(timer); wake?.() }
   }, [owner])
   const current = usage?.owner === owner && usage.period === period ? usage : null
+  const groups = groupUsage?.owner === owner && groupUsage.period === period ? groupUsage.groups : {}
   const history = activity?.owner === owner ? activity.value : null
   const total = current?.total.ok ? current.total.data : null
   const number = new Intl.NumberFormat(locale)
-  const retry = () => { props.loadPlans(); props.refreshStamina(); setRevision(value => value + 1) }
+  const retry = () => { props.refreshStamina(); setRevision(value => value + 1) }
   if (!owner && account.view?.status === 'credential-stored' && (account.accountFailed || account.profile?.id === null)) {
     return <main className={`${base.page} ${css.page}`} data-verboo-page="analytics">
       <PageHead title={props.t('analytics')} description={props.t('analyticsSubtitle')} t={props.t} />
@@ -128,7 +140,7 @@ export function AnalyticsPage(props: Props) {
   }
   return <main className={`${base.page} ${css.page}`} data-verboo-page="analytics">
     <PageHead title={props.t('analytics')} description={props.t('analyticsSubtitle')} t={props.t} onRefresh={retry} />
-    <StaminaPanel {...props} />
+    <StaminaPanel {...props} analytics />
     <SpeedCard value={speed?.owner === owner ? speed : null} locale={locale} t={props.t} />
     <section className={css.card} aria-label={props.t('analyticsActivity')}>
       <h2>{props.t('analyticsActivity')}</h2><p>{props.t('analyticsActivityDesc')}</p>
@@ -156,14 +168,15 @@ export function AnalyticsPage(props: Props) {
         </>}
     </section>
     <section className={css.card}><h2>{props.t('analyticsPlanUsage')}</h2>
-      {account.plans === null ? <p>{props.t(account.plansFailed ? 'planUnavailable' : 'analyticsLoading')}</p> : subscriptions.length === 0
-        ? <p>{props.t('analyticsNoPlans')}</p> : subscriptions.map((row) => {
-          const result = current?.groups[row.planId]
-          return <div className={css.plan} key={row.planId}><strong>{row.name}</strong>
-            {result === undefined ? <span>{props.t('analyticsLoading')}</span> : !result.ok ? <span>{props.t('analyticsPlanFailure')} <button className={css.retry} onClick={retry}>{props.t('retry')}</button></span>
-              : <span>{props.t('analyticsInput')}: {number.format(result.data.tokensInTotal)} · {props.t('analyticsOutput')}: {number.format(result.data.tokensOutTotal)}</span>}
-          </div>
-        })}
+      {subscriptionResult === null ? <p>{props.t('analyticsLoading')}</p> : !subscriptionResult.ok
+        ? <p role="alert">{props.t('planUnavailable')} <button className={css.retry} onClick={retry}>{props.t('retry')}</button></p> : subscriptions.length === 0
+          ? <p>{props.t('analyticsNoPlans')}</p> : subscriptions.map((row) => {
+            const result = groups[row.planId]
+            return <div className={css.plan} key={row.planId}><strong>{row.name}</strong>
+              {result === undefined ? <span>{props.t('analyticsLoading')}</span> : !result.ok ? <span>{props.t('analyticsPlanFailure')} <button className={css.retry} onClick={retry}>{props.t('retry')}</button></span>
+                : <span>{props.t('analyticsInput')}: {number.format(result.data.tokensInTotal)} · {props.t('analyticsOutput')}: {number.format(result.data.tokensOutTotal)}</span>}
+            </div>
+          })}
     </section>
   </main>
 }

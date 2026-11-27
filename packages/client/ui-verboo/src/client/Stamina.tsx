@@ -8,8 +8,8 @@ import css from './Stamina.module.css'
 type StaminaProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 'useResource' | 't' | 'refreshStamina'>
 
 /** Enrolled-plan details on My plan; a missing or disabled policy renders no bar. */
-export function StaminaPanel(props: StaminaProps) {
-  return <Stamina {...props} compact={false} />
+export function StaminaPanel({ analytics = false, ...props }: StaminaProps & { analytics?: boolean }) {
+  return <Stamina {...props} compact={false} analytics={analytics} />
 }
 
 /** Account stamina below the active composer, including on narrow viewports. */
@@ -17,24 +17,25 @@ export function StaminaDock(props: PropsRuntime<'conversation.composer.dock'> & 
   return <Stamina {...props} compact />
 }
 
-function Stamina({ compact, ...props }: StaminaProps & { compact: boolean }) {
+function Stamina({ compact, analytics = false, ...props }: StaminaProps & { compact: boolean; analytics?: boolean }) {
   const account = props.useProduct(state => state)
   const locale = props.usePreferences(state => state.locale)
   const resource = props.useResource<'verboo-stamina'>(staminaAddress(account))
-  return <StaminaDisplay rows={resource.value} failed={resource.status === 'failed'} compact={compact} locale={locale} t={props.t} refreshStamina={props.refreshStamina} />
+  return <StaminaDisplay rows={resource.value} failed={resource.status === 'failed'} compact={compact} analytics={analytics} locale={locale} t={props.t} refreshStamina={props.refreshStamina} />
 }
 
 /** Public stamina readings; unknown eligibility never produces a filled progress bar. */
-export function StaminaDisplay({ rows, failed, compact, locale, ...props }: Pick<StaminaProps, 't' | 'refreshStamina'> & {
+export function StaminaDisplay({ rows, failed, compact, analytics = false, locale, ...props }: Pick<StaminaProps, 't' | 'refreshStamina'> & {
   rows: StaminaStatus[] | undefined
   failed: boolean
   compact: boolean
+  analytics?: boolean
   locale: string
 }) {
   if (rows?.length === 0 || rows === undefined && (compact || !failed)) return null
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
   return (
-    <section className={compact ? css.compact : css.panel} aria-label={props.t('staminaTitle')} data-verboo-stamina>
+    <section className={compact ? css.compact : analytics ? css.analytics : css.panel} aria-label={props.t('staminaTitle')} data-verboo-stamina>
       {!compact && <h2>{props.t('staminaTitle')}</h2>}
       {failed && (
         <div className={css.notice} role="status">
