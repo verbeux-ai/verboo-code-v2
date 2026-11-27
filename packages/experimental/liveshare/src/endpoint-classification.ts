@@ -102,6 +102,7 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'verboo/getPlans': 'owner-only',
   'verboo/getStamina': 'owner-only',
   'verboo/getUsageActivity': 'owner-only',
+  'verboo/getUsageSubscriptions': 'owner-only',
   'verboo/getUsageSummary': 'owner-only',
   'verboo/watchUsageSpeed': 'owner-only',
   'verboo/getTrialStatus': 'owner-only',
