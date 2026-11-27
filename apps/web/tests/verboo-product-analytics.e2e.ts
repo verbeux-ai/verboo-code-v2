@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, type Browser } from 'playwright'
 import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-host-verboo-analytics'
-import { launchWebScaffold, seedSession, selectedSessionFixture } from './scaffold.ts'
+import { expandProductNavigation, launchWebScaffold, seedSession, selectedSessionFixture } from './scaffold.ts'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const ACCOUNT = '00000000-0000-4000-8000-000000000002'
@@ -162,6 +162,7 @@ it('sends anonymous, bounded observations for actual project and split controls'
       { timeout: 10000 }).toBe(4)
     expect(events.filter(event => event.feature === 'desktop_update_download').map(event => event.outcome).sort()).toEqual(['completed', 'started'])
     expect(events.filter(event => event.feature === 'desktop_update_install').map(event => event.outcome).sort()).toEqual(['failed', 'started'])
+    await expandProductNavigation(page)
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
     await page.getByRole('button', { name: /^(Add project|Adicionar projeto)$/ }).click()
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)

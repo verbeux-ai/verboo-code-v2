@@ -553,7 +553,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await expect.poll(async () => {
       unavailableSnapshot = await terminal.ariaSnapshot()
       return unavailableSnapshot
-    }).toContain('no longer exists')
+    }).toContain('The previous terminal was closed. Open a new terminal.')
     expect(handles).toHaveLength(1)
     const unavailable = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
     await compareOrRefreshGolden(unavailable, unavailableSnapshot, webSnapshotMode())

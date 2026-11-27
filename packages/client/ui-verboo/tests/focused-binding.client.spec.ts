@@ -20,3 +20,19 @@ it('waits for a restored pane reference, scope and binding before using the mode
   binding.mockReturnValue(ready)
   expect(focusedBinding(retained, sessions)).toEqual({ session: id, binding: ready })
 })
+
+it('does not resolve a binding for an empty pane or a stale focus or reference', () => {
+  const id = 'restored' as SessionId
+  const root = { kind: 'pane', id: 'pane', sessionId: id } as const
+  const references = new Map([['pane', { sessionId: 'old-session' as SessionId }]])
+  const sessions = { scope: vi.fn<() => undefined>(), binding: vi.fn<() => undefined>() }
+
+  expect(focusedBinding({ layout: { version: 1, root, focused: 'missing' }, references }, sessions))
+    .toEqual({ session: null, binding: undefined })
+  expect(focusedBinding({ layout: { version: 1, root: { ...root, sessionId: null }, focused: 'pane' }, references }, sessions))
+    .toEqual({ session: null, binding: undefined })
+  expect(focusedBinding({ layout: { version: 1, root, focused: 'pane' }, references }, sessions))
+    .toEqual({ session: id, binding: undefined })
+  expect(sessions.scope).not.toHaveBeenCalled()
+  expect(sessions.binding).not.toHaveBeenCalled()
+})

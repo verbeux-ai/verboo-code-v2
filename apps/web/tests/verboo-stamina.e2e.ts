@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Locator, type Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
-  captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession,
+  captureStableAria, compareOrRefreshGolden, expandProductNavigation, launchWebScaffold, seedSession,
   selectedSessionFixture, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 
@@ -114,18 +114,27 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   let page: Page
   let directory: string
   let failures = 0
+  const preferences = /^(Preferences|Preferências)$/
   async function navigate(name: RegExp) {
     await page.setViewportSize({ width: 1280, height: 960 })
-    const open = page.getByRole('button', { name: /^(Open sidebar|Abrir barra lateral)$/ }).first()
-    if (await open.isVisible()) await open.click()
+    await page.locator('[data-sidebar-drawer]').waitFor({ state: 'detached' })
+    await expandProductNavigation(page)
+    if (name === preferences) {
+      await page.getByRole('button', { name: /^(Verboo account|Conta Verboo)$/ }).click()
+      await page.getByRole('menuitem', { name }).click()
+      return
+    }
     const button = page.getByRole('button', { name }).first()
     await button.click()
   }
   async function showContent(width: number) {
     await page.setViewportSize({ width, height: 960 })
     if (width >= 700) return
-    const close = page.getByRole('button', { name: /^(Collapse sidebar|Recolher barra lateral)$/ }).first()
-    if (await close.isVisible()) await close.click()
+    const drawer = page.locator('[data-sidebar-drawer]')
+    await drawer.waitFor()
+    if (await drawer.getAttribute('data-sidebar-collapsed') !== 'true') {
+      await drawer.getByRole('button', { name: /^(Collapse navigation|Recolher navegação)$/ }).click()
+    }
   }
   async function openConversation() {
     await navigate(/^(Workspace|Área de trabalho)$/)
@@ -184,7 +193,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
     if (DEBUG) {
-      await page.getByRole('button', { name: /^(Preferences|Preferências)$/ }).click()
+      await navigate(preferences)
       await page.getByRole('checkbox', { name: 'Stamina (debug)' }).click()
       await page.waitForFunction(() => {
         const input = document.querySelector<HTMLInputElement>('input[type=checkbox]')
@@ -207,7 +216,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
 
   it('keeps stamina off plan, connection and preference pages across themes and viewport sizes', async () => {
     for (const locale of ['en', 'pt']) {
-      await navigate(/^(Preferences|Preferências)$/)
+      await navigate(preferences)
       await page.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
       await navigate(/^(My plan|Meu plano)$/)
       const region = page.locator('[data-verboo-page="plan"]')
@@ -247,7 +256,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
           await page.screenshot({ path: join(ARTIFACTS, `plan-${locale}-${theme}-${width}.png`), animations: 'disabled' })
         }
       }
-      for (const [name, id] of [[/^(Connections|Conexões)$/, 'connections'], [/^(Preferences|Preferências)$/, 'preferences']] as const) {
+      for (const [name, id] of [[/^(Connections|Conexões)$/, 'connections'], [preferences, 'preferences']] as const) {
         await navigate(name)
         await page.locator(`[data-verboo-page="${id}"]`).waitFor()
         expect(await page.locator('[data-verboo-stamina-liquid]:visible').count()).toBe(0)
@@ -256,7 +265,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     }
   })
   it('surrounds Send with a purple ring while retaining the water inside', async () => {
-    await navigate(/^(Preferences|Preferências)$/)
+    await navigate(preferences)
     await page.getByLabel(/^(Language|Idioma)$/).selectOption('en')
     await openConversation()
     await chooseModel('Fixture model')
@@ -312,7 +321,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await navigate(/^(My plan|Meu plano)$/)
   })
   it('shows empty and full liquid without preventing an otherwise valid send', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
     const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     const editor = page.locator('[data-composer-input]')
@@ -336,7 +345,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await navigate(/^(My plan|Meu plano)$/)
   })
   it('preserves confirmed liquid during failure, automatically recovers, and hides an unselected account', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     platform.state.down = true
     await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBe('true')
@@ -350,7 +359,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
   })
   it('discards the old account response while switching to another selected account', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
     platform.state.holdNext = true
     await expect.poll(() => platform.state.held !== undefined, { timeout: 10000 }).toBe(true)
     const account = scaffold.ctx.deepseekAccount
@@ -422,12 +431,12 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       expect(debugBox!.x + debugBox!.width).toBeLessThanOrEqual(390)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: join(ARTIFACTS, 'debug-server-reading-compact.png'), animations: 'disabled' })
-      await navigate(/^(Preferences|Preferências)$/)
+      await navigate(preferences)
       const toggle = page.getByRole('checkbox', { name: 'Stamina (debug)' })
       await toggle.click()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
       await page.reload({ waitUntil: 'load' })
-      await navigate(/^(Preferences|Preferências)$/)
+      await navigate(preferences)
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
       await toggle.click()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(true)

@@ -1,2 +1,2 @@
-- alert: This terminal no longer exists. Open a new terminal.
+- alert: The previous terminal was closed. Open a new terminal.
 - button "New terminal"

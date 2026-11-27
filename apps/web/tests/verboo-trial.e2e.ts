@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, type Page } from 'playwright'
 import { expect, it } from 'vitest'
 import {
-  captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession,
+  captureStableAria, compareOrRefreshGolden, expandProductNavigation, launchWebScaffold, seedSession,
   selectedSessionFixture, webSnapshotMode,
 } from './scaffold.ts'
 
@@ -87,6 +87,7 @@ it('shows trial attention and an explicit quote, then resumes only the original 
     await context.route('https://checkout.stripe.com/**', route => route.fulfill({ status: 200, body: 'Fixture payment destination' }))
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
+    await expandProductNavigation(page)
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
     await page.locator('[data-verboo-session="trial-history"]').getByRole('button').first().click()
     await page.locator('[data-verboo-trial-notice]').waitFor()
