@@ -23,6 +23,7 @@
   // this client-registered project must not also hold them (one program
   // cannot see both sides of the cordis Context merges).
   "exclude": [
+    "tests/verboo-first-use-tour.e2e.ts",
     "tests/verboo-product-analytics.e2e.ts",
     "tests/verboo-trial.e2e.ts",
     "tests/verboo-stamina.e2e.ts",
