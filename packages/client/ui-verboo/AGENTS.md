@@ -7,6 +7,6 @@ Match the Verboo Code web app's visual identity: near-black neutral surfaces, lo
 
 Show stamina as water inside the existing Send/Stop button, with a thin purple circular ring around it. Keep the arrow, actions, disabled state and keyboard focus owned by the composer. Do not add a separate stamina bar or control beside the model. Keep inference rate ceilings out of the interface, tooltips and accessibility labels. The Analytics page may show the account's server-reported generation speed; do not substitute stamina limits for actual measurements. Respect reduced motion.
 
-Keep the normal Working label out of the composer; retain waiting, connection and error feedback. Opt-in staminaDebug diagnostics may show exact server percentages, plan names and server reading times, but never inference rates or financial reserves. Normal mode keeps these diagnostics hidden. The Analytics page may separately show server stamina per plan.
+Keep the normal Working label out of the composer; retain waiting, connection and error feedback. Stamina debug controls and readings stay out of the product interface. The Analytics page may separately show server stamina per plan.
 
-Bind water and debug readings to the accepted composer model’s group using server routing slugs and group IDs. Never borrow a percentage from another enrollment, infer identity from a display name or select the lowest balance across unrelated groups. Missing group metadata or stamina stays unavailable.
+Bind the water indicator to the accepted composer model’s group using server routing slugs and group IDs. Never borrow a percentage from another enrollment, infer identity from a display name or select the lowest balance across unrelated groups. Missing group metadata or stamina stays unavailable.

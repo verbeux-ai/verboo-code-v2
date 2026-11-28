@@ -83,6 +83,10 @@ declare global {
     readonly protocolVersion: number
     /** Host-reported runtime identity shown in the account sheet. */
     deviceInfo?(): Promise<string>
+    /** Ask the desktop notification backend for permission after explicit opt-in. */
+    notificationPermission?(): Promise<boolean>
+    /** Send a generic completion notification when the window is out of focus. */
+    notifyTaskComplete?(title: string, body: string): Promise<boolean>
     /** Quit the native application after the user holds the shortcut. */
     quit?(this: void): Promise<void>
     /** Present a separate, unprivileged payment WebView until the user closes the modal. */

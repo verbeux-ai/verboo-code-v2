@@ -13,7 +13,7 @@
  * trigger instead of a parallel tree.
  */
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react'
 import clsx from 'clsx'
 import {
@@ -67,6 +67,8 @@ export const InputBar = memo(function InputBar({
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
   const [activity, setActivity] = useState(false)
+  const [primaryDescription, setPrimaryDescription] = useState<string>()
+  const primaryDescriptionId = useId()
   useEffect(() => { setActivity(false) }, [sessionId])
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
@@ -392,6 +394,7 @@ export const InputBar = memo(function InputBar({
   const primaryStops = running && subagent === null && !sending && (empty || blocked !== undefined)
   // Disabled native buttons may omit mouseleave; their tooltip must close from state.
   const primaryDisabled = primaryStops ? stopAction === undefined : empty || disabled || machineBusy || uploadsPending
+  const primaryDescriptionFocusable = primaryDisabled && primaryDescription !== undefined
   const interruptible = running && (continuable || (sending && subagent === null))
   const primarySubmitMode = resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)
   const plainMessageDraft = !empty && input?.phase === 'plain' && !draft.trimStart().startsWith('/')
@@ -583,37 +586,55 @@ export const InputBar = memo(function InputBar({
               </Tooltip>
             )}
             {(primaryStops ? cancelDenied : promptDenied) ? null : (
-              <Tooltip label={primaryStops ? t('input.stop') : primaryLabel} shortcutKeys={primaryStops ? (paneShortcut ? ['Esc'] : stopKeys) : undefined} side="top" delayMs={500} disabled={primaryDisabled} portal>
-                <button
-                  type="button"
-                  className={css.primary}
-                  aria-label={primaryLabel}
-                  data-composer-primary
-                  aria-busy={sending}
-                  data-sending={sending ? '' : undefined}
-                  disabled={primaryDisabled}
-                  onMouseDown={keepFocus}
-                  onClick={onPrimary}
+              <Tooltip
+                label={primaryDescription === undefined ? primaryLabel : `${primaryLabel} · ${primaryDescription}`}
+                shortcutKeys={primaryStops ? (paneShortcut ? ['Esc'] : stopKeys) : undefined}
+                side="top"
+                delayMs={500}
+                disabled={primaryDisabled && primaryDescription === undefined}
+                maxWidth={300}
+                portal
+              >
+                <span
+                  className={css.primaryAnchor}
+                  tabIndex={primaryDescriptionFocusable ? 0 : undefined}
+                  role={primaryDescriptionFocusable ? 'group' : undefined}
+                  aria-label={primaryDescriptionFocusable ? primaryLabel : undefined}
+                  aria-describedby={primaryDescriptionFocusable ? primaryDescriptionId : undefined}
                 >
-                  <span className={css.primaryBackground} data-composer-primary-background aria-hidden="true">
-                    {renderSlot('conversation.input.primary.background', {})}
-                  </span>
-                  {/* Distinct glyphs prevent WebKit from retaining the spinner animation on Send or Stop. */}
-                  {primaryStops ? (
-                    <svg key="stop" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                      <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
-                    </svg>
-                  ) : sending ? (
-                    <svg key="sending" className={css.sendingSpinner} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
-                      <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  ) : (
-                    <svg key="send" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-                      <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
-                    </svg>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    className={css.primary}
+                    aria-label={primaryLabel}
+                    aria-describedby={primaryDescription === undefined ? undefined : primaryDescriptionId}
+                    data-composer-primary
+                    aria-busy={sending}
+                    data-sending={sending ? '' : undefined}
+                    disabled={primaryDisabled}
+                    onMouseDown={keepFocus}
+                    onClick={onPrimary}
+                  >
+                    <span className={css.primaryBackground} data-composer-primary-background aria-hidden="true">
+                      {renderSlot('conversation.input.primary.background', { onDescriptionChange: setPrimaryDescription })}
+                    </span>
+                    {/* Distinct glyphs prevent WebKit from retaining the spinner animation on Send or Stop. */}
+                    {primaryStops ? (
+                      <svg key="stop" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                        <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+                      </svg>
+                    ) : sending ? (
+                      <svg key="sending" className={css.sendingSpinner} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
+                        <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <svg key="send" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                        <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
+                      </svg>
+                    )}
+                  </button>
+                  {primaryDescription !== undefined && <span id={primaryDescriptionId} hidden>{primaryDescription}</span>}
+                </span>
               </Tooltip>
             )}
           </div>

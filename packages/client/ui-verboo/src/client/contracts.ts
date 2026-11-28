@@ -7,7 +7,7 @@ import type {
   PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { FontRole, FontSizes, ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { BillingState, CardSetupLabels, LifecycleAction } from './billing-model.ts'
 import type { ProductSnapshot } from './model.ts'
 import type { DesktopUpdateState } from './update-source.ts'
@@ -19,11 +19,14 @@ import type {
   Subscription,
   PlanId,
   StaminaStatus,
+  UsageWindowsStatus,
+  ProfileSettings, PasswordResult, Result,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { McpServerInput } from '@deepseek-ai/dsh-api-verboo-mcp/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Key } from './locales.ts'
+import type { ConversationWidth } from '../config.ts'
 import type {} from '@deepseek-ai/dsh-openai-account/remote'
 import type { SubscriptionUsage } from './subscription-usage-resource.ts'
 import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client'
@@ -36,6 +39,9 @@ export type ExecutionProps = PropsRuntime<'conversation.composer.dock'> & PropsL
 /** Theme and language choices observed by product components. */
 export interface PreferenceSnapshot {
   theme: ThemePreference
+  fontSizes: FontSizes
+  conversationWidth: ConversationWidth
+  canSetConversationWidth: boolean
   locale: string
   languages: readonly { id: string; label: string }[]
 }
@@ -63,6 +69,10 @@ export interface ProductInjected {
   reopen(): void
   cancel(): void
   retryAccount(): void
+  getProfileSettings(): Promise<Result<ProfileSettings>>
+  updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>>
+  updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult>
+  signOutAll(owner: string): Promise<boolean>
   signOut(): Promise<boolean>
   startSession(): void
   openSession(id: SessionId): void
@@ -118,6 +128,9 @@ export interface ProductInjected {
   billing(id: PlanId | null, purchase: boolean): void
   dismiss(): void
   setTheme(theme: 'light' | 'dark' | 'system'): void
+  setFontSize(role: FontRole, size: number): void
+  setConversationWidth(width: ConversationWidth): Promise<boolean>
+  openShortcuts(): void
   setLocale(locale: string): void
   retryModel(): void
   help(): void
@@ -143,6 +156,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
     /** Public stamina for the account encoded in the resource address. */
     'verboo-stamina': StaminaStatus[]
+    /** Public allowance windows for the account encoded in this address. */
+    'verboo-usage-windows': UsageWindowsStatus[]
     /** Usage reading of the external subscription serving the account's ChatGPT route. */
     'verboo-subscription-usage': SubscriptionUsage
   }

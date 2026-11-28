@@ -13,6 +13,7 @@ const MAX_VALUE: usize = 1024 * 1024;
 fn allowed(key: &str) -> bool {
     key.len() <= 2048
         && (key == "dsh.verboo.layout.v1"
+            || key == "dsh.verboo.notifications.v1"
             || key == "dsh.terminal.shell"
             || key.starts_with("dsh.sidebar-right.v1.")
             || key.starts_with("dsh.terminal.binding.v1.")

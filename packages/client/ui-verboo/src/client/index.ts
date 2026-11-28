@@ -41,6 +41,7 @@ import { createUpdateSource } from './update-source.ts'
 import { createUpdateAnalytics } from './update-analytics.ts'
 import { createConnectionAnalytics } from './connection-analytics.ts'
 import { createStaminaResource } from './stamina-resource.ts'
+import { createUsageWindowsResource } from './usage-windows-resource.ts'
 import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -48,7 +49,6 @@ import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ProductAction } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -141,14 +141,26 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       navigationEntries.set([])
     }
   })
+  const widthForm = ctx.configForms.get<Pick<Config, 'conversationWidth'>>('ui-verboo')
   const preferenceValue = (): PreferenceSnapshot => ({
     theme: ctx.theme.getTheme().preference,
+    fontSizes: ctx.theme.getTheme().fontSizes,
+    conversationWidth: widthForm.getSnapshot().value?.conversationWidth ?? config.conversationWidth,
+    canSetConversationWidth: widthForm.getSnapshot().status === 'ready',
     locale: ctx.locale.getLocale().active,
     languages: ctx.locale
       .getLocale()
       .locales.map(l => ({ id: l.id, label: l.label })),
   })
   const preferences = createSnapshotStore(preferenceValue())
+  ctx.effect(() => widthForm.subscribe(() => { preferences.set(preferenceValue()) }), 'Verboo: conversation width preference')
+  ctx.effect(() => ctx.remote.$on('api-session/turn-completed', () => {
+    if (localStorage.getItem('dsh.verboo.notifications.v1') !== 'on') return
+    const native = globalThis.__VERBOO_DESKTOP__
+    if (!native?.notifyTaskComplete) return
+    const t = ctx.locale.bind('verboo')
+    void native.notifyTaskComplete(t('settingsNotificationTitle'), t('settingsNotificationBody')).catch(() => {})
+  }), 'Verboo: completed task notification')
   ctx.on('theme/change', () =>{  preferences.set(preferenceValue()) })
   ctx.on('locale/change', () =>{  preferences.set(preferenceValue()) })
   const metadata = (): AccountClientMetadata => ({
@@ -431,6 +443,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     config.staminaRefreshIntervalMs,
   )
   ctx.effect(() => ctx.resources.register(stamina.provider), 'Verboo: account stamina')
+  const allowance = createUsageWindowsResource(
+    signal => ctx.remote.verboo.getUsageWindows(signal), model.state, config.usageWindowsRefreshIntervalMs,
+  )
+  ctx.effect(() => ctx.resources.register(allowance.provider), 'Verboo: account allowance')
   const subscriptionUsage = createSubscriptionUsageResource(
     signal => ctx.remote.llmOpenaiAccount.usage(signal),
     model.state,
@@ -691,6 +707,24 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         } else await model.refreshProfile()
       })().catch(() =>{  model.failAccount() })
     },
+    getProfileSettings: async () => {
+      const r = await ctx.remote.verboo.getProfileSettings()
+      return r.ok ? r.value : { ok: false, code: 'request_failed' }
+    },
+    updateProfileSettings: async (input) => {
+      const r = await ctx.remote.verboo.updateProfileSettings(input)
+      if (r.ok && r.value.ok) void model.refreshProfile()
+      return r.ok ? r.value : { ok: false, code: 'request_failed' }
+    },
+    updateAccountPassword: async (input) => {
+      const r = await ctx.remote.verboo.updateAccountPassword(input)
+      return r.ok ? r.value : { ok: false, code: 'failed' }
+    },
+    signOutAll: async (owner) => {
+      const r = await ctx.remote.verboo.signOutAll(owner)
+      if (!r.ok || !r.value.ok) return false
+      return model.state.getSnapshot().profile?.id === owner ? model.signOut() : true
+    },
     signOut: () => model.signOut(),
     startSession: () =>{  ctx.uiWorkspace.startSession() },
     openSession: (id) =>{  ctx.uiWorkspace.openSession(id) },
@@ -782,6 +816,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
     dismiss: () =>{  model.dismiss() },
     setTheme: (theme) =>{  ctx.theme.setTheme(theme) },
+    setFontSize: (role, size) => { ctx.theme.setFontSize(role, size) },
+    setConversationWidth: width => widthForm.set('conversationWidth', width),
+    openShortcuts: () => { ctx.emit('shortcuts/open-reference') },
     setLocale: (locale) =>{  ctx.locale.setLocale(locale) },
     retryModel: () => {
       void model.initializeModel()
@@ -860,20 +897,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     const product = face()
     const staminaModel = sessionId === undefined ? noStaminaModel : ctx.modelDirectories.directoryFor(sessionId).store
     return { ...product, hooks: { ...product.hooks, staminaModel } }
-  }
-  const debugConfig = ctx.configForms.get<Pick<Config, 'staminaDebug'>>('ui-verboo')
-  const debugActions: StaminaDebugInjected = {
-    hooks: { staminaDebug: debugConfig },
-    refreshStamina: () => { stamina.refresh() },
-    async setStaminaDebug(enabled) {
-      try { return await debugConfig.set('staminaDebug', enabled) }
-      catch (_error) { return false } // The toggle reports an unsuccessful Host write inline.
-    },
-  }
-  const debugFace = (sessionId?: SessionId) => {
-    const product = staminaFace(sessionId)
-    return { ...product, ...debugActions,
-      hooks: { ...product.hooks, ...debugActions.hooks } }
   }
   // The pill reads the external subscription's own record; a Verboo route
   // leaves it absent, so the dock never shows a borrowed number.
@@ -1033,15 +1056,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       StaminaButtonFill,
     ),
   )
-  ctx.slots.inject('conversation.composer.dock', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.composer.dock', id: 'verboo.stamina-debug', order: 20, locale: 'verboo',
-        inject: debugFace,
-      },
-      StaminaDebug,
-    ),
-  )
   // The external subscription's reading stays absent until it has something to
   // say, so the dock keeps its resting height on a healthy window.
   ctx.slots.inject('conversation.composer.dock', () =>
@@ -1084,7 +1098,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ConnectionsPage,
     )
     yield ctx.slots.register(
-      { name: 'main', key: 'verboo.plan', locale: 'verboo', inject: billingFace },
+      { name: 'main', key: 'verboo.plan', locale: 'verboo',
+        inject: () => ({ ...billingFace(), refreshUsageWindows: allowance.refresh }) },
       PlanPage,
     )
     yield ctx.slots.register(
@@ -1092,7 +1107,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         name: 'main',
         key: 'verboo.preferences',
         locale: 'verboo',
-        inject: debugFace,
+        inject: face,
       },
       PreferencesPage,
     )

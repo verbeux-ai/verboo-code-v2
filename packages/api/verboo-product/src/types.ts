@@ -17,9 +17,20 @@ export interface Plan {
   /** Server routing slug; absent on older API projections. */
   slug?: string
   description: string
-  priceCents: number
-  currency: string
+  priceCents: number | null
+  currency: string | null
   interval: string
+  /** Set when the server lists the group without an acquisition offer. */
+  unavailable?: true
+  /** Server-reported limits and model catalog; omitted when unavailable. */
+  usageLimitsEnabled?: boolean
+  concurrentRequests?: number
+  apiRateLimitRpm?: number
+  apiAccessEnabled?: boolean
+  structuredOutputEnabled?: boolean
+  enableRanking?: boolean
+  seatPurchasesEnabled?: boolean
+  models?: { name: string; temporary: boolean }[]
 }
 /** Server-authoritative subscription information for one account. */
 export interface Subscription {
@@ -32,6 +43,7 @@ export interface Subscription {
   renewsAt: string | null
   cancelAtEnd: boolean
   canUpgrade: boolean
+  limitedUsage?: { concurrentRequests?: number; apiRateLimitRpm?: number }
   permissions?: SubscriptionPermissions
   activeChangeId?: PlanChangeId
   canRemoveTier?: boolean
@@ -42,6 +54,16 @@ export interface Subscription {
 export interface Plans {
   subscriptions: Subscription[]
   catalog: Plan[]
+}
+/** Display-safe allowance state, without internal budgets or billing inputs. */
+export interface UsageWindowsStatus {
+  groupId: PlanId
+  groupName: string
+  limited: boolean
+  blocked: boolean
+  accountingPending: boolean
+  availableAt: string | null
+  windows: { id: string; durationSeconds: number; usedPercent: number; resetsAt: string | null }[]
 }
 /** Public stamina for one enrolled plan. Budgets, tariffs and costs stay on the server. */
 export interface StaminaStatus {
@@ -114,6 +136,19 @@ export type ProductError =
 export type Result<T> =
   | { ok: true; data: T }
   | { ok: false; code: ProductError }
+
+/** Account settings returned by the authenticated profile endpoint. */
+export interface ProfileSettings {
+  id: string
+  name: string
+  email: string
+  hasPassword: boolean
+  publicProfile: boolean
+  anonymousHandle?: string | undefined
+}
+
+/** Password failures never include provider messages or password values. */
+export type PasswordResult = { ok: true } | { ok: false; code: 'incorrect_password' | 'failed' }
 
 /** Server-decided trial attention, scoped to the group whose access is ending. */
 export interface TrialNotice {

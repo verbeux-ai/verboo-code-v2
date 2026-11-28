@@ -92,11 +92,11 @@ export function DesktopUpdate({ state, t, install, retry }: {
           if ((ready || failed) && !busy) { setToast(false); setOpen(!open); setFailure(null) }
         }}>
         <svg viewBox="0 0 36 36" aria-hidden="true">
-          <circle className={css.desktopUpdateTrack} cx="18" cy="18" r="15" />
-          <circle className={css.desktopUpdateRing} cx="18" cy="18" r="15" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - circle} />
+          {!ready && <><circle className={css.desktopUpdateTrack} cx="18" cy="18" r="15" />
+            <circle className={css.desktopUpdateRing} cx="18" cy="18" r="15" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - circle} /></>}
           <path className={css.desktopUpdateArrow} d="M18 10v13m-5-5 5 5 5-5" />
         </svg>
-        {ready && <span className={css.desktopUpdateDot} />}
+        {ready && <span className={css.desktopUpdateText}>{t('updateCompleteCompact')}</span>}
       </button>
     </Tooltip>
     {toast && !open && createPortal(<div className={css.desktopUpdateToast} style={floating} role={state.phase === 'error' ? 'alert' : 'status'}>{label}</div>, document.body)}

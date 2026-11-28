@@ -70,6 +70,10 @@ async function platformFixture() {
       respond(res, 200, { data: { available: false, toolkits: [], accounts: [] } })
       return
     }
+    if (req.url === '/api/me/usage-windows') {
+      respond(res, 200, { data: [] })
+      return
+    }
     respond(res, 404, { error: 'not_found' })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -116,7 +120,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   let failures = 0
   async function navigate(name: RegExp) {
     await page.setViewportSize({ width: 1280, height: 960 })
-    const open = page.getByRole('button', { name: /^(Open sidebar|Abrir barra lateral)$/ }).first()
+    const open = page.getByRole('button', { name: /^(Open navigation|Abrir navegação)$/ }).first()
     if (await open.isVisible()) await open.click()
     const button = page.getByRole('button', { name }).first()
     await button.click()
@@ -178,6 +182,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     })
     const session = await selectedSessionFixture(join(ROOT, 'snapshots/web/turn-tail-actions/session.v4.jsonl'))
     await seedSession(scaffold, await readFile(session, 'utf8'), 'stamina-history')
+    await seedSession(scaffold, await readFile(session, 'utf8'), 'switch-history')
     browser = await chromium.launch(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {})
     page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US', deviceScaleFactor: 2 })
     page.setDefaultTimeout(10000)
@@ -192,6 +197,48 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       })
     }
   }, 120000)
+  it('previews recent conversations on desktop and commits only after Control is released', async () => {
+    const desktop = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'en-US' })
+    desktop.setDefaultTimeout(12000)
+    try {
+      // Tauri exposes its own bridge and does not set the old Electron platform marker.
+      await desktop.addInitScript(() => {
+        Object.defineProperty(window, '__VERBOO_DESKTOP__', {
+          value: { framework: 'tauri', protocolVersion: 1, deviceInfo: async () => undefined },
+        })
+      })
+      await desktop.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await desktop.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
+      const open = desktop.getByRole('button', { name: /^(Open navigation|Abrir navegação)$/ })
+      if (await open.isVisible()) await open.click()
+      const start = desktop.locator('[data-verboo-session="stamina-history"]')
+      const target = desktop.locator('[data-verboo-session="switch-history"]')
+      await start.getByRole('button').first().click()
+      await expect.poll(() => start.getAttribute('data-active')).toBe('true')
+      const editor = desktop.locator('[data-composer-input]').first()
+      await editor.focus()
+      const overlay = desktop.getByRole('region', { name: /^(Switch conversation|Alternar conversa)$/ })
+      await desktop.keyboard.down('Control')
+      await desktop.keyboard.press('Tab')
+      await overlay.waitFor()
+      expect(await start.getAttribute('data-active')).toBe('true')
+      await desktop.keyboard.up('Control')
+      await overlay.waitFor({ state: 'hidden' })
+      await expect.poll(() => target.getAttribute('data-active')).toBe('true')
+      await desktop.keyboard.down('Control')
+      await desktop.keyboard.press('Shift+Tab')
+      await overlay.waitFor()
+      await desktop.keyboard.press('Escape')
+      await desktop.keyboard.up('Control')
+      expect(await overlay.count()).toBe(0)
+      expect(await target.getAttribute('data-active')).toBe('true')
+    } catch (error) {
+      await writeFile(join(ARTIFACTS, 'switcher-failure.aria.txt'), await desktop.locator('body').ariaSnapshot())
+      throw error
+    } finally {
+      await desktop.close()
+    }
+  }, 90000)
   afterEach(async ({ task }) => {
     if (task.result?.state !== 'fail' || !page) return
     const path = join(ARTIFACTS, `failure-${++failures}`)

@@ -88,6 +88,8 @@ it('shows trial attention and an explicit quote, then resumes only the original 
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: /^(Workspace|Área de trabalho)$/ }).first().click()
+    const openNavigation = page.getByRole('button', { name: /^(Open navigation|Abrir navegação)$/ })
+    if (await openNavigation.isVisible()) await openNavigation.click()
     await page.locator('[data-verboo-session="trial-history"]').getByRole('button').first().click()
     await page.locator('[data-verboo-trial-notice]').waitFor()
     expect(await page.locator('[data-verboo-trial-notice]').textContent()).toContain('200')

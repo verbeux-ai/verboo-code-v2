@@ -326,6 +326,16 @@
   white-space: pre-line;
 }
 
+.features, .models ul { list-style:none; padding:0; margin:0; }
+.features { display:grid; gap:7px; margin:4px 0 14px; }
+.features li { display:flex; align-items:flex-start; gap:7px; color:var(--verboo-ink); font-size:12px; line-height:1.4; }
+.features svg { flex:none; color:var(--verboo-accent); margin-top:1px; }
+.models { color:var(--verboo-muted); font-size:11px; line-height:1.5; }
+.models p { margin:0 0 5px; color:var(--verboo-ink); font-size:11px; font-weight:600; }
+.models li { padding:2px 0; overflow-wrap:anywhere; }
+.models li span { color:var(--verboo-muted); }
+.models summary { margin-top:5px; padding-block:3px; color:var(--verboo-accent); }
+
 .cardFoot {
   margin-top: auto;
   padding-top: 18px;
@@ -816,4 +826,42 @@
   .modalActions > button, .modalPlanList > button, .modalClose {
     min-height: 44px;
   }
+}
+
+.usageGroup {
+  padding-block: 8px;
+}
+.usageGroup + .usageGroup {
+  border-top: 1px solid var(--verboo-border);
+}
+.usageGroup h3 {
+  font-size: 14px;
+}
+.usageHeading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.usageWindow {
+  margin-top: 8px;
+}
+.usageProgress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--verboo-accent);
+}
+.usageNote, .usageBlocked {
+  margin: 4px 0;
+  color: var(--verboo-muted);
+  font-size: 12px;
+}
+.usageBlocked {
+  color: var(--verboo-error);
+}
+.usageRetry {
+  color: var(--verboo-accent);
+  text-decoration: underline;
 }

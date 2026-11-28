@@ -14,6 +14,7 @@ describe('desktop update indicator', () => {
     render(<DesktopUpdate state={{ phase: 'ready', percent: 100 }} t={t} retry={vi.fn()} install={vi.fn()} />)
     expect(screen.getByRole('status').textContent).toBe('Atualização baixada com sucesso')
     expect(screen.getByRole('button', { name: 'Atualização baixada com sucesso' })).toBeTruthy()
+    expect(screen.getByText('Download completo')).toBeTruthy()
   })
 
   it('opens an error bubble with Boo and retries without restarting the app', async () => {

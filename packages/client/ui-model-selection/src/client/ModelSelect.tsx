@@ -488,8 +488,15 @@ export function ModelSelect(
       onKeyDown={onRootKeyDown}
       onBlur={onBlur}
       onMouseDown={(event) => {
+        const target = event.target
+        if (!(target instanceof Element)) return
         // WebKit blurs a focused row before click unless the button's mousedown keeps focus.
-        if (event.target instanceof Element && event.target.closest('button') !== null) event.preventDefault()
+        const isButton = target.closest('button') !== null
+        // The scale and padding are inside the effort menu. Keep the slider focused
+        // there, while letting the native input handle its own clicks and drags.
+        const isEffortDecoration = pane === 'effort' && menuRef.current?.contains(target) === true
+          && target !== effortInputRef.current
+        if (isButton || isEffortDecoration) event.preventDefault()
       }}
     >
       <button

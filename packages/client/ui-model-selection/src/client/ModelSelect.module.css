@@ -423,7 +423,7 @@
  * it; the native thumb then travels exactly between the first and last stop. */
 .effortSlider {
   position: relative;
-  height: 20px;
+  height: 36px;
 }
 
 .effortRail {

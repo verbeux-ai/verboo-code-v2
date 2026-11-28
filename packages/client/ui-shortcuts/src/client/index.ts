@@ -31,6 +31,7 @@ export function apply(ctx: Context): void {
   const handle = createShortcutsStore()
   const instance = handle.create()
   const store: typeof handle = { ...handle, create: () => instance }
+  ctx.effect(() => ctx.on('shortcuts/open-reference', () => { instance.actions.open() }), 'shortcuts: open reference')
   const edit: typeof ctx.shortcuts.edit = (...args) => ctx.shortcuts.edit(...args)
   const recording = (active: boolean) => ctx.shortcuts.recording(active)
   const describeBinding: typeof ctx.shortcuts.describeBinding = binding => ctx.shortcuts.describeBinding(binding)

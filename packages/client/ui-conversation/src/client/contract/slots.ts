@@ -324,7 +324,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * Non-interactive decoration behind the primary action, clipped to its circle. A painted
      * contribution carries data-composer-primary-visual; the carrier keeps its own semantics.
      */
-    'conversation.input.primary.background': { kind: 'single'; scope: 'session-maybe' }
+    'conversation.input.primary.background': { kind: 'single'; scope: 'session-maybe'; owner: InputPrimaryBackgroundOwnerProps }
     /**
      * Compact action after the model selector; it can expand across the toolbar while retaining the
      * editor and submit action, and fixed overlays must portal to the document body because the
@@ -611,6 +611,12 @@ export interface ComposerBarInjected {
 export interface InputControlOwnerProps {
   /** Whether the composer currently refuses interaction. */
   locked: boolean
+}
+
+/** Optional accessible detail supplied by the primary action's visual decoration. */
+export interface InputPrimaryBackgroundOwnerProps {
+  /** @param description - localized detail to include in the tooltip; clear it on unmount. */
+  onDescriptionChange: (description: string | undefined) => void
 }
 
 /** A toolbar activity hides ordinary accessory controls while expanded; its occupant must release expansion on unmount. */
