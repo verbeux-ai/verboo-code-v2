@@ -159,10 +159,14 @@ describe('summary and section states', () => {
   })
 
   it('explains an unavailable catalog without inventing rows', () => {
-    const { props, state } = fixture()
-    state.connections = { available: false, toolkits: [], accounts: [] }
+    const { props } = fixture({ connections: { available: false, toolkits: [], accounts: [] }, mcpServers: [] })
     render(<ConnectionsPage {...props} />)
-    expect(screen.getAllByText(/As conexões estão indisponíveis/).length).toBeGreaterThan(0)
+    const alert = within(screen.getByRole('alert'))
+    expect(alert.getByText(pt.readConnectionsTitle)).toBeTruthy()
+    expect(alert.getByText(pt.readRetryDescription)).toBeTruthy()
+    expect(screen.queryAllByRole('article')).toEqual([])
+    fireEvent.click(alert.getByRole('button', { name: pt.retry }))
+    expect(props.loadConnections).toHaveBeenCalledOnce()
   })
 
   it('tells the user to finish authorizing in the browser during a handoff', () => {

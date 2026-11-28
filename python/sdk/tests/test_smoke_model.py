@@ -95,12 +95,21 @@ def live_smoke(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
                 raise AssertionError(state.receipt_mode)
             return state.verify_result
 
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "unit-test-key")
-    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.invalid")
+    monkeypatch.setenv("VERBOO_CODE_CI_API_KEY", "unit-test-verboo-key")
     monkeypatch.setattr(deepseek_harness, "DeepSeekHarness", ScriptedHarness)
     monkeypatch.setattr(globals_["secrets"], "token_hex", fresh_challenge)
     monkeypatch.setitem(globals_, "assert_zstd_session_log", state.checked_logs.append)
     return state
+
+
+def test_live_smoke_requires_the_verboo_credential(
+    live_smoke: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("VERBOO_CODE_CI_API_KEY")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "unrelated-provider-fixture")
+    with pytest.raises(AssertionError, match="sdk-live requires VERBOO_CODE_CI_API_KEY"):
+        SMOKE["smoke_sdk_live"]()
+    assert not live_smoke.prompts
 
 
 def test_live_smoke_requires_fresh_external_content(live_smoke: SimpleNamespace) -> None:

@@ -15,16 +15,27 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Cache isolation includes both the account and its accepted credential revision. */
-export function usageWindowsAddress({ view, profile }: Account): string {
+/**
+ * Cache isolation includes both the account and its accepted credential revision.
+ * @param account The current account view and profile.
+ * @returns The scoped resource address, or an empty string when no credential is accepted.
+ */
+export function usageWindowsAddress(account: Account): string {
+  const { view, profile } = account
   return view?.status === 'credential-stored' && view.credentialRevision !== undefined && profile?.id != null
     ? `dsh-resource://verboo-usage-windows/${encodeURIComponent(view.credentialRevision)}/${encodeURIComponent(profile.id)}`
     : ''
 }
 
-/** Build the Plans-only poller and its explicit retry. */
+/**
+ * Build the Plans-only poller and its explicit retry.
+ * @param read Read the current account's allowance windows.
+ * @param account Observe account and credential changes while the reader is open.
+ * @param intervalMs Delay in milliseconds between reads while the resource is visible.
+ * @returns The resource provider and a command to refresh active readers.
+ */
 export function createUsageWindowsResource(read: ClientRemote['verboo']['getUsageWindows'],
-  account: ObservableSnapshot<Account>, intervalMs: number): { provider: ResourceProvider<'verboo-usage-windows'>; refresh(): void } {
+  account: ObservableSnapshot<Account>, intervalMs: number): { provider: ResourceProvider<'verboo-usage-windows'>; refresh(this: void): void } {
   const refreshers = new Set<() => void>()
   const failure = (reason: Failure): RemoteResult<UsageWindowsStatus[]> => ({
     ok: false, error: new RemoteError('verboo/usage-windows-unavailable', 'Allowance refresh is unavailable.', { reason }),

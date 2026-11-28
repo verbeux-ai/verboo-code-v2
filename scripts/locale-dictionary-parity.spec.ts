@@ -122,6 +122,13 @@ function dictionariesIn(file: string): Dictionary[] {
     }
   }
 
+  const addDictionary = (name: string, literal: ts.ObjectLiteralExpression): void => {
+    const properties = dictionaryProperties(literal, moduleConsts)
+    const templates = Object.fromEntries([...properties].flatMap(([key, value]) =>
+      ts.isStringLiteralLike(value) ? [[key, value.text] as const] : []))
+    found.push({ file: rel, name, keys: [...properties.keys()].sort(), templates })
+  }
+
   for (const statement of source.statements) {
     if (!ts.isVariableStatement(statement)) continue
     if (statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) !== true) continue
@@ -130,7 +137,7 @@ function dictionariesIn(file: string): Dictionary[] {
       const literal = unwrap(decl.initializer)
       if (literal === undefined || !ts.isObjectLiteralExpression(literal)) continue
       if (localeOf(decl.name.text) === undefined) continue
-      found.push({ file: rel, name: decl.name.text, keys: keysOf(literal), templates: templatesOf(literal) })
+      addDictionary(decl.name.text, literal)
     }
   }
 
@@ -176,7 +183,7 @@ function dictionariesIn(file: string): Dictionary[] {
         // The namespace expression's source text identifies the pair, so the
         // zh and en calls for one namespace meet and calls for different
         // namespaces stay apart.
-        found.push({ file: rel, name: `${tag.text}@register:${ns.getText(source)}`, keys: keysOf(dictionary), templates: templatesOf(dictionary) })
+        addDictionary(`${tag.text}@register:${ns.getText(source)}`, dictionary)
       }
     }
     if (ts.isArrayLiteralExpression(node) && node.elements.length >= 2) {
@@ -188,7 +195,7 @@ function dictionariesIn(file: string): Dictionary[] {
         if (tag === undefined || !ts.isStringLiteral(tag)) continue
         if (literal === undefined || !ts.isObjectLiteralExpression(literal)) continue
         if (!SHIPPED_LOCALE_IDS.some(id => id === tag.text)) continue
-        found.push({ file: rel, name: `${tag.text}@inline:${site}`, keys: keysOf(literal), templates: templatesOf(literal) })
+        addDictionary(`${tag.text}@inline:${site}`, literal)
       }
     }
     ts.forEachChild(node, visit)
@@ -197,26 +204,30 @@ function dictionariesIn(file: string): Dictionary[] {
   return found
 }
 
-/** Literal templates; shared spread dictionaries are checked at their own declaration. */
-function templatesOf(literal: ts.ObjectLiteralExpression): Readonly<Record<string, string>> {
-  const templates: Record<string, string> = {}
+function dictionaryProperties(
+  literal: ts.ObjectLiteralExpression,
+  localValues: ReadonlyMap<string, ts.Expression>,
+  active = new Set<ts.ObjectLiteralExpression>(),
+): Map<string, ts.Expression> {
+  if (active.has(literal)) throw new Error('Locale dictionary has a cyclic spread')
+  active.add(literal)
+  const properties = new Map<string, ts.Expression>()
   for (const property of literal.properties) {
-    if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.initializer)) continue
-    if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
-      templates[property.name.text] = property.initializer.text
+    if (ts.isSpreadAssignment(property) && ts.isIdentifier(property.expression)) {
+      const name = property.expression.text
+      // A shared fragment declares copy for this locale. Spreading another
+      // locale is a runtime fallback and does not fulfill translation coverage.
+      const spread = localeOf(name) === undefined ? unwrap(localValues.get(name)) : undefined
+      if (spread && ts.isObjectLiteralExpression(spread)) {
+        for (const [key, value] of dictionaryProperties(spread, localValues, active)) properties.set(key, value)
+      }
+    } else if (ts.isPropertyAssignment(property)
+      && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+      properties.set(property.name.text, property.initializer)
     }
   }
-  return templates
-}
-
-/** Declared property names of an object literal, sorted. */
-function keysOf(literal: ts.ObjectLiteralExpression): string[] {
-  const keys: string[] = []
-  for (const prop of literal.properties) {
-    if (!ts.isPropertyAssignment(prop)) continue
-    if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) keys.push(prop.name.text)
-  }
-  return keys.sort()
+  active.delete(literal)
+  return properties
 }
 
 /** Look through `satisfies`/`as`/parenthesized wrappers to the literal. */
@@ -309,6 +320,26 @@ function registrationProblems(file: string): string[] {
 }
 
 describe('shipped locale dictionaries', () => {
+  it('counts shared copy and explicit overrides while keeping locale fallbacks visible as missing', () => {
+    const factory = ts.factory
+    const en = factory.createObjectLiteralExpression([
+      factory.createPropertyAssignment('fallbackOnly', factory.createStringLiteral('Fallback')),
+    ])
+    const shared = factory.createObjectLiteralExpression([
+      factory.createPropertyAssignment('sample', factory.createStringLiteral('pnpm test')),
+      factory.createPropertyAssignment('heading', factory.createStringLiteral('Heading')),
+    ])
+    const translated = factory.createStringLiteral('Título')
+    const pt = factory.createObjectLiteralExpression([
+      factory.createSpreadAssignment(factory.createIdentifier('en')),
+      factory.createSpreadAssignment(factory.createIdentifier('shared')),
+      factory.createPropertyAssignment('heading', translated),
+    ])
+    const properties = dictionaryProperties(pt, new Map([['en', en], ['shared', shared]]))
+    expect([...properties.keys()]).toEqual(['sample', 'heading'])
+    expect(properties.get('heading')).toBe(translated)
+  })
+
   it('registers every shipped language alongside every object-form bilingual dictionary', () => {
     expect(sourceFiles().flatMap(registrationProblems)).toEqual([])
   })

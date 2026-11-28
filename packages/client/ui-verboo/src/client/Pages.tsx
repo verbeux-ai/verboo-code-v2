@@ -8,8 +8,14 @@ import { AppearanceSettings } from './AppearanceSettings.tsx'
 import { PageHead } from './PageParts.tsx'
 import { paneShortcutKeys } from './panes/shortcut-labels.ts'
 import css from './Product.module.css'
+
+type PreferencesProps = Pick<PageProps,
+  't' | 'useProduct' | 'usePreferences' | 'getProfileSettings' | 'updateProfileSettings' | 'updateAccountPassword'
+  | 'selectPanel' | 'setLocale' | 'setFontSize' | 'setTheme' | 'setConversationWidth'
+  | 'openShortcuts' | 'help' | 'signOut' | 'signOutAll'>
+
 /** Preferences are an ordinary page. Destructive session changes use one accessible confirmation. */
-export function PreferencesPage(props: PageProps) {
+export function PreferencesPage(props: PreferencesProps) {
   const state = props.useProduct(s => s)
   const preference = props.usePreferences(s => s)
   const [signOut, setSignOut] = useState(false)

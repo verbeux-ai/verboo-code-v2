@@ -175,7 +175,11 @@ export interface ProductApi {
    */
   signOutMcpServer(this: void, name: string): Promise<McpResult<CustomMcpServerView>>
 }
-const initial = (): ProductSnapshot => ({
+/**
+ * Create the product display state before the first account read.
+ * @returns A fresh snapshot with no account, catalog, or session data.
+ */
+export const initialProductSnapshot = (): ProductSnapshot => ({
   view: null,
   profile: null,
   profilePreviouslyVerified: false,
@@ -212,7 +216,7 @@ export class ProductModel {
   /**
    * Observable current-account state; invalidated on identity replacement.
    */
-  readonly state = createSnapshotStore<ProductSnapshot>(initial())
+  readonly state = createSnapshotStore<ProductSnapshot>(initialProductSnapshot())
   private generation = 0
   private profileRequest: Promise<void> | undefined
   private planRequest: Promise<void> | undefined
@@ -271,7 +275,7 @@ export class ProductModel {
     this.planRequest = undefined
     this.connectionRequest = undefined
     this.mcpRequest = undefined
-    this.state.set(initial())
+    this.state.set(initialProductSnapshot())
   }
   /**
    * Apply a newer account observation without regressing an OAuth attempt.

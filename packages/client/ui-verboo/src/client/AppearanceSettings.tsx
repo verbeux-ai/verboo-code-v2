@@ -2,7 +2,10 @@ import { useState, type CSSProperties } from 'react'
 import { CONVERSATION_WIDTHS, type ConversationWidth } from '../config.ts'
 import type { PageProps, PreferenceSnapshot } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
+import type { Key } from './locales.ts'
 import css from './Product.module.css'
+
+type AppearanceProps = Pick<PageProps, 't' | 'setFontSize' | 'setTheme' | 'setConversationWidth'>
 
 const fontPresets = [
   { text: 10, code: 10, terminal: 10 },
@@ -11,7 +14,7 @@ const fontPresets = [
   { text: 18, code: 13, terminal: 16 },
   { text: 22, code: 16, terminal: 20 },
 ] as const
-const fontLabels = ['settingsFontVerySmall', 'settingsFontSmall', 'settingsFontMedium', 'settingsFontLarge', 'settingsFontVeryLarge'] as const
+const fontLabelKeys = ['settingsFontVerySmall', 'settingsFontSmall', 'settingsFontMedium', 'settingsFontLarge', 'settingsFontVeryLarge'] as const satisfies readonly Key[]
 const widthOptions = [
   ['narrow', 'settingsWidthNarrow'],
   ['standard', 'settingsWidthStandard'],
@@ -28,13 +31,13 @@ function closestFontPreset(sizes: PreferenceSnapshot['fontSizes']): number {
 }
 
 /** Appearance preferences and an inline sample of the selected theme, size and width. */
-export function AppearanceSettings({ props, preference }: { props: PageProps; preference: PreferenceSnapshot }) {
+export function AppearanceSettings({ props, preference }: { props: AppearanceProps; preference: PreferenceSnapshot }) {
   const { t, setFontSize, setTheme, setConversationWidth } = props
   const [pendingWidth, setPendingWidth] = useState<ConversationWidth | null>(null)
   const [widthFailed, setWidthFailed] = useState(false)
   const width = pendingWidth ?? preference.conversationWidth
   const fontLevel = closestFontPreset(preference.fontSizes)
-  const fontLabel = t(fontLabels[fontLevel] ?? fontLabels[2])
+  const fontLabel = t(fontLabelKeys[fontLevel] ?? fontLabelKeys[2])
   const applyFontPreset = (preset: PreferenceSnapshot['fontSizes']) => {
     setFontSize('text', preset.text)
     setFontSize('code', preset.code)
@@ -81,7 +84,7 @@ export function AppearanceSettings({ props, preference }: { props: PageProps; pr
         <div className={css.fontScale}>
           <div className={css.fontScaleHeading}><span>{t('settingsFontPreview')}</span><span>{fontLabel}</span></div>
           <div className={css.fontScaleControl} style={{ '--font-scale-progress': `${fontLevel * 25}%` } as CSSProperties}>
-            <span className={css.fontScaleSmall} aria-hidden="true">A</span>
+            <span className={css.fontScaleSmall} aria-hidden="true">{t('settingsPreviewGlyph')}</span>
             <div className={css.fontScaleTrack}>
               <div className={css.fontScaleStops} aria-hidden="true">
                 {fontPresets.map((_, i) => <span key={i} data-passed={i <= fontLevel} />)}
@@ -92,7 +95,7 @@ export function AppearanceSettings({ props, preference }: { props: PageProps; pr
                   if (preset) applyFontPreset(preset)
                 }} />
             </div>
-            <span className={css.fontScaleLarge} aria-hidden="true">A</span>
+            <span className={css.fontScaleLarge} aria-hidden="true">{t('settingsPreviewGlyph')}</span>
           </div>
         </div>
         <button className={css.secondary} type="button" onClick={() => { applyFontPreset(fontPresets[2]) }}>
@@ -116,8 +119,8 @@ export function AppearanceSettings({ props, preference }: { props: PageProps; pr
       <div className={css.appearancePreview} style={previewStyle}>
         <div className={css.appearanceSample}>
           <p>{t('settingsPreviewMessage')}</p>
-          <pre aria-label={t('settingsCodeSize')}><code>const ready = true</code></pre>
-          <pre aria-label={t('settingsTerminalSize')}><code><span aria-hidden="true">$</span> pnpm test</code></pre>
+          <pre aria-label={t('settingsCodeSize')}><code>{t('settingsPreviewCode')}</code></pre>
+          <pre aria-label={t('settingsTerminalSize')}><code><span aria-hidden="true">$</span> {t('settingsPreviewCommand')}</code></pre>
         </div>
       </div>
     </section>

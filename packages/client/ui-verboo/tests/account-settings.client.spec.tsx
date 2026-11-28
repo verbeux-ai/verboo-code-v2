@@ -1,22 +1,24 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { AccountSettings } from '../src/client/AccountSettings.tsx'
 import { PreferencesPage } from '../src/client/Pages.tsx'
-import type { PageProps } from '../src/client/contracts.ts'
 import { pt } from '../src/client/locales.ts'
+import { initialProductSnapshot } from '../src/client/model.ts'
 
+const copy: Readonly<Record<string, string>> = pt
 afterEach(cleanup)
 
 it('saves a profile change for the displayed account and validates password confirmation', async () => {
   const profile = { id: 'user-a', name: 'Ana', email: 'ana@example.test', hasPassword: true, publicProfile: false }
   const updateProfileSettings = vi.fn().mockResolvedValue({ ok: true, data: { ...profile, name: 'Ana Maria' } })
   const updateAccountPassword = vi.fn().mockResolvedValue({ ok: true })
-  const props = {
-    t: (key: keyof typeof pt) => pt[key],
+  const props: ComponentProps<typeof AccountSettings>['props'] = {
+    t: key => copy[key] ?? key,
     getProfileSettings: vi.fn().mockResolvedValue({ ok: true, data: profile }),
     updateProfileSettings, updateAccountPassword,
-  } as unknown as PageProps
+  }
   render(<AccountSettings props={props} owner="user-a" />)
   fireEvent.change(await screen.findByLabelText('Nome'), { target: { value: 'Ana Maria' } })
   fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }))
@@ -50,15 +52,17 @@ it('saves a profile change for the displayed account and validates password conf
 it('organizes settings into tabs and lets users preview and change conversation width', async () => {
   const setFontSize = vi.fn()
   const setConversationWidth = vi.fn().mockResolvedValue(false)
-  const props = {
-    t: (key: keyof typeof pt) => pt[key],
-    useProduct: (select: (value: unknown) => unknown) => select({ profile: null, view: null, busy: null }),
-    usePreferences: (select: (value: unknown) => unknown) => select({
+  const props: ComponentProps<typeof PreferencesPage> = {
+    t: key => copy[key] ?? key,
+    useProduct: select => select(initialProductSnapshot()),
+    usePreferences: select => select({
       theme: 'dark', fontSizes: { text: 14, code: 11, terminal: 13 }, locale: 'pt',
       conversationWidth: 'standard', canSetConversationWidth: true, languages: [{ id: 'pt', label: 'Português' }],
     }),
     selectPanel: vi.fn(), setTheme: vi.fn(), setLocale: vi.fn(), setFontSize, setConversationWidth, help: vi.fn(),
-  } as unknown as PageProps
+    openShortcuts: vi.fn(), signOut: vi.fn(), signOutAll: vi.fn(),
+    getProfileSettings: vi.fn(), updateProfileSettings: vi.fn(), updateAccountPassword: vi.fn(),
+  }
   render(<PreferencesPage {...props} />)
   fireEvent.click(screen.getByRole('button', { name: 'Geral' }))
   expect(screen.getByLabelText('Idioma')).toBeTruthy()

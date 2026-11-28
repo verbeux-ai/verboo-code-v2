@@ -845,7 +845,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     const terminal = page.locator('[data-sidebar-terminal]')
-    await expect.poll(() => terminal.getByRole('alert').innerText()).toContain('no longer exists')
+    await expect.poll(() => terminal.getByRole('alert').innerText()).toContain('The previous terminal was closed.')
     expect(terminals()).toEqual([])
     const expected = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
     await compareOrRefreshGolden(expected, await terminal.ariaSnapshot(), MODE)

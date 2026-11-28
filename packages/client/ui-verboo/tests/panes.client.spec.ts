@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { createScope } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   ISessions,
@@ -180,24 +182,28 @@ describe('independent Verboo conversation panes', () => {
     expect(controller.state.getSnapshot().references.size).toBe(2)
   })
 
-  it('only resolves the restored model after the focused pane retains its session', () => {
+  it('only resolves the restored model after the focused pane retains its session', async () => {
     const { controller, list } = fixture({ initial: undefined, save: vi.fn() }, 'pending')
     const directory = vi.fn()
-    const binding = { sessionId: b } as SessionBinding
-    const sessions = {
-      scope: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? {} : undefined,
-      binding: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? binding : undefined,
-    } as unknown as Pick<ISessions, 'scope' | 'binding'>
+    const handle = createScope(new Context(), b)
+    const sessions: Pick<ISessions, 'scope' | 'binding'> = {
+      scope: id => id === b && controller.state.getSnapshot().references.has('b') ? handle.ctx : undefined,
+      binding: id => id === b ? controller.state.getSnapshot().references.get('b')?.binding : undefined,
+    }
     const sync = () => {
       const current = focusedBinding(controller.state.getSnapshot(), sessions)
       if (current.binding !== undefined) directory(current.session)
     }
     const off = controller.state.subscribe(sync)
-    controller.restore({ version: 1, root: { kind: 'pane', id: 'b', sessionId: b }, focused: 'b' })
-    expect(directory).not.toHaveBeenCalled()
-    list.update((state) => { state.phase = 'ready' })
-    expect(directory).toHaveBeenCalledWith(b)
-    off()
+    try {
+      controller.restore({ version: 1, root: { kind: 'pane', id: 'b', sessionId: b }, focused: 'b' })
+      expect(directory).not.toHaveBeenCalled()
+      list.update((state) => { state.phase = 'ready' })
+      expect(directory).toHaveBeenCalledWith(b)
+    } finally {
+      off()
+      await handle.fiber.dispose()
+    }
   })
 
   it('does not navigate after a pending new conversation was superseded', async () => {

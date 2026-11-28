@@ -58,6 +58,7 @@ async function fixture(
     inferenceMalformed: false,
     inferenceStatus: 200,
     inferenceStatuses: [] as number[],
+    inferenceRetryVeto: false,
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
@@ -135,9 +136,14 @@ async function fixture(
       state.inferences++
       const status = state.inferenceStatuses.shift() ?? state.inferenceStatus
       if (status !== 200) {
+        if (state.inferenceRetryVeto)
+          res.setHeader('x-should-retry', 'false')
+        const error = status === 503 && state.inferenceRetryVeto
+          ? { code: 'free_tokens_accounting_pending', message: 'fixture billing rejection' }
+          : { message: 'fixture rejection' }
         res
           .writeHead(status)
-          .end('{"error":{"message":"fixture rejection"}}')
+          .end(JSON.stringify({ error }))
         return
       }
       res.setHeader('content-type', 'text/event-stream')
@@ -770,6 +776,38 @@ it('preserves a valid account when the gateway rejects an entitlement', async ()
   expect((await app.ctx.deepseekAccount.getState()).status).toBe(
     'credential-stored',
   )
+})
+
+it.each([
+  [503, true, 'ACCOUNT_REQUEST_RETRY_STOPPED', false],
+  [503, false, 'SERVER', true],
+  [429, true, 'ACCOUNT_REQUEST_RETRY_STOPPED', false],
+  [429, false, 'RATE_LIMIT', true],
+  [403, true, 'AUTH_FORBIDDEN', false],
+] as const)('keeps the application retry decision for HTTP %s with retry veto %s', async (status, veto, code, retryable) => {
+  const app = await fixture()
+  await app.login()
+  app.state.inferenceStatuses.push(status)
+  app.state.inferenceRetryVeto = veto
+  const provider = 'deepseek-account'
+  const model = 'max/qwen3.6-27b'
+  const prepared = await app.ctx.llm.prepareCall({ provider, model })
+  const chunks: StreamChunk[] = []
+  for await (const chunk of prepared.stream({ ...prepared.config, messages: [] }))
+    chunks.push(chunk)
+
+  expect(chunks.at(-1)).toMatchObject({
+    type: 'finish',
+    reason: {
+      kind: 'error',
+      failure: code === 'ACCOUNT_REQUEST_RETRY_STOPPED' ? { code, status } : { code },
+    },
+  })
+  const policy = prepared.retryPolicy
+  if (policy.mode !== 'normal') throw new Error('Expected the account route to use bounded retries')
+  expect(policy.retryableCodes.includes(code)).toBe(retryable)
+  expect(app.state.inferences).toBe(1)
+  expect(app.state.refreshes).toBe(0)
 })
 
 it('authenticates ciphertext and keeps issuer or installation keys separate', async () => {
