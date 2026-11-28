@@ -7,6 +7,10 @@ on:
         description: Run the isolated Windows smoke.
         type: boolean
         required: true
+      offline_only:
+        description: Run only the cached update on next launch.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,4 +39,6 @@ jobs:
           cache-on-failure: true
       - name: Verify signed upgrade and relaunch with the native Windows installer
         shell: pwsh
+        env:
+          VERBOO_SMOKE_OFFLINE_ONLY: ${{ inputs.offline_only && '1' || '0' }}
         run: node apps/desktop/tauri/tests/fixtures/windows-quiet-updater-native.mjs

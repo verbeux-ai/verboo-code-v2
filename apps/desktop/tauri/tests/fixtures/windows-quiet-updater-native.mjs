@@ -23,6 +23,7 @@ const staged = join(process.env.LOCALAPPDATA, 'ai.verbeux.verboo-code', 'pending
 const testDir = await mkdtemp(join(tmpdir(), 'verboo-quiet-update-'))
 const hostHome = join(dataDir, 'home')
 const fixture = join(hostHome, 'update-test-profile.txt')
+const offlineOnly = process.env.VERBOO_SMOKE_OFFLINE_ONLY === '1'
 
 const powershell = command => execute('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 30_000 })
 const appProcesses = "Get-Process | Where-Object ProcessName -EQ 'verboo-code-desktop'"
@@ -228,31 +229,31 @@ try {
   assert.deepEqual(await cargo.finished, { code: 0, signal: null })
   const testApp = resolve('apps/desktop/.desktop-build/tauri/target/x86_64-pc-windows-msvc/release', executable)
 
-  const manualLog = join(testDir, 'manual.log')
-  stopObserver = await observeWindows(manualLog, join(testDir, 'manual.ready'))
-  const manual = watch(previous.packageFile, [], { stdio: 'ignore' })
-  try {
-    await until('manual setup window as a control', async () => (await stat(manualLog)).size > 0, 30_000)
-    console.log('PASS: manually opening the official installer shows Verboo Code Setup.')
-  } finally {
-    manual.child.kill()
-    await manual.finished
-    await stopObserver()
-    stopObserver = undefined
-  }
-
   let standardUserError
-  try {
-    await checkStandardUserInstaller(previous, target)
-  } catch (error) {
-    standardUserError = error
-    console.error('Standard-user check:', error.stdout?.trim(), error.stderr?.trim())
-  } finally {
-    await powershell(appProcesses + ' | Stop-Process -Force')
+  if (!offlineOnly) {
+    const manualLog = join(testDir, 'manual.log')
+    stopObserver = await observeWindows(manualLog, join(testDir, 'manual.ready'))
+    const manual = watch(previous.packageFile, [], { stdio: 'ignore' })
+    try {
+      await until('manual setup window as a control', async () => (await stat(manualLog)).size > 0, 30_000)
+      console.log('PASS: manually opening the official installer shows Verboo Code Setup.')
+    } finally {
+      manual.child.kill()
+      await manual.finished
+      await stopObserver()
+      stopObserver = undefined
+    }
+    try {
+      await checkStandardUserInstaller(previous, target)
+    } catch (error) {
+      standardUserError = error
+      console.error('Standard-user check:', error.stdout?.trim(), error.stderr?.trim())
+    } finally {
+      await powershell(appProcesses + ' | Stop-Process -Force')
+    }
   }
 
-  for (const scenario of ['restart-now', 'next-open-offline']) {
-    if (scenario !== 'restart-now') await runInstaller(join(appDir, 'uninstall.exe'), ['/S'])
+  for (const scenario of offlineOnly ? ['next-open-offline'] : ['restart-now']) {
     await runInstaller(previous.packageFile, ['/S'])
     assert.equal(await installedVersion(), oldVersion)
     await copyFile(testApp, appFile)
