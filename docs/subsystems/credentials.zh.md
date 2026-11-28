@@ -464,6 +464,13 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote getPlans(): Promise<Result<Plans>>
 
 /**
+ * Read owned subscriptions independently of the commercial catalog.
+ * @param signal - cancellation of the owning Client read.
+ * @returns display-safe subscriptions for the current account.
+ */
+@Remote getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>
+
+/**
  * Read historical subscription usage without exposing account credentials.
  * @param period - selected reporting period.
  * @param groupId - plan group to read, or null for the account total.

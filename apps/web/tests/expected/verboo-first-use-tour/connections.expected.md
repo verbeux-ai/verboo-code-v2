@@ -1,0 +1,7 @@
+- dialog "Conexões":
+  - text: Etapa 6 de 6
+  - button "Fechar tour"
+  - heading "Conexões" [level=2]
+  - paragraph: Conecte serviços como GitHub e Google Drive para usar repositórios e documentos nas conversas.
+  - button "Voltar"
+  - button "Concluir"

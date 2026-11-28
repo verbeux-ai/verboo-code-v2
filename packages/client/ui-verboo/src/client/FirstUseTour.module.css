@@ -1,0 +1,76 @@
+.welcome.welcome {
+  width: min(460px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  gap: 0;
+  padding: 0 0 28px;
+  color: var(--verboo-ink);
+  font-family: var(--dsw-font-family);
+  background: radial-gradient(ellipse 62% 174px at 50% 92px,
+    color-mix(in srgb, var(--verboo-accent-solid) 28%, transparent),
+    color-mix(in srgb, var(--verboo-accent-solid) 8%, transparent) 55%,
+    transparent 100%), var(--dsw-alias-bg-layer-2);
+}
+.mascotStage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 170px;
+  color: var(--verboo-accent);
+}
+.mascotStage img {
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--verboo-accent-solid) 35%, transparent));
+}
+.sparkleLeft, .sparkleRight { position: absolute; }
+.sparkleLeft { inset: 52px auto auto calc(50% - 101px); transform: rotate(-14deg); }
+.sparkleRight { inset: 94px auto auto calc(50% + 83px); transform: rotate(15deg); }
+.close { position: absolute; inset: 12px 12px auto auto; }
+.welcomeCopy { padding: 0 24px; text-align: center; }
+.welcome h2, .tip h2 { margin: 0; color: var(--verboo-ink); font-weight: 500; }
+.welcome h2 { font-size: 26px; line-height: 1.25; letter-spacing: -.5px; }
+.welcome p, .tip p { margin: 10px 0 0; color: var(--verboo-muted); font-size: 14px; line-height: 1.55; }
+.welcomeButtons { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center; padding: 0 20px; margin-top: 22px; }
+.welcomeButtons button, .tipButtons button { min-height: 40px; padding-inline: 14px; }
+.overlay { position: fixed; inset: 0; z-index: 1000; overflow: hidden; pointer-events: auto; }
+.dim { position: absolute; inset: var(--dsh-frame-chrome-top, 0px) 0 0; background: rgb(0 0 0 / .62); }
+.spotlight {
+  position: absolute;
+  border: 2px solid var(--verboo-accent);
+  border-radius: var(--dsw-radius-sm);
+  box-sizing: border-box;
+  box-shadow: 0 0 0 160vmax rgb(0 0 0 / .62), 0 0 18px var(--verboo-accent);
+  pointer-events: none;
+}
+.tip {
+  position: absolute;
+  box-sizing: border-box;
+  width: min(328px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  padding: 14px 16px 16px;
+  border: 1px solid var(--verboo-border);
+  border-radius: var(--dsw-radius-panel);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--verboo-ink);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-family: var(--dsw-font-family);
+  outline: none;
+}
+.tip[data-point]::before {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: solid var(--verboo-border);
+  border-width: 1px 0 0 1px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+.tip[data-point='below']::before, .tip[data-point='above']::before { left: calc(clamp(18px, var(--tour-arrow), 100% - 18px) - 6px); }
+.tip[data-point='below']::before { top: -7px; }
+.tip[data-point='above']::before { bottom: -7px; transform: rotate(225deg); }
+.tip[data-point='right']::before { left: -7px; top: calc(clamp(18px, var(--tour-arrow), 100% - 18px) - 6px); transform: rotate(-45deg); }
+.tipTop { display: flex; align-items: center; justify-content: space-between; margin: -5px -5px 5px 0; color: var(--verboo-accent); font-size: 12px; }
+.tip h2 { font-size: 19px; line-height: 1.3; }
+.tipButtons { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; }
