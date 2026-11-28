@@ -464,6 +464,33 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote getPlans(): Promise<Result<Plans>>
 
 /**
+ * Read the current account's editable settings.
+ * @returns display-safe profile settings or an account request failure.
+ */
+@Remote getProfileSettings(): Promise<Result<ProfileSettings>>
+
+/**
+ * Apply one profile change for the active account.
+ * @param input - the displayed account ID and the profile fields to update.
+ * @returns the updated profile or a failure, including an account switch.
+ */
+@Remote updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>>
+
+/**
+ * Set or change the current account password without recording either password.
+ * @param input - the displayed account ID, new password and current password when one exists.
+ * @returns success, an incorrect password result or a failed update.
+ */
+@Remote async updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult>
+
+/**
+ * Revoke every server session for the currently displayed account.
+ * @param owner - the displayed account ID to match before revocation.
+ * @returns a successful null result or an account request failure.
+ */
+@Remote signOutAll(owner: string): Promise<Result<null>>
+
+/**
  * Read owned subscriptions independently of the commercial catalog.
  * @param signal - cancellation of the owning Client read.
  * @returns display-safe subscriptions for the current account.
@@ -499,6 +526,13 @@ async executeAgentConnection( input: { connectionId: string slug: string version
  * @returns public percentages and next-request ceilings; older APIs without stamina return an empty list.
  */
 @Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>
+
+/**
+ * Read only the current account's allowance windows for the Plans page.
+ * @param signal - cancellation of the owning Client read.
+ * @returns the public allowance, usage percentage, and renewal time.
+ */
+@Remote getUsageWindows(signal: AbortSignal): Promise<Result<UsageWindowsStatus[]>>
 
 /**
  * Read server-decided trial attention; an unavailable API never means expired.

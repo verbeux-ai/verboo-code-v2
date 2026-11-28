@@ -567,13 +567,20 @@ export class VerbooProduct extends TypertRemoteService {
     return this.result(() => this.readPlans())
   }
 
-  /** Read the current account's editable settings without exposing credentials. */
+  /**
+   * Read the current account's editable settings.
+   * @returns display-safe profile settings or an account request failure.
+   */
   @Remote
   getProfileSettings(): Promise<Result<ProfileSettings>> {
     return this.result(async () => profileSettings.parse(await this.request('/api/me')).data)
   }
 
-  /** Apply one explicit profile change for the active account. */
+  /**
+   * Apply one profile change for the active account.
+   * @param input - the displayed account ID and the profile fields to update.
+   * @returns the updated profile or a failure, including an account switch.
+   */
   @Remote
   updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>> {
     return this.result(async () => {
@@ -589,7 +596,11 @@ export class VerbooProduct extends TypertRemoteService {
     })
   }
 
-  /** Change or set a password without recording its value or mistaking an incorrect password for an expired grant. */
+  /**
+   * Set or change the current account password without recording either password.
+   * @param input - the displayed account ID, new password and current password when one exists.
+   * @returns success, an incorrect password result or a failed update.
+   */
   @Remote
   async updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult> {
     try {
@@ -610,7 +621,11 @@ export class VerbooProduct extends TypertRemoteService {
     }
   }
 
-  /** Revoke every server session for the currently displayed account. */
+  /**
+   * Revoke every server session for the currently displayed account.
+   * @param owner - the displayed account ID to match before revocation.
+   * @returns a successful null result or an account request failure.
+   */
   @Remote
   signOutAll(owner: string): Promise<Result<null>> {
     return this.result(async () => {

@@ -53,6 +53,8 @@ DOM fixed-input observers receive composition and consumption flags before appli
 
 Desktop native menus and embedded frames use the same command registry as DOM input. Preload and the client match the focused iframe name or browser webview lease against native input; the client rejects messages from an older configuration. Browser guest input ends when its lease is released, before guest destruction finishes. Native menu selection is explicit and works without a bound accelerator. Two-key chords have no native menu accelerator; their labels remain visible in the shortcut reference. Terminal Ctrl+W/R remains local input outside Windows and macOS Desktop. Explicit native-menu actions retain their modal checks; keyboard bindings use the device dispatch policy.
 
+Client features emit `shortcuts/open-reference` to open the shortcut reference in the current window.
+
 </details>
 
 -----

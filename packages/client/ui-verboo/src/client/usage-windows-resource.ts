@@ -15,14 +15,25 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Cache isolation includes both the account and its accepted credential revision. */
-export function usageWindowsAddress({ view, profile }: Account): string {
+/**
+ * Scope the allowance resource to the account and its accepted credential revision.
+ * @param account - the current profile and credential view.
+ * @returns the resource URI or an empty string when no account is available.
+ */
+export function usageWindowsAddress(account: Account): string {
+  const { view, profile } = account
   return view?.status === 'credential-stored' && view.credentialRevision !== undefined && profile?.id != null
     ? `dsh-resource://verboo-usage-windows/${encodeURIComponent(view.credentialRevision)}/${encodeURIComponent(profile.id)}`
     : ''
 }
 
-/** Build the Plans-only poller and its explicit retry. */
+/**
+ * Poll the current account allowance while the Plans page has a reader.
+ * @param read - the remote allowance reader.
+ * @param account - the observed account and credential source.
+ * @param intervalMs - the delay between successive polls in milliseconds.
+ * @returns the account-scoped resource provider and an explicit refresh command.
+ */
 export function createUsageWindowsResource(read: ClientRemote['verboo']['getUsageWindows'],
   account: ObservableSnapshot<Account>, intervalMs: number): { provider: ResourceProvider<'verboo-usage-windows'>; refresh(): void } {
   const refreshers = new Set<() => void>()

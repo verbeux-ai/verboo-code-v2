@@ -131,6 +131,12 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     const button = page.getByRole('button', { name }).first()
     await button.click()
   }
+  async function selectLanguage(locale: string) {
+    await navigate(preferences)
+    const tabs = page.getByRole('navigation', { name: preferences })
+    await tabs.getByRole('button', { name: /^(General|Geral)$/ }).click()
+    await page.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
+  }
   async function showContent(width: number) {
     await page.setViewportSize({ width, height: 960 })
     if (width >= 700) return
@@ -263,8 +269,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
 
   it('keeps stamina off plan, connection and preference pages across themes and viewport sizes', async () => {
     for (const locale of ['en', 'pt']) {
-      await navigate(preferences)
-      await page.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
+      await selectLanguage(locale)
       await navigate(/^(My plan|Meu plano)$/)
       const region = page.locator('[data-verboo-page="plan"]')
       await region.waitFor()
@@ -312,8 +317,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     }
   })
   it('surrounds Send with a purple ring while retaining the water inside', async () => {
-    await navigate(preferences)
-    await page.getByLabel(/^(Language|Idioma)$/).selectOption('en')
+    await selectLanguage('en')
     await openConversation()
     await chooseModel('Fixture model')
     const primary = page.locator('[data-composer-primary]')
@@ -343,13 +347,17 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
         const water = await liquid.boundingBox()
         const outline = await ring.boundingBox()
         const selector = await model.boundingBox()
-        return button !== null && water !== null && outline !== null && selector !== null
-          && button.width === 42 && button.height === 42
-          && water.width === 34 && water.height === 34
-          && outline.width === 42 && outline.height === 42
-          && selector.x + selector.width <= button.x
-          && button.x + button.width <= width && button.y + button.height <= 960
-      }).toBe(true)
+        return {
+          buttonSize: button && [button.width, button.height],
+          waterSize: water && [water.width, water.height],
+          outlineSize: outline && [outline.width, outline.height],
+          modelAndSendSeparated: selector !== null && button !== null && selector.x + selector.width <= button.x,
+          sendWithinViewport: button !== null && button.x + button.width <= width && button.y + button.height <= 960,
+        }
+      }).toEqual({
+        buttonSize: [42, 42], waterSize: [36, 36], outlineSize: [42, 42],
+        modelAndSendSeparated: true, sendWithinViewport: true,
+      })
       expect(await ring.evaluate(node => parseFloat(getComputedStyle(node).borderTopWidth))).toBeGreaterThanOrEqual(1)
       expect(await primary.evaluate((node) => {
         const box = node.getBoundingClientRect()
@@ -369,6 +377,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   })
   it('shows empty and full liquid without preventing an otherwise valid send', async () => {
     await openConversation()
+    await chooseModel('Fixture model')
     const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     const editor = page.locator('[data-composer-input]')
@@ -393,20 +402,28 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   })
   it('preserves confirmed liquid during failure, automatically recovers, and hides an unselected account', async () => {
     await openConversation()
+    await chooseModel('Fixture model')
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
-    platform.state.down = true
-    await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBe('true')
-    expect(await liquidFraction(liquid)).toBeCloseTo(0.5, 2)
-    platform.state.down = false
-    await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBeNull()
-    platform.state.enrolled = false
-    await liquid.waitFor({ state: 'hidden' })
-    platform.state.enrolled = true
     await liquid.waitFor()
-    await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
+    try {
+      platform.state.down = true
+      await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBe('true')
+      expect(await liquidFraction(liquid)).toBeCloseTo(0.5, 2)
+      platform.state.down = false
+      await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBeNull()
+      platform.state.enrolled = false
+      await liquid.waitFor({ state: 'hidden' })
+      platform.state.enrolled = true
+      await liquid.waitFor()
+      await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
+    } finally {
+      platform.state.down = false
+      platform.state.enrolled = true
+    }
   })
   it('discards the old account response while switching to another selected account', async () => {
     await openConversation()
+    await chooseModel('Fixture model')
     platform.state.holdNext = true
     await expect.poll(() => platform.state.held !== undefined, { timeout: 10000 }).toBe(true)
     const account = scaffold.ctx.deepseekAccount
