@@ -2,12 +2,13 @@
 import { render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ConversationSwitcher, sidebarConversationOrder, stepConversation } from '../src/client/panes/ConversationSwitcher.tsx'
 
-const row = (name: string, options: Partial<SessionSummary> = {}) =>
-  ({ id: name as SessionId, displayTitle: name, blank: false, ...options }) as SessionSummary
+const row = (name: string, options: Partial<SessionSummary> = {}): SessionSummary => ({
+  id: name as SessionId, displayTitle: name, updatedAt: 0, blank: false, running: false, retainedBy: {}, ...options,
+})
 
 it('takes project rows in sidebar order, then ungrouped rows, skipping archived, draft and agent rows', () => {
   const [a, b, c, archived, draft, agent] = [
@@ -19,7 +20,13 @@ it('takes project rows in sidebar order, then ungrouped rows, skipping archived,
     ids: rows.map(r => r.id), byId: Object.fromEntries(rows.map(r => [r.id, r])),
     phase: 'ready', projectionsBySession: {},
   }
-  const workspace = { items: [{ sessionIds: [a.id, b.id, draft.id] }], archivedSessionIds: [archived.id] } as WorkspaceSnapshot
+  const workspace: WorkspaceSnapshot = {
+    items: [{
+      workspaceId: 'project' as WorkspaceId, title: 'Project', path: '/work/project',
+      sessionIds: [a.id, b.id, draft.id], createdAt: '', updatedAt: '',
+    }],
+    archivedSessionIds: [archived.id], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+  }
   expect(sidebarConversationOrder(sessions, workspace, undefined)).toEqual([a, b, c])
   expect(sidebarConversationOrder(sessions, workspace, draft.id)).toEqual([a, b, draft, c])
 })

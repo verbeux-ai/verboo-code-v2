@@ -13,10 +13,11 @@ const reading: StaminaStatus = {
   fullAt: null, accountingPending: false, asOf: '2026-11-04T15:00:00Z',
 }
 function readingProps() {
+  const copy: Readonly<Record<string, string>> = pt
   const props = {
     locale: 'pt-BR',
     onDescriptionChange: vi.fn<(description: string | undefined) => void>(),
-    t: (key, values) => pt[key].replace(/\{(\w+)\}/g, (_match, name: string) => String(values?.[name] ?? '')),
+    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => String(values?.[name] ?? '')),
   } satisfies Omit<ComponentProps<typeof StaminaButtonReading>, 'reading' | 'stale'>
   return props
 }

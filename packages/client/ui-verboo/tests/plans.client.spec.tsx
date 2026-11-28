@@ -14,7 +14,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
-const plan = (name: string, priceCents: number, interval = 'month'): Plan => ({
+const plan = (name: string, priceCents: number, interval = 'month'): Plan & { priceCents: number } => ({
   id: name as PlanId, name, description: `Description: ${name}`, priceCents, currency: 'BRL', interval,
   ...(name === 'Lite' ? { usageLimitsEnabled: true } : {}),
 })
