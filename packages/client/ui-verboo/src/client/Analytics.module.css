@@ -6,7 +6,7 @@
 .card > h2 { padding-bottom: 10px; border-bottom: 1px solid var(--verboo-border); }
 .sectionHead { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--verboo-border); }
 .sectionHead label { color: var(--verboo-muted); font-size: 12px; }
-.sectionHead select { color: var(--verboo-ink); background: var(--verboo-surface); border: 1px solid var(--verboo-border); border-radius: 8px; padding: 8px; margin-left: 8px; font: inherit; }
+.sectionHead select { color: var(--verboo-ink); background: var(--verboo-surface); border: 1px solid var(--verboo-border); border-radius: var(--dsw-radius-sm); padding: 8px; margin-left: 8px; font: inherit; }
 .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 2px; margin-top: 16px; }
 .metrics + .card { margin-top: 28px; }
 .metric { display: flex; flex-direction: column-reverse; gap: 3px; background: var(--verboo-surface); border-radius: var(--dsw-radius-sm); padding: 10px 12px; }
