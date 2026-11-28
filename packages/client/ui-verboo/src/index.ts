@@ -4,13 +4,17 @@ import Schema from '@deepseek-ai/schemastery'
 import { ConfigFields, type Config as BrowserConfig, type ConversationWidth } from './config.ts'
 
 /** Host diagnostics can change without restarting the product or agent. */
-export interface Config extends Omit<BrowserConfig, 'staminaDebug' | 'paneLayout' | 'minimalist' | 'conversationWidth'> {
+export interface Config extends Omit<
+  BrowserConfig,
+  'staminaDebug' | 'paneLayout' | 'minimalist' | 'conversationWidth' | 'firstUseTourSeen'
+> {
   /** Changing conversation appearance preserves mounted editors and running work. */
   minimalist: Volatile<boolean>
   /** Share the selected transcript width across panes without reloading them. */
   conversationWidth: Volatile<ConversationWidth>
   /** Pane persistence never reloads the product or its Session views. */
   paneLayout: Volatile<string>
+  firstUseTourSeen: Volatile<boolean>
   /** Opt-in diagnostics exposed through the shared configuration form. */
   staminaDebug: Volatile<boolean>
 }
@@ -22,5 +26,6 @@ export const Config = Schema.object({
   conversationWidth: ConfigFields.conversationWidth.volatile(),
   staminaDebug: ConfigFields.staminaDebug.volatile(),
   paneLayout: ConfigFields.paneLayout.volatile(),
+  firstUseTourSeen: ConfigFields.firstUseTourSeen.volatile(),
 })
 export function apply(): void {}

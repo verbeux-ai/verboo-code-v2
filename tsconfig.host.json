@@ -8,6 +8,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/verboo-first-use-tour.e2e.ts",
     "apps/web/tests/verboo-product-analytics.e2e.ts",
     "apps/web/tests/verboo-trial.e2e.ts",
     "apps/web/tests/verboo-stamina.e2e.ts",

@@ -11,6 +11,8 @@ export interface Config {
   conversationWidth: ConversationWidth
   /** Serialized pane arrangement, persisted in the Host profile across local-origin changes. */
   paneLayout: string
+  /** Whether the desktop welcome was dismissed or completed on this profile. */
+  firstUseTourSeen: boolean
   /** Minimum width in CSS pixels of a split conversation pane. */
   minimumPaneWidth: number
   /** Minimum height in CSS pixels of a split conversation pane. */
@@ -31,6 +33,7 @@ export const ConfigFields = {
   minimalist: Schema.boolean().default(true),
   conversationWidth: Schema.union(['narrow', 'standard', 'wide']).default('standard'),
   paneLayout: Schema.string().default(''),
+  firstUseTourSeen: Schema.boolean().default(false),
   minimumPaneWidth: Schema.number().min(320).max(800).default(360),
   minimumPaneHeight: Schema.number().min(240).max(600).default(280),
   refreshIntervalMs: Schema.number().min(1000).max(30000).default(5000),

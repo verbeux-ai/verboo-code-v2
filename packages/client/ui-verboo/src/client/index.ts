@@ -23,7 +23,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
+import type { FirstUseInjected, OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
 import { en, pt, zh, ja, es, fr, de, ru } from './locales.ts'
 import { Config } from '../config.ts'
 import type {} from '@deepseek-ai/dsh-host-verboo-analytics/remote'
@@ -57,6 +57,7 @@ import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
+import { FirstUseTour } from './FirstUseTour.tsx'
 import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
 import { BillingModel, type BillingApi } from './billing-model.ts'
@@ -660,6 +661,92 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       unsubscribePreferences(); unsubscribeStatus(); unsubscribeModel()
     }
   }, 'Verboo: preference analytics')
+  const addProject = async (): Promise<void> => {
+    const consent = captureProductConsent()
+    observeFeature('project_add', 'started', consent)
+    const picker = globalThis as typeof globalThis & {
+      __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> }
+    }
+    let created = false
+    try {
+      const path = picker.__DSH_DIRECTORY_PICKER__
+        ? await picker.__DSH_DIRECTORY_PICKER__.pick()
+        : await ctx.uiWorkspace.pickDirectory()
+      if (path === null) {
+        observeFeature('project_add', 'cancelled', consent)
+        return
+      }
+      const workspace = await ctx.workspaces.create({ path })
+      created = true
+      observeFeature('project_add', 'completed', consent)
+      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
+    } catch (error) {
+      if (!created) observeFeature('project_add', 'failed', consent)
+      throw error
+    }
+  }
+  const firstUse = createSnapshotStore({ visible: false, measurable: false })
+  const firstUseSetting = ctx.configForms.get<Pick<Config, 'firstUseTourSeen'>>('ui-verboo')
+  let firstUseDismissed = false
+  let firstUseReported = false
+  let firstUseStarted = false
+  const reportedSteps = new Set<string>()
+  const updateFirstUse = () => {
+    const account = model.state.getSnapshot()
+    const list = ctx.sessions.list.getSnapshot()
+    const settings = firstUseSetting.getSnapshot()
+    const visible = !firstUseDismissed && settings.status === 'ready' && !settings.value?.firstUseTourSeen
+      && account.view?.status === 'credential-stored' && account.profile !== null
+      && list.phase === 'ready' && list.ids.every(id => list.byId[id]?.blank)
+    const measurable = captureProductConsent() !== undefined
+    const previous = firstUse.getSnapshot()
+    if (previous.visible !== visible || previous.measurable !== measurable) firstUse.set({ visible, measurable })
+  }
+  if (globalThis.__VERBOO_DESKTOP__) {
+    ctx.effect(() => {
+      const unsubscribe = [
+        model.state.subscribe(updateFirstUse), ctx.sessions.list.subscribe(updateFirstUse),
+        analyticsStatus.subscribe(updateFirstUse), firstUseSetting.subscribe(updateFirstUse),
+      ]
+      updateFirstUse()
+      return () => { for (const stop of unsubscribe) stop() }
+    }, 'Verboo: first desktop tour')
+  }
+  const observeFirstUse = () => {
+    const consent = captureProductConsent()
+    if (firstUseReported || !firstUse.getSnapshot().visible || !consent) return
+    firstUseReported = true
+    observeFeature('desktop_first_use_guide', 'started', consent)
+  }
+  const firstUseFace: FirstUseInjected = {
+    hooks: { firstUse },
+    observeFirstUse,
+    startFirstUse: () => {
+      if (firstUseStarted || !firstUse.getSnapshot().visible) return
+      firstUseStarted = true
+      observeFirstUse()
+      observeFeature('desktop_first_use_task', 'started', captureProductConsent())
+    },
+    observeFirstUseStep: (step, outcome) => {
+      const consent = captureProductConsent()
+      const key = step + ':' + outcome
+      if (!consent || !firstUseStarted || reportedSteps.has(key)) return
+      reportedSteps.add(key)
+      observeFeature(step, outcome, consent)
+    },
+    backFirstUse: () => {
+      if (firstUseStarted) observeFeature('desktop_first_use_step_back', 'started', captureProductConsent())
+    },
+    finishFirstUse: (completed) => {
+      if (firstUseDismissed) return
+      observeFirstUse()
+      observeFeature(firstUseStarted ? 'desktop_first_use_task' : 'desktop_first_use_guide',
+        completed ? 'completed' : 'cancelled', captureProductConsent())
+      firstUseDismissed = true
+      updateFirstUse()
+      void firstUseSetting.set('firstUseTourSeen', true).catch(() => {})
+    },
+  }
   const externalDialogOpen = createSnapshotStore({ open: false })
   const reloadExternalStatus = async (): Promise<void> => {
     externalStatus.set(await openAiStatus())
@@ -731,27 +818,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     openWorkspace: (id) => {
       void ctx.uiWorkspace.openWorkspace(id)
     },
-    addProject: async () => {
-      const consent = captureProductConsent()
-      observeFeature('project_add', 'started', consent)
-      const picker = globalThis as typeof globalThis & {
-        __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> }
-      }
-      let created = false
-      try {
-        const path = picker.__DSH_DIRECTORY_PICKER__
-          ? await picker.__DSH_DIRECTORY_PICKER__.pick()
-          : await ctx.uiWorkspace.pickDirectory()
-        if (path === null) { observeFeature('project_add', 'cancelled', consent); return }
-        const workspace = await ctx.workspaces.create({ path })
-        created = true
-        observeFeature('project_add', 'completed', consent)
-        await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
-      } catch (error) {
-        if (!created) observeFeature('project_add', 'failed', consent)
-        throw error
-      }
-    },
+    addProject: () => addProject(),
     renameProject: async (id, title) => {
       await ctx.workspaces.rename(id, title)
     },
@@ -1006,6 +1073,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       Onboarding,
     )
     yield ctx.slots.register(
+      { name: 'shell.overlay', id: 'verboo.first-use', order: 101, locale: 'verboo', inject: () => firstUseFace },
+      FirstUseTour,
+    )
+    yield ctx.slots.register(
       {
         name: 'shell.overlay',
         id: 'verboo.feedback',
@@ -1018,7 +1089,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('conversation.hero.intro', () =>
     ctx.slots.register(
-      { name: 'conversation.hero.intro', locale: 'verboo', inject: face },
+      { name: 'conversation.hero.intro', locale: 'verboo' },
       Hero,
     ),
   )
