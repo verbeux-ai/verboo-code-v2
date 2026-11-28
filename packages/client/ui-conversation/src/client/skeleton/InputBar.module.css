@@ -463,6 +463,7 @@
   display: inline-flex;
   flex: none;
   border-radius: 50%;
+  corner-shape: round;
 }
 
 .primaryAnchor:has(> .primary[data-sending]) { cursor: progress; }

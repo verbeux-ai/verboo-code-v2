@@ -281,13 +281,13 @@ describe.skipIf(MODE === 'record')('Verboo Connections page in the built applica
   })
 
   it('keeps a failed catalog read actionable and stays within a narrow viewport', async () => {
-    const unavailable = /indisponíveis/i
+    const failure = pageRegion().getByRole('alert').filter({ hasText: 'Não foi possível atualizar suas conexões' })
     platform.state.connectionsDown = true
     await pageRegion().getByRole('button', { name: 'Atualizar' }).first().click()
-    await expect.poll(() => pageRegion().getByRole('alert').filter({ hasText: unavailable }).count()).toBeGreaterThan(0)
+    await expect.poll(() => failure.count()).toBe(1)
     platform.state.connectionsDown = false
-    await pageRegion().getByRole('button', { name: 'Atualizar' }).first().click()
-    await expect.poll(() => pageRegion().getByRole('alert').filter({ hasText: unavailable }).count()).toBe(0)
+    await failure.getByRole('button', { name: 'Tentar novamente' }).click()
+    await expect.poll(() => failure.count()).toBe(0)
 
     await pageRegion().getByRole('button', { name: 'Atualizar' }).first().click()
     for (const theme of ['light', 'dark'] as const) {

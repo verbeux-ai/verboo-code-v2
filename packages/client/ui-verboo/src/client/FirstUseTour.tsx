@@ -82,7 +82,7 @@ function useSpotlight(target: Target) {
         left: rect.left - padding, top: rect.top - padding,
         width: rect.width + padding * 2, height: rect.height + padding * 2,
       }
-      const popupStyle = { ...pin, '--tour-arrow': arrow + 'px' } as CSSProperties
+      const popupStyle = { ...pin, '--tour-arrow': `${arrow}px` } as CSSProperties
       setPosition(previous => previous?.side === side
         && previous.popup.left === pin.left && previous.popup.top === pin.top
         && previous.ring.left === ring.left && previous.ring.top === ring.top
@@ -113,9 +113,9 @@ function useSpotlight(target: Target) {
 
 function GuidedSteps({ index, onBack, onNext, onClose, t }: {
   index: number
-  onBack(): void
-  onNext(): void
-  onClose(): void
+  onBack(this: void): void
+  onNext(this: void): void
+  onClose(this: void): void
   t: FirstUseProps['t']
 }) {
   const step = steps[index] ?? steps[0]

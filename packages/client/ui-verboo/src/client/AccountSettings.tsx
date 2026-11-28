@@ -4,8 +4,10 @@ import type { ProfileSettings } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { PageProps } from './contracts.ts'
 import css from './Product.module.css'
 
+type AccountSettingsProps = Pick<PageProps, 't' | 'getProfileSettings' | 'updateProfileSettings' | 'updateAccountPassword'>
+
 /** Editable account fields are loaded from, and saved to, the authenticated account. */
-export function AccountSettings({ props, owner }: { props: PageProps; owner: string }) {
+export function AccountSettings({ props, owner }: { props: AccountSettingsProps; owner: string }) {
   const [profile, setProfile] = useState<ProfileSettings | null>(null)
   const [name, setName] = useState('')
   const [current, setCurrent] = useState('')

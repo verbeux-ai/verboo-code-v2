@@ -2,6 +2,8 @@
   width: min(460px, 100%);
   max-height: 100%;
   overflow: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   gap: 0;
   padding: 0 0 28px;
   color: var(--verboo-ink);

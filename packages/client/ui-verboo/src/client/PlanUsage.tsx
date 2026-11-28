@@ -6,7 +6,7 @@ import css from './Plans.module.css'
 
 /** Refresh action for the allowance read mounted by Plans. */
 export interface PlanUsageActions {
-  refreshUsageWindows(): void
+  refreshUsageWindows(this: void): void
 }
 
 type PlanUsageProps = Pick<PageProps, 'useProduct' | 'usePreferences' | 'useResource' | 't'> & PlanUsageActions

@@ -90,7 +90,7 @@ declare global {
     /** Quit the native application after the user holds the shortcut. */
     quit?(this: void): Promise<void>
     /** Present a separate, unprivileged payment WebView until the user closes the modal. */
-    openCardSetup?(setup: NativeCardSetup): Promise<boolean>
+    openCardSetup?(this: void, setup: NativeCardSetup): Promise<boolean>
     /** Dismiss the native payment modal associated with an invalidated operation. */
     closeCardSetup?(operation: string): Promise<void>
     /**
