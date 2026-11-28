@@ -2,12 +2,18 @@ name: Verify Windows quiet updater (isolated)
 
 on:
   workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Run the isolated Windows smoke.
+        type: boolean
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: inputs.verify_only
     runs-on: windows-latest
     timeout-minutes: 45
     env:

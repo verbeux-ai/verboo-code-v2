@@ -31,7 +31,7 @@ const root = 'https://github.com/verbeux-ai/verboo-code-v2/releases/download/'
 const fileName = version => 'Verboo-Code-v2-' + version + '-Windows-x64-Setup.exe'
 
 function watch(command, args, options = {}) {
-  const child = spawn(command, args, { windowsHide: true, ...options })
+  const child = spawn(command, args, options)
   const finished = new Promise((done, reject) => {
     child.once('error', reject)
     child.once('exit', (code, signal) => done({ code, signal }))
@@ -142,7 +142,7 @@ async function observeWindows(windowLog, readyFile) {
     "  Get-Process | Where-Object { $_.MainWindowTitle -like '*Verboo Code Setup*' } | ForEach-Object { Add-Content -LiteralPath " + psString(windowLog) + " -Value $_.MainWindowTitle }",
     '  Start-Sleep -Milliseconds 70',
     '}',
-  ].join('\n')], { stdio: 'ignore' })
+  ].join('\n')], { windowsHide: true, stdio: 'ignore' })
   await until('Windows setup-window observer', async () => (await readFile(readyFile, 'utf8')).trim() === 'started')
   return async () => { watcher.child.kill(); await watcher.finished }
 }
