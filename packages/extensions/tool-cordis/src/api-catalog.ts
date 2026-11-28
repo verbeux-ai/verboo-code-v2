@@ -4471,6 +4471,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'display-safe plan projections.',
       },
       {
+        signature: '@Remote getProfileSettings(): Promise<Result<ProfileSettings>>',
+        description: 'Read the current account\'s editable settings without exposing credentials.',
+        parameters: [],
+        returns: 'The profile settings or an account request failure.',
+      },
+      {
+        signature: '@Remote updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>>',
+        description: 'Apply one explicit profile change for the active account.',
+        parameters: [{ name: 'input', description: 'The expected account ID and the profile fields to change.' }],
+        returns: 'The updated profile settings or an account request failure.',
+      },
+      {
+        signature: '@Remote async updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult>',
+        description: 'Change or set a password without recording its value or mistaking an incorrect password for an expired grant.',
+        parameters: [{ name: 'input', description: 'The expected account ID, new password, and current password when one is set.' }],
+        returns: 'Success or a password error code.',
+      },
+      {
+        signature: '@Remote signOutAll(owner: string): Promise<Result<null>>',
+        description: 'Revoke every server session for the currently displayed account.',
+        parameters: [{ name: 'owner', description: 'The account ID displayed when the user requested sign-out.' }],
+        returns: 'Null on successful revocation or an account request failure.',
+      },
+      {
         signature: '@Remote getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>',
         description: 'Read owned subscriptions independently of the commercial catalog.',
         parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
@@ -4499,6 +4523,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read stamina only for plans where the server has enrolled this account.',
         parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
         returns: 'public percentages and next-request ceilings; older APIs without stamina return an empty list.',
+      },
+      {
+        signature: '@Remote getUsageWindows(signal: AbortSignal): Promise<Result<UsageWindowsStatus[]>>',
+        description: 'Read only the current account\'s allowance windows for the Plans page.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'the public allowance, usage percentage, and renewal time.',
       },
       {
         signature: '@Remote getTrialStatus(signal: AbortSignal): Promise<Result<TrialStatus>>',
@@ -5270,6 +5300,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'One Agent changed running state.',
     description: 'One Agent changed running state.',
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'running', description: 'whether the Agent is running.' }],
+  },
+  {
+    name: 'api-session/turn-completed',
+    mode: 'emit',
+    signature: '\'api-session/turn-completed\'(sessionId: SessionId): void',
+    summary: 'A live top-level turn completed successfully.',
+    description: 'A live top-level turn completed successfully.',
+    parameters: [{ name: 'sessionId', description: 'completed Session identity.' }],
   },
   {
     name: 'app-boot/config-reload',
@@ -8020,6 +8058,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PaneOpenResult {\n    id: string;\n    isPlaced: boolean;\n    reason?: string;\n}',
   },
   {
+    name: 'PasswordResult',
+    declaration: 'export type PasswordResult = {\n    ok: true;\n} | {\n    ok: false;\n    code: \'incorrect_password\' | \'failed\';\n};',
+  },
+  {
     name: 'PatchHunk',
     declaration: 'export interface PatchHunk {\n    lineNumber: number;\n    context?: string;\n    oldLines: string[];\n    newLines: string[];\n    isEndOfFile: boolean;\n}',
   },
@@ -8053,7 +8095,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Plan',
-    declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    slug?: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
+    declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    slug?: string;\n    description: string;\n    priceCents: number | null;\n    currency: string | null;\n    interval: string;\n    unavailable?: true;\n    usageLimitsEnabled?: boolean;\n    concurrentRequests?: number;\n    apiRateLimitRpm?: number;\n    apiAccessEnabled?: boolean;\n    structuredOutputEnabled?: boolean;\n    enableRanking?: boolean;\n    seatPurchasesEnabled?: boolean;\n    models?: {\n        name: string;\n        temporary: boolean;\n    }[];\n}',
   },
   {
     name: 'PlanChangeId',
@@ -8294,6 +8336,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProfileReconciliation',
     declaration: 'export interface ProfileReconciliation {\n    warnings: string[];\n    pending: PendingModule[];\n    restartReason?: \'module-comparison\' | \'package-moved\';\n}',
+  },
+  {
+    name: 'ProfileSettings',
+    declaration: 'export interface ProfileSettings {\n    id: string;\n    name: string;\n    email: string;\n    hasPassword: boolean;\n    publicProfile: boolean;\n    anonymousHandle?: string | undefined;\n}',
   },
   {
     name: 'ProjectionChangeListener',
@@ -10001,7 +10047,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Subscription',
-    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    permissions?: SubscriptionPermissions;\n    activeChangeId?: PlanChangeId;\n    canRemoveTier?: boolean;\n    cancellation?: SubscriptionCancellation;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
+    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    limitedUsage?: {\n        concurrentRequests?: number;\n        apiRateLimitRpm?: number;\n    };\n    permissions?: SubscriptionPermissions;\n    activeChangeId?: PlanChangeId;\n    canRemoveTier?: boolean;\n    cancellation?: SubscriptionCancellation;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
     name: 'SubscriptionAdditionalLimit',
@@ -10662,6 +10708,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UsageSummary',
     declaration: 'export interface UsageSummary {\n    timezone: string;\n    bucket: \'minute\' | \'hour\' | \'day\';\n    reqTotal: number;\n    tokensInTotal: number;\n    tokensOutTotal: number;\n    cachedTokens: number;\n    buckets: UsageBucket[];\n}',
+  },
+  {
+    name: 'UsageWindowsStatus',
+    declaration: 'export interface UsageWindowsStatus {\n    groupId: PlanId;\n    groupName: string;\n    limited: boolean;\n    blocked: boolean;\n    accountingPending: boolean;\n    availableAt: string | null;\n    windows: {\n        id: string;\n        durationSeconds: number;\n        usedPercent: number;\n        resetsAt: string | null;\n    }[];\n}',
   },
   {
     name: 'UserMessage',

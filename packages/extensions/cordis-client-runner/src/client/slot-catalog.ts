@@ -998,7 +998,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-verboo TrialDock id \'verboo.trial-notice\'',
       'client-ui-verboo OmittedDiagnostic',
       'client-ui-verboo ExecutionStatus id \'verboo.execution\'',
-      'client-ui-verboo StaminaDebug id \'verboo.stamina-debug\'',
       'client-ui-verboo SubscriptionUsage id \'verboo.subscription-usage\'',
     ],
     replaceRisk: 'none',
@@ -1872,7 +1871,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     summary: 'Non-interactive decoration behind the primary action, clipped to its circle.',
     doc: 'Non-interactive decoration behind the primary action, clipped to its circle. A painted\ncontribution carries data-composer-primary-visual; the carrier keeps its own semantics.',
     registerOptions: [],
-    ownerProps: [],
+    ownerProps: [
+      '/** Optional accessible detail supplied by the primary action\'s visual decoration. */\nexport interface InputPrimaryBackgroundOwnerProps {\n  /** @param description - localized detail to include in the tooltip; clear it on unmount. */\n  onDescriptionChange: (description: string | undefined) => void\n}',
+    ],
     ownerPropsReferences: [],
     standardProps: [
       'useRemoteAccess: (action: RemoteEndpoint) => boolean',
@@ -4112,7 +4113,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-verboo OpenAiSignInDialog id \'verboo.openai-signin\'',
       'client-ui-verboo DesktopQuitHold id \'verboo.quit-hold\'',
       'client-ui-verboo Onboarding id \'verboo.onboarding\'',
+      'client-ui-verboo FirstUseTour id \'verboo.first-use\'',
       'client-ui-verboo Feedback id \'verboo.feedback\'',
+      'client-ui-verboo ConversationSwitcher id \'verboo.conversation-switcher\'',
       'client-ui-workspace SessionRenameDialog id \'workspace.session-rename\'',
       'client-ui-workspace SessionArchiveConfirmDialog id \'workspace.session-archive\'',
       'client-ui-workspace SessionDeleteConfirmDialog id \'workspace.session-delete\'',
