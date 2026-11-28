@@ -440,6 +440,7 @@ export function Sidebar(props: SidebarProps) {
             data-active={selected === panels.connections}
             onClick={() =>{  go(panels.connections) }}
             aria-label={t('connections')}
+            data-verboo-tour-connections
             aria-current={selected === panels.connections ? 'page' : undefined}
           >
             <Glyph name="cable" />

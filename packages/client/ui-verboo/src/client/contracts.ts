@@ -133,7 +133,7 @@ export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderS
     installDesktopUpdate(confirmed: boolean): Promise<void>
     retryDesktopUpdate(): Promise<void>
   }>
-export type FirstUseStep = `desktop_first_use_step_${'project' | 'model' | 'message' | 'split' | 'tools'}`
+export type FirstUseStep = `desktop_first_use_step_${'project' | 'model' | 'message' | 'split' | 'tools' | 'connections'}`
 
 /** Desktop tour visibility and privacy-gated interaction observations. */
 export interface FirstUseInjected {

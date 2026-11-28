@@ -14,6 +14,8 @@ const steps = [
   { feature: 'desktop_first_use_step_message', titleKey: 'firstUseMessageTitle', bodyKey: 'firstUseMessageBody', target: '[data-composer-card]', side: 'above' },
   { feature: 'desktop_first_use_step_split', titleKey: 'firstUseSplitTitle', bodyKey: 'firstUseSplitBody', target: '[data-verboo-tour-split]', side: 'below' },
   { feature: 'desktop_first_use_step_tools', titleKey: 'firstUseToolsTitle', bodyKey: 'firstUseToolsBody', target: '[data-sidebar-right-expand], [data-sidebar-right-toggle]', side: 'below' },
+  { feature: 'desktop_first_use_step_connections', titleKey: 'connections', bodyKey: 'firstUseConnectionsBody',
+    target: '[data-verboo-tour-connections], [data-sidebar-opener]', side: 'right' },
 ] as const satisfies readonly { feature: FirstUseStep; titleKey: string; bodyKey: string; target: string; side: string }[]
 
 type Target = typeof steps[number]

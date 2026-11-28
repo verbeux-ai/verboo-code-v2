@@ -60,9 +60,12 @@ it('starts on request, supports stepping back, and completes only on the last st
   expect(screen.getByRole('dialog', { name: pt.firstUseProjectTitle })).toBeTruthy()
   for (let step = 0; step < 4; step++) fireEvent.click(screen.getByRole('button', { name: pt.firstUseNext }))
   expect(screen.getByRole('dialog', { name: pt.firstUseToolsTitle })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseNext }))
+  expect(screen.getByRole('dialog', { name: pt.connections })).toBeTruthy()
+  expect(screen.getByText(pt.firstUseConnectionsBody)).toBeTruthy()
   expect(actions.finishFirstUse).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: pt.firstUseDone }))
-  expect(actions.advanceFirstUse).toHaveBeenLastCalledWith('desktop_first_use_step_tools')
+  expect(actions.advanceFirstUse).toHaveBeenLastCalledWith('desktop_first_use_step_connections')
   expect(actions.finishFirstUse).toHaveBeenCalledExactlyOnceWith(true)
 })
 
