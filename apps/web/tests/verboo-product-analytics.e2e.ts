@@ -196,6 +196,8 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await editor.fill('Fixture message by button')
     await page.getByRole('button', { name: 'Send message', exact: true }).click()
     await expect.poll(() => existsSync(readyFile), { timeout: 15000 }).toBe(true)
+    await expect.poll(() => events.filter(event => event.feature === 'desktop_response_attempt' && event.outcome === 'started').length,
+      { timeout: 10000 }).toBe(1)
     await expect.poll(() => events.some(event => event.feature === 'message_button'), { timeout: 10000 }).toBe(true)
     expect(events).toContainEqual(expect.objectContaining({ feature: 'message_button', modelProvider: 'verboo',
       modelName: 'unlimited/deepseek-v4-flash', modelEffort: 'high' }))
@@ -220,6 +222,9 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await expect.poll(() => events.some(event => event.feature === 'message_enter'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Stop generating', exact: true }).click()
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating', exact: true }).count(), { timeout: 15000 }).toBe(0)
+    await expect.poll(() => events.filter(event => event.feature === 'desktop_response_attempt' && event.outcome === 'started').length,
+      { timeout: 10000 }).toBe(2)
+    expect(events.filter(event => event.feature === 'desktop_response_error')).toHaveLength(0)
     await page.locator('input[type="file"]').first().setInputFiles({ name: 'private-fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('private fixture bytes') })
     await expect.poll(() => events.some(event => event.feature === 'attachment_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
     await expect.poll(() => events.some(event => event.feature === 'attachment_upload_file' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)

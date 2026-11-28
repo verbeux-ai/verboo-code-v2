@@ -217,15 +217,17 @@ export default class VerbooAnalytics extends TypertRemoteService {
             return undefined
           })
           this.background(owner.then(() => {}))
-          this.turnOwners.set(session, { turn: facts.turn, owner, attempted: false,
-            reference: checkpoint?.turn === facts.turn ? checkpoint.reference : undefined })
+          const capture: TurnOwner = { turn: facts.turn, owner, attempted: false,
+            reference: checkpoint?.turn === facts.turn ? checkpoint.reference : undefined }
+          this.turnOwners.set(session, capture)
+          // The live agent opens the step before it writes the admitted user message.
+          if (facts.stepped) this.background(this.responseAttempt(session, facts.turn, facts.startedAt, event.time, capture))
         }
         return
       }
-      if (event.type === 'step/start' && this.config.surface === 'desktop' && facts.root && facts.human) {
+      if (event.type === 'step/start' && facts.root && facts.human) {
         const capture = this.turnOwners.get(session)
-        if (capture?.turn === event.data.turn && !capture.attempted) {
-          capture.attempted = true
+        if (capture?.turn === event.data.turn) {
           this.background(this.responseAttempt(session, event.data.turn, facts.startedAt, event.time, capture))
         }
         return
@@ -597,6 +599,8 @@ export default class VerbooAnalytics extends TypertRemoteService {
   }
 
   private async responseAttempt(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {
+    if (this.config.surface !== 'desktop' || capture.attempted) return
+    capture.attempted = true
     const current = await this.currentCaptureOwner(capture)
     if (current === undefined) return
     const id = responseOperationId(`response-attempt:${session.id}`, turn)
