@@ -29,6 +29,8 @@ The `verboo` profile supplies the public API origin, router URL and OAuth client
 
 When an inference request returns HTTP 401, the account route forces one refresh for the exact token used by the request and replays the request once if the login still matches. A repeated 401 is returned without another refresh. HTTP 403 is reported as an access denial and does not refresh or remove the login. Refresh timeouts and network failures preserve the stored grant and stop the model request without automatic replay.
 
+When the Verboo gateway sends `x-should-retry: false` with HTTP 429 or 5xx, the account route stops automatic retries for that inference attempt. Transient responses without that header still use the bounded retry policy.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

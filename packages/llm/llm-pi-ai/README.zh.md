@@ -151,6 +151,8 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 
 该事件覆盖有无 Session id 的推理调用及辅助调用，不用于模型发现。贡献器异常或无效 HTTP 标头会在推理发送前以 `REQUEST_HEADERS` 使调用失败，不发送部分准备好的请求。失败信息包含 provider 和贡献器的顶层错误消息，该消息必须排除凭据与标头值。原生标头校验可能在 `TypeError` 中回显值，因此 TypeError 详情与非 Error 抛出值改用安全的排查提示；嵌套 cause 仍附在抛出的错误上，但不会复制到公开失败信息中。贡献不会改变消息、工具 schema 或 Session 日志。直接使用 `PiAiAdapter` 的调用方可提供等效的 `prepareHeaders` 回调。
 
+直接使用适配器的调用方可通过 `classifyHttpFailure` 根据状态码和标头对失败的推理 HTTP 响应分类。返回的失败信息只替换该次流式响应的终止错误。未分类的响应保留 pi-ai 的错误。
+
 ### 源码地图
 
 | 文件 | 职责 |

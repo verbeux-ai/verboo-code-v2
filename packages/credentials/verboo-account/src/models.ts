@@ -206,6 +206,15 @@ class VerbooAdapter extends PiAiAdapter {
         })
         return headers
       },
+      classifyHttpFailure: (status, headers) => {
+        if ((status === 429 || status >= 500) && headers.get('x-should-retry') === 'false') {
+          return {
+            code: 'ACCOUNT_REQUEST_RETRY_STOPPED',
+            status,
+            message: 'O gateway do Verboo Code pediu para encerrar esta tentativa. Confira o estado da sua conta antes de enviar outra mensagem.',
+          }
+        }
+      },
     })
     const replace = (models: PiAiModelProfile[], sessionId?: string) => {
       const profiles = resolveProfiles(
