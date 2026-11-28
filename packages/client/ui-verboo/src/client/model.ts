@@ -175,7 +175,10 @@ export interface ProductApi {
    */
   signOutMcpServer(this: void, name: string): Promise<McpResult<CustomMcpServerView>>
 }
-/** Create the product display state before the first account read. */
+/**
+ * Create the product display state before the first account read.
+ * @returns A fresh snapshot with no account, catalog, or session data.
+ */
 export const initialProductSnapshot = (): ProductSnapshot => ({
   view: null,
   profile: null,
