@@ -35,7 +35,7 @@ export interface BillingApi {
   portal(subscription: BillingSubscriptionId): Promise<Result<string>>
   startCardUpdate(subscription: BillingSubscriptionId, requestId: string, embedded: boolean): Promise<Result<SubscriptionCardUpdate>>
   currentCardUpdate(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionCardUpdate | null>>
-  openCardSetup?(operation: string, setup: EmbeddedCardSetup, labels: CardSetupLabels, signal: AbortSignal): Promise<boolean>
+  openCardSetup?(this: void, operation: string, setup: EmbeddedCardSetup, labels: CardSetupLabels, signal: AbortSignal): Promise<boolean>
   open(url: string): Promise<void>
   refreshPlans(): Promise<void>
 }

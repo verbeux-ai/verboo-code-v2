@@ -2,6 +2,7 @@ import Schema from '@deepseek-ai/schemastery'
 
 /** Maximum transcript widths; each pane can shrink to fit its available space. */
 export const CONVERSATION_WIDTHS = { narrow: 660, standard: 920, wide: 1200 } as const
+/** Named maximum widths accepted by conversation appearance settings. */
 export type ConversationWidth = keyof typeof CONVERSATION_WIDTHS
 
 /** Browser refresh and reconciliation budgets. */

@@ -32,12 +32,12 @@ it.skipIf(MODE === 'record')('introduces the desktop tools and points to the Con
       server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
     })
     cleanup.push(() => new Promise<void>((resolve) => {
-      server.close(() => resolve())
+      server.close(() => { resolve() })
       server.closeAllConnections()
     }))
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('Tour fixture listener did not start')
-    const origin = 'http://127.0.0.1:' + address.port
+    const origin = `http://127.0.0.1:${address.port}`
     const directory = await mkdtemp(join(tmpdir(), 'verboo-tour-browser-'))
     cleanup.push(() => rm(directory, { recursive: true, force: true }))
     const overlay = join(directory, 'tour.patch.yml')

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { clientSourceRoot, findUiI18nViolations } from './verify-client-ui-i18n.ts'
 
-function messages(source: string): string[] {
-  return findUiI18nViolations('packages/client/ui-example/src/client/View.tsx', source)
+function messages(source: string, localeSource?: string): string[] {
+  return findUiI18nViolations('packages/client/ui-example/src/client/View.tsx', source, localeSource)
     .map(violation => violation.text)
 }
+
+const localeSource = `
+  const shared = { runningMessage: 'Still running' }
+  export const en = { ...shared, renewalLabel: 'Renews' } as const
+  export type Key = keyof typeof en
+`
 
 describe('Client UI i18n source check', () => {
   it('rejects direct JSX copy and copy-bearing attributes', () => {
@@ -54,6 +60,56 @@ describe('Client UI i18n source check', () => {
         </section>
       )
     `)).toEqual([])
+  })
+
+  it('accepts known locale keys in typed returns and direct translation arguments', () => {
+    expect(messages(`
+      import type { Key as LocaleKey } from './locales.ts'
+      function statusMessage(ready: boolean): LocaleKey {
+        return ready ? 'renewalLabel' : 'runningMessage'
+      }
+      function View({ t }) {
+        const periodLabel = ready ? 'renewalLabel' : 'runningMessage'
+        return <div>{t(periodLabel)} {t(statusMessage(ready))}</div>
+      }
+    `, localeSource)).toEqual([])
+  })
+
+  it('rejects undeclared keys, raw JSX, and key bindings with mixed uses', () => {
+    expect(messages(`
+      import type { Key } from './locales.ts'
+      function statusMessage(): Key { return 'unknownMessage' }
+      function View({ t }) {
+        const rawLabel = 'renewalLabel'
+        const missingLabel = 'unknownLabel'
+        const storedLabel = 'runningMessage'
+        save({ storedLabel })
+        return <div>{t(rawLabel)} {rawLabel} {t(missingLabel)} {t(storedLabel)} renewalLabel</div>
+      }
+    `, localeSource)).toEqual(['unknownMessage', 'renewalLabel', 'unknownLabel', 'runningMessage', 'renewalLabel'])
+  })
+
+  it('requires the sibling locale type and a translation binding', () => {
+    expect(messages(`
+      import type { Key } from './unrelated-types.ts'
+      function statusMessage(): Key { return 'renewalLabel' }
+    `, localeSource)).toEqual(['renewalLabel'])
+    expect(messages(`
+      import type { Key } from './locales.ts'
+      function View({ t }) {
+        const statusLabel = 'runningMessage'
+        if (ready) {
+          const t = (value: string) => value
+          const periodLabel = 'renewalLabel'
+          return <div>{t(periodLabel)}</div>
+        }
+        return <div>{t(statusLabel)}</div>
+      }
+      function Identity([t]) {
+        const label = 'runningMessage'
+        return <div>{t(label)}</div>
+      }
+    `, localeSource)).toEqual(['renewalLabel', 'runningMessage'])
   })
 
   it('does not inspect locale dictionary owners', () => {

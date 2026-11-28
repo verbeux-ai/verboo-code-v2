@@ -166,6 +166,7 @@ it('sends anonymous, bounded observations for actual project and split controls'
     await page.getByRole('button', { name: /^(Add project|Adicionar projeto)$/ }).click()
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'cancelled'), { timeout: 10000 }).toBe(true)
     await expect.poll(() => events.some(event => event.feature === 'project_add' && event.outcome === 'started'), { timeout: 10000 }).toBe(true)
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
     await page.locator('[data-verboo-session="analytics-history"]').getByRole('button').first().click()
     await expect.poll(() => events.some(event => event.feature === 'conversation_open' && event.outcome === 'completed'), { timeout: 10000 }).toBe(true)
     await page.getByRole('button', { name: 'Open right sidebar', exact: true }).first().click()

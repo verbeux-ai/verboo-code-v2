@@ -369,7 +369,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const presentCardSetup = desktopPayments?.openCardSetup
   const openCardSetup: BillingApi['openCardSetup'] = presentCardSetup && (async (operation, setup, labels, signal) => {
     if (signal.aborted) return false
-    const close = () => { void desktopPayments?.closeCardSetup?.(operation).catch(() => {}) }
+    const close = () => { void desktopPayments.closeCardSetup?.(operation).catch(() => {}) }
     signal.addEventListener('abort', close, { once: true })
     try {
       return await presentCardSetup({

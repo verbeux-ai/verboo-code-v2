@@ -17,7 +17,10 @@ function readingProps() {
   const props = {
     locale: 'pt-BR',
     onDescriptionChange: vi.fn<(description: string | undefined) => void>(),
-    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => String(values?.[name] ?? '')),
+    t: (key, values) => (copy[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => {
+      const value = values?.[name]
+      return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+    }),
   } satisfies Omit<ComponentProps<typeof StaminaButtonReading>, 'reading' | 'stale'>
   return props
 }
