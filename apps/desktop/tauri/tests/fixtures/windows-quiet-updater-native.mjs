@@ -89,6 +89,7 @@ async function installedVersion() {
 
 async function renderer(expression) {
   const response = await fetch('http://127.0.0.1:' + devtoolsPort + '/json/list', { signal: AbortSignal.timeout(3000) })
+    .catch(error => { throw new Error('WebView2 debug endpoint: ' + (error.cause?.code ?? error.message)) })
   const targets = await response.json()
   const target = targets.find(page => page.type === 'page' && page.url.startsWith('http://127.0.0.1:'))
   if (!target) return undefined
@@ -180,7 +181,7 @@ Write-Output 'PASS: the official silent installer upgraded the standard Windows 
     "New-LocalUser -Name $name -Password $password | Out-Null",
     'try {',
     "  $sid = (Get-LocalUser -Name $name).SID.Value",
-    "  Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $name",
+    "  if (-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object { $_.SID.Value -eq $sid })) { Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $name }",
     "  & icacls " + psString(testDir) + " /grant ('*' + $sid + ':(OI)(CI)M') | Out-Null",
     "  if ($LASTEXITCODE -ne 0) { throw 'Unable to grant the test user access to its fixture' }",
     "  $credential = [pscredential]::new(($env:COMPUTERNAME + '\\' + $name), $password)",
@@ -200,6 +201,7 @@ let server
 let release
 let packageRequests = 0
 let stopObserver
+const debugArguments = '--remote-debugging-port=' + devtoolsPort
 try {
   const identity = await powershell('$p = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()); $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)')
   console.log('Runner user token has administrator rights:', identity.stdout.trim())
@@ -207,12 +209,14 @@ try {
   release = target
   server = createServer((req, res) => {
     if (req.url === '/feed') {
+      console.log('Test feed requested.')
       const url = 'http://127.0.0.1:' + server.address().port + '/setup.exe'
       const asset = { url, signature: release.signature }
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ version: newVersion, platforms: {'windows-x86_64': asset, 'windows-x86_64-nsis': asset} }))
     } else if (req.url === '/setup.exe') {
       packageRequests += 1
+      console.log('Signed Windows package requested.')
       res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': release.bytes })
       createReadStream(release.packageFile).on('error', () => res.destroy()).pipe(res)
     } else res.writeHead(404).end()
@@ -234,8 +238,9 @@ try {
   assert.deepEqual(await cargo.finished, { code: 0, signal: null })
   const testApp = resolve('apps/desktop/.desktop-build/tauri/target/x86_64-pc-windows-msvc/release', executable)
 
+  process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = debugArguments
   await powershell("$ErrorActionPreference = 'Stop'; New-Item -Path " + psString(webviewKey) + " -Force | Out-Null; New-ItemProperty -Path " +
-    psString(webviewKey) + " -Name " + psString(executable) + " -Value '--remote-debugging-port=" + devtoolsPort + "' -PropertyType String -Force | Out-Null")
+    psString(webviewKey) + " -Name '*' -Value " + psString(debugArguments) + " -PropertyType String -Force | Out-Null")
 
   const manualLog = join(testDir, 'manual.log')
   stopObserver = await observeWindows(manualLog, join(testDir, 'manual.ready'))
@@ -250,6 +255,16 @@ try {
     stopObserver = undefined
   }
 
+  let standardUserError
+  try {
+    await checkStandardUserInstaller(previous, target)
+  } catch (error) {
+    standardUserError = error
+    console.error('Standard-user check:', error.stdout?.trim(), error.stderr?.trim())
+  } finally {
+    await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | Stop-Process -Force')
+  }
+
   for (const scenario of ['restart-now', 'next-open-offline']) {
     if (scenario !== 'restart-now') await runInstaller(join(appDir, 'uninstall.exe'), ['/S'])
     await runInstaller(previous.packageFile, ['/S'])
@@ -258,7 +273,8 @@ try {
     const previousHash = await digest(appFile)
     await mkdir(hostHome, { recursive: true })
     await writeFile(fixture, 'data-sentinel:' + scenario)
-    const desktop = watch(appFile, [], { stdio: 'ignore' })
+    const desktop = watch(appFile, [], { cwd: appDir, stdio: 'inherit' })
+    desktop.finished.then(result => console.log(scenario + ' source process exited:', result)).catch(() => {})
     await waitForInterface()
     await until('signed package ready in the actual desktop updater', async () =>
       (await renderer('window.__VERBOO_UPDATE__?.getState()'))?.phase === 'ready', 180_000)
@@ -276,7 +292,7 @@ try {
       server.closeAllConnections()
       await new Promise(done => server.close(done))
       server = undefined
-      watch(appFile, [], { stdio: 'ignore' })
+      watch(appFile, [], { cwd: appDir, stdio: 'inherit' })
     }
     await until('installer registered the new version', async () => (await installedVersion()) === newVersion)
     await until('a new Verboo process from the installer', async () =>
@@ -296,7 +312,12 @@ try {
     console.log('PASS: ' + scenario + ' installed the signed version without Setup, retained the user file, and restored the Verboo interface.')
     await closeApp()
   }
-  await checkStandardUserInstaller(previous, target)
+  if (standardUserError) throw standardUserError
+} catch (error) {
+  const { stdout } = await powershell("Get-Process -Name 'verboo-code-desktop','msedgewebview2' -ErrorAction SilentlyContinue | " +
+    "Select-Object -Property Id,ProcessName,MainWindowTitle | Out-String -Width 200")
+  console.log('Native process state:', stdout.trim())
+  throw error
 } finally {
   await stopObserver?.()
   if (server) {
@@ -304,6 +325,6 @@ try {
     await new Promise(done => server.close(done))
   }
   await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | Stop-Process -Force; Remove-ItemProperty -LiteralPath ' +
-    psString(webviewKey) + ' -Name ' + psString(executable) + ' -ErrorAction SilentlyContinue')
+    psString(webviewKey) + " -Name '*' -ErrorAction SilentlyContinue")
   await rm(testDir, { recursive: true, force: true, maxRetries: 3 })
 }
