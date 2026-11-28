@@ -129,9 +129,11 @@ describe('SessionController facade', () => {
     const status = vi.fn()
     const failure = vi.fn()
     const activity = vi.fn()
+    const completed = vi.fn()
     ctx.on('api-session/status', status)
     ctx.on('api-session/error', failure)
     ctx.on('api-session/activity', activity)
+    ctx.on('api-session/turn-completed', completed)
 
     const session = ctx.sessions.create(sessionId, { meta: header })
     const agent = {
@@ -195,6 +197,12 @@ describe('SessionController facade', () => {
     })
     abort.abort()
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    session.append('turn/end', { turn: 2, reason: { kind: 'blocked' } })
+    expect(completed).toHaveBeenCalledTimes(1)
+    expect(completed).toHaveBeenCalledWith(sessionId)
   })
 
   it.each(['success', 'domain-error', 'throw'] as const)(

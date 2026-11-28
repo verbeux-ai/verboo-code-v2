@@ -136,6 +136,55 @@ const plan = {
   priceCents: 1000, currency: 'BRL', billingInterval: 'month',
 }
 
+describe('account settings', () => {
+  const user = { id: 'user-a', name: 'Ana', email: 'ana@example.test', hasPassword: true, publicProfile: false }
+  it('checks the account before updating the profile', async () => {
+    const f = fixture(Response.json({ data: user }), Response.json({ data: { ...user, name: 'Ana Maria' } }))
+    expect(await f.product.updateProfileSettings({ owner: user.id, name: 'Ana Maria' })).toMatchObject({ ok: true, data: { name: 'Ana Maria' } })
+    expect(f.fetch.mock.calls[1]?.[1]?.method).toBe('PATCH')
+  })
+  it('refuses to write when another account is active', async () => {
+    const f = fixture(Response.json({ data: user }))
+    expect(await f.product.updateProfileSettings({ owner: 'other-user', publicProfile: true })).toEqual({ ok: false, code: 'account_changed' })
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('does not reject a valid session when the current password is incorrect', async () => {
+    const f = fixture(Response.json({ data: user }), new Response('', { status: 401 }))
+    expect(await f.product.updateAccountPassword({ owner: user.id, currentPassword: 'wrong', newPassword: 'new-password' }))
+      .toEqual({ ok: false, code: 'incorrect_password' })
+    expect(f.account.rejectToken).not.toHaveBeenCalled()
+  })
+  it('sets an initial password for an account without one', async () => {
+    const f = fixture(Response.json({ data: { ...user, hasPassword: false } }), Response.json({ data: null }))
+    expect(await f.product.updateAccountPassword({ owner: user.id, newPassword: 'new-password' })).toEqual({ ok: true })
+    expect(f.fetch.mock.calls[1]?.[0]).toBe('https://code.verboo.ai/api/me/set-password')
+  })
+  it('does not submit a password after the active account changes', async () => {
+    const f = fixture(Response.json({ data: user }))
+    expect(await f.product.updateAccountPassword({ owner: 'other-user', currentPassword: 'wrong', newPassword: 'new-password' }))
+      .toEqual({ ok: false, code: 'failed' })
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('stops a profile write if the session changes during the ownership check', async () => {
+    const f = fixture()
+    f.fetch.mockImplementationOnce(async () => {
+      f.account.getPlatformSession.mockResolvedValue(session('account-b'))
+      return Response.json({ data: user })
+    })
+    expect(await f.product.updateProfileSettings({ owner: user.id, name: 'Another name' }))
+      .toEqual({ ok: false, code: 'account_changed' })
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('revokes sessions only after checking the account owner', async () => {
+    const f = fixture(Response.json({ data: user }), Response.json({ data: null }))
+    expect(await f.product.signOutAll(user.id)).toEqual({ ok: true, data: null })
+    expect(f.fetch.mock.calls[1]?.[0]).toBe('https://code.verboo.ai/api/me/logout-all')
+    const other = fixture(Response.json({ data: user }))
+    expect(await other.product.signOutAll('other-user')).toEqual({ ok: false, code: 'account_changed' })
+    expect(other.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('live account generation speed', () => {
   it('subscribes with a private ticket and streams safe measurements', async () => {
     let socket: FakeSocket | undefined
@@ -543,6 +592,53 @@ it('keeps commercial reads available when the operational fallback logger fails'
 })
 
 describe('usage analytics', () => {
+  it('keeps prepaid API models out of the subscription catalog', async () => {
+    const prepaid = { ...plan, id: '00000000-0000-4000-8000-000000000002', name: 'API model', priceCents: 0, billingMode: 'prepaid_tokens' }
+    const unpriced = { ...plan, id: '00000000-0000-4000-8000-000000000003', name: 'Custom plan', priceCents: 0, billingMode: 'subscription' }
+    const f = fixture(Response.json({ data: [] }), Response.json({ data: [plan, prepaid, unpriced] }))
+    const result = await f.product.getPlans()
+    expect(result.ok && result.data.catalog.map(row => row.name)).toEqual(['Pro', 'Custom plan'])
+  })
+  it('projects plan features from the authoritative catalog without inventing missing values', async () => {
+    const featured = { ...plan, usageLimitsEnabled: true, concurrentRequests: 2, apiRateLimitRpm: 100,
+      catalogModels: [{ modelName: 'model-a', displayName: 'Model A', temporary: true }, { modelName: 'model-b', displayName: null }] }
+    const f = fixture(Response.json({ data: [] }), Response.json({ data: [featured] }))
+    const result = await f.product.getPlans()
+    expect(result.ok && result.data.catalog[0]).toMatchObject({ usageLimitsEnabled: true, concurrentRequests: 2, apiRateLimitRpm: 100,
+      models: [{ name: 'Model A', temporary: true }, { name: 'model-b', temporary: false }] })
+  })
+  it('does not block plan purchases when optional presentation metadata is malformed', async () => {
+    const f = fixture(Response.json({ data: [] }), Response.json({ data: [{ ...plan, usageLimitsEnabled: null, catalogModels: [{ displayName: 'Unknown' }] }] }))
+    const result = await f.product.getPlans()
+    expect(result.ok && result.data.catalog).toHaveLength(1)
+    if (result.ok) {
+      expect(result.data.catalog[0]).not.toHaveProperty('usageLimitsEnabled')
+      expect(result.data.catalog[0]).not.toHaveProperty('models')
+    }
+  })
+  it('uses regional offers including annual totals and does not sell a legacy price when the server lists no offers', async () => {
+    const unlisted = { ...plan, id: '00000000-0000-4000-8000-000000000007', name: 'Unavailable', offers: [] }
+    const offers = [
+      { priceCents: 24900, currency: 'brl', billingInterval: 'month', paymentMethods: ['stripe'] },
+      { priceCents: 249000, currency: 'brl', billingInterval: 'year', paymentMethods: ['stripe'] },
+    ]
+    const f = fixture(Response.json({ data: [] }), Response.json({ data: [{ ...plan, offers }, unlisted] }))
+    const result = await f.product.getPlans()
+    expect(result.ok && result.data.catalog).toMatchObject([
+      { id: plan.id, priceCents: 24900, currency: 'brl', interval: 'month' },
+      { id: plan.id, priceCents: 249000, currency: 'brl', interval: 'year' },
+      { id: unlisted.id, priceCents: null, currency: null, unavailable: true },
+    ])
+  })
+  it('reads allowance windows and strips backend budgets from the client projection', async () => {
+    const window = { id: '00000000-0000-4000-8000-000000000007', durationSeconds: 604800,
+      usedPercent: 23.5, resetsAt: '2026-12-04T10:00:00Z' }
+    const group = { groupId: plan.id, groupName: 'Lite', limited: true, blocked: false,
+      accountingPending: false, availableAt: null }
+    const f = fixture(Response.json({ data: [{ ...group, windows: [{ ...window, limitUsd: '5.00' }] }] }))
+    expect(await f.product.getUsageWindows(f.signal)).toEqual({ ok: true, data: [{ ...group, windows: [window] }] })
+    expect(f.fetch.mock.calls[0]?.[0]).toContain('/api/me/usage-windows')
+  })
   it('loads subscriptions without requesting the marketplace catalog', async () => {
     const f = fixture(Response.json({ data: [] }))
     expect(await f.product.getUsageSubscriptions(f.signal)).toEqual({ ok: true, data: [] })

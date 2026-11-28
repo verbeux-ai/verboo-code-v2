@@ -16,6 +16,7 @@ import type { SidebarProps, ProductProps } from './contracts.ts'
 import { Brand, BrandMark } from './Brand.tsx'
 import { Glyph } from './Glyph.tsx'
 import { DesktopUpdate } from './DesktopUpdate.tsx'
+import { sidebarConversationRows } from './panes/ConversationSwitcher.tsx'
 import css from './Product.module.css'
 const panels = {
   analytics: 'verboo.analytics' as MainPanelId,
@@ -363,17 +364,8 @@ export function Sidebar(props: SidebarProps) {
       : (active?.name ?? t('noPlan'))
   const needle = query.trim().toLocaleLowerCase()
   const rows = (ids: readonly SessionId[]) =>
-    ids
-      .filter(id => workspaces.archivedSessionIds.includes(id) === archived)
-      .map(id => sessions.byId[id])
-      .filter(s => s !== undefined)
-      .filter(
-        s =>
-          s.origin !== 'subagent' &&
-          (!s.blank || s.id === current) &&
-          (needle === '' ||
-            s.displayTitle.toLocaleLowerCase().includes(needle)),
-      )
+    sidebarConversationRows(ids, sessions, workspaces, current, archived)
+      .filter(s => needle === '' || s.displayTitle.toLocaleLowerCase().includes(needle))
   const owned = new Set(workspaces.items.flatMap(w => w.sessionIds))
   const ungrouped = rows(sessions.ids.filter(id => !owned.has(id)))
   const content = (
@@ -440,6 +432,7 @@ export function Sidebar(props: SidebarProps) {
             data-active={selected === panels.connections}
             onClick={() =>{  go(panels.connections) }}
             aria-label={t('connections')}
+            data-verboo-tour-connections
             aria-current={selected === panels.connections ? 'page' : undefined}
           >
             <Glyph name="cable" />
@@ -500,6 +493,7 @@ export function Sidebar(props: SidebarProps) {
                 className={css.iconButton}
                 disabled={adding}
                 aria-label={t('addProject')}
+                data-verboo-tour-project
                 onClick={() => {
                   void openProject()
                 }}

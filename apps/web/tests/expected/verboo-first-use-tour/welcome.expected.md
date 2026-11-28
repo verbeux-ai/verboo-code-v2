@@ -1,0 +1,6 @@
+- dialog "Boas-vindas ao Verboo Code!":
+  - button "Fechar tour"
+  - heading "Boas-vindas ao Verboo Code!" [level=2]
+  - paragraph: Valeu por baixar o app! Quer conhecer as ferramentas para começar seu primeiro projeto?
+  - button "Começar tour"
+  - button "Agora não"

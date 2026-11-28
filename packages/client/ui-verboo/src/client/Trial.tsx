@@ -92,7 +92,9 @@ export function TrialModal(props: TrialProps) {
   const visible = state.open && product.profile !== null
   const plans =
     product.plans?.catalog.filter(
-      plan => plan.currency.toUpperCase() === 'USD',
+      (plan): plan is typeof plan & { priceCents: number; currency: string } => !plan.unavailable
+        && plan.interval === 'month' && plan.priceCents !== null && plan.priceCents > 0
+        && plan.currency?.toUpperCase() === 'USD',
     ) ?? []
   const recommended =
     plans.find(plan => plan.slug === 'pro') ??

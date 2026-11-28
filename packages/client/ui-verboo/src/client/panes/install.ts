@@ -7,6 +7,7 @@ import { PaneController } from './controller.ts'
 import { Pane, PaneControls, Panes } from './Panes.tsx'
 import type { PanesInjected } from './Panes.tsx'
 import type { PaneAxis } from './layout.ts'
+import { ConversationSwitcher, type ConversationSwitch, sidebarConversationOrder, stepConversation } from './ConversationSwitcher.tsx'
 
 /** Install one product-owned layout controller and its view registrations.
  * @param ctx - product Client context.
@@ -14,7 +15,7 @@ import type { PaneAxis } from './layout.ts'
  * @param onSplitClick - observe a split control without pane or session data.
  * @returns the owned pane state, for product-level composition. */
 export function installPanes(ctx: Context, config: Config, onSplitClick: (axis: PaneAxis) => void): PaneController['state'] {
-  const form = ctx.configForms.get<Pick<Config, 'paneLayout' | 'minimalist'>>('ui-verboo')
+  const form = ctx.configForms.get<Pick<Config, 'paneLayout' | 'conversationWidth'>>('ui-verboo')
   const saveError = createSnapshotStore(false)
   let pending: string | null = null
   let saving: Promise<void> | undefined
@@ -175,6 +176,58 @@ export function installPanes(ctx: Context, config: Config, onSplitClick: (axis: 
       PaneControls,
     ),
   )
+  if (globalThis.__VERBOO_DESKTOP__ !== undefined || ctx.shortcuts.runtime === 'desktop') {
+    const conversationSwitch = createSnapshotStore<ConversationSwitch | null>(null)
+    const clear = () => { conversationSwitch.set(null) }
+    const canSwitch = () => ctx.layout.panelInfo.getSnapshot().activePanelId === null
+      && !controller.state.getSnapshot().restoring
+    const sidebarOrder = () => sidebarConversationOrder(ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(),
+      controller.focused().sessionId ?? undefined)
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+      name: 'shell.overlay', id: 'verboo.conversation-switcher', locale: 'verboo',
+      inject: () => ({ hooks: { conversationSwitch } }),
+    }, ConversationSwitcher))
+    ctx.effect(function* () {
+      yield ctx.shortcuts.registerFixed({
+        id: 'verboo.panes.switch-conversation' as ShortcutCommandId,
+        label: () => ctx.locale.bind('verboo')('switchConversation'),
+        keys: ['Ctrl', 'Tab'],
+        bindings: [{ code: 'Tab', modifiers: ['control'] }, { code: 'Tab', modifiers: ['control', 'shift'] }],
+        group: 'application',
+      })
+      yield ctx.shortcuts.observeFixedInput((input) => {
+        if (input.type === 'reset') { clear(); return }
+        const { gesture, context } = input
+        if (context.modal !== null || !canSwitch() || gesture.composing || gesture.defaultPrevented) return
+        const previous = conversationSwitch.getSnapshot()
+        if (gesture.code === 'Escape' && previous !== null) {
+          input.consume()
+          clear()
+          return
+        }
+        if (gesture.code !== 'Tab' || !gesture.control || gesture.alt || gesture.meta) return
+        if (context.region === 'terminal'
+          || context.region === 'editable' && !context.target?.closest('[data-composer-card]')) return
+        const next = stepConversation(previous?.rows ?? sidebarOrder(), controller.focused().sessionId ?? undefined,
+          gesture.shift ? -1 : 1, previous)
+        if (next === null) return
+        input.consume()
+        if (!gesture.repeat) conversationSwitch.set(next)
+      })
+      const release = (event: KeyboardEvent) => {
+        if (event.key !== 'Control' || event.ctrlKey) return
+        const preview = conversationSwitch.getSnapshot()
+        if (preview === null) return
+        clear()
+        const id = preview.rows[preview.selected]?.id
+        if (id === undefined || !canSwitch() || !sidebarOrder().some(row => row.id === id)) return
+        controller.select(controller.focused().id, id)
+        controller.focusInput(controller.focused().id)
+      }
+      window.addEventListener('keyup', release)
+      yield () => { window.removeEventListener('keyup', release); clear() }
+    }, 'Verboo: recent conversation switcher')
+  }
   // Existing native chrome and sidebar toggle continue to own opening/closing.
   if (window.innerWidth >= 1024) ctx.layout.toggleSidebar()
   const commands: Array<{

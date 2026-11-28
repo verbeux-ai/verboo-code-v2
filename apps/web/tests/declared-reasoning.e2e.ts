@@ -138,6 +138,35 @@ describe.skipIf(MODE === 'record').each([
     expect(tripwire.pageErrors).toEqual([])
   })
 
+  it('keeps the effort slider open when a pointer lands just below the rail', async () => {
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    await trigger.click()
+    await page.getByRole('menuitem', { name: /推理等级/ }).click()
+    const slider = page.getByRole('slider', { name: '推理等级' })
+    await slider.waitFor()
+    const labelBox = await page.locator('[class*="effortScaleLabel"]').last().boundingBox()
+    if (labelBox === null) throw new Error('Reasoning level label is not visible')
+    await page.mouse.click(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2)
+    expect(await slider.isVisible()).toBe(true)
+    expect(await slider.evaluate(element => element === document.activeElement)).toBe(true)
+
+    const box = await slider.boundingBox()
+    if (box === null) throw new Error('Reasoning level slider is not visible')
+    expect(box.height).toBeGreaterThanOrEqual(36)
+    await slider.click({ position: { x: box.width - 2, y: box.height - 4 } })
+    await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('最高')
+
+    await page.mouse.move(box.x + box.width - 7, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height + 8, { steps: 8 })
+    await page.mouse.up()
+    expect(await slider.isVisible()).toBe(true)
+
+    await page.mouse.click(0, 0)
+    await slider.waitFor({ state: 'detached' })
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('selects model and effort by mouse and keeps keyboard control after cancelled or rejected clicks', async () => {
     onTestFailed(() => saveFailureShot(page, `web-e2e-model-pointer-${engine.name()}`))
     let selections = 0

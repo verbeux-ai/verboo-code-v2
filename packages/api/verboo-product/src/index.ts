@@ -34,10 +34,12 @@ import type {
   ConnectionId,
   PlanId,
   Plans,
+  UsageWindowsStatus,
   Connections,
   Result,
   StaminaStatus,
   UsagePeriod, UsageSummary, UsageActivityDay, SpeedFrame,
+  ProfileSettings, PasswordResult,
 } from './types.ts'
 
 /** Public product API deployment addresses; no provider secret is accepted. */
@@ -71,17 +73,39 @@ export interface Config {
 const id = z
   .uuid()
   .transform(value => value as PlanId)
+const profileSettings = z.object({ data: z.object({
+  id: z.string().min(1), name: z.string(), email: z.string(), hasPassword: z.boolean(),
+  publicProfile: z.boolean(), anonymousHandle: z.string().optional(),
+}) })
+const catalogPrice = z.object({
+  priceCents: z.number().int().nonnegative(),
+  currency: z.string().regex(/^[A-Za-z]{3}$/),
+  billingInterval: z.enum(['month', 'year']),
+})
 const plan = z.object({
   id,
   name: z.string(),
   slug: z.string().min(1).optional(),
   description: z.string(),
-  priceCents: z.number().int().nonnegative(),
-  currency: z.string().regex(/^[A-Za-z]{3}$/),
-  billingInterval: z.enum(['month', 'year']),
+  priceCents: catalogPrice.shape.priceCents.nullish().catch(null),
+  currency: catalogPrice.shape.currency.nullish().catch(null),
+  billingInterval: catalogPrice.shape.billingInterval,
+  offers: z.array(catalogPrice.extend({
+    paymentMethods: z.array(z.string()).optional(),
+  }).nullable().catch(null)).max(16).nullish().catch([]),
   billingMode: z.string().optional(),
   newAcquisitionEnabled: z.boolean().default(true),
   apiOnly: z.boolean().default(false),
+  usageLimitsEnabled: z.boolean().optional().catch(undefined),
+  concurrentRequests: z.number().int().nonnegative().nullish().catch(undefined),
+  apiRateLimitRpm: z.number().int().nonnegative().nullish().catch(undefined),
+  apiAccessEnabled: z.boolean().optional().catch(undefined),
+  structuredOutputEnabled: z.boolean().optional().catch(undefined),
+  enableRanking: z.boolean().optional().catch(undefined),
+  seatPurchasesEnabled: z.boolean().optional().catch(undefined),
+  catalogModels: z.array(z.object({
+    modelName: z.string().min(1), displayName: z.string().nullish(), temporary: z.boolean().optional(),
+  })).max(500).nullish().catch(undefined),
 })
 const cardUpdate = z.object({
   id: z.uuid(), status: z.enum(['pending', 'confirmed', 'failed', 'expired']), url: z.string().optional(),
@@ -96,7 +120,14 @@ const subscriptions = z.object({
       z.object({
         id: z.uuid(),
         groupId: id,
-        group: z.object({ name: z.string(), slug: z.string().min(1).optional() }).nullish(),
+        group: z.object({
+          name: z.string(), slug: z.string().min(1).optional(),
+          usageLimitsEnabled: plan.shape.usageLimitsEnabled,
+          concurrentRequests: plan.shape.concurrentRequests,
+          apiRateLimitRpm: plan.shape.apiRateLimitRpm,
+        }).nullish(),
+        concurrencyRequestsOverride: plan.shape.concurrentRequests,
+        concurrencyTier: z.object({ concurrentRequests: plan.shape.concurrentRequests }).nullish().catch(undefined),
         status: z.string(),
         currentPeriodEnd: z.string().nullish(),
         cancelAtPeriodEnd: z.boolean(),
@@ -122,37 +153,80 @@ const subscriptions = z.object({
 function projectSubscriptions(value: unknown): Subscription[] {
   return subscriptions
     .parse(value)
-    .data.map(s => ({
-      id: s.id,
-      planId: s.groupId,
-      name: s.group?.name ?? s.groupId,
-      ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
-      status: s.status,
-      renewsAt: s.currentPeriodEnd ?? null,
-      cancelAtEnd: s.cancelAtPeriodEnd,
-      canUpgrade: s.management.changePlan,
-      ...([s.management.cancelSubscription, s.management.reactivateSubscription,
-        s.management.viewInvoices, s.management.updatePaymentMethod, s.management.updateCard].some(flag => flag !== undefined)
-        ? { permissions: {
-          cancel: s.management.cancelSubscription === true,
-          reactivate: s.management.reactivateSubscription === true,
-          invoices: s.management.viewInvoices === true,
-          paymentMethod: s.management.updatePaymentMethod === true,
-          ...(s.management.updateCard === true ? { cardUpdate: true } : {}),
+    .data.map((s) => {
+      const base = s.group?.concurrentRequests
+      const override = s.concurrencyRequestsOverride ?? 0
+      const concurrency = override > 0 ? override : base != null && base > 0
+        ? base + (s.concurrencyTier?.concurrentRequests ?? 0) : base
+      return {
+        id: s.id,
+        planId: s.groupId,
+        name: s.group?.name ?? s.groupId,
+        ...(s.group?.slug === undefined ? {} : { slug: s.group.slug }),
+        status: s.status,
+        renewsAt: s.currentPeriodEnd ?? null,
+        cancelAtEnd: s.cancelAtPeriodEnd,
+        canUpgrade: s.management.changePlan,
+        ...(s.group?.usageLimitsEnabled === true ? { limitedUsage: {
+          ...(concurrency == null ? {} : { concurrentRequests: concurrency }),
+          ...(s.group.apiRateLimitRpm == null ? {} : { apiRateLimitRpm: s.group.apiRateLimitRpm }),
         } } : {}),
-      ...(s.activePlanChangeId ? { activeChangeId: s.activePlanChangeId } : {}),
-      ...(s.management.removeConcurrencyTier ? { canRemoveTier: true } : {}),
-      ...(s.cancellation ? { cancellation: s.cancellation } : {}),
-      billing: s.billing
-        ? {
-          amountMinor: s.billing.amountMinor,
-          currency: s.billing.currency,
-          interval: s.billing.billingInterval,
-        }
-        : null,
-    }))
+        ...([s.management.cancelSubscription, s.management.reactivateSubscription,
+          s.management.viewInvoices, s.management.updatePaymentMethod, s.management.updateCard].some(flag => flag !== undefined)
+          ? { permissions: {
+            cancel: s.management.cancelSubscription === true,
+            reactivate: s.management.reactivateSubscription === true,
+            invoices: s.management.viewInvoices === true,
+            paymentMethod: s.management.updatePaymentMethod === true,
+            ...(s.management.updateCard === true ? { cardUpdate: true } : {}),
+          } } : {}),
+        ...(s.activePlanChangeId ? { activeChangeId: s.activePlanChangeId } : {}),
+        ...(s.management.removeConcurrencyTier ? { canRemoveTier: true } : {}),
+        ...(s.cancellation ? { cancellation: s.cancellation } : {}),
+        billing: s.billing
+          ? {
+            amountMinor: s.billing.amountMinor,
+            currency: s.billing.currency,
+            interval: s.billing.billingInterval,
+          }
+          : null,
+      }
+    })
 }
 const catalog = z.object({ data: z.array(plan).max(500) })
+function projectCatalogPlan(p: z.infer<typeof plan>): Plans['catalog'] {
+  const { usageLimitsEnabled, apiAccessEnabled, structuredOutputEnabled, enableRanking, seatPurchasesEnabled } = p
+  const common = {
+    id: p.id, name: p.name, description: p.description,
+    ...(p.slug === undefined ? {} : { slug: p.slug }),
+    ...(usageLimitsEnabled === undefined ? {} : { usageLimitsEnabled }),
+    ...(p.concurrentRequests == null ? {} : { concurrentRequests: p.concurrentRequests }),
+    ...(p.apiRateLimitRpm == null ? {} : { apiRateLimitRpm: p.apiRateLimitRpm }),
+    ...(apiAccessEnabled === undefined ? {} : { apiAccessEnabled }),
+    ...(structuredOutputEnabled === undefined ? {} : { structuredOutputEnabled }),
+    ...(enableRanking === undefined ? {} : { enableRanking }),
+    ...(seatPurchasesEnabled === undefined ? {} : { seatPurchasesEnabled }),
+    ...(p.catalogModels == null ? {} : {
+      models: p.catalogModels.map(m => ({ name: m.displayName || m.modelName, temporary: m.temporary ?? false })),
+    }),
+  }
+  if (p.offers == null) {
+    const price = p.priceCents ?? null
+    const currency = p.currency ?? null
+    return [{ ...common, priceCents: price, currency, interval: p.billingInterval,
+      ...(price === null || currency === null ? { unavailable: true } : {}) }]
+  }
+  const offers = new Map<string, NonNullable<NonNullable<typeof p.offers>[number]>>()
+  for (const offer of p.offers) {
+    if (offer !== null && offer.paymentMethods?.length !== 0 && !offers.has(offer.billingInterval))
+      offers.set(offer.billingInterval, offer)
+  }
+  return offers.size === 0
+    ? [{ ...common, priceCents: null, currency: null, interval: p.billingInterval, unavailable: true }]
+    : [...offers.values()].map(offer => ({
+      ...common, priceCents: offer.priceCents, currency: offer.currency, interval: offer.billingInterval,
+    }))
+}
 const stamina = z.object({
   data: z.array(z.object({
     groupId: id,
@@ -166,6 +240,23 @@ const stamina = z.object({
   })).max(500).refine(rows => new Set(rows.map(row => row.groupId)).size === rows.length),
 })
 const usagePeriod = z.enum(['24h', '7d', '30d', 'current_month', 'previous_month'])
+const usageWindowInstant = z.iso.datetime({ offset: true }).nullable()
+const usageWindows = z.object({
+  data: z.array(z.object({
+    groupId: id,
+    groupName: z.string(),
+    limited: z.boolean(),
+    blocked: z.boolean(),
+    accountingPending: z.boolean(),
+    availableAt: usageWindowInstant,
+    windows: z.array(z.object({
+      id: z.uuid(),
+      durationSeconds: z.number().int().positive(),
+      usedPercent: z.number().min(0).max(100),
+      resetsAt: usageWindowInstant,
+    })).max(100),
+  })).max(500),
+})
 const usageSummary = z.object({ data: z.object({
   timezone: z.string().max(128), bucket: z.enum(['minute', 'hour', 'day']),
   reqTotal: z.number().nonnegative(), tokensInTotal: z.number().nonnegative(),
@@ -279,6 +370,7 @@ export class VerbooProduct extends TypertRemoteService {
     expectedSession?: PlatformSession['sessionId'],
     billingIdentity?: ReturnType<typeof operation>,
     decode?: (value: unknown) => T,
+    passwordRequest = false,
   ): Promise<T> {
     const session = await this.ctx.deepseekAccount.getPlatformSession()
     if (session?.sessionId === undefined)
@@ -339,7 +431,7 @@ export class VerbooProduct extends TypertRemoteService {
           ? error
           : new AccountRequestError('contract_error')
       record('failed', safe)
-      if (safe.code === 'authentication_invalid')
+      if (safe.code === 'authentication_invalid' && !passwordRequest)
         await this.ctx.deepseekAccount.rejectToken(token)
       throw safe
     }
@@ -475,6 +567,62 @@ export class VerbooProduct extends TypertRemoteService {
     return this.result(() => this.readPlans())
   }
 
+  /** Read the current account's editable settings without exposing credentials. */
+  @Remote
+  getProfileSettings(): Promise<Result<ProfileSettings>> {
+    return this.result(async () => profileSettings.parse(await this.request('/api/me')).data)
+  }
+
+  /** Apply one explicit profile change for the active account. */
+  @Remote
+  updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>> {
+    return this.result(async () => {
+      const validated = z.object({
+        owner: z.string().min(1), name: z.string().trim().min(1).max(100).optional(), publicProfile: z.boolean().optional(),
+      }).strict().parse(input)
+      const session = (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+      if (session === undefined) throw new AccountRequestError('authentication_invalid')
+      const current = profileSettings.parse(await this.request('/api/me', 'GET', undefined, undefined, undefined, undefined, session)).data
+      if (current.id !== validated.owner) throw new AccountRequestError('request_cancelled')
+      const { owner: _owner, ...fields } = validated
+      return profileSettings.parse(await this.request('/api/me', 'PATCH', fields, undefined, undefined, undefined, session)).data
+    })
+  }
+
+  /** Change or set a password without recording its value or mistaking an incorrect password for an expired grant. */
+  @Remote
+  async updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult> {
+    try {
+      const validated = z.object({
+        owner: z.string().min(1), currentPassword: z.string().min(1).max(128).optional(), newPassword: z.string().min(8).max(128),
+      }).strict().parse(input)
+      const session = (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+      if (session === undefined) throw new AccountRequestError('authentication_invalid')
+      const current = profileSettings.parse(await this.request('/api/me', 'GET', undefined, undefined, undefined, undefined, session)).data
+      if (current.id !== validated.owner || current.hasPassword !== (validated.currentPassword !== undefined))
+        throw new AccountRequestError('request_cancelled')
+      const path = validated.currentPassword === undefined ? '/api/me/set-password' : '/api/me/change-password'
+      const { owner: _owner, ...fields } = validated
+      await this.request(path, 'POST', fields, undefined, undefined, undefined, session, undefined, undefined, true)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, code: error instanceof AccountRequestError && error.status === 401 ? 'incorrect_password' : 'failed' }
+    }
+  }
+
+  /** Revoke every server session for the currently displayed account. */
+  @Remote
+  signOutAll(owner: string): Promise<Result<null>> {
+    return this.result(async () => {
+      const session = (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
+      if (session === undefined) throw new AccountRequestError('authentication_invalid')
+      const current = profileSettings.parse(await this.request('/api/me', 'GET', undefined, undefined, undefined, undefined, session)).data
+      if (current.id !== owner) throw new AccountRequestError('request_cancelled')
+      await this.request('/api/me/logout-all', 'POST', undefined, undefined, undefined, undefined, session)
+      return null
+    })
+  }
+
   private async readPlans(signal?: AbortSignal, expectedSession?: BillingOwner['session']): Promise<Plans> {
     const session = expectedSession ?? (await this.ctx.deepseekAccount.getPlatformSession())?.sessionId
     if (session === undefined) throw new AccountRequestError('authentication_invalid')
@@ -491,17 +639,10 @@ export class VerbooProduct extends TypertRemoteService {
             p.newAcquisitionEnabled &&
             !p.apiOnly &&
             p.billingMode !== 'token' &&
+            p.billingMode !== 'prepaid_tokens' &&
             p.billingMode !== 'pay_as_you_go',
         )
-        .map(p => ({
-          id: p.id,
-          name: p.name,
-          ...(p.slug === undefined ? {} : { slug: p.slug }),
-          description: p.description,
-          priceCents: p.priceCents,
-          currency: p.currency,
-          interval: p.billingInterval,
-        })),
+        .flatMap(projectCatalogPlan),
     }
   }
   /**
@@ -620,6 +761,16 @@ export class VerbooProduct extends TypertRemoteService {
     })
   }
   /**
+   * Read only the current account's allowance windows for the Plans page.
+   * @param signal - cancellation of the owning Client read.
+   * @returns the public allowance, usage percentage, and renewal time.
+   */
+  @Remote
+  getUsageWindows(signal: AbortSignal): Promise<Result<UsageWindowsStatus[]>> {
+    return this.result(async () =>
+      usageWindows.parse(await this.request('/api/me/usage-windows', 'GET', undefined, signal)).data)
+  }
+  /**
    * Read server-decided trial attention; an unavailable API never means expired.
    * @param signal - cancellation for the owning visible-window read.
    * @returns persisted attention, remaining tokens and paid group access.
@@ -640,8 +791,8 @@ export class VerbooProduct extends TypertRemoteService {
     return this.result(async () => {
       const plans = await this.getPlans()
       if (!plans.ok) throw new AccountRequestError('contract_error')
-      const selected = plans.data.catalog.find(plan => plan.id === id.parse(planId))
-      if (!selected || selected.currency.toUpperCase() !== 'USD') throw new AccountRequestError('contract_error')
+      const selected = plans.data.catalog.find(plan => plan.id === id.parse(planId) && plan.interval === 'month')
+      if (!selected || selected.unavailable || selected.currency?.toUpperCase() !== 'USD') throw new AccountRequestError('contract_error')
       return this.trialCommerce.offer(trialId, selected, z.enum(['card', 'pix']).parse(method ?? 'card'))
     })
   }
@@ -1550,7 +1701,7 @@ export class VerbooProduct extends TypertRemoteService {
         const plans = await this.getPlans()
         if (!plans.ok) throw new AccountRequestError('contract_error')
         const allowed = purchase
-          ? plans.data.catalog.some(p => p.id === planId)
+          ? plans.data.catalog.some(p => p.id === planId && !p.unavailable)
           : plans.data.subscriptions.some(p => p.planId === planId)
         if (!allowed) throw new AccountRequestError('contract_error')
         url.searchParams.set('plan', id.parse(planId))

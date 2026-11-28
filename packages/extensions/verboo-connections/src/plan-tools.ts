@@ -182,8 +182,9 @@ export function apply(ctx: Context, timeoutMs: number): void {
           ok: true,
           subscriptions: plans.data.subscriptions.slice(0, maxPlanRows).map(subscriptionView),
           plans: plans.data.catalog.slice(0, maxPlanRows).map(plan => ({
-            planId: plan.id, name: label(plan.name), billingInterval: plan.interval, currency: plan.currency.toUpperCase(),
-            listPriceMinor: plan.priceCents || null, limitedUsage: (plan.slug || plan.name).trim().toLowerCase() === 'lite',
+            planId: plan.id, name: label(plan.name), billingInterval: plan.interval, currency: plan.currency?.toUpperCase() ?? null,
+            listPriceMinor: plan.priceCents || null, limitedUsage: plan.usageLimitsEnabled ?? null,
+            acquisitionAvailable: !plan.unavailable,
           })),
           truncated: plans.data.subscriptions.length > maxPlanRows || plans.data.catalog.length > maxPlanRows,
         }

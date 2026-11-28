@@ -238,6 +238,9 @@ export class SessionController extends TypertRemoteService {
       ctx.emit('api-session/error', agent.id, errorChain(error))
     })
     ctx.on('session/event', (session, event) => {
+      if (event.type === 'turn/end' && event.data.reason.kind === 'completed' && session.header.origin !== 'subagent') {
+        ctx.emit('api-session/turn-completed', session.id)
+      }
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
       ctx.emit('api-session/activity', session.id, event.time)
     })

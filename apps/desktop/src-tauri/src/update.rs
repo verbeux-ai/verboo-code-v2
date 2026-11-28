@@ -1261,6 +1261,15 @@ mod tests {
     }
 
     #[test]
+    fn windows_updater_uses_silent_nsis() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let updater: tauri_plugin_updater::Config =
+            serde_json::from_value(config["plugins"]["updater"].clone()).unwrap();
+        assert_eq!(updater.windows.unwrap().install_mode.nsis_args(), &["/S"]);
+    }
+
+    #[test]
     fn update_finalizes_idle_host_without_confirmation() {
         let (host, events, root) = activity_probe("idle");
         assert!(can_restart_without_confirmation(&host).unwrap());

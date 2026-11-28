@@ -66,10 +66,37 @@ interface TurnOwner {
   turn: number
   owner: Promise<Owner | undefined>
   reference: OrderReference | undefined
+  attempted: boolean
 }
 
 interface OrderReference { order: bigint; serverTime: number; proof: string }
 interface TurnCheckpoint { turn: number; reference: OrderReference | undefined }
+
+// Never forward upstream messages or unknown provider-specific codes.
+const responseErrorCategories = new Map([
+  ['AUTH', 'authentication'],
+  ['AUTH_FORBIDDEN', 'authentication'],
+  ['ACCOUNT_SIGN_IN_REQUIRED', 'authentication'],
+  ['ACCOUNT_REFRESH_FAILED', 'authentication'],
+  ['ACCOUNT_TOKEN_INVALID', 'authentication'],
+  ['INVALID_CREDENTIAL', 'authentication'],
+  ['QUOTA', 'quota'],
+  ['ACCOUNT_QUOTA', 'quota'],
+  ['RATE_LIMIT', 'rate_limit'],
+  ['TRANSPORT', 'connection'],
+  ['STREAM_CLOSED', 'connection'],
+  ['TIMEOUT', 'timeout'],
+  ['SERVER', 'service'],
+  ['INVALID_RESPONSE', 'service'],
+  ['MALFORMED_RESPONSE', 'service'],
+  ['INVALID_REQUEST', 'request'],
+  ['CONTEXT_WINDOW_EXCEEDED', 'request'],
+  ['MODEL_UNSUPPORTED', 'request'],
+  ['UNKNOWN_MODEL', 'request'],
+  ['UNSUPPORTED_MODEL', 'request'],
+  ['EMPTY_RESPONSE', 'empty_response'],
+  ['TOOL_ACTIVATION_FAILED', 'tools'],
+])
 
 function positiveOrder(value: string | undefined): bigint | undefined {
   if (value === undefined || !/^[1-9][0-9]{0,18}$/.test(value)) return undefined
@@ -190,8 +217,18 @@ export default class VerbooAnalytics extends TypertRemoteService {
             return undefined
           })
           this.background(owner.then(() => {}))
-          this.turnOwners.set(session, { turn: facts.turn, owner,
-            reference: checkpoint?.turn === facts.turn ? checkpoint.reference : undefined })
+          const capture: TurnOwner = { turn: facts.turn, owner, attempted: false,
+            reference: checkpoint?.turn === facts.turn ? checkpoint.reference : undefined }
+          this.turnOwners.set(session, capture)
+          // The live agent opens the step before it writes the admitted user message.
+          if (facts.stepped) this.background(this.responseAttempt(session, facts.turn, facts.startedAt, event.time, capture))
+        }
+        return
+      }
+      if (event.type === 'step/start' && facts.root && facts.human) {
+        const capture = this.turnOwners.get(session)
+        if (capture?.turn === event.data.turn) {
+          this.background(this.responseAttempt(session, event.data.turn, facts.startedAt, event.time, capture))
         }
         return
       }
@@ -231,7 +268,8 @@ export default class VerbooAnalytics extends TypertRemoteService {
       this.scheduleCalls.delete(session)
       if (this.config.surface === 'desktop' && facts.root && facts.human && facts.stepped &&
         event.data.reason.kind === 'error' && capture?.turn === event.data.turn) {
-        this.background(this.failedResponse(session, event.data.turn, facts.startedAt, event.time, capture))
+        const category = responseErrorCategories.get(event.data.reason.error.code) ?? 'unknown'
+        this.background(this.failedResponse(session, event.data.turn, facts.startedAt, event.time, capture, category))
       }
       if (facts.completedTurn !== event.data.turn || this.config.surface === 'dashboard') return
       if (capture?.turn === event.data.turn) this.background(this.completed(session, facts, event.time, capture))
@@ -560,11 +598,23 @@ export default class VerbooAnalytics extends TypertRemoteService {
     }
   }
 
-  private async failedResponse(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {
+  private async responseAttempt(session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner): Promise<void> {
+    if (this.config.surface !== 'desktop' || capture.attempted) return
+    capture.attempted = true
+    const current = await this.currentCaptureOwner(capture)
+    if (current === undefined) return
+    const id = responseOperationId(`response-attempt:${session.id}`, turn)
+    await this.enqueue('product_feature_used', { feature: 'desktop_response_attempt', outcome: 'started' },
+      at, id, startedAt, current, capture.reference?.proof)
+  }
+
+  private async failedResponse(
+    session: Session, turn: number, startedAt: number, at: number, capture: TurnOwner, errorCategory: string,
+  ): Promise<void> {
     const current = await this.currentCaptureOwner(capture)
     if (current === undefined) return
     const id = responseOperationId(`response-error:${session.id}`, turn)
-    await this.enqueue('product_feature_used', { feature: 'desktop_response_error', outcome: 'failed' },
+    await this.enqueue('product_feature_used', { feature: 'desktop_response_error', outcome: 'failed', errorCategory },
       at, id, startedAt, current, capture.reference?.proof)
   }
 

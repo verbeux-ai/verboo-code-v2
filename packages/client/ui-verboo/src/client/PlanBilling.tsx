@@ -48,10 +48,10 @@ function day(value: string, locale: string) {
 /**
  * Label catalog options whose use is limited, including inside the plan chooser.
  * @param props - catalog item and translation function.
- * @returns a badge for Lite, or null for other plans.
+ * @returns a badge when the server marks the plan as limited.
  */
 export function LimitedPlanBadge({ plan, t }: { plan: Plan; t: ProductProps['t'] }) {
-  return (plan.slug || plan.name).trim().toLowerCase() === 'lite'
+  return plan.usageLimitsEnabled === true
     ? <span className={styles.limited}>{t('planLimitedUsage')}</span> : null
 }
 
@@ -259,7 +259,8 @@ function ChangeForm(props: SubscriptionProps & { candidatePlans: Plan[]; canChoo
       {candidatePlans.map(plan => <Button key={plan.id + plan.interval} variant="outline" disabled={state.busy}
         onClick={() => { props.previewPlanChange(billingId, plan, removeTier) }}>
         <span><strong>{plan.name}</strong> {t(plan.interval === 'year' ? 'yearly' : 'monthly')} <LimitedPlanBadge plan={plan} t={t} /></span>
-        {plan.priceCents > 0 && <span>{price(plan.priceCents, plan.currency, locale)}</span>}
+        {plan.priceCents !== null && plan.priceCents > 0 && plan.currency !== null
+          && <span>{price(plan.priceCents, plan.currency, locale)}</span>}
         <Glyph name="chevron-right" size={15} />
       </Button>)}
     </div>

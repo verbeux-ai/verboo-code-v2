@@ -18,6 +18,8 @@ describe('viewer endpoint classification', () => {
     'openaiAccountLogin/signOut', 'openaiAccountLogin/status',
     'llmOpenaiAccount/discoverModels', 'llmOpenaiAccount/usage',
     'verboo/getUsageActivity', 'verboo/getUsageSubscriptions', 'verboo/getUsageSummary', 'verboo/watchUsageSpeed',
+    'verboo/getUsageWindows', 'verboo/getProfileSettings', 'verboo/updateProfileSettings',
+    'verboo/updateAccountPassword', 'verboo/signOutAll',
   ] as const)('keeps %s exclusive to the owner', (endpoint) => {
     expect(COMPLETE_VIEWER_ENDPOINT_CLASSES[endpoint]).toBe('owner-only')
   })

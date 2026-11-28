@@ -1,3 +1,48 @@
+.conversationSwitcher {
+  position: fixed;
+  z-index: 100;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  width: min(390px, calc(100% - 32px));
+  padding: 12px;
+  border: 1px solid var(--verboo-border);
+  border-radius: var(--dsw-radius-md);
+  background: var(--verboo-surface);
+  color: var(--verboo-ink);
+  box-shadow: var(--verboo-shadow);
+  pointer-events: none;
+}
+.conversationSwitcher h2,
+.conversationSwitcher ul {
+  margin: 0;
+  padding: 0;
+}
+.conversationSwitcher h2 {
+  padding: 4px 8px 8px;
+  color: var(--verboo-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.conversationSwitcher li {
+  padding: 7px 8px;
+  list-style: none;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversationSwitcher li[aria-current] {
+  background: var(--verboo-accent-wash);
+  border-radius: var(--dsw-radius-sm);
+}
+.conversationSwitchPosition {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+}
 .workspace {
   position: relative;
   height: 100%;
@@ -33,6 +78,10 @@
   min-height: 0;
   min-width: 0;
   background: var(--dsw-alias-bg-base);
+}
+.workspace .conversation :global([data-conversation-content]) {
+  --dsh-chat-content-width: min(calc(100% - 32px), var(--verboo-conversation-max-width));
+  --dsh-composer-card-max-width: min(calc(100% - 16px), calc(var(--verboo-conversation-max-width) + 32px));
 }
 .workspace[data-pane-split] .canvas {
   background: var(--dsw-alias-bg-base);

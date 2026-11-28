@@ -94,6 +94,26 @@ fn owned_window(window: &WebviewWindow, state: &HostState) -> Result<(), String>
 }
 
 #[tauri::command]
+fn desktop_notification_permission(window: WebviewWindow, state: tauri::State<'_, Arc<HostState>>) -> Result<bool, String> {
+    use tauri_plugin_notification::NotificationExt;
+    owned_window(&window, &state)?;
+    let permission = window.app_handle().notification().request_permission().map_err(|_| "notification_unavailable")?;
+    Ok(permission == tauri::plugin::PermissionState::Granted)
+}
+
+#[tauri::command]
+fn desktop_notification_send(window: WebviewWindow, state: tauri::State<'_, Arc<HostState>>, title: String, body: String) -> Result<bool, String> {
+    use tauri_plugin_notification::NotificationExt;
+    owned_window(&window, &state)?;
+    if title.is_empty() || title.len() > 160 || body.is_empty() || body.len() > 320 {
+        return Err("notification_invalid".into());
+    }
+    if window.is_focused().map_err(|_| "notification_focus_unavailable")? { return Ok(false); }
+    window.app_handle().notification().builder().title(title).body(body).show().map_err(|_| "notification_unavailable")?;
+    Ok(true)
+}
+
+#[tauri::command]
 fn quit_after_hold(
     window: WebviewWindow,
     state: tauri::State<'_, Arc<HostState>>,
@@ -345,10 +365,13 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             pick_directory,
             desktop_info,
+            desktop_notification_permission,
+            desktop_notification_send,
             client_ready,
             desktop_layout_read,
             desktop_layout_write,

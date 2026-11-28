@@ -99,7 +99,10 @@ function fixture(locale = 'pt') {
       select([]),
     useExternalStatus: <T,>(select: (s: OpenAiStatus) => T): T => select({ signedIn: false }),
     usePreferences: <T,>(select: (s: PreferenceSnapshot) => T): T =>
-      select({ theme: 'system', locale, languages: [] }),
+      select({
+        theme: 'system', locale, languages: [], fontSizes: { text: 14, code: 13, terminal: 13 },
+        conversationWidth: 'standard', canSetConversationWidth: true,
+      }),
     t: ((key: string, params: Record<string, string> = {}) =>
       (dictionary as Record<string, string>)[key]?.replace(/\{(\w+)\}/g, (_, name: string) => params[name] ?? name) ??
       key) as TrialFixture['t'],
@@ -108,6 +111,10 @@ function fixture(locale = 'pt') {
     reopen: vi.fn(),
     cancel: vi.fn(),
     retryAccount: vi.fn(),
+    getProfileSettings: vi.fn(),
+    updateProfileSettings: vi.fn(),
+    updateAccountPassword: vi.fn(),
+    signOutAll: vi.fn(),
     signOut: vi.fn(async () => true),
     startSession: vi.fn(),
     openSession: vi.fn(),
@@ -142,6 +149,9 @@ function fixture(locale = 'pt') {
     billing: vi.fn(),
     dismiss: vi.fn(),
     setTheme: vi.fn(),
+    setFontSize: vi.fn(),
+    setConversationWidth: vi.fn(),
+    openShortcuts: vi.fn(),
     setLocale: vi.fn(),
     retryModel: vi.fn(),
     help: vi.fn(),

@@ -459,6 +459,15 @@
   cursor: progress;
 }
 
+.primaryAnchor {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+
+.primaryAnchor:has(> .primary[data-sending]) { cursor: progress; }
+.primaryAnchor > .primary:disabled { pointer-events: none; }
+
 .primaryBackground {
   position: absolute;
   z-index: 0;

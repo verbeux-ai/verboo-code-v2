@@ -1024,6 +1024,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   SubscriptionCancellation: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   SubscriptionInvoice: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   PlanId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
+  Subscription: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Plans: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   ConnectionId: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',
   Connections: 'Product projections are owned by packages/api/verboo-product/README.md and src/types.ts',

@@ -693,6 +693,12 @@ declare module '@deepseek-ai/cordis' {
      */
     'api-session/status'(sessionId: SessionId, running: boolean): void
     /**
+     * A live top-level turn completed successfully.
+     * @mode emit
+     * @param sessionId - completed Session identity.
+     */
+    'api-session/turn-completed'(sessionId: SessionId): void
+    /**
      * One user-authored durable message advanced Session list activity.
      * @mode emit
      * @param sessionId - addressed Session identity.

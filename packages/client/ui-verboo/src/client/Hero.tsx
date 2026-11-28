@@ -1,6 +1,7 @@
 import type { HeroProps } from './contracts.ts'
 import css from './Product.module.css'
-/** One quiet opening question leaves the conversation and composer in focus. */
+
+/** Introduce a blank conversation. */
 export function Hero({ t }: HeroProps) {
   return <div className={css.hero}><h1>{t('homeTitle')}</h1></div>
 }

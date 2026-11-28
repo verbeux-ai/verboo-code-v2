@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { Plan, PlanId, Subscription } from '@deepseek-ai/dsh-api-verboo-product/types'
+import type { AccountCredentialRevision, AccountUserId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { BillingState } from '../src/client/billing-model.ts'
 import type { BillingQuoteId, BillingSubscriptionId, PlanChangeId } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ProductSnapshot } from '../src/client/model.ts'
@@ -13,8 +14,9 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
-const plan = (name: string, priceCents: number, interval = 'month'): Plan => ({
+const plan = (name: string, priceCents: number, interval = 'month'): Plan & { priceCents: number } => ({
   id: name as PlanId, name, description: `Description: ${name}`, priceCents, currency: 'BRL', interval,
+  ...(name === 'Lite' ? { usageLimitsEnabled: true } : {}),
 })
 const pro = plan('Pro', 24900)
 const max = plan('Max', 49900)
@@ -41,7 +43,10 @@ function fixture(locale = 'pt') {
   }
   const props: ComponentProps<typeof PlanPage> = {
     useProduct: selector => selector(state),
-    usePreferences: selector => selector({ locale, theme: 'system', languages: [] }),
+    usePreferences: selector => selector({ locale, theme: 'system', languages: [],
+      fontSizes: { text: 14, code: 13, terminal: 13 }, conversationWidth: 'standard', canSetConversationWidth: true }),
+    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
+    refreshUsageWindows: vi.fn(),
     useBillingPanel: selector => selector(billingState),
     choosePurchase: vi.fn(), manageSubscription: vi.fn(), confirmPurchase: vi.fn(), reopenPurchase: vi.fn(),
     retryPurchase: vi.fn(), abandonPurchase: vi.fn(), openBillingTerms: vi.fn(), closePurchase: vi.fn(), refreshBilling: vi.fn(),
@@ -58,14 +63,14 @@ function fixture(locale = 'pt') {
 }
 
 describe('subscription comparison', () => {
-  it('orders prices within each currency, marks the current plan and keeps server descriptions intact', () => {
+  it('orders prices within each currency, marks the current plan and hides catalog descriptions', () => {
     const { props, state } = fixture()
     state.plans!.catalog.push(plan('Lite', 9900))
     const view = render(<PlanPage {...props} />)
     expect([...view.container.querySelectorAll('[data-plan-id]')].map(el => el.getAttribute('data-plan-id'))).toEqual(['Lite', 'Pro', 'Max'])
     expect(screen.getByRole('button', { name: 'Plano atual: Pro' }).hasAttribute('disabled')).toBe(true)
     expect(within(view.container.querySelector('[data-plan-id="Lite"]') as HTMLElement).getByText('Uso limitado')).toBeTruthy()
-    expect(screen.getByText('Description: Pro')).toBeTruthy()
+    expect(screen.queryByText('Description: Pro')).toBeNull()
     expect(screen.getByText(/499,00/)).toBeTruthy()
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByText(/Recomendado|Popular/)).toBeNull()
@@ -80,6 +85,30 @@ describe('subscription comparison', () => {
     expect(props.choosePurchase).toHaveBeenLastCalledWith(max)
     fireEvent.click(screen.getByRole('button', { name: 'Plano atual: Pro' }))
     expect(props.choosePurchase).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows server-reported benefits and keeps additional models in a disclosure', () => {
+    const { props, state } = fixture()
+    const selected = state.plans!.catalog.find(item => item.name === 'Max')!
+    selected.usageLimitsEnabled = false
+    selected.concurrentRequests = 2
+    selected.apiRateLimitRpm = 100
+    selected.models = [
+      { name: 'Model A', temporary: false }, { name: 'Model B', temporary: true },
+      { name: 'Model C', temporary: false }, { name: 'Model D', temporary: false },
+    ]
+    const view = render(<PlanPage {...props} />)
+    const card = within(view.container.querySelector('[data-plan-id="Max"]') as HTMLElement)
+    expect(card.getByText('Sem limite por janela de uso')).toBeTruthy()
+    expect(card.getByText('100 requisições por minuto')).toBeTruthy()
+    expect(card.getByText('2 requisições simultâneas')).toBeTruthy()
+    expect(card.getByText(/Model B/).textContent).toContain('temporário')
+    const disclosure = card.getByText('Ver todos os modelos').closest('details')!
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(card.getByText('Ver todos os modelos'))
+    expect(disclosure.open).toBe(true)
+    expect(card.getByText('Model D')).toBeTruthy()
+    expect(within(view.container.querySelector('[data-plan-id="Pro"]') as HTMLElement).queryByText('Sem limite por janela de uso')).toBeNull()
   })
 
   it('folds ended subscriptions while keeping payment issues and unknown statuses visible', () => {
@@ -162,6 +191,45 @@ describe('subscription comparison', () => {
     expect(props.choosePurchase).toHaveBeenLastCalledWith(unpriced)
     expect(screen.queryByText(/^R\$\s*0,00/)).toBeNull()
     expect(screen.queryByText(/Grátis|Gratuito/)).toBeNull()
+  })
+
+  it('shows a missing offer as unavailable and reports only explicit Lite limits', () => {
+    const { props, state } = fixture()
+    state.plans!.catalog.push(
+      { ...plan('Unavailable', 0), unavailable: true, priceCents: null, currency: null },
+      { ...plan('Lite', 9900), usageLimitsEnabled: true, concurrentRequests: 8, apiRateLimitRpm: 100,
+        apiAccessEnabled: true, structuredOutputEnabled: true, enableRanking: false, seatPurchasesEnabled: false },
+    )
+    const view = render(<PlanPage {...props} />)
+    const lite = within(view.container.querySelector('[data-plan-id="Lite"]') as HTMLElement)
+    expect(lite.getByText('8 requisições simultâneas')).toBeTruthy()
+    expect(lite.getByText('100 requisições por minuto')).toBeTruthy()
+    expect(lite.getByText('Indisponível: ranking e compra de assentos')).toBeTruthy()
+    const unavailable = within(view.container.querySelector('[data-plan-id="Unavailable"]') as HTMLElement)
+    expect(unavailable.getByText('Preço indisponível')).toBeTruthy()
+    expect(unavailable.queryByRole('button')).toBeNull()
+  })
+
+  it('shows the owned Lite allowance and preserves it during an unsuccessful refresh', () => {
+    const { props, state } = fixture()
+    const lite = { ...subscription('active', 'Lite'), limitedUsage: { concurrentRequests: 9, apiRateLimitRpm: 100 } }
+    state.plans!.subscriptions = [lite]
+    state.view = { status: 'credential-stored', credentialRevision: 'fixture' as AccountCredentialRevision,
+      attempt: null, links: { usageUrl: '', topUpUrl: '' } }
+    state.profile = { id: 'owner' as AccountUserId, name: 'Fixture', contact: null }
+    const rows = [{ groupId: lite.planId, groupName: 'Lite', limited: true, blocked: false, accountingPending: false,
+      availableAt: null, windows: [{ id: 'week', durationSeconds: 604800, usedPercent: 23.5, resetsAt: null }] }]
+    const read = vi.fn(() => ({ status: 'failed', value: rows, failure: undefined }))
+    props.useResource = read as typeof props.useResource
+    render(<PlanPage {...props} />)
+    const allowance = within(screen.getByRole('region', { name: pt.planUsageTitle }))
+    expect(allowance.getByText('Janela de 7 dias')).toBeTruthy()
+    expect(allowance.getByText('23,5% utilizado')).toBeTruthy()
+    expect(allowance.getByText('9 requisições simultâneas')).toBeTruthy()
+    expect(allowance.getByText(pt.planUsageStale)).toBeTruthy()
+    fireEvent.click(allowance.getByRole('button', { name: pt.retry }))
+    expect(props.refreshUsageWindows).toHaveBeenCalledOnce()
+    expect(read).toHaveBeenCalledWith('dsh-resource://verboo-usage-windows/fixture/owner')
   })
 
   it('compares only real billing periods and supports keyboard selection without changing annual prices', () => {

@@ -4,7 +4,7 @@
   const invoke = (command, args) => window.__TAURI_INTERNALS__.invoke(command, args)
   // The Host uses a fresh loopback port on each launch. Restore only layout and
   // terminal bookkeeping before client stores enumerate this origin's storage.
-  const layoutKey = key => key === 'dsh.verboo.layout.v1' || key === 'dsh.terminal.shell'
+  const layoutKey = key => key === 'dsh.verboo.layout.v1' || key === 'dsh.verboo.notifications.v1' || key === 'dsh.terminal.shell'
     || key.startsWith('dsh.sidebar-right.v1.') || key.startsWith('dsh.terminal.binding.v1.')
     || key.startsWith('dsh.terminal.close.v1.')
   const setStorage = Storage.prototype.setItem
@@ -124,6 +124,8 @@
   Object.defineProperty(window, '__VERBOO_DESKTOP__', {
     value: Object.freeze({
       framework: 'tauri', protocolVersion: 1, deviceInfo: () => invoke('desktop_info'),
+      notificationPermission: () => invoke('desktop_notification_permission'),
+      notifyTaskComplete: (title, body) => invoke('desktop_notification_send', { title, body }),
       quit: () => invoke('quit_after_hold'),
       openCardSetup: setup => invoke('open_card_setup', { setup }),
       closeCardSetup: operation => invoke('close_card_setup', { operation }),
