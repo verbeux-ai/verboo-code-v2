@@ -1,23 +1,36 @@
+/* The update row sits above the plan shortcut: quiet until there is something
+   to say, and never wider than the footer. */
 .indicator {
-  display: inline-grid;
-  grid-template-columns: 14px max-content;
+  display: flex;
   align-items: center;
-  column-gap: 4px;
-  flex: none;
-  height: 28px;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
   padding: 0 8px;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 20%, transparent);
+  border: none;
   border-radius: var(--dsw-radius-sm);
-  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 8%, transparent);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
   font-family: inherit;
   font-size: 12px;
-  font-weight: 500;
   line-height: 18px;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+  transition: var(--dsw-motion-colors);
+}
+
+@media (hover: hover) {
+  .indicator:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+/* A staged installer is the one state worth an accent: it is waiting on the
+   reader, and the row is the only place that says so. */
+.indicator[data-staged] {
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .icon {
@@ -25,24 +38,74 @@
   place-items: center;
   width: 14px;
   height: 14px;
+  flex: none;
 }
 
-.badge {
-  position: absolute;
-  inset-inline-end: 2px;
-  top: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.errorDot { background: currentColor; width: 6px; height: 6px; border-radius: 50%; corner-shape: round; }
-.spinner { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.spinner {
+  animation: spin 1s linear infinite;
+}
 
-.indicator[aria-disabled="true"] {
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+  .indicator { transition: none; }
+}
+
+.indicator[aria-disabled='true'] {
   cursor: default;
+}
+
+.confirmBody {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.primary,
+.secondary {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--dsw-motion-colors);
+}
+
+.primary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+@media (hover: hover) {
+  .primary:hover {
+    background: var(--dsw-alias-button-primary-hover);
+  }
+}
+
+.secondary {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+@media (hover: hover) {
+  .secondary:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary,
+  .secondary { transition: none; }
 }

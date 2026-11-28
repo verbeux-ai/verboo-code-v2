@@ -4,7 +4,9 @@ import { VerbooHttp } from '../src/http.ts'
 import { Config, deploymentOf } from '../src/config.ts'
 
 it.each([
+  [400, true, 'quote_rejected'],
   [409, true, 'quote_rejected'],
+  [410, true, 'quote_rejected'],
   [422, true, 'quote_rejected'],
   [409, false, 'unknown'],
   [500, true, 'unknown'],

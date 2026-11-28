@@ -851,7 +851,8 @@ describe('desktop main startup', () => {
     const options = harness.app.setAboutPanelOptions.mock.calls[0]![0]
     const expected = JSON.parse(readFileSync(new URL('./expected/about-panel.json', import.meta.url), 'utf8')) as Record<string, unknown>
     const [about, separator] = submenu
-    expect({ menu: [{ label: about!.label, role: about!.role }, separator], options: { ...options, iconPath: '<app icon>' } })
+    const aboutItem = about!.role === undefined ? { label: about!.label } : { label: about!.label, role: about!.role }
+    expect({ menu: [aboutItem, separator], options: { ...options, iconPath: '<app icon>' } })
       .toEqual(expected[`${platform}:${locale}`])
     expect(options.iconPath).toBe(packaged ? join('desktop-test-resources', 'icon.png')
       : join('desktop-test-app', 'resources', 'icon-windows.png'))

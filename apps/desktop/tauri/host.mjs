@@ -11,6 +11,8 @@ let outputOpen = true
 const send = (message) => { if (outputOpen) process.stdout.write(`${protocol}${JSON.stringify(message)}\n`) }
 let application
 let stopping
+let readyContext
+const quitReservations = new Map()
 
 /** Dispose the profile before the parent terminates Node; repeated requests share the same shutdown. */
 function stop() {
@@ -37,7 +39,46 @@ input.on('line', (line) => {
     send({ type: 'invalid-command' })
     return
   }
-  if (request?.type === 'shutdown') void stop()
+  if (request?.type === 'shutdown') { void stop(); return }
+  if (typeof request?.type !== 'string' || !request.type.startsWith('quit-')) return
+  if (!Number.isSafeInteger(request.requestId) || request.requestId < 1) return
+  const reply = (kind, lease) => send({ type: 'quit-response', requestId: request.requestId, kind,
+    ...(lease === undefined ? {} : { lease }) })
+  const admission = readyContext?.agents?.exitAdmission
+  if (admission === undefined || stopping !== undefined) {
+    reply(admission === undefined && stopping === undefined && request.type === 'quit-cancel' ? 'cancelled' : 'unknown')
+    return
+  }
+  try {
+    if (request.type === 'quit-reserve') {
+      const result = admission.tryReserve()
+      if (result.kind === 'reserved') { quitReservations.set(request.requestId, result.id); reply('reserved', result.id) }
+      else reply(result.kind === 'busy' ? 'busy' : 'unknown')
+      return
+    }
+    if (request.type === 'quit-cancel' && Number.isSafeInteger(request.reservationRequestId)) {
+      const lease = quitReservations.get(request.reservationRequestId)
+      if (lease !== undefined) { admission.cancel(lease); quitReservations.delete(request.reservationRequestId) }
+      reply('cancelled')
+      return
+    }
+    if (!Number.isSafeInteger(request.lease) || request.lease < 1) { reply('unknown'); return }
+    if (request.type === 'quit-cancel') {
+      admission.cancel(request.lease)
+      for (const [id, lease] of quitReservations) if (lease === request.lease) quitReservations.delete(id)
+      reply('cancelled')
+    } else if (request.type === 'quit-commit') {
+      reply(admission.commit(request.lease) ? 'committed' : 'rejected')
+    } else if (request.type === 'quit-finalize') {
+      const finalized = admission.finalize(request.lease, () => {
+        quitReservations.clear()
+        // The ACK precedes shutdown, and the admission gate remains closed.
+        reply('finalized')
+        void stop()
+      })
+      if (!finalized) reply('rejected')
+    } else reply('unknown')
+  } catch (_error) { reply('unknown') }
 })
 input.once('close', () => { void stop() })
 
@@ -70,6 +111,7 @@ try {
   if (stopping !== undefined || input.closed) {
     await stop()
   } else {
+    readyContext = ctx
     const url = ctx.connection.authenticatedUrl(`${ctx.webServer.protocol}//127.0.0.1:${ctx.webServer.port}`)
     send({ type: 'ready', url })
   }

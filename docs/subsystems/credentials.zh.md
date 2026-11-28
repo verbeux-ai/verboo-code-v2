@@ -464,6 +464,36 @@ async executeAgentConnection( input: { connectionId: string slug: string version
 @Remote getPlans(): Promise<Result<Plans>>
 
 /**
+ * Read owned subscriptions independently of the commercial catalog.
+ * @param signal - cancellation of the owning Client read.
+ * @returns display-safe subscriptions for the current account.
+ */
+@Remote getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>
+
+/**
+ * Read historical subscription usage without exposing account credentials.
+ * @param period - selected reporting period.
+ * @param groupId - plan group to read, or null for the account total.
+ * @param signal - cancellation of the owning Client read.
+ * @returns validated request and token totals for the chosen scope.
+ */
+@Remote getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>>
+
+/**
+ * Read the subscription activity calendar independently of historical totals.
+ * @param signal - cancellation of the owning Client read.
+ * @returns validated daily activity counts for the past year.
+ */
+@Remote getUsageActivity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>>
+
+/**
+ * Stream account generation speed from the same service as the web dashboard.
+ * @param signal - lifetime of the authenticated speed stream.
+ * @returns server measurements without private credentials or concurrency data.
+ */
+@Remote({ mode: 'stream' }) async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame>
+
+/**
  * Read stamina only for plans where the server has enrolled this account.
  * @param signal - cancellation of the owning Client read.
  * @returns public percentages and next-request ceilings; older APIs without stamina return an empty list.
@@ -509,6 +539,140 @@ async executeAgentConnection( input: { connectionId: string slug: string version
  * @returns the existing handoff or persisted completion of that same attempt.
  */
 @Remote resumeTrialPayment(attemptId: TrialAttemptId, trialId?: TrialId): Promise<Result<TrialPayment>>
+
+/**
+ * Open the canonical billing operations for the current host login.
+ * The capability is Host-only and all of its I/O uses the same login.
+ * @returns operations bound to the current authenticated account, or a safe refusal.
+ */
+agentBilling(): Promise<Result<AgentBilling>>
+
+/** Verify the next action for a plan under the current login.
+ * @param plan - selected catalog plan.
+ * @param interval - selected billing period.
+ * @returns server-authorized actions for the account.
+ */
+@Remote billingOptions(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseRecommendation>>
+
+/** Prepare a card quote without starting a purchase.
+ * @param plan - selected catalog plan.
+ * @param interval - selected billing period.
+ * @returns the amounts and currency to review.
+ */
+@Remote quotePurchase(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseQuote>>
+
+/** Confirm one reviewed card quote and retain its identity before sending it.
+ * @param quoteId - identifier of the reviewed Host offer.
+ * @returns the attempt and any provider handoff.
+ */
+@Remote confirmPurchase(quoteId: BillingQuoteId): Promise<Result<PurchaseProgress>>
+
+/** Retry the identical authorization only when no server attempt is visible.
+ * @param attempt - exact unresolved operation owned by the signed-in account.
+ * @returns the reconciliation result or the repeated original request.
+ */
+@Remote retryPurchase(attempt: PurchaseProgress['id']): Promise<Result<PurchaseProgress>>
+
+/** Reconcile the account's original checkout against the server record.
+ * @param signal - lifetime of the visible account read.
+ * @returns the original purchase, or null if no local operation exists.
+ */
+@Remote currentPurchase(signal: AbortSignal): Promise<Result<PurchaseProgress | null>>
+
+/** Open the provider's existing session for an eligible original checkout.
+ * @param attempt - exact attempt owned by the current account.
+ * @returns a validated provider URL.
+ */
+@Remote resumePurchase(attempt: PurchaseProgress['id']): Promise<Result<string>>
+
+/** Close the saved provider attempt after the user explicitly requests it.
+ * @param attempt - exact open card checkout to abandon.
+ * @returns persisted status after the provider closes the attempt.
+ */
+@Remote abandonPurchase(attempt: PurchaseProgress['id']): Promise<Result<PurchaseProgress>>
+
+/** Clear a resolved operation after verifying that exact attempt.
+ * @param attempt - completed or terminal attempt being dismissed.
+ * @returns whether its durable recovery record was removed.
+ */
+@Remote dismissPurchase(attempt: PurchaseProgress['id']): Promise<Result<boolean>>
+
+/** Quote an exact change for one owned subscription.
+ * @param subscription - existing subscription.
+ * @param plan - target plan.
+ * @param interval - target billing period.
+ * @param removeTier - explicit acceptance that the existing add-on is removed.
+ * @returns amounts, effective date, and the opaque confirmation handle.
+ */
+@Remote quotePlanChange( subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, removeTier: boolean, ): Promise<Result<PlanChangeQuote>>
+
+/** Confirm only the last reviewed change for the current login.
+ * @param quoteId - opaque handle of the reviewed change.
+ * @returns the exact operation, even when acceptance is unconfirmed.
+ */
+@Remote confirmPlanChange(quoteId: BillingQuoteId): Promise<Result<PlanChangeProgress>>
+
+/** Read the status of the exact change previously requested.
+ * @param change - issued plan-change operation.
+ * @param signal - lifetime of the visible account read.
+ * @returns persisted progress and any safe continuation URL.
+ */
+@Remote billingChangeStatus(change: PlanChangeId, signal: AbortSignal): Promise<Result<PlanChangeProgress>>
+
+/** Restore a change submitted through this Host, including lost responses.
+ * @param subscription - exact subscription that was updated.
+ * @param signal - lifetime of the visible account read.
+ * @returns persisted progress for the exact submitted operation.
+ */
+@Remote currentBillingChange(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>
+
+/** Request one lifecycle action and persist its identity before sending it.
+ * @param subscription - exact subscription to mutate.
+ * @param action - explicit lifecycle action.
+ * @param locale - current presentation locale for cancellation notices.
+ * @returns immediate progress, including an unconfirmed response.
+ */
+@Remote updateSubscription( subscription: BillingSubscriptionId, action: 'cancel' | 'reactivate', locale?: string, ): Promise<Result<SubscriptionLifecycleProgress>>
+
+/** Reconcile the saved lifecycle action against the exact subscription.
+ * @param subscription - exact subscription selected in Plans.
+ * @param signal - lifetime of the visible account read.
+ * @param checkCancellation - also refresh a pending cancellation started elsewhere.
+ * @returns authoritative progress or null if nothing is being reconciled.
+ */
+@Remote currentSubscriptionLifecycle( subscription: BillingSubscriptionId, checkCancellation: boolean, signal: AbortSignal, ): Promise<Result<SubscriptionLifecycleProgress | null>>
+
+/** Read invoices scoped to the selected subscription.
+ * @param subscription - exact subscription whose invoices are requested.
+ * @returns display fields and an optional safe invoice link.
+ */
+@Remote billingInvoices(subscription: BillingSubscriptionId): Promise<Result<SubscriptionInvoice[]>>
+
+/** Open the current published terms for an account that needs to accept them.
+ * @returns the official acceptance page for this deployment.
+ */
+@Remote async billingTermsURL(): Promise<Result<string>>
+
+/** Start or resume the secure card setup for one subscription.
+ * @param subscription - exact subscription whose renewal card will change.
+ * @param requestId - retry identity for this explicit action.
+ * @param embedded - use the isolated native card form.
+ * @returns the operation and its account-bound Stripe setup.
+ */
+@Remote startBillingCardUpdate( subscription: BillingSubscriptionId, requestId: string, embedded?: boolean, ): Promise<Result<SubscriptionCardUpdate>>
+
+/** Read the latest card setup result proved by the server.
+ * @param subscription - exact subscription selected in Plans.
+ * @param signal - lifetime of the visible account read.
+ * @returns the operation or null when this subscription has no card update.
+ */
+@Remote currentBillingCardUpdate(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionCardUpdate | null>>
+
+/** Request the payment portal for one subscription.
+ * @param subscription - exact subscription to manage.
+ * @returns a validated provider URL.
+ */
+@Remote billingPortal(subscription: BillingSubscriptionId): Promise<Result<string>>
 
 /**
  * Read only this authenticated user's connections.
@@ -697,6 +861,47 @@ The stored session was removed locally, whether by sign-out or by a rejected ref
 ```
 
 Source: [`packages/credentials/openai-account/src/types.ts`](../../packages/credentials/openai-account/src/types.ts)
+
+<a id="verboo-account-events"></a>
+
+### `verboo-account/*` events
+
+<a id="verboo-accountlogin-completed--emit"></a>
+
+#### `verboo-account/login-completed` — emit
+
+A local OAuth grant was committed; the opaque session ID stays in the Host.
+
+```ts cordis-catalog
+/**
+ * A local OAuth grant was committed; the opaque session ID stays in the Host.
+ * @param sessionId - local login identity.
+ * @param attemptId - local attempt identity.
+ * @param startedAt - UTC timestamp when the user started OAuth, in milliseconds.
+ * @param completedAt - UTC timestamp in milliseconds.
+ * @mode emit
+ */
+'verboo-account/login-completed'(sessionId: AccountSessionId, attemptId: SignInAttemptId, startedAt: number, completedAt: number): void
+```
+
+Source: [`packages/credentials/verboo-account/src/index.ts`](../../packages/credentials/verboo-account/src/index.ts)
+
+<a id="verboo-accountlogin-started--emit"></a>
+
+#### `verboo-account/login-started` — emit
+
+A new local OAuth attempt is starting.
+
+```ts cordis-catalog
+/**
+ * A new local OAuth attempt is starting.
+ * @param attemptId - opaque local attempt identity.
+ * @mode emit
+ */
+'verboo-account/login-started'(attemptId: SignInAttemptId): void
+```
+
+Source: [`packages/credentials/verboo-account/src/index.ts`](../../packages/credentials/verboo-account/src/index.ts)
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getProfile、getBalance、getUnnotifiedBonuses、ackBonusNotified、startSignIn、cancelSignIn、signOut、watch，以及仅限 Host 的 resolveToken、refreshRejectedToken、rejectToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。

@@ -99,7 +99,7 @@ jobs:
       - name: Check the built contracts
         run: pnpm run build:check
       - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs apps/desktop/tauri/tests/macos-signing.test.mjs
+        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/startup-error.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs apps/desktop/tauri/tests/macos-signing.test.mjs
       - name: Test update window and ChatGPT connection
         run: >-
           pnpm exec vitest run apps/desktop/tests/update-window.spec.ts

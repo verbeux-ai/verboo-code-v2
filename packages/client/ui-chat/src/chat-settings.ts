@@ -52,8 +52,16 @@ const TRANSCRIPT_VIEW_SETTING_VALUES = [
   ...TRANSCRIPT_VIEW_MODES, LEGACY_TRANSCRIPT_VIEW_MODE, LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE,
 ] as const
 
-/** Default work details for non-Desktop Web clients. */
-export const DEFAULT_TRANSCRIPT_VIEW_MODE: TranscriptViewMode = 'detailed'
+/**
+ * The one work-details presentation this product ships. The other modes stay
+ * in the accepted-value union so a document written by an earlier build still
+ * validates. A previously saved choice remains effective, while new users get
+ * this mode and the current settings UI does not offer a mode picker.
+ */
+export const TRANSCRIPT_VIEW_MODE: TranscriptViewMode = 'compact'
+
+/** Work details without an explicit saved mode. */
+export const DEFAULT_TRANSCRIPT_VIEW_MODE: TranscriptViewMode = TRANSCRIPT_VIEW_MODE
 
 /** Performance and usage detail levels accepted by user settings. */
 export const PERFORMANCE_USAGE_MODES = ['compact', 'detailed'] as const

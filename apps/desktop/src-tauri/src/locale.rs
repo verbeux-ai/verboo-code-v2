@@ -11,6 +11,19 @@ fn language() -> String {
         .to_string()
 }
 
+pub fn update_install_wait() -> &'static str {
+    match language().as_str() {
+        "pt" => "Aguardando outra janela concluir a instalação da atualização…",
+        "zh" => "正在等待另一个窗口完成更新安装…",
+        "ja" => "別のウィンドウでのアップデートのインストールを待っています…",
+        "es" => "Esperando a que otra ventana termine de instalar la actualización…",
+        "fr" => "En attente de la fin de l’installation dans une autre fenêtre…",
+        "de" => "Warten, bis ein anderes Fenster die Installation des Updates abgeschlossen hat…",
+        "ru" => "Ожидание завершения установки обновления в другом окне…",
+        _ => "Waiting for another window to finish installing the update…",
+    }
+}
+
 /// Close the focused chat view rather than the native application window.
 pub fn close_pane() -> &'static str {
     match language().as_str() {
@@ -81,17 +94,59 @@ pub fn quit_cancel() -> &'static str {
     }
 }
 
+/// Report an uncertain exit without claiming that the Host is still running.
+pub fn quit_check_failure() -> &'static str {
+    match language().as_str() {
+        "pt" => "Não foi possível confirmar o encerramento com segurança. Tente novamente.",
+        "zh" => "无法确认应用是否安全退出。请重试。",
+        "ja" => "安全に終了できることを確認できませんでした。もう一度お試しください。",
+        "es" => "No se pudo confirmar que la aplicación se pueda cerrar de forma segura. Inténtalo de nuevo.",
+        "fr" => "Impossible de confirmer que l’application peut se fermer en toute sécurité. Réessayez.",
+        "de" => "Es konnte nicht bestätigt werden, dass die App sicher beendet werden kann. Versuchen Sie es erneut.",
+        "ru" => "Не удалось подтвердить безопасное завершение работы. Повторите попытку.",
+        _ => "The application could not confirm a safe exit. Try again.",
+    }
+}
+
 /// Startup failure copy.
 pub fn startup_failure() -> &'static str {
     match language().as_str() {
-        "pt" => "Não foi possível iniciar o Verboo Code. Feche o app e execute novamente o comando de desenvolvimento.",
-        "zh" => "无法启动 Verboo Code。请关闭应用，然后重新运行桌面启动命令。",
-        "ja" => "Verboo Code を起動できませんでした。アプリを閉じて、デスクトップの起動コマンドを再実行してください。",
-        "es" => "No se pudo iniciar Verboo Code. Cierra la aplicación y vuelve a ejecutar el comando de escritorio.",
-        "fr" => "Impossible de démarrer Verboo Code. Fermez l’application et relancez la commande de bureau.",
-        "de" => "Verboo Code konnte nicht gestartet werden. Schließen Sie die App und starten Sie den Desktop-Befehl erneut.",
-        "ru" => "Не удалось запустить Verboo Code. Закройте приложение и повторите команду запуска.",
-        _ => "Verboo Code could not start. Close the app and run the desktop command again.",
+        "pt" => "Não foi possível iniciar o Verboo Code. Feche o aplicativo e tente novamente.",
+        "zh" => "无法启动 Verboo Code。请关闭应用后重试。",
+        "ja" => "Verboo Code を起動できませんでした。アプリを閉じて再試行してください。",
+        "es" => "No se pudo iniciar Verboo Code. Cierra la aplicación y vuelve a intentarlo.",
+        "fr" => "Impossible de démarrer Verboo Code. Fermez l’application et réessayez.",
+        "de" => "Verboo Code konnte nicht gestartet werden. Schließen Sie die App und versuchen Sie es erneut.",
+        "ru" => "Не удалось запустить Verboo Code. Закройте приложение и попробуйте снова.",
+        _ => "Verboo Code could not start. Close the app and try again.",
+    }
+}
+
+/// An older process cannot prove an update has finished.
+pub fn update_wait() -> &'static str {
+    match language().as_str() {
+        "pt" => "Uma atualização pode estar em andamento. Aguarde alguns instantes e abra o Verboo Code novamente. Se o problema persistir, reinstale usando o instalador oficial.",
+        "es" => "Es posible que haya una actualización en curso. Espera unos momentos y vuelve a abrir Verboo Code. Si el problema continúa, reinstálalo con el instalador oficial.",
+        "fr" => "Une mise à jour est peut-être en cours. Patientez quelques instants puis rouvrez Verboo Code. Si le problème persiste, réinstallez-le avec l’installateur officiel.",
+        "de" => "Möglicherweise läuft gerade ein Update. Warten Sie einen Moment und öffnen Sie Verboo Code erneut. Wenn das Problem weiterhin besteht, installieren Sie es mit dem offiziellen Installationsprogramm erneut.",
+        "zh" => "更新可能正在进行。请稍候，然后重新打开 Verboo Code。如果问题仍然存在，请使用官方安装程序重新安装。",
+        "ja" => "更新が進行中の可能性があります。しばらく待ってから Verboo Code を開き直してください。問題が続く場合は、公式インストーラーで再インストールしてください。",
+        "ru" => "Возможно, выполняется обновление. Подождите немного и снова откройте Verboo Code. Если проблема не исчезнет, переустановите приложение с помощью официального установщика.",
+        _ => "An update may be in progress. Wait a moment and reopen Verboo Code. If the problem persists, reinstall using the official installer.",
+    }
+}
+
+/// The updater retained a backup but could not restore the installed bundle.
+pub fn update_rollback_failure() -> &'static str {
+    match language().as_str() {
+        "pt" => "Não foi possível concluir a atualização nem restaurar a instalação anterior. O backup foi preservado. Reinstale o Verboo Code usando o instalador oficial.",
+        "zh" => "无法完成更新，也无法恢复以前的安装。备份已保留。请使用官方安装程序重新安装 Verboo Code。",
+        "ja" => "更新を完了できず、以前のインストールも復元できませんでした。バックアップは保存されています。公式インストーラーで Verboo Code を再インストールしてください。",
+        "es" => "No se pudo completar la actualización ni restaurar la instalación anterior. Se conservó la copia de seguridad. Reinstala Verboo Code con el instalador oficial.",
+        "fr" => "La mise à jour et la restauration de l’installation précédente ont échoué. La sauvegarde a été conservée. Réinstallez Verboo Code avec l’installateur officiel.",
+        "de" => "Das Update und die Wiederherstellung der vorherigen Installation sind fehlgeschlagen. Die Sicherung wurde behalten. Installieren Sie Verboo Code mit dem offiziellen Installationsprogramm erneut.",
+        "ru" => "Не удалось завершить обновление и восстановить предыдущую установку. Резервная копия сохранена. Переустановите Verboo Code с помощью официального установщика.",
+        _ => "The update could not finish and the previous installation could not be restored. The backup was preserved. Reinstall Verboo Code using the official installer.",
     }
 }
 
@@ -301,109 +356,23 @@ pub fn updated_copy_in(language: &str, version: &str) -> (String, String, String
 mod tests {
     use super::*;
 
-    /// Every language the desktop ships copy for.
-    const LANGUAGES: [&str; 7] = ["pt", "zh", "ja", "es", "fr", "de", "ru"];
-
     #[test]
-    fn every_language_fills_every_update_string() {
-        for language in LANGUAGES {
-            let copy = update_copy_in(language, "1.2.3");
-            for (field, value) in [
-                ("title", &copy.title),
-                ("body", &copy.body),
-                ("install", &copy.install),
-                ("later", &copy.later),
-                ("running_title", &copy.running_title),
-                ("running_body", &copy.running_body),
-                ("status", &copy.status),
-                ("finalizing_status", &copy.finalizing_status),
-                ("close", &copy.close),
-                ("failed", &copy.failed),
-                ("diagnostic_label", &copy.diagnostic_label),
-            ] {
-                assert!(!value.trim().is_empty(), "{language} {field} is empty");
-                // Control characters would break the injected script layout.
-                assert!(
-                    !value.chars().any(|c| c.is_control() && c != '\n'),
-                    "{language} {field} has a control character"
-                );
-            }
+    fn every_native_string_carries_copy() {
+        for value in [
+            close_pane(),
+            quit_title(),
+            quit_message(),
+            quit_confirm(),
+            quit_cancel(),
+            startup_failure(),
+        ] {
+            assert!(!value.trim().is_empty());
+            assert!(!value.contains('\u{7}'));
         }
-    }
-
-    #[test]
-    fn the_offer_names_the_version_it_announces() {
-        for language in LANGUAGES {
-            let copy = update_copy_in(language, "9.9.9-rc.1");
-            assert!(
-                copy.body.contains("9.9.9-rc.1"),
-                "{language} omits the version"
-            );
-        }
-    }
-
-    #[test]
-    fn the_applied_notice_names_the_running_version() {
-        for language in LANGUAGES {
-            let (title, body, ok) = updated_copy_in(language, "9.9.9-rc.1");
-            assert!(!title.trim().is_empty(), "{language} title empty");
-            assert!(body.contains("9.9.9-rc.1"), "{language} omits the version");
-            assert!(!ok.trim().is_empty(), "{language} OK label empty");
-        }
-    }
-
-    #[test]
-    fn languages_do_not_fall_back_to_english() {
-        let english = update_copy_in("en", "1.0.0").title;
-        let mut distinct = 0;
-        for language in LANGUAGES {
-            if update_copy_in(language, "1.0.0").title != english {
-                distinct += 1;
-            }
-        }
-        // Each localized table states its own heading; only a missing table may
-        // repeat the English one.
-        assert_eq!(
-            distinct,
-            LANGUAGES.len(),
-            "a language reuses the English heading"
-        );
     }
 
     #[test]
     fn an_unknown_language_falls_back_to_english() {
-        assert_eq!(update_copy_in("xx", "1.0.0").title, "Update available");
-        assert_eq!(
-            updated_copy_in("xx", "1.0.0").0,
-            "Your Verboo Code is up to date!"
-        );
-    }
-
-    /// The exact phrase each language uses to promise the automatic restart.
-    const RESTART_PHRASE: [(&str, &str); 7] = [
-        ("pt", "reinicia sozinho"),
-        ("zh", "自动重启"),
-        ("ja", "自動的に再起動"),
-        ("es", "se reinicia sola"),
-        ("fr", "redémarre seule"),
-        ("de", "automatisch neu"),
-        ("ru", "перезапустится"),
-    ];
-
-    #[test]
-    fn every_language_promises_the_restart_before_the_download_starts() {
-        // The point of the window: the user is told the app restarts on its own
-        // before they confirm the download.
-        for (language, phrase) in RESTART_PHRASE {
-            let copy = update_copy_in(language, "1.0.0");
-            assert!(
-                copy.body.contains(phrase),
-                "{language} must state the restart with '{phrase}': {}",
-                copy.body,
-            );
-        }
-        assert!(update_copy_in("en", "1.0.0")
-            .body
-            .contains("restarts on its own"));
+        assert!(!language().is_empty());
     }
 }

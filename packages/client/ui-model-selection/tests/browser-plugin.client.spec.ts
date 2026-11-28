@@ -588,3 +588,68 @@ it.each([false, true])('reports accepted switches with blank=%s and no refused s
     expect(b.track).not.toHaveBeenCalled()
   } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
 })
+
+it('observes explicit model switches without passing model or session data and without blocking selection', async () => {
+  const b = await bench('en')
+  const scope = b.mint('analytics')
+  try {
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    const stop = b.ctx.modelDirectories.observeModelSwitch(begin)
+    const face = b.seat().inject!(sid('analytics'))
+    await b.ctx.modelDirectories.directoryFor(sid('analytics')).load()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    expect(begin).toHaveBeenCalledExactlyOnceWith()
+    expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+    begin.mockClear(); finish.mockClear()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+    expect(begin).not.toHaveBeenCalled()
+    b.rejectSelection()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(begin).toHaveBeenCalledExactlyOnceWith()
+    expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+    stop()
+    begin.mockClear()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(begin).not.toHaveBeenCalled()
+  } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
+})
+
+it('reports accepted model and effort choices and ignores failed selections', async () => {
+  const b = await bench('en')
+  const scope = b.mint('analytics')
+  try {
+    const accepted = vi.fn()
+    const begin = vi.fn(() => accepted)
+    const stop = b.ctx.modelDirectories.observeModelChoices(begin)
+    const face = b.seat().inject!(sid('analytics'))
+    await b.ctx.modelDirectories.directoryFor(sid('analytics')).load()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' })
+    expect(begin).toHaveBeenCalledExactlyOnceWith({ provider: 'deepseek-official', name: 'deepseek-v4-pro', effort: 'high' })
+    expect(accepted).toHaveBeenCalledOnce()
+    begin.mockClear(); accepted.mockClear()
+    b.rejectSelection()
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(begin).toHaveBeenCalledOnce()
+    expect(accepted).not.toHaveBeenCalled()
+    stop()
+  } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
+})
+
+it('keeps selection working when an observer fails and respects replacement cleanup', async () => {
+  const b = await bench('en')
+  const scope = b.mint('analytics')
+  try {
+    const firstCleanup = b.ctx.modelDirectories.observeModelSwitch(() => { throw new Error('unavailable') })
+    const face = b.seat().inject!(sid('analytics'))
+    await b.ctx.modelDirectories.directoryFor(sid('analytics')).load()
+    expect(await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).toEqual({ ok: true, value: undefined })
+    const finish = vi.fn(() => { throw new Error('unavailable') })
+    const begin = vi.fn(() => finish)
+    b.ctx.modelDirectories.observeModelSwitch(begin)
+    firstCleanup()
+    expect(await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })).toEqual({ ok: true, value: undefined })
+    expect(begin).toHaveBeenCalledExactlyOnceWith()
+    expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+  } finally { await scope.fiber.dispose(); await b.ctx.fiber.dispose() }
+})

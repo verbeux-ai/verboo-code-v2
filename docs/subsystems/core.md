@@ -71,6 +71,8 @@ interface Agent {
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */
   readonly status: AgentStatus
+  /** Conservative synchronous shutdown activity; omission means unknown. */
+  readonly exitActivity?: 'idle' | 'busy' | 'unknown'
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
 

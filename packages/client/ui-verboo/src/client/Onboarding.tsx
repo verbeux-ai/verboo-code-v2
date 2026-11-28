@@ -4,6 +4,8 @@ import { useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ProductProps } from './contracts.ts'
 import { Brand } from './Brand.tsx'
 import { Glyph } from './Glyph.tsx'
+import mascot from './assets/verboo-mascot.png'
+import { startupMascot } from './startup-mascot.ts'
 import css from './Product.module.css'
 /** One entry screen replaces the former multi-step credit onboarding. */
 export function Onboarding(props: ProductProps) {
@@ -12,6 +14,11 @@ export function Onboarding(props: ProductProps) {
   const waitingForInitialProfileCheck = state.profile === null
     && (!state.profilePreviouslyVerified || state.accountFailed)
   const visible = state.view?.status !== 'credential-stored' || waitingForInitialProfileCheck
+  // Until the first account read answers, the welcome copy and the sign-in
+  // button would describe a state nobody observed yet: a fresh install flashed
+  // them before the stored credential arrived. An unknown view shows the plain
+  // brand loading instead.
+  const booting = state.view === null && !state.accountFailed
   useModalLayer(ref, visible, () => {})
   if (!visible) return null
   const phase = state.view?.attempt?.phase
@@ -26,6 +33,15 @@ export function Onboarding(props: ProductProps) {
     phase === 'failed' ||
     phase === 'expired'
   const stored = state.view?.status === 'credential-stored'
+  // Keep the desktop startup animation continuous while the initial account
+  // observation is pending. Never present sign-in before a signed-out result.
+  if (globalThis.__VERBOO_DESKTOP__ && !state.accountFailed && (booting || stored)) {
+    return createPortal(<div ref={ref} tabIndex={-1} role="dialog" aria-modal="true"
+      aria-label={props.t('product')} className={css.desktopStartup} data-verboo-onboarding>
+      <div className={css.startupOrbit}><img src={startupMascot} alt="" /></div>
+      <p className={css.startupMessage} role="status">{props.t('checking')}…</p>
+    </div>, document.body)
+  }
   return createPortal(
     <div
       ref={ref}
@@ -33,95 +49,102 @@ export function Onboarding(props: ProductProps) {
       role="dialog"
       aria-modal="true"
       aria-label={props.t('product')}
-      className={css.onboarding}
+      className={[css.onboarding, globalThis.__VERBOO_DESKTOP__ ? css.desktopOnboarding : ''].join(' ')}
       data-verboo-onboarding
     >
-      <section className={css.welcomeCopy}>
-        <Brand t={props.t} large />
-        <div className={css.welcomeBody}>
-          <h1>{props.t('welcomeTitle')}</h1>
-          <p className={css.welcomeDescription}>
-            {props.t('welcomeDescription')}
-          </p>
-          <div className={css.loginArea}>
-            {stored ? (
-              <>
-                {state.accountFailed ? (
-                  <>
-                    <p className={css.error} role="alert">
-                      {props.t('accountLoadFailed')}
-                    </p>
-                    <button
-                      className={css.primary}
-                      onClick={props.retryAccount}
-                    >
-                      {props.t('retry')}
-                      <Glyph name="rotate-cw" />
-                    </button>
-                    <button
-                      className={css.textButton}
-                      onClick={() => {
-                        void props.signOut()
-                      }}
-                    >
-                      {props.t('signOut')}
-                    </button>
-                  </>
-                ) : (
+      <section className={[css.welcomeCopy, globalThis.__VERBOO_DESKTOP__ ? css.desktopWelcome : ''].join(' ')}>
+        {globalThis.__VERBOO_DESKTOP__ ? <div className={css.desktopWelcomeMascot}><img src={mascot} alt="" /></div> : <Brand t={props.t} large />}
+        {booting ? (
+          <div className={css.waiting} role="status">
+            <Glyph name="loader-circle" className={css.spin} />
+            {props.t('checking')}
+          </div>
+        ) : (
+          <div className={css.welcomeBody}>
+            <h1>{props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthTitle' : 'welcomeTitle')}</h1>
+            <p className={css.welcomeDescription}>
+              {props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthDescription' : 'welcomeDescription')}
+            </p>
+            <div className={css.loginArea}>
+              {stored ? (
+                <>
+                  {state.accountFailed ? (
+                    <>
+                      <p className={css.error} role="alert">
+                        {props.t('accountLoadFailed')}
+                      </p>
+                      <button
+                        className={css.primary}
+                        onClick={props.retryAccount}
+                      >
+                        {props.t('retry')}
+                        <Glyph name="rotate-cw" />
+                      </button>
+                      <button
+                        className={css.textButton}
+                        onClick={() => {
+                          void props.signOut()
+                        }}
+                      >
+                        {props.t('signOut')}
+                      </button>
+                    </>
+                  ) : (
+                    <div className={css.waiting} role="status">
+                      <Glyph name="loader-circle" className={css.spin} />
+                      {props.t('checking')}
+                    </div>
+                  )}
+                </>
+              ) : pending ? (
+                <>
                   <div className={css.waiting} role="status">
                     <Glyph name="loader-circle" className={css.spin} />
-                    {props.t('checking')}
+                    {props.t('waiting')}
                   </div>
-                )}
-              </>
-            ) : pending ? (
-              <>
-                <div className={css.waiting} role="status">
-                  <Glyph name="loader-circle" className={css.spin} />
-                  {props.t('waiting')}
-                </div>
-                <div className={css.inlineActions}>
-                  <button className={css.secondary} onClick={props.reopen}>
-                    {props.t('reopen')}
-                    <Glyph name="arrow-up-right" />
-                  </button>
-                  <button className={css.textButton} onClick={props.cancel}>
-                    {props.t('cancel')}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <button
-                className={css.primary}
-                disabled={!state.initialized}
-                onClick={props.start}
-              >
-                {props.t('signIn')}
-                <Glyph name="arrow-right" />
-              </button>
-            )}
-            {state.accountFailed && !stored && (
-              <p className={css.error} role="alert">
-                {props.t('unavailable')}{' '}
-                <button className={css.textButton} onClick={props.retryAccount}>
-                  {props.t('retry')}
+                  <div className={css.inlineActions}>
+                    <button className={css.secondary} onClick={props.reopen}>
+                      {props.t('reopen')}
+                      <Glyph name="arrow-up-right" />
+                    </button>
+                    <button className={css.textButton} onClick={props.cancel}>
+                      {props.t('cancel')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  className={css.primary}
+                  disabled={!state.initialized}
+                  onClick={props.start}
+                >
+                  {props.t(globalThis.__VERBOO_DESKTOP__ ? 'desktopAuthSignIn' : 'signIn')}
+                  <Glyph name="arrow-right" />
                 </button>
-              </p>
-            )}
-            {failed && (
-              <p className={css.error} role="alert">
-                {props.t('authFailed')}
-              </p>
-            )}
-            {!stored && (
-              <p className={css.fine}>
-                <Glyph name="shield-check" size={14} />
-                {props.t('secureBrowser')}
-              </p>
-            )}
+              )}
+              {state.accountFailed && !stored && (
+                <p className={css.error} role="alert">
+                  {props.t('unavailable')}{' '}
+                  <button className={css.textButton} onClick={props.retryAccount}>
+                    {props.t('retry')}
+                  </button>
+                </p>
+              )}
+              {failed && (
+                <p className={css.error} role="alert">
+                  {props.t('authFailed')}
+                </p>
+              )}
+              {!stored && (
+                <p className={css.fine}>
+                  <Glyph name="shield-check" size={14} />
+                  {props.t('secureBrowser')}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>
+        )}
+        {!booting && !globalThis.__VERBOO_DESKTOP__ && <p className={css.welcomeFoot}>{props.t('welcomeNote')}</p>}
       </section>
 
     </div>,

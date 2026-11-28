@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import type { KeyboardEventHandler, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEventHandler, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCloseOutlineRegular, IconWarningOutlineRegular } from './icons/index.tsx'
@@ -19,6 +19,7 @@ interface ModalBaseProps {
   shortcutModal?: string
   onKeyDownCapture?: KeyboardEventHandler<HTMLDivElement>
   backdropBlur?: boolean
+  motion?: { durationMs: number; closing: boolean }
 }
 
 type ModalProps = ModalBaseProps & (
@@ -45,19 +46,23 @@ type ModalProps = ModalBaseProps & (
  * @param props.headless - render children directly in the card (no default
  * header/close/body chrome); mask, card, Escape, and aria-label remain.
  * @param props.onKeyDownCapture - handle a nested dialog's keys before the document Escape listeners.
- * @returns null when closed; otherwise the overlay tree.
+ * @param props.motion - slide in, or keep an inert overlay mounted while the caller animates dismissal.
+ * @returns the overlay while open or animating dismissal.
  */
 export function Modal({
   open, onClose, title, closeLabel, description, children, footer, className, contentClassName,
-  onKeyDownCapture, headless = false, backdropBlur = true, shortcutModal, tone,
+  onKeyDownCapture, headless = false, backdropBlur = true, shortcutModal, tone, motion,
 }: ModalProps) {
   const dialog = useRef<HTMLDivElement>(null)
   useModalLayer(dialog, open, onClose)
 
-  if (!open) return null
+  if (!open && !motion?.closing) return null
 
   return createPortal((
-    <div className={css.root} role="presentation" onKeyDownCapture={onKeyDownCapture}>
+    <div className={css.root} role="presentation" onKeyDownCapture={onKeyDownCapture}
+      data-motion={motion === undefined ? undefined : open ? 'enter' : 'exit'}
+      style={motion === undefined ? undefined : { '--modal-motion-duration': `${motion.durationMs}ms` } as CSSProperties}
+      {...{ inert: open ? undefined : '' }} aria-hidden={!open || undefined}>
       <div className={css.mask} style={backdropBlur ? undefined : { backdropFilter: 'none' }} aria-hidden="true" onClick={onClose} />
       <div
         ref={dialog}
@@ -65,7 +70,7 @@ export function Modal({
         data-shortcut-modal={shortcutModal}
         className={clsx(css.dialog, !headless && tone === 'warning' && css.warning, className)}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open || undefined}
         aria-label={title}
       >
         {headless

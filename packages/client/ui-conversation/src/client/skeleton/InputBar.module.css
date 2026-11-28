@@ -70,6 +70,9 @@
   border-radius: var(--dsw-radius-panel);
   background: var(--dsw-specific-input-major);
   box-shadow: var(--dsw-elevation-soft), var(--dsh-composer-focus-ring, 0 0 0 0 transparent);
+  /* The focus ring fades in with the interaction timing instead of snapping
+     the moment the caret lands. */
+  transition: box-shadow var(--dsw-motion-fast) var(--dsw-ease-standard);
   /* The draft text follows the Settings font-size preference (the textarea,
      mirror, and backdrop all inherit from here, so the three layers stay in
      step); the line height keeps the default 10px leading via the shared px
@@ -85,9 +88,14 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-.card:focus-within {
-  --dsw-elevation-stroke-color: var(--dsh-composer-focus-stroke-color, var(--dsw-alias-border-l2));
-  --dsh-composer-focus-ring: 0 0 0 var(--dsh-composer-focus-ring-width, 0px) color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)) 10%, transparent);
+/* The ring marks the draft field, not the card. Scoping it to the editor keeps
+   the card neutral while the reader uses the attachment, model, or access
+   controls inside it, which previously lit the ring as if the field were
+   selected. The tinted stroke stays neutral too: recolouring the hairline drew
+   a second, inset purple line that read as an outline twice. */
+.card:has(.input:focus-visible),
+.card:has(.input:focus) {
+  --dsh-composer-focus-ring: 0 0 0 var(--dsh-composer-focus-ring-width, 0px) color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)) 18%, transparent);
 }
 
 @media (pointer: coarse) {
@@ -351,12 +359,17 @@
   background: var(--dsw-specific-selector);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: var(--dsw-motion-colors), transform var(--dsw-motion-instant) var(--dsw-ease-standard);
 }
 
 @media (hover: hover) {
   .add:hover:not(:disabled) {
     background: var(--dsw-alias-interactive-bg-hover-solid);
   }
+}
+
+.add:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .add:disabled {
@@ -385,6 +398,7 @@
   white-space: nowrap;
   cursor: pointer;
   appearance: none;
+  transition: var(--dsw-motion-colors);
 }
 
 @media (hover: hover) {
@@ -418,13 +432,19 @@
      fill in both themes (design 34:10465). */
   color: #fff;
   cursor: pointer;
-  transition: background-color 100ms ease;
+  /* The most repeated gesture in the app: the press pops through the spring
+     curve while the fill swap stays on the standard interaction timing. */
+  transition: var(--dsw-motion-colors), transform var(--dsw-motion-instant) var(--dsw-ease-spring);
 }
 
 @media (hover: hover) {
   .primary:hover:not(:disabled) {
     background: var(--dsw-alias-button-info-hover);
   }
+}
+
+.primary:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .primary:disabled {
@@ -438,6 +458,15 @@
   opacity: 1;
   cursor: progress;
 }
+
+.primaryAnchor {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+
+.primaryAnchor:has(> .primary[data-sending]) { cursor: progress; }
+.primaryAnchor > .primary:disabled { pointer-events: none; }
 
 .primaryBackground {
   position: absolute;
@@ -469,6 +498,17 @@
 @media (prefers-reduced-motion: reduce) {
   .sendingSpinner {
     animation-duration: 2400ms;
+  }
+
+  .add,
+  .select,
+  .primary {
+    transition: none;
+  }
+
+  .add:active:not(:disabled),
+  .primary:active:not(:disabled) {
+    transform: none;
   }
 }
 

@@ -153,12 +153,28 @@
 }
 
 
-/* Project leading slot: folder by default, expand arrow on row hover. */
-.projectRow .chevron { display: none; }
-@media (hover: hover) {
-  .projectRow:hover .chevron { display: inline-flex; }
+/* Project leading slot: folder by default, expand arrow on row hover. Both
+   glyphs share the slot and crossfade instead of a display swap, so the
+   hover change reads as a transition rather than a pop. */
+/* Both glyphs stay in the same grid cell, so swapping them never moves the
+   title: a display swap would reflow the row by the chevron's width. */
+.projectRow .folder,
+.projectRow .chevron {
+  grid-area: 1 / 1;
+  transition: var(--dsw-motion-fade);
+}
 
-  .projectRow:hover .folder { display: none; }
+.projectRow .slot:has(> .chevron) {
+  display: inline-grid;
+  place-items: center;
+}
+
+.projectRow .chevron { opacity: 0; }
+
+@media (hover: hover) {
+  .projectRow:hover .chevron { opacity: 1; }
+
+  .projectRow:hover .folder { opacity: 0; }
 }
 
 /* Expand arrow (filled triangle): points right closed, rotates to point down open. */
@@ -269,7 +285,10 @@
   flex: none;
 }
 
-/* The trailing strip keeps a shared gap between its fixed-size control boxes. */
+/* The trailing strip keeps a shared gap between its fixed-size control boxes.
+   The strip fades and slides in on hover instead of a display pop; the display
+   rule stays for the menu-open and keyboard states, which must appear
+   immediately. */
 .rowActions {
   flex: none;
   display: none;
@@ -278,14 +297,35 @@
 }
 
 @media (hover: hover) {
+  /* visibility keeps the hidden controls out of the accessibility tree and the
+     tab order; opacity alone would leave both reachable while invisible. The
+     visibility step is delayed until the fade ends on the way out. */
+  .projectRow .rowActions,
+  .searchResultRow .rowActions {
+    display: inline-flex;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(4px);
+    transition:
+      opacity var(--dsw-motion-fast) var(--dsw-ease-standard),
+      transform var(--dsw-motion-fast) var(--dsw-ease-standard),
+      visibility 0s linear var(--dsw-motion-fast);
+  }
+
   .projectRow:hover .rowActions,
   .searchResultRow:hover .rowActions {
-    display: inline-flex;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
   }
 }
 
 .projectRow.menuOpen .rowActions {
   display: inline-flex;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
 }
 
 .rowQuickActions {
@@ -319,10 +359,25 @@
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 
+  .sessionRow .rowActions {
+    display: inline-flex;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(4px);
+    transition:
+      opacity var(--dsw-motion-fast) var(--dsw-ease-standard),
+      transform var(--dsw-motion-fast) var(--dsw-ease-standard),
+      visibility 0s linear var(--dsw-motion-fast);
+  }
+
   .sessionRow:hover .rowActions,
   .sessionRow.menuOpen .rowActions,
   :global(html[data-input-modality='keyboard']) .sessionRow:focus-within .rowActions {
     display: inline-flex;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
   }
 
   .sessionRow:hover .rowResting,
@@ -484,8 +539,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .arrow {
+  .arrow,
+  .projectRow .folder,
+  .projectRow .chevron,
+  .projectRow .rowActions,
+  .searchResultRow .rowActions,
+  .sessionRow .rowActions {
     animation: none;
     transition: none;
+  }
+
+  /* Without the transition the visibility step needs no delay to stay in step. */
+  .projectRow .rowActions,
+  .searchResultRow .rowActions,
+  .sessionRow .rowActions {
+    transition-delay: 0s;
   }
 }

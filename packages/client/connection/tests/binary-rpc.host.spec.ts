@@ -21,6 +21,7 @@ function binaryResponse(rpcId: string, mutate: (parts: FormData) => void = () =>
 }
 
 describe('Connection binary RPC', () => {
+  // This exercises a real HTTP socket with a 1 MiB multipart body, so it needs more than the default 5 seconds.
   it.each(['gzip', 'none'] as const)('preserves %s configuration through the HTTP bridge', async (compression) => {
     const ctx = new Context()
     try {
@@ -69,7 +70,7 @@ describe('Connection binary RPC', () => {
     } finally {
       await ctx.fiber.dispose()
     }
-  })
+  }, 15_000)
 
   it('roundtrips raw bytes and metadata on the existing channel while JSON results and errors stay JSON', async () => {
     const ctx = new Context()

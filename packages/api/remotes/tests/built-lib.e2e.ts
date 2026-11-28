@@ -183,6 +183,9 @@ describe.skipIf(!requiredArtifacts)('Application Remote built LIB chain', () => 
           const plugin = instantiate(id)
           await client.plugin({ inject: plugin.inject, apply: plugin.apply })
         }
+        if (typeof client.remote.verbooAnalytics?.status !== 'function') {
+          throw new Error('Product analytics Remote namespace was not mounted')
+        }
         client.typert.contexts.registerClient('agent', {
           identity: candidate => 'builtAgentId' in candidate ? candidate.builtAgentId : undefined,
         })

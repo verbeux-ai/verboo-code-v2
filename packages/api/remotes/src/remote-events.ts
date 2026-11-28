@@ -28,6 +28,7 @@ export const API_REMOTE_FORWARDED_EVENTS = [
   { event: 'agent-preset/selected', mode: 'emit' },
   { event: 'approval/request', mode: 'waterfall' },
   { event: 'api-session/activity', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },
+  { event: 'api-session/turn-completed', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },
   { event: 'api-session/added', mode: 'emit', resources: { session: (summary): SessionId => summary.sessionId } },
   { event: 'api-session/error', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },
   { event: 'api-session/removed', mode: 'emit', resources: { session: (sessionId): SessionId => sessionId } },

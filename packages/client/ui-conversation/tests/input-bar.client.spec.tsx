@@ -31,7 +31,7 @@ import type { SubmitOutcome } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { $replaceDetectSpanWithText, $selectDetectSpan } from '../src/client/input/editor/span-map.ts'
 import type {
-  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads, InputActivityOwnerProps,
+  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads, InputActivityOwnerProps, InputPrimaryBackgroundOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
@@ -1100,6 +1100,33 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
+  it('shows the primary visual detail on hover and focus without enabling an empty draft', () => {
+    vi.useFakeTimers()
+    try {
+      const { button, view, slotCalls, sink } = bench()
+      const { onDescriptionChange } = slotCalls.find(call => call.key === 'conversation.input.primary.background')!.owner as InputPrimaryBackgroundOwnerProps
+      const detail = 'Stamina (Max) · 99.99% remaining'
+      act(() => { onDescriptionChange(detail) })
+      const meter = view.getByRole('group', { name: '发送消息' })
+      expect(meter.tabIndex).toBe(0)
+      expect(button.disabled).toBe(true)
+      expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe(detail)
+      fireEvent.pointerEnter(meter)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(view.getByRole('tooltip').textContent).toContain(detail)
+      fireEvent.pointerLeave(meter)
+      expect(view.queryByRole('tooltip')).toBeNull()
+      fireEvent.focus(meter)
+      expect(view.getByRole('tooltip').textContent).toContain(detail)
+      fireEvent.click(meter)
+      expect(sink).not.toHaveBeenCalled()
+      act(() => { onDescriptionChange(undefined) })
+      expect(view.queryByRole('group', { name: '发送消息' })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it.each([
     { messages: zh, label: '停止生成', trigger: 'hover' },
     { messages: en, label: 'Stop generating', trigger: 'focus' },

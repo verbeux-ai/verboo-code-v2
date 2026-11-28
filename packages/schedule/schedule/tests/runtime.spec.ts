@@ -84,6 +84,21 @@ it('appends after stored history in arrival order and keeps the change time mono
 })
 
 describe('Host Schedule timer', () => {
+  it('resumes a due request when a committed exit is cancelled', async () => {
+    const tasks = [task(createAfterScheduleRecord(ScheduleId('exit-cancel'), 'Remember', 2, Date.now(), 'Remember'))]
+    const test = await setup(tasks)
+    const gate = test.ctx.agents.exitAdmission
+    gate.registerRequired('jobs', () => 'idle')
+    gate.registerOptional(() => test.runtime.exitActivity)
+    const reservation = gate.tryReserve()
+    if (reservation.kind !== 'reserved') throw new Error(`expected idle: ${reservation.kind}`)
+    expect(gate.commit(reservation.id)).toBe(true)
+    test.runtime.requestDrive()
+    expect(test.runtime.exitActivity).toBe('busy')
+    expect(gate.finalize(reservation.id, () => {})).toBe(false)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(test.followup).toHaveBeenCalledOnce()
+  })
   it('keeps reminders unacknowledged when no Session activation provider is mounted', async () => {
     const tasks = [task(createAfterScheduleRecord(ScheduleId('unavailable'), 'Remember', 2, Date.now(), 'Remember'))]
     const test = await setup(tasks, { sessionController: false })

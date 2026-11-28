@@ -20,7 +20,7 @@ import type {
 } from '@deepseek-ai/dsh-api-verboo-mcp/types'
 import type { Key } from './locales.ts'
 import { Glyph } from './Glyph.tsx'
-import { PageHead, Notice, Busy } from './PageParts.tsx'
+import { PageHead, Notice, Busy, ReadFailure } from './PageParts.tsx'
 import { CATEGORY_ORDER, categoryOf } from './categories.ts'
 import type { CategoryId } from './categories.ts'
 import css from './Product.module.css'
@@ -736,12 +736,8 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
         </button>}
       />
       {state.connectionsFailed && (
-        <Notice
-          error
-          text={t('connectionUnavailable')}
-          retry={refresh}
-          label={t('retry')}
-        />
+        <ReadFailure kind="connections" reason={state.connectionsFailureReason} hasPrevious={data !== null && data.available}
+          retry={props.loadConnections} signIn={props.start} t={t} />
       )}
       {state.handoff === 'connection' && (
         <Notice
@@ -751,7 +747,8 @@ export function ConnectionsPage(props: PageProps & Pick<PageProps, 'openOpenAiDi
         />
       )}
       {data === null && state.loadingConnections && <Busy label={t('loading')} />}
-      {data !== null && !data.available && <Notice text={t('connectionUnavailable')} />}
+      {data !== null && !data.available && !state.connectionsFailed && <ReadFailure kind="connections" reason="unavailable"
+        hasPrevious={false} retry={props.loadConnections} signIn={props.start} t={t} />}
 
       {data !== null && (
         <div className={css.summary}>

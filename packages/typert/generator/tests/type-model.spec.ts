@@ -546,6 +546,36 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
     })
   })
 
+  it('resolves cross-face re-exports from built declarations when source is absent from the client program', () => {
+    const root = copyFixture('typert-published-cross-face-')
+    const host = join(root, 'packages/host')
+    const manifestPath = join(host, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { exports: Record<string, unknown> }
+    manifest.exports['./published'] = { types: './lib/types/published.d.ts', default: './lib/published.js' }
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+    writeFileSync(join(host, 'src/published.ts'), 'export interface Published { readonly value: string }\n')
+    mkdirSync(join(host, 'lib/types'), { recursive: true })
+    writeFileSync(join(host, 'lib/types/published.d.ts'), 'export interface Published { readonly value: string }\n')
+    const configPath = join(root, 'tsconfig.base.json')
+    const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+      compilerOptions: { paths: Record<string, string[]> }
+    }
+    config.compilerOptions.paths['@fixture/host/published'] = ['./packages/host/lib/types/published.d.ts']
+    writeFileSync(configPath, JSON.stringify(config, null, 2))
+    const sourcePath = join(root, 'packages/client/src/index.ts')
+    writeFileSync(sourcePath, `${readFileSync(sourcePath, 'utf8')}\nexport type { Published } from '@fixture/host/published'\n`)
+
+    const model = new WorkspaceAnalyzer({ root, faces: ['client'] }).analyze()
+    expect(model.crossFaceLinks).toContainEqual({
+      fromFace: 'client',
+      fromPackage: '@fixture/client',
+      toFace: 'host',
+      toPackage: '@fixture/host',
+      subpath: './published',
+      name: 'Published',
+    })
+  })
+
   it('expands explicit same-face package exports through declaration targets', () => {
     const root = copyFixture('typert-same-face-')
     addSameFacePackage(root, '@fixture/host/models', 'Payload')

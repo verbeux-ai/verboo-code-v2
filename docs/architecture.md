@@ -76,6 +76,8 @@ Subagent Activations own runtime tree membership.
 
 AgentLoop rolls back failed initialization and awaits serial `agent/created` before queued work; unload retains resources through teardown ([ordering](../packages/core/agent-loop/README.md#understand-the-implementation)).
 
+The agent registry coordinates conservative exit admission across the loop, jobs, schedules and terminals; desktop requests a reversible idle reservation before shutdown ([exit admission](../packages/core/agent/README.md#use-this-package)).
+
 [Event producers and consumers](event-producer-consumer.md).
 
 ## Turn flow

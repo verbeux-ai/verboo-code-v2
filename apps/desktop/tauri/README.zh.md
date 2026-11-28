@@ -10,7 +10,7 @@
 pnpm run dev:desktop
 ```
 
-该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。打包后的 Windows 应用是 GUI 程序，因此 Host 控制台进程以 `CREATE_NO_WINDOW` 创建；否则 Windows 会在产品窗口旁打开一个终端窗口。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源提交文档，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
+该命令构建共享应用、启动客户端重建监视器并启动 Tauri。Rust 负责原生窗口和运行产品 `verboo` 配置的私有 Node 进程。打包后的 Windows 应用是 GUI 程序，因此 Host 控制台进程以 `CREATE_NO_WINDOW` 创建；否则 Windows 会在产品窗口旁打开一个终端窗口。Host 仅绑定 `127.0.0.1`，使用操作系统分配的端口及每次启动生成的浏览器 Cookie 进行认证，并保留现有会话、工具、模型和插件服务。WebView 先在 Host 来源显示打包的启动动画，避免请求受保护的首页，再从该来源交换启动令牌，使 WebKit 在认证重定向时保留 `SameSite=Strict` Cookie。原生目录选择使用 Tauri 对话框插件。原生权限仅授予应用窗口和该 Host 的确切来源；窗口不能跳转到其他来源。
 
 仓库构建完成后，可复用产物：
 
@@ -20,7 +20,7 @@ pnpm run start:desktop
 
 `pnpm run dev:desktop --skip-build` 同样复用产物，并启动客户端监视器。Rust 源码变更由 Tauri 重建；客户端变更通过 Web 使用的同一套监视构建更新。退出应用时先释放配置资源，再等待 Node 进程退出；超过关闭期限会明确报告失败，不会误报成功。
 
-启动时仅打开原生聊天窗口，即使用户配置启用了自动打开浏览器。浏览器登录和用户明确请求的外部链接仍使用系统浏览器。
+启动失败时，本地恢复窗口显示安全的错误代码和说明；Host 安全停止后可重试，仅对已识别原因提供可展开的检查建议。Desktop 在挂载客户端前从有大小限制的原生存储恢复侧栏布局和终端身份，避免 Host 端口变化导致丢失。启动时仅打开原生聊天窗口，即使用户配置启用了自动打开浏览器。浏览器登录和用户明确请求的外部链接仍使用系统浏览器。
 
 原生关闭命令（macOS 的 Command+W、Windows 的 Control+W）关闭当前对话窗格，不关闭应用窗口。macOS 按下 Command+Q 或 Windows 按下 Control+Q 会显示提示；三秒内再次按下该快捷键即可退出。按 Escape、失去焦点、隐藏文档或等待三秒会取消确认。长按不会算作第二次按键。原生菜单退出和窗口关闭按钮仍会先请求确认，再中断工作或释放 Host。取消后窗口与工作保持运行，确认后仍执行有时限的正常关闭。重复退出请求共用一个确认，不能跳过 Host 释放。
 
@@ -36,13 +36,11 @@ Linux 桌面使用官方 glibc Node 运行时。在 AppImage 扫描 ELF 依赖�
 
 ## 更新
 
-Tauri 更新器随应用一起发布：Host 开始提供产品页面后，它每次启动读取一次更新源，确认后在原位置安装新版本。Linux 替换 AppImage，Windows 以 `passive` 模式复用 NSIS 安装器，macOS 用归档的 `.app` 替换应用包。Debian 和 RPM 安装继续由包管理器更新。开发构建从不检查更新，因此检出目录不会自行安装发布版本。
+Tauri 更新器在 Host 启动后每次检查一次更新源，在后台下载新版本并验证签名后暂存。侧边栏显示下载进度，检查或下载失败后可重试，暂存完成后可选择重启；仅当有工作正在进行或其状态未知时，重启前才请求确认。没有其他受支持窗口运行时，暂存的更新会在下次启动 Host 前再次验证并安装，即使没有网络也可以进行。支持该协议的版本通过进程锁协调；不使用这些锁的旧版本无法可靠检测。如果其他实例正在安装，启动窗口会显示等待提示，关闭此窗口不会中断该安装。安装失败时显示错误并避免自动重启循环。开发构建不检查更新。Linux 使用与安装包相匹配的 AppImage、Debian 或 RPM；Windows 使用 `passive` 模式的 NSIS 安装器，macOS 用归档中的 `.app` 替换应用包。
 
-更新卡片加载应用自带的本地页面，并在打开前获得安装和关闭权限。下载结束后，卡片在签名验证和安装期间显示不定进度的正在完成状态。完成通知会保留到用户点击 OK 或按 Escape；关闭任一种更新卡片只会关闭该卡片，不会请求退出应用。
+`bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名；由于 RPM 的包元数据使用规范化的预发布版本，发布工作流还用产品版本签署 RPM。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
 
-`bundle.createUpdaterArtifacts` 让打包器输出更新包及其签名，发布工作流使用 `TAURI_SIGNING_PRIVATE_KEY` 签名。`plugins.updater.pubkey` 中的公钥是唯一信任锚，更新器拒绝由其他密钥签名的更新包；私钥一旦丢失，后续安装器将永远无法更新。
-
-更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。拒绝某个版本的用户不会再被同一版本打扰。
+更新源是 `update-feed` 分支上的 `latest.json`，而不是发布附件，因为 `releases/latest` 永远不会指向预发布版本。`verify-release.mjs` 依据校验后的清单写出它，`publish-feed.mjs` 在发布公开后提交它；重跑旧版本发布不会让更新源倒退。
 
 ## 发布流水线
 
@@ -90,3 +88,5 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 桥接测试覆盖缓存和异步客户端挂载，并确认不设置 Electron 标记。Node 集成测试覆盖真实配置的认证 HTML 和资源、重复关闭、启动失败以及父进程断开。Rust 测试拒绝远程或无效的启动 URL。
 
 产品 Client 条目在启动时为必需项，原生就绪状态要求 Verboo 导航已挂载。普通 Harness 根节点不能报告产品启动成功。构建后，在仓库根目录运行 `node apps/desktop/tauri/product-qa.mjs`，使用临时配置与操作系统凭据、外部 HTTP 测试服务，验证 OAuth PKCE、令牌实时刷新时不闪现引导页且保留草稿、焦点和运行中的对话、模型选择、方案、连接、对话框及两种主题。`VERBOO_QA_OUTPUT` 指定截图目录，`VERBOO_QA_CHROME` 指定浏览器可执行文件。
+
+浏览器验证在真实对话流程中覆盖订阅工具，包括拒绝批准、响应丢失和取消续订。在 Linux 上设置 `VERBOO_QA_NATIVE_BILLING=1`，可在调试版 Tauri 应用中使用同一个回环测试服务重复验证。原生检查通过 Python GI 和 AT-SPI 输入提示并操作应用内的批准卡片，然后确认服务端仅收到一次获批的操作。若 Wayland 上的 AT-SPI 无法向编辑器输入，还需要有当前用户输入设备权限的 `ydotool`。运行器只在独立的测试窗口及输入框获得焦点时输入。

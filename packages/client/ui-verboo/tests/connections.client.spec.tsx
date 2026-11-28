@@ -89,6 +89,7 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
       return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
     }),
     loadConnections: vi.fn(),
+    start: vi.fn(),
     loadMcpServers: vi.fn(),
     saveMcpServer: vi.fn(async () => true),
     deleteMcpServer: vi.fn(async () => true),
@@ -111,6 +112,19 @@ function fixture(locale: 'pt' | 'en' | 'zh' = 'pt', overrides: Partial<ProductSn
 }
 
 describe('connections page structure', () => {
+  it('keeps previous connections and provides sign-in or retry for a signed-out account', () => {
+    const { props } = fixture('pt', { connectionsFailed: true, connectionsFailureReason: 'signed_out' })
+    render(<ConnectionsPage {...props} />)
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain(pt.readAuthDescription)
+    expect(alert.textContent).toContain(pt.readStale)
+    fireEvent.click(screen.getByRole('button', { name: pt.readSignIn }))
+    expect(props.start).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: pt.retry }))
+    expect(props.loadConnections).toHaveBeenCalledOnce()
+    expect(props.loadMcpServers).not.toHaveBeenCalled()
+  })
+
   it('separates owned accounts, MCP servers and the catalog', () => {
     const { props } = fixture()
     const view = render(<ConnectionsPage {...props} />)

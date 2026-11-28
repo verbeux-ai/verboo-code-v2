@@ -1,19 +1,17 @@
 - main:
   - heading "Planos e assinatura" [level=1]
-  - paragraph: Escolha o plano para o seu ritmo de trabalho.
   - button "Atualizar"
-  - region "Suas assinaturas":
-    - heading "Suas assinaturas" [level=2]
+  - region "Minha assinatura":
+    - heading "Minha assinatura" [level=2]
     - article:
       - heading "Unlimited" [level=3]
       - text: Ativo
-      - 'button "Gerenciar assinatura: Unlimited"': Gerenciar assinatura
+      - 'button "Ver detalhes da assinatura: Unlimited"': Ver detalhes
     - article:
       - heading "Testes" [level=3]
       - text: Ativo
-      - 'button "Gerenciar assinatura: Testes"': Gerenciar assinatura
+      - 'button "Ver detalhes da assinatura: Testes"': Ver detalhes
   - region "Conheça os planos":
     - heading "Conheça os planos" [level=2]
     - paragraph: Nenhum plano disponível no momento.
     - button "Ver planos na Verboo"
-  - paragraph: Pagamento seguro e gerenciamento da assinatura no navegador.

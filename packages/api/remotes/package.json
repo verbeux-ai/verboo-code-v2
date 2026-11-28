@@ -87,6 +87,7 @@
     "@deepseek-ai/dsh-file-reference": "workspace:*",
     "@deepseek-ai/dsh-goal": "workspace:*",
     "@deepseek-ai/dsh-host-plugin-inventory": "workspace:*",
+    "@deepseek-ai/dsh-host-verboo-analytics": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-llm-openai-account": "workspace:*",
     "@deepseek-ai/dsh-mcp-manager": "workspace:*",

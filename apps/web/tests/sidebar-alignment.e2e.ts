@@ -141,6 +141,13 @@ describe('web e2e: sidebar search alignment and row action targets', () => {
     try { await browser?.close() } finally { await scaffold?.close() }
   })
 
+  /** Wait for the row's reveal transitions to finish before measuring geometry. */
+  async function settleRowActions(row: Locator): Promise<void> {
+    await row.evaluate(async (element) => {
+      await Promise.all(element.getAnimations({ subtree: true }).map(async (item) => { await item.finished }))
+    })
+  }
+
   it('aligns the 32px expanded search with both edges of New session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-search-alignment'))
     const searchButton = page.getByRole('button', { name: 'Search sessions', exact: true })
@@ -377,6 +384,7 @@ describe('web e2e: sidebar search alignment and row action targets', () => {
     await page.getByPlaceholder('Search session names', { exact: true }).fill('Archived geometry')
     const row = page.getByRole('treeitem').filter({ hasText: archivedTitle })
     await row.hover()
+    await settleRowActions(row)
     await row.getByRole('button', { name: 'Unarchive session', exact: true }).waitFor()
     const geometry = await row.evaluate((element) => {
       const title = element.querySelector<HTMLElement>('[class*="searchResultTitle"]')
@@ -579,6 +587,7 @@ describe('web e2e: sidebar search alignment and row action targets', () => {
       : page.locator('[data-row-key^="workspace:"]').filter({ hasText: workspaceTitle })
     const restingBox = await row.boundingBox()
     await row.hover()
+    await settleRowActions(row)
     const labels = kind === 'session'
       ? [`Session actions for ${sessionTitle}`, 'Archive session', 'Pin session'] as const
       : [`Workspace actions for ${workspaceTitle}`, `New session in ${workspaceTitle}`] as const
@@ -647,7 +656,9 @@ describe('web e2e: sidebar search alignment and row action targets', () => {
       expect(await tooltipAnchor.isVisible()).toBe(true)
     }
     await page.mouse.click(1000, 400)
-    expect(await tooltipAnchor.isVisible()).toBe(false)
+    // The click leaves the row, so the reveal ends with it: hover is gone and the
+    // keyboard modality no longer holds the actions open.
+    await expect.poll(async () => await tooltipAnchor.isVisible()).toBe(false)
     expect(await page.getByRole('tooltip').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

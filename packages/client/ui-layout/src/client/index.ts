@@ -69,6 +69,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
+     * Rows the sidebar occupant renders in its own footer, above its lowest
+     * shortcut. Declared here because the frame owns the sidebar slot contract;
+     * the occupant authorizes it as a child and decides where it sits.
+     */
+    'sidebar.footer.row': { kind: 'single'; scope: 'root'; owner: SidebarFooterRowOwnerProps }
+    /**
      * Central panel selected by sidebar entry id. The reserved `conversation`
      * key hosts the Conversation; other keys receive no Session binding.
      */
@@ -126,6 +132,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 // renderSlot. Registrants IMPORT these and compose their full component props
 // from the framework-derived shares. Conversation business state and actions arrive through
 // framework-standard hooks and each registrant's inject face, not owner props.
+
+/** Geometry a sidebar footer row receives. */
+export interface SidebarFooterRowOwnerProps {
+  /** Whether the sidebar renders wide content (false = collapsed rail). */
+  wide: boolean
+}
 
 /** Sidebar owner share: live column state from the frame's concession solve. */
 export interface SidebarOwnerProps {

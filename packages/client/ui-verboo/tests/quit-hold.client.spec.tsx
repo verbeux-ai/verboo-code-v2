@@ -63,3 +63,17 @@ it('shows an error and allows retry after quit fails', async () => {
   fireEvent.keyDown(window, { code: 'KeyQ', key: 'q', ...modifier })
   expect(screen.getByRole('status')).toBeTruthy()
 })
+
+
+it('allows another quit gesture after the native request was acknowledged and the user stayed', async () => {
+  const { quit, modifier } = setup()
+  fireEvent.keyDown(window, { code: 'KeyQ', key: 'q', ...modifier })
+  fireEvent.keyUp(window, { code: 'KeyQ', key: 'q', ...modifier })
+  fireEvent.keyDown(window, { code: 'KeyQ', key: 'q', ...modifier })
+  await act(async () => {})
+  fireEvent.keyUp(window, { code: 'KeyQ', key: 'q', ...modifier })
+  fireEvent.keyDown(window, { code: 'KeyQ', key: 'q', ...modifier })
+  fireEvent.keyUp(window, { code: 'KeyQ', key: 'q', ...modifier })
+  fireEvent.keyDown(window, { code: 'KeyQ', key: 'q', ...modifier })
+  expect(quit).toHaveBeenCalledTimes(2)
+})

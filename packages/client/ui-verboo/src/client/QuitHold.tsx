@@ -1,7 +1,17 @@
 /** Native quit gesture; browser tabs retain their own application shortcuts. */
 import { useEffect, useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import sadBoo from './assets/boo-sad.svg'
+import productCss from './Product.module.css'
 import css from './QuitHold.module.css'
+
+declare global {
+  var __VERBOO_QUIT_CONFIRMATION__: {
+    subscribe(listener: () => void): () => void
+    respond(confirmed: boolean): Promise<void>
+  } | undefined
+}
 
 /** Time allowed for the second deliberate shortcut. */
 export const QUIT_CONFIRM_MS = 3000
@@ -36,7 +46,9 @@ export function QuitHold({ quit, mac, t }: QuitHoldProps) {
         armed = false
         quitting = true
         setVisible(false)
-        void quit().catch(() => { quitting = false; setFailed(true) })
+        // Native admission may open a confirmation and later be cancelled.
+        // The IPC acknowledgement is not the end of the application lifetime.
+        void quit().then(() => { quitting = false }).catch(() => { quitting = false; setFailed(true) })
         return
       }
       setFailed(false)
@@ -69,6 +81,31 @@ export function QuitHold({ quit, mac, t }: QuitHoldProps) {
 /** Only native windows receive an application-quit capability. */
 export function DesktopQuitHold(props: PropsLocale<'verboo'>) {
   const native = globalThis.__VERBOO_DESKTOP__
-  return native?.quit === undefined ? null
-    : <QuitHold {...props} quit={native.quit} mac={/Mac|iPhone|iPad/.test(navigator.platform)} />
+  return native?.quit === undefined ? null : <>
+    <QuitHold {...props} quit={native.quit} mac={/Mac|iPhone|iPad/.test(navigator.platform)} />
+    <QuitConfirmation {...props} />
+  </>
+}
+
+/** A native close request waits for an explicit response from this dialog. */
+export function QuitConfirmation({ t }: PropsLocale<'verboo'>) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => globalThis.__VERBOO_QUIT_CONFIRMATION__?.subscribe(() => { setOpen(true); setFailed(false) }), [])
+  const respond = (confirmed: boolean) => {
+    if (busy) return
+    setBusy(true)
+    void globalThis.__VERBOO_QUIT_CONFIRMATION__?.respond(confirmed).then(() => {
+      setOpen(false); setBusy(false)
+    }).catch(() => { setBusy(false); setFailed(true) })
+  }
+  return <Modal open={open} onClose={() => { respond(false) }} title={t('quitDialogTitle')}
+    description={t('quitDialogDescription')} closeLabel={t('close')} footer={<>
+      <button type="button" className={productCss.secondary} disabled={busy} onClick={() => { respond(false) }}>{t('quitDialogStay')}</button>
+      <button type="button" className={productCss.primary} disabled={busy} onClick={() => { respond(true) }}>{t('quitDialogExit')}</button>
+    </>}>
+    <img className={css.mascot} src={sadBoo} alt="" />
+    {failed && <p role="alert">{t('quitFailed')}</p>}
+  </Modal>
 }

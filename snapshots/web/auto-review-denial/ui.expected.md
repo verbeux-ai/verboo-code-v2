@@ -12,7 +12,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Called tools, ran code, ran commands" [expanded]
+- button "3 actions" [expanded]
 - text: Failed
 - button "Tool call Rejected by Auto review"
 - button "Code Catch an Auto-denied inner call"
@@ -39,7 +39,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Called tools, ran code, ran commands" [expanded]
+- button "3 actions" [expanded]
 - text: Failed
 - button "Tool call Rejected by Auto review" [expanded]
 - text: "OUT Tool was not executed. Reason: raw reason"

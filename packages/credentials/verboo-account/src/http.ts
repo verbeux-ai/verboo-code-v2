@@ -15,6 +15,8 @@ export class AccountRequestError extends Error {
       | 'request_cancelled'
       | 'contract_error'
       | 'quote_rejected'
+      | 'checkout_not_started'
+      | 'lifecycle_not_started'
       | 'authentication_invalid'
       | 'authorization_denied'
       | 'unknown',
@@ -52,7 +54,7 @@ export function operation(): Operation {
  */
 export function observe(
   context: Operation,
-  stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return',
+  stage: 'login' | 'catalog' | 'checkout_request' | 'trial_conversion' | 'trial_activation' | 'plan_change' | 'payment_return' | 'payment_portal' | 'payment_method_change' | 'cancellation' | 'reactivation',
   outcome: 'started' | 'succeeded' | 'failed',
   error?: AccountRequestError,
 ): void {
@@ -60,7 +62,9 @@ export function observe(
     '[verboo-journey]',
     JSON.stringify({
       schemaVersion: 2,
-      ...context,
+      journeyId: context.journeyId,
+      operationId: context.operationId,
+      requestId: context.requestId,
       stage,
       outcome,
       ...(error === undefined
@@ -83,6 +87,10 @@ export class VerbooHttp {
    * @param init - request body, authentication and cancellation captured by the caller.
    * @param context - immutable identity retained across attempts.
    * @param emptyResponse - accept a successful response without a JSON body.
+   * @param deadlineMs - ceiling for a call whose owner knows the endpoint
+   * answers slower than the deployment default; it replaces both the
+   * per-attempt ceiling and the total budget, because such a caller cannot
+   * retry.
    * @returns parsed JSON, or null for a successful empty response.
    */
   async request(
@@ -90,10 +98,11 @@ export class VerbooHttp {
     init: RequestInit = {},
     context: Operation = operation(),
     emptyResponse = false,
+    deadlineMs?: number,
   ): Promise<unknown> {
     const safe =
       init.method === undefined || ['GET', 'HEAD'].includes(init.method)
-    const budget = AbortSignal.timeout(35_000)
+    const budget = AbortSignal.timeout(deadlineMs ?? 35_000)
     const headers = new Headers(init.headers)
     headers.set('X-Verboo-Journey-Id', context.journeyId)
     headers.set('X-Verboo-Operation-Id', context.operationId)
@@ -104,7 +113,7 @@ export class VerbooHttp {
           ? []
           : [init.signal]),
         budget,
-        AbortSignal.timeout(this.deployment.requestTimeoutMs),
+        AbortSignal.timeout(deadlineMs ?? this.deployment.requestTimeoutMs),
       ])
       let response: Response
       try {
@@ -164,9 +173,17 @@ export class VerbooHttp {
       if (!response.ok) {
         const status = response.status
         // This server marker is emitted only before a financial write is started.
-        if ([409, 422].includes(status) && response.headers.get('x-verboo-quote-rejected') === 'true') {
+        if ([400, 409, 410, 422].includes(status) && response.headers.get('x-verboo-quote-rejected') === 'true') {
           await response.body?.cancel()
           throw new AccountRequestError('quote_rejected', status)
+        }
+        if (response.headers.get('x-verboo-checkout-not-started') === 'true') {
+          await response.body?.cancel()
+          throw new AccountRequestError('checkout_not_started', status)
+        }
+        if (response.headers.get('x-verboo-lifecycle-not-started') === 'true') {
+          await response.body?.cancel()
+          throw new AccountRequestError('lifecycle_not_started', status)
         }
         let rejectedGrant = false
         if (
@@ -200,8 +217,16 @@ export class VerbooHttp {
       }
       try {
         return await response.json()
-      } catch {
-        throw new AccountRequestError('contract_error', response.status)
+      } catch (error) {
+        // Reading the body can outlive receipt of the response headers. Preserve
+        // cancellation and timeout diagnostics instead of calling an aborted
+        // or interrupted response malformed JSON.
+        throw new AccountRequestError(
+          init.signal?.aborted ? 'request_cancelled'
+            : signal.aborted ? 'request_timeout'
+              : error instanceof SyntaxError ? 'contract_error' : 'network_error',
+          response.status,
+        )
       }
     }
   }

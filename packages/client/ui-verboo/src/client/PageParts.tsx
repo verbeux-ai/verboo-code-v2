@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react'
+import thinkingBoo from './assets/boo-thinking.svg'
+import sadBoo from './assets/boo-sad.svg'
+import type { ProductError } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { ProductProps } from './contracts.ts'
 import { Glyph } from './Glyph.tsx'
 import css from './Product.module.css'
@@ -38,12 +41,40 @@ export function Notice({ text, retry, label, error = false }: {
   error?: boolean
 }) {
   return (
-    <div className={css.notice} role={error ? 'alert' : 'status'}>
-      <Glyph name="triangle-alert" size={18} />
-      <p>{text}</p>
-      {retry && <button className={css.textButton} onClick={retry}>{label}</button>}
+    <div className={error ? css.noticeError : css.notice} role={error ? 'alert' : 'status'}>
+      {error ? <div className={css.noticeMascot} aria-hidden="true"><img src={thinkingBoo} alt="" /></div> : <Glyph name="triangle-alert" size={18} />}
+      <div className={error ? css.noticeCard : css.noticeBody}>
+        <p>{text}</p>
+        {retry && <button className={css.textButton} onClick={retry}>{label}</button>}
+      </div>
     </div>
   )
+}
+
+/** Present safe read failures while leaving previously loaded content visible. */
+export function ReadFailure({ kind, reason, hasPrevious, retry, signIn, t }: {
+  kind: 'plans' | 'connections'
+  reason: ProductError | 'unexpected' | undefined
+  hasPrevious: boolean
+  retry: () => void
+  signIn: () => void
+  t: ProductProps['t']
+}) {
+  const signedOut = reason === 'signed_out'
+  const title = signedOut ? t('readAuthTitle') : kind === 'plans' ? t('readPlansTitle') : t('readConnectionsTitle')
+  const description = signedOut ? t('readAuthDescription') : reason === 'account_changed' ? t('readInterrupted') : t('readRetryDescription')
+  return <div className={css.readFailure} role="alert">
+    <img src={signedOut ? sadBoo : thinkingBoo} alt="" />
+    <div>
+      <strong>{title}</strong>
+      <p>{description}</p>
+      {hasPrevious && <p>{t('readStale')}</p>}
+      <div className={css.readFailureActions}>
+        {signedOut && <button type="button" className={css.primary} onClick={signIn}>{t('readSignIn')}</button>}
+        <button type="button" className={signedOut ? css.textButton : css.primary} onClick={retry}>{t('retry')}</button>
+      </div>
+    </div>
+  </div>
 }
 
 /** Announces a pending page read without placeholder account data. */

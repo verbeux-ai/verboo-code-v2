@@ -11,14 +11,14 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Called tools, ran code, ran commands" [expanded]
-- button "Think The user wants one run_code program that:"
+- button "4 actions" [expanded]
+- button "Think"
 - text: Failed
 - 'button "Code Error: code run failed (exception): AFTER_PRESENT"'
 - button "Present files Delivery failed missing.txt"
 - button "Bash Write DELIVERED_REPORT and DELIVERED_NOTE to files"
 - button "Present files Delivered report.txt, 说明.txt"
-- button "Think The program ran as intended:"
+- button "Think"
 - paragraph:
   - text: "The single program ran exactly as ordered:"
   - code: present

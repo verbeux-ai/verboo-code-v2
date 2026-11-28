@@ -13,7 +13,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { Config } from '../../config.ts'
+import { CONVERSATION_WIDTHS, type Config } from '../../config.ts'
 import type { PaneSnapshot } from './controller.ts'
 import { leaves, MAX_PANES, minimumSize, rectangles, boxAt } from './layout.ts'
 import type { PaneAxis, PaneLeaf, PaneNode, PaneRect, PaneSplit } from './layout.ts'
@@ -27,7 +27,7 @@ export interface PanesInjected {
   hooks: {
     panes: HostObservable<PaneSnapshot>
     paneSaveError: HostObservable<boolean>
-    panePreferences: HostObservable<ConfigFormSnapshot<Pick<Config, 'paneLayout' | 'minimalist'>>>
+    panePreferences: HostObservable<ConfigFormSnapshot<Pick<Config, 'paneLayout' | 'conversationWidth'>>>
   }
   minimumWidth: number
   minimumHeight: number
@@ -169,7 +169,7 @@ export function Panes(props: PanesProps) {
   const { usePanes, SessionProvider, renderSlot, focusPane, focusPaneInput, resizePane, minimumWidth, minimumHeight, t } = props
   const snapshot = usePanes(s => s)
   const saveError = props.usePaneSaveError(value => value)
-  const minimalist = props.usePanePreferences(value => value.value?.minimalist === true)
+  const conversationWidth = props.usePanePreferences(value => value.value?.conversationWidth ?? 'standard')
   const restoredFocus = useRef(false)
   useEffect(() => {
     if (
@@ -209,7 +209,8 @@ export function Panes(props: PanesProps) {
   const boxes = rectangles(layout.root)
   return (
     <div className={css.workspace} data-verboo-panes="" data-pane-split={panes.length > 1 || undefined}
-      data-conversation-minimalist={minimalist || undefined}
+      data-conversation-minimalist=""
+      style={{ '--verboo-conversation-max-width': `${CONVERSATION_WIDTHS[conversationWidth]}px` } as CSSProperties}
       aria-label={t('paneWorkspace')}>
       {saveError && (
         <div className={css.saveNotice} role="alert">
@@ -449,7 +450,7 @@ function PaneButtons({
 }) {
   const shortcuts = paneShortcutKeys()
   return (
-    <div className={css.actions}>
+    <div className={css.actions} data-verboo-tour-split>
       <Tooltip label={t('paneSplitRight')} shortcutKeys={shortcuts.right} portal>
         <button
           type="button"

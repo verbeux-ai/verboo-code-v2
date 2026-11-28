@@ -265,6 +265,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain. Agent *creation* is provided by whichever plugin implements the AgentFactory (`@deepseek-ai/dsh-agent-loop`), registered via setFactory.\n\nInitiator methods provide same-process causal attribution only. Ambient presence is neither liveness proof nor authorization; subjects and owners remain explicit, as does identity at worker, process, persistence, and wire boundaries. Returned Promise boundaries drain during teardown, except a nested lineage that starts an owning-fiber unload is excluded from its own drain.',
     methods: [
       {
+        signature: 'readonly exitAdmission: ExitAdmission = new ExitAdmission()',
+        description: 'Global conservative admission for a desktop silent exit.',
+        parameters: [],
+      },
+      {
         signature: 'turnBoundaryOf(session: Session): TurnBoundaryProjection',
         description: 'Read the turn and step positions recorded in a Session.',
         parameters: [{ name: 'session', description: 'Session whose committed events are read.' }],
@@ -4345,6 +4350,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'verbooAnalytics',
+    summary: 'Host-owned consent, response observation and receipt-checked product outbox.',
+    description: 'Host-owned consent, response observation and receipt-checked product outbox.',
+    methods: [
+      {
+        signature: '@Remote async status(): Promise<ProductAnalyticsStatus>',
+        description: 'Read the product analytics preference and queue status for the current identity.',
+        parameters: [],
+        returns: 'preference for the current identity; unavailable does not grant collection.',
+      },
+      {
+        signature: '@Remote async choose(decision: \'granted\' | \'denied\'): Promise<ProductConsentResult>',
+        description: 'Persist an explicit choice. Refusal blocks locally before any network call.',
+        parameters: [{ name: 'decision', description: 'product-only choice, independent of advertising.' }],
+        returns: 'confirmed preference, or a fixed failure without credentials.',
+      },
+      {
+        signature: '@Remote feature(feature: ProductFeature, outcome: \'started\' | \'completed\' | \'failed\' | \'cancelled\', subjectId: ProductAnalyticsSubject, consentRevision: number, consentProof: string, model?: ProductModelDetails): Promise<void>',
+        description: 'Observe one allowlisted feature without tool names, arguments or page data.',
+        parameters: [{ name: 'feature', description: 'fixed product category.' }, { name: 'outcome', description: 'fixed observation outcome.' }, { name: 'subjectId', description: 'consent subject observed when the user initiated the action.' }, { name: 'consentRevision', description: 'granted revision observed when the action began.' }, { name: 'consentProof', description: 'signed reference observed when the action began.' }, { name: 'model', description: 'bounded model and effort dimensions for a message attempt.' }],
+        returns: 'after the eligible observation\'s local queue attempt settles.',
+      },
+    ],
+  },
+  {
     key: 'verbooMcp',
     summary: 'The user-defined MCP server service.',
     description: 'The user-defined MCP server service. Definitions live in a `per-record` storage domain; each mounted definition owns one `ctx.mcpManager.register()` disposer, so reconciliation adds and withdraws servers without touching manager-configured ones.',
@@ -4441,6 +4471,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'display-safe plan projections.',
       },
       {
+        signature: '@Remote getUsageSubscriptions(signal: AbortSignal): Promise<Result<Subscription[]>>',
+        description: 'Read owned subscriptions independently of the commercial catalog.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'display-safe subscriptions for the current account.',
+      },
+      {
+        signature: '@Remote getUsageSummary(period: UsagePeriod, groupId: PlanId | null, signal: AbortSignal): Promise<Result<UsageSummary>>',
+        description: 'Read historical subscription usage without exposing account credentials.',
+        parameters: [{ name: 'period', description: 'selected reporting period.' }, { name: 'groupId', description: 'plan group to read, or null for the account total.' }, { name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'validated request and token totals for the chosen scope.',
+      },
+      {
+        signature: '@Remote getUsageActivity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>>',
+        description: 'Read the subscription activity calendar independently of historical totals.',
+        parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
+        returns: 'validated daily activity counts for the past year.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watchUsageSpeed(signal: AbortSignal): AsyncIterable<SpeedFrame>',
+        description: 'Stream account generation speed from the same service as the web dashboard.',
+        parameters: [{ name: 'signal', description: 'lifetime of the authenticated speed stream.' }],
+        returns: 'server measurements without private credentials or concurrency data.',
+      },
+      {
         signature: '@Remote getStamina(signal: AbortSignal): Promise<Result<StaminaStatus[]>>',
         description: 'Read stamina only for plans where the server has enrolled this account.',
         parameters: [{ name: 'signal', description: 'cancellation of the owning Client read.' }],
@@ -4475,6 +4529,126 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Reopen only the authenticated user\'s original provider checkout, without another purchase.',
         parameters: [{ name: 'attemptId', description: 'original local purchase attempt identifier.' }, { name: 'trialId', description: 'subscription notice for legacy invoice recovery; absent uses checkout recovery only.' }],
         returns: 'the existing handoff or persisted completion of that same attempt.',
+      },
+      {
+        signature: 'agentBilling(): Promise<Result<AgentBilling>>',
+        description: 'Open the canonical billing operations for the current host login. The capability is Host-only and all of its I/O uses the same login.',
+        parameters: [],
+        returns: 'operations bound to the current authenticated account, or a safe refusal.',
+      },
+      {
+        signature: '@Remote billingOptions(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseRecommendation>>',
+        description: 'Verify the next action for a plan under the current login.',
+        parameters: [{ name: 'plan', description: 'selected catalog plan.' }, { name: 'interval', description: 'selected billing period.' }],
+        returns: 'server-authorized actions for the account.',
+      },
+      {
+        signature: '@Remote quotePurchase(plan: PlanId, interval: BillingInterval): Promise<Result<PurchaseQuote>>',
+        description: 'Prepare a card quote without starting a purchase.',
+        parameters: [{ name: 'plan', description: 'selected catalog plan.' }, { name: 'interval', description: 'selected billing period.' }],
+        returns: 'the amounts and currency to review.',
+      },
+      {
+        signature: '@Remote confirmPurchase(quoteId: BillingQuoteId): Promise<Result<PurchaseProgress>>',
+        description: 'Confirm one reviewed card quote and retain its identity before sending it.',
+        parameters: [{ name: 'quoteId', description: 'identifier of the reviewed Host offer.' }],
+        returns: 'the attempt and any provider handoff.',
+      },
+      {
+        signature: '@Remote retryPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<PurchaseProgress>>',
+        description: 'Retry the identical authorization only when no server attempt is visible.',
+        parameters: [{ name: 'attempt', description: 'exact unresolved operation owned by the signed-in account.' }],
+        returns: 'the reconciliation result or the repeated original request.',
+      },
+      {
+        signature: '@Remote currentPurchase(signal: AbortSignal): Promise<Result<PurchaseProgress | null>>',
+        description: 'Reconcile the account\'s original checkout against the server record.',
+        parameters: [{ name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'the original purchase, or null if no local operation exists.',
+      },
+      {
+        signature: '@Remote resumePurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<string>>',
+        description: 'Open the provider\'s existing session for an eligible original checkout.',
+        parameters: [{ name: 'attempt', description: 'exact attempt owned by the current account.' }],
+        returns: 'a validated provider URL.',
+      },
+      {
+        signature: '@Remote abandonPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<PurchaseProgress>>',
+        description: 'Close the saved provider attempt after the user explicitly requests it.',
+        parameters: [{ name: 'attempt', description: 'exact open card checkout to abandon.' }],
+        returns: 'persisted status after the provider closes the attempt.',
+      },
+      {
+        signature: '@Remote dismissPurchase(attempt: PurchaseProgress[\'id\']): Promise<Result<boolean>>',
+        description: 'Clear a resolved operation after verifying that exact attempt.',
+        parameters: [{ name: 'attempt', description: 'completed or terminal attempt being dismissed.' }],
+        returns: 'whether its durable recovery record was removed.',
+      },
+      {
+        signature: '@Remote quotePlanChange( subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, removeTier: boolean, ): Promise<Result<PlanChangeQuote>>',
+        description: 'Quote an exact change for one owned subscription.',
+        parameters: [{ name: 'subscription', description: 'existing subscription.' }, { name: 'plan', description: 'target plan.' }, { name: 'interval', description: 'target billing period.' }, { name: 'removeTier', description: 'explicit acceptance that the existing add-on is removed.' }],
+        returns: 'amounts, effective date, and the opaque confirmation handle.',
+      },
+      {
+        signature: '@Remote confirmPlanChange(quoteId: BillingQuoteId): Promise<Result<PlanChangeProgress>>',
+        description: 'Confirm only the last reviewed change for the current login.',
+        parameters: [{ name: 'quoteId', description: 'opaque handle of the reviewed change.' }],
+        returns: 'the exact operation, even when acceptance is unconfirmed.',
+      },
+      {
+        signature: '@Remote billingChangeStatus(change: PlanChangeId, signal: AbortSignal): Promise<Result<PlanChangeProgress>>',
+        description: 'Read the status of the exact change previously requested.',
+        parameters: [{ name: 'change', description: 'issued plan-change operation.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'persisted progress and any safe continuation URL.',
+      },
+      {
+        signature: '@Remote currentBillingChange(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>',
+        description: 'Restore a change submitted through this Host, including lost responses.',
+        parameters: [{ name: 'subscription', description: 'exact subscription that was updated.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'persisted progress for the exact submitted operation.',
+      },
+      {
+        signature: '@Remote updateSubscription( subscription: BillingSubscriptionId, action: \'cancel\' | \'reactivate\', locale?: string, ): Promise<Result<SubscriptionLifecycleProgress>>',
+        description: 'Request one lifecycle action and persist its identity before sending it.',
+        parameters: [{ name: 'subscription', description: 'exact subscription to mutate.' }, { name: 'action', description: 'explicit lifecycle action.' }, { name: 'locale', description: 'current presentation locale for cancellation notices.' }],
+        returns: 'immediate progress, including an unconfirmed response.',
+      },
+      {
+        signature: '@Remote currentSubscriptionLifecycle( subscription: BillingSubscriptionId, checkCancellation: boolean, signal: AbortSignal, ): Promise<Result<SubscriptionLifecycleProgress | null>>',
+        description: 'Reconcile the saved lifecycle action against the exact subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription selected in Plans.' }, { name: 'signal', description: 'lifetime of the visible account read.' }, { name: 'checkCancellation', description: 'also refresh a pending cancellation started elsewhere.' }],
+        returns: 'authoritative progress or null if nothing is being reconciled.',
+      },
+      {
+        signature: '@Remote billingInvoices(subscription: BillingSubscriptionId): Promise<Result<SubscriptionInvoice[]>>',
+        description: 'Read invoices scoped to the selected subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription whose invoices are requested.' }],
+        returns: 'display fields and an optional safe invoice link.',
+      },
+      {
+        signature: '@Remote async billingTermsURL(): Promise<Result<string>>',
+        description: 'Open the current published terms for an account that needs to accept them.',
+        parameters: [],
+        returns: 'the official acceptance page for this deployment.',
+      },
+      {
+        signature: '@Remote startBillingCardUpdate( subscription: BillingSubscriptionId, requestId: string, embedded?: boolean, ): Promise<Result<SubscriptionCardUpdate>>',
+        description: 'Start or resume the secure card setup for one subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription whose renewal card will change.' }, { name: 'requestId', description: 'retry identity for this explicit action.' }, { name: 'embedded', description: 'use the isolated native card form.' }],
+        returns: 'the operation and its account-bound Stripe setup.',
+      },
+      {
+        signature: '@Remote currentBillingCardUpdate(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionCardUpdate | null>>',
+        description: 'Read the latest card setup result proved by the server.',
+        parameters: [{ name: 'subscription', description: 'exact subscription selected in Plans.' }, { name: 'signal', description: 'lifetime of the visible account read.' }],
+        returns: 'the operation or null when this subscription has no card update.',
+      },
+      {
+        signature: '@Remote billingPortal(subscription: BillingSubscriptionId): Promise<Result<string>>',
+        description: 'Request the payment portal for one subscription.',
+        parameters: [{ name: 'subscription', description: 'exact subscription to manage.' }],
+        returns: 'a validated provider URL.',
       },
       {
         signature: '@Remote getConnections(): Promise<Result<Connections>>',
@@ -5610,6 +5784,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'request', description: 'pending user-question request.' }],
   },
   {
+    name: 'verboo-account/login-completed',
+    mode: 'emit',
+    signature: '\'verboo-account/login-completed\'(sessionId: AccountSessionId, attemptId: SignInAttemptId, startedAt: number, completedAt: number): void',
+    summary: 'A local OAuth grant was committed; the opaque session ID stays in the Host.',
+    description: 'A local OAuth grant was committed; the opaque session ID stays in the Host.',
+    parameters: [{ name: 'sessionId', description: 'local login identity.' }, { name: 'attemptId', description: 'local attempt identity.' }, { name: 'startedAt', description: 'UTC timestamp when the user started OAuth, in milliseconds.' }, { name: 'completedAt', description: 'UTC timestamp in milliseconds.' }],
+  },
+  {
+    name: 'verboo-account/login-started',
+    mode: 'emit',
+    signature: '\'verboo-account/login-started\'(attemptId: SignInAttemptId): void',
+    summary: 'A new local OAuth attempt is starting.',
+    description: 'A new local OAuth attempt is starting.',
+    parameters: [{ name: 'attemptId', description: 'opaque local attempt identity.' }],
+  },
+  {
     name: 'web/providers-changed',
     mode: 'emit',
     signature: '\'web/providers-changed\'(): void',
@@ -5788,6 +5978,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Agent',
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
+  },
+  {
+    name: 'AgentBilling',
+    declaration: 'export interface AgentBilling {\n    isCurrent(): Promise<boolean>;\n    watchOwner(signal: AbortSignal): Promise<boolean>;\n    plans(signal: AbortSignal): Promise<Result<Plans>>;\n    quoteChange(subscription: BillingSubscriptionId, plan: PlanId, interval: BillingInterval, signal: AbortSignal): Promise<Result<PreparedAgentPlanChange>>;\n    cancel(reviewed: Subscription, locale: string | undefined, signal: AbortSignal): Promise<Result<SubscriptionLifecycleProgress>>;\n    changeStatus(subscription: Subscription, operation: PlanChangeId | undefined, signal: AbortSignal): Promise<Result<PlanChangeProgress | null>>;\n    cancellationStatus(subscription: BillingSubscriptionId, signal: AbortSignal): Promise<Result<SubscriptionLifecycleProgress | null>>;\n}',
   },
   {
     name: 'AgentCancelCause',
@@ -6040,6 +6234,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BillingInterval',
+    declaration: 'export type BillingInterval = \'month\' | \'year\';',
+  },
+  {
+    name: 'BillingQuoteId',
+    declaration: 'export type BillingQuoteId = Branded<\'BillingQuoteId\'>;',
+  },
+  {
+    name: 'BillingSubscriptionId',
+    declaration: 'export type BillingSubscriptionId = Branded<\'BillingSubscriptionId\'>;',
   },
   {
     name: 'BindingOrigin',
@@ -6642,6 +6848,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EmbeddedCardSetup',
+    declaration: 'export interface EmbeddedCardSetup {\n    url: string;\n    clientSecret: string;\n    publishableKey: string;\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -6668,6 +6878,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EveryScheduleRecord',
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'ExitActivity',
+    declaration: 'export type ExitActivity = \'idle\' | \'busy\' | \'unknown\';',
+  },
+  {
+    name: 'ExitAdmission',
+    declaration: 'export class ExitAdmission {\n    get isFrozen(): boolean;\n    get isFinalized(): boolean;\n    onReopen(listener: () => void): () => void;\n    registerRequired(name: \'agents\' | \'jobs\' | \'schedule\', read: () => ExitActivity): () => void;\n    registerOptional(read: () => ExitActivity): () => void;\n    assertAdmission(): void;\n    begin(): () => void;\n    tryReserve(): ExitReservation;\n    commit(id: number): boolean;\n    cancel(id: number): void;\n    finalize(id: number, shutdown: () => void): boolean;\n}',
+  },
+  {
+    name: 'ExitReservation',
+    declaration: 'export type ExitReservation = {\n    readonly kind: \'reserved\';\n    readonly id: number;\n} | {\n    readonly kind: \'busy\' | \'unknown\';\n};',
   },
   {
     name: 'FeedbackCategory',
@@ -7834,6 +8056,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Plan {\n    id: PlanId;\n    name: string;\n    slug?: string;\n    description: string;\n    priceCents: number;\n    currency: string;\n    interval: string;\n}',
   },
   {
+    name: 'PlanChangeId',
+    declaration: 'export type PlanChangeId = Branded<\'PlanChangeId\'>;',
+  },
+  {
+    name: 'PlanChangeProgress',
+    declaration: 'export interface PlanChangeProgress {\n    id: PlanChangeId;\n    status: string;\n    effectiveAt: string | null;\n    url: string | null;\n}',
+  },
+  {
+    name: 'PlanChangeQuote',
+    declaration: 'export interface PlanChangeQuote {\n    id: BillingQuoteId;\n    subscriptionId: BillingSubscriptionId;\n    targetPlanId: PlanId;\n    interval: BillingInterval;\n    currency: string;\n    amountDueNowCents: number;\n    creditNowCents: number;\n    nextRenewalAmountCents: number;\n    nextRenewalAt: string;\n    effectiveAt: string;\n    expiresAt: string;\n    undoesCancellation: boolean;\n    removesConcurrencyTier: boolean;\n    pixMandateAmountCents?: number;\n}',
+  },
+  {
     name: 'PlanId',
     declaration: 'export type PlanId = Branded<\'VerbooPlanId\'>;',
   },
@@ -7958,6 +8192,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'PreparedAgentPlanChange',
+    declaration: 'export interface PreparedAgentPlanChange {\n    readonly quote: PlanChangeQuote;\n    confirm(signal: AbortSignal): Promise<Result<{\n        progress: PlanChangeProgress;\n        submitted: boolean;\n    }>>;\n}',
+  },
+  {
     name: 'PreparedDeepSeekLlmApiExtension',
     declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
   },
@@ -8006,8 +8244,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PrincipalMap {\n    owner: {\n        readonly kind: \'owner\';\n    };\n}',
   },
   {
+    name: 'ProductAnalyticsStatus',
+    declaration: 'export interface ProductAnalyticsStatus {\n    consent: ProductConsent | null;\n    pending: number;\n    lost: number;\n    failure: \'none\' | \'unavailable\' | \'storage\' | \'rejected\';\n}',
+  },
+  {
+    name: 'ProductAnalyticsSubject',
+    declaration: 'export type ProductAnalyticsSubject = Branded<\'ProductAnalyticsSubject\'>;',
+  },
+  {
+    name: 'ProductConsent',
+    declaration: 'export interface ProductConsent {\n    subjectId: ProductAnalyticsSubject;\n    decision: ProductDecision;\n    revision: number;\n    policyVersion: 1;\n    decidedAt: string;\n    expiresAt: string;\n    enabled: boolean;\n    referenceProof?: string | undefined;\n}',
+  },
+  {
+    name: 'ProductConsentResult',
+    declaration: 'export type ProductConsentResult = {\n    ok: true;\n    status: ProductAnalyticsStatus;\n} | {\n    ok: false;\n    code: \'unavailable\' | \'storage\' | \'account_changed\';\n};',
+  },
+  {
+    name: 'ProductDecision',
+    declaration: 'export type ProductDecision = \'unknown\' | \'granted\' | \'denied\';',
+  },
+  {
     name: 'ProductError',
-    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'request_failed\' | \'quote_changed\' | \'contract_error\';',
+    declaration: 'export type ProductError = \'signed_out\' | \'account_changed\' | \'unavailable\' | \'not_found\' | \'terms_required\' | \'request_failed\' | \'quote_changed\' | \'checkout_rejected\' | \'contract_error\';',
   },
   {
     name: 'ProductEvent',
@@ -8016,6 +8274,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProductEventMap',
     declaration: 'export interface ProductEventMap {\n    desktop_app_launch: Record<string, never>;\n    auth_page_view: Record<string, never>;\n    auth_page_click: {\n        button_name: \'sign_in\' | \'api-key\';\n    };\n    api_key_save_click: Record<string, never>;\n    onboarding_page_view: {\n        page_name: OnboardingPage;\n    };\n    onboarding_page_click: {\n        page_name: OnboardingPage;\n        button_name: \'next\' | \'back\' | \'skip\' | \'charge\' | \'later\' | \'continue\';\n        selected_content?: \'office\' | \'code\' | \'code_office\' | \'focus_result\' | \'key_detail\' | \'full_process\';\n    };\n    onboarding_popup_view: {\n        popup_name: \'skip_charge\' | \'skip_setting\';\n    };\n    onboarding_popup_click: {\n        popup_name: \'skip_charge\' | \'skip_setting\';\n        button_name: \'charge\' | \'know\' | \'enter\' | \'setting\' | \'close\';\n    };\n    desktop_upgrade_click: Record<string, never>;\n    desktop_upgrade_download_result: {\n        is_success: boolean;\n        error_reason?: string;\n    };\n    desktop_upgrade_install_restart_click: Record<string, never>;\n    send_button_click: {\n        session_id?: SessionId;\n        model_name?: string;\n        thinking_effort?: string;\n        run_mode: \'plan\' | \'goal\' | \'default\';\n        msg_type: \'default\' | \'steer\' | \'queue\';\n        is_new_session: boolean;\n        agent_preset?: AnalyticsPreset | \'other\';\n    };\n    model_switch: {\n        session_id?: SessionId;\n        switch_from: string;\n        switch_to: string;\n    };\n    thinking_level_switch: {\n /* …truncated — full shape in source */',
+  },
+  {
+    name: 'ProductFeature',
+    declaration: 'export type ProductFeature = \'conversation\' | \'model_switch\' | \'tool\' | \'browser\' | \'mcp\' | \'plan\' | \'goal\' | \'checkout\' | \'pane_split_right\' | \'pane_split_down\' | \'stop_button\' | \'project_add\' | \'message_enter\' | \'message_button\' | \'message_queue_enter\' | \'message_queue_button\' | \'message_steer_enter\' | \'message_steer_button\' | \'preference_busy_queue\' | \'preference_busy_steer\' | \'model_choice\' | \'queue_steer_button\' | \'preference_coding_tools_on\' | \'preference_coding_tools_off\' | \'preference_preset_cordis\' | \'preference_preset_ptc\' | \'preference_preset_minimal\' | \'preference_preset_standard\' | \'preference_preset_other\' | \'preference_theme_light\' | \'preference_theme_dark\' | \'preference_theme_system\' | \'preference_minimalist_on\' | \'preference_minimalist_off\' | \'preference_language_en\' | \'preference_language_pt\' | \'preference_language_zh\' | \'preference_language_ja\' | \'preference_language_es\' | \'preference_language_fr\' | \'preference_language_de\' | \'preference_language_ru\' | \'preference_language_other\' | \'desktop_update_download\' | \'desktop_update_install\' | \'desktop_update_error\' | \'desktop_response_error\' | \'desktop_connection_recovered\' | \'desktop_first_use_guide\' | \'desktop_first_use_task\' | \'desktop_first_use_step_project\' | \'desktop_first_use_step_model\' | \'desktop_first_use_step_message\' | \'desktop_first_use_step_split\' | \'desktop_first_use_step_tools\' | \'desktop_first_use_step_connections\' | \'desktop_first_use_step_back\' | \'terminal_open\' | \'files_open\' | \'document_open\'  /* …truncated — full shape in source */',
+  },
+  {
+    name: 'ProductModelDetails',
+    declaration: 'export interface ProductModelDetails {\n    provider: \'verboo\' | \'openai\' | \'deepseek\' | \'other\';\n    model: string;\n    effort: \'default\' | \'off\' | \'minimal\' | \'low\' | \'medium\' | \'high\' | \'xhigh\' | \'max\' | \'ultra\' | \'other\';\n}',
   },
   {
     name: 'ProductTelemetryRecord',
@@ -8156,6 +8422,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PtcRunSpec',
     declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number | null;\n}',
+  },
+  {
+    name: 'PurchaseAttemptId',
+    declaration: 'export type PurchaseAttemptId = Branded<\'PurchaseAttemptId\'>;',
+  },
+  {
+    name: 'PurchaseProgress',
+    declaration: 'export interface PurchaseProgress {\n    id: PurchaseAttemptId;\n    planId: PlanId;\n    interval: BillingInterval;\n    status: \'unconfirmed\' | \'pending\' | \'requires_action\' | \'succeeded\' | \'failed\' | \'expired\' | \'review\' | \'reactivated\' | \'abandoned\';\n    url: string | null;\n    canRetry?: boolean;\n    canAbandon?: boolean;\n    closedUnstarted?: boolean;\n    declined?: boolean;\n}',
+  },
+  {
+    name: 'PurchaseQuote',
+    declaration: 'export interface PurchaseQuote {\n    id: BillingQuoteId;\n    planId: PlanId;\n    interval: BillingInterval;\n    initialAmountMinor: number;\n    renewalAmountMinor: number;\n    currency: string;\n    expiresAt: string;\n}',
+  },
+  {
+    name: 'PurchaseRecommendation',
+    declaration: 'export interface PurchaseRecommendation {\n    action: \'checkout\' | \'choose\' | \'change\' | \'manage\' | \'convert\' | \'resume\' | \'recover\' | \'support\';\n    subscriptions: {\n        subscriptionId: BillingSubscriptionId;\n        action: PurchaseRecommendation[\'action\'];\n        attemptId?: PurchaseAttemptId;\n    }[];\n}',
   },
   {
     name: 'QueueAction',
@@ -9502,6 +9784,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpeechSpec extends SpeechInput {\n    readonly provider: SpeechProvider;\n}',
   },
   {
+    name: 'SpeedFrame',
+    declaration: 'export interface SpeedFrame {\n    at: string;\n    stale: boolean;\n    measurement: SpeedMeasurement | null;\n}',
+  },
+  {
+    name: 'SpeedMeasurement',
+    declaration: 'export interface SpeedMeasurement {\n    value: number;\n    quality: \'measured\' | \'estimated\';\n    partial: boolean;\n    at: string;\n    previous: boolean;\n}',
+  },
+  {
     name: 'SpillLocator',
     declaration: 'export type SpillLocator = Branded<\'SpillLocator\'>;',
   },
@@ -9711,15 +10001,35 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Subscription',
-    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
+    declaration: 'export interface Subscription {\n    id: string;\n    planId: PlanId;\n    name: string;\n    slug?: string;\n    status: string;\n    renewsAt: string | null;\n    cancelAtEnd: boolean;\n    canUpgrade: boolean;\n    permissions?: SubscriptionPermissions;\n    activeChangeId?: PlanChangeId;\n    canRemoveTier?: boolean;\n    cancellation?: SubscriptionCancellation;\n    billing: {\n        amountMinor: number;\n        currency: string;\n        interval: string;\n    } | null;\n}',
   },
   {
     name: 'SubscriptionAdditionalLimit',
     declaration: 'export interface SubscriptionAdditionalLimit extends SubscriptionLimitWindow {\n    readonly id: string;\n}',
   },
   {
+    name: 'SubscriptionCancellation',
+    declaration: 'export interface SubscriptionCancellation {\n    collectionStatus: string;\n    localStatus: string;\n    accessUntil: string | null;\n    operationId?: string | undefined;\n}',
+  },
+  {
+    name: 'SubscriptionCardUpdate',
+    declaration: 'export interface SubscriptionCardUpdate {\n    id: string;\n    status: \'pending\' | \'confirmed\' | \'failed\' | \'expired\';\n    url: string | null;\n    embedded?: EmbeddedCardSetup;\n}',
+  },
+  {
+    name: 'SubscriptionInvoice',
+    declaration: 'export interface SubscriptionInvoice {\n    id: string;\n    number: string;\n    created: string;\n    amountDue: number;\n    amountPaid: number;\n    currency: string;\n    status: string;\n    url: string | null;\n}',
+  },
+  {
+    name: 'SubscriptionLifecycleProgress',
+    declaration: 'export interface SubscriptionLifecycleProgress {\n    action: \'cancel\' | \'reactivate\';\n    status: \'unconfirmed\' | \'pending\' | \'confirmed\' | \'reconciliation_required\';\n    cancellation: SubscriptionCancellation | null;\n}',
+  },
+  {
     name: 'SubscriptionLimitWindow',
     declaration: 'export interface SubscriptionLimitWindow {\n    readonly usedPercent: number;\n    readonly windowSeconds?: number;\n    readonly resetAfterSeconds?: number;\n    readonly reachedType?: string;\n}',
+  },
+  {
+    name: 'SubscriptionPermissions',
+    declaration: 'export interface SubscriptionPermissions {\n    cancel: boolean;\n    reactivate: boolean;\n    invoices: boolean;\n    paymentMethod: boolean;\n    cardUpdate?: boolean;\n}',
   },
   {
     name: 'SubscriptionUsage',
@@ -10336,6 +10646,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: SessionId;\n}',
+  },
+  {
+    name: 'UsageActivityDay',
+    declaration: 'export interface UsageActivityDay {\n    date: string;\n    count: number;\n}',
+  },
+  {
+    name: 'UsageBucket',
+    declaration: 'export interface UsageBucket {\n    bucket: string;\n    reqCount: number;\n    tokensIn: number;\n    tokensOut: number;\n    cachedTokens: number;\n}',
+  },
+  {
+    name: 'UsagePeriod',
+    declaration: 'export type UsagePeriod = \'24h\' | \'7d\' | \'30d\' | \'current_month\' | \'previous_month\';',
+  },
+  {
+    name: 'UsageSummary',
+    declaration: 'export interface UsageSummary {\n    timezone: string;\n    bucket: \'minute\' | \'hour\' | \'day\';\n    reqTotal: number;\n    tokensInTotal: number;\n    tokensOutTotal: number;\n    cachedTokens: number;\n    buckets: UsageBucket[];\n}',
   },
   {
     name: 'UserMessage',

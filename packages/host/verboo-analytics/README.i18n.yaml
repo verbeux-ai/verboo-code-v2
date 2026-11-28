@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/host/verboo-analytics/README.md
+/:
+  en: c10ba1265b03ae0e
+  zh: 0cd338061de244ee
+/deepseek-ai-dsh-host-verboo-analytics:
+  en: 8f09f38318acf401
+  zh: 7b1026aed34bba54
+/deepseek-ai-dsh-host-verboo-analytics/summary:
+  en: bb975a2976392de5
+  zh: 4b002ea14881e7fd
+/deepseek-ai-dsh-host-verboo-analytics/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 10b48a104003e11b
+/deepseek-ai-dsh-host-verboo-analytics/use-this-package:
+  en: ba5bb325097fcc07
+  zh: 70858aa60689322b
+/deepseek-ai-dsh-host-verboo-analytics/use-this-package/when-to-choose-it:
+  en: dd58a91204c34e92
+  zh: 6e32f65612d48704
+/deepseek-ai-dsh-host-verboo-analytics/use-this-package/minimal-configuration:
+  en: ec9b50e572c40221
+  zh: a6ca44967c35bb3a
+/deepseek-ai-dsh-host-verboo-analytics/understand-the-implementation:
+  en: 6e507d425b42e290
+  zh: 2585255eabe2240f
+/deepseek-ai-dsh-host-verboo-analytics/further-exploration:
+  en: 8b6cbfc555be36e0
+  zh: ab7d700f3918afee
+/deepseek-ai-dsh-host-verboo-analytics/model-experience:
+  en: 90a66eeba0912e9f
+  zh: 56cfcb456facb96d
+/deepseek-ai-dsh-host-verboo-analytics/model-experience/kv-cache-effect:
+  en: b287f8e34f3634d1
+  zh: 7308b3a16edd805c
+/deepseek-ai-dsh-host-verboo-analytics/known-limitations-and-deferred-work:
+  en: acce08a286845feb
+  zh: 2adddc2d04dc8067
+/deepseek-ai-dsh-host-verboo-analytics/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

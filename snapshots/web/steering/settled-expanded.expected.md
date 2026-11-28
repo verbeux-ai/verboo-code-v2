@@ -11,7 +11,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [disabled]
-- button "Asked questions" [expanded]
+- button "1 action" [expanded]
 - button "Ask question 1/1 answered"
 - group "Questions and answers":
   - term: Checkpoint Ready to continue?

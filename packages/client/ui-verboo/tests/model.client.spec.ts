@@ -211,8 +211,29 @@ describe('account-bound product presenter', () => {
     expect(model.state.getSnapshot()).toMatchObject({
       plans: emptyPlans,
       plansFailed: true,
+      plansFailureReason: 'request_failed',
       loadingPlans: false,
     })
+  })
+  it('retains connection data and clears the safe failure reason after retry', async () => {
+    const { api, model } = fixture()
+    await model.loadConnections()
+    api.connections = vi.fn(async () => ({ ok: false as const, code: 'signed_out' as const }))
+    await model.loadConnections()
+    expect(model.state.getSnapshot()).toMatchObject({
+      connections: emptyConnections,
+      connectionsFailed: true,
+      connectionsFailureReason: 'signed_out',
+    })
+    api.connections = vi.fn(async () => ({ ok: true as const, data: emptyConnections }))
+    await model.loadConnections()
+    expect(model.state.getSnapshot()).toMatchObject({ connectionsFailed: false, connectionsFailureReason: undefined })
+  })
+  it('does not expose an exception as a cause for a failed plans read', async () => {
+    const { api, model } = fixture()
+    api.plans = vi.fn(async () => { throw new Error('private diagnostic') })
+    await model.loadPlans()
+    expect(model.state.getSnapshot()).toMatchObject({ plansFailed: true, plansFailureReason: 'unexpected' })
   })
   it('does not overwrite a newly signed-in account with a late sign-out reply', async () => {
     const { api, model } = fixture()

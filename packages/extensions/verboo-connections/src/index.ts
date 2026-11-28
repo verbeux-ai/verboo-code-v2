@@ -6,18 +6,30 @@ import Schema from '@deepseek-ai/schemastery'
 import * as Tools from './tools.ts'
 export const name = 'verboo-connections'
 export const inject = ['agents', 'verbooProduct']
-/** Bounded execution time for a connected service tool. */
+/** Bounded execution time for a connected service tool and its discovery surface. */
 export interface Config {
   /** Maximum duration in milliseconds of one connected service tool execution. */
   timeoutMs: number
+  /** Most provider tools one search makes callable. */
+  discoveryMaxTools: number
+  /** Most connections one search queries. */
+  discoveryMaxTargets: number
+  /** Largest argument schema, in bytes, declared to the model. */
+  discoveryMaxSchemaBytes: number
+  /** Longest tool description declared to the model. */
+  discoveryMaxDescriptionChars: number
 }
 export const Config = Schema.object({
-  timeoutMs: Schema.number().min(1000).max(120000).default(45000),
+  timeoutMs: Schema.number().min(1000).max(120000).default(120000),
+  discoveryMaxTools: Schema.number().min(1).max(40).default(12),
+  discoveryMaxTargets: Schema.number().min(1).max(24).default(8),
+  discoveryMaxSchemaBytes: Schema.number().min(512).max(65536).default(20000),
+  discoveryMaxDescriptionChars: Schema.number().min(80).max(2000).default(400),
 })
 /**
  * Own each tool contribution until its Agent or this extension is disposed.
  * @param ctx - product Host.
- * @param config - validated tool budget.
+ * @param config - validated tool and discovery budgets.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const mounted = new Map<Agent, ReturnType<Context['plugin']>>()

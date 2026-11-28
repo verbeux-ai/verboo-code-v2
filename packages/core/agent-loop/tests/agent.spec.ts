@@ -48,6 +48,7 @@ describe('Agent', () => {
 
     expect(agent.session.snapshotEvents().map(event => event.type)).toEqual(['agent/inbox/spliced'])
     expect(agent.status).toBe('idle')
+    expect(agent.exitActivity).toBe('idle')
     expect(adapter.requests).toHaveLength(0)
     await agent.whenIdle()
   })

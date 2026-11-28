@@ -168,6 +168,7 @@ describe('Remote event Host source', () => {
     const stream = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const cases: readonly (readonly [string, readonly unknown[], string])[] = [
       ['api-session/activity', ['s-activity', 1], 's-activity'],
+      ['api-session/turn-completed', ['s-completed'], 's-completed'],
       ['api-session/added', [{ sessionId: 's-added' }], 's-added'],
       ['api-session/error', ['s-error', 'boom'], 's-error'],
       ['api-session/removed', ['s-removed'], 's-removed'],

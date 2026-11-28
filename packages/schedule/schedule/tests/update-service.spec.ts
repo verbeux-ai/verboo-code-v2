@@ -36,6 +36,21 @@ async function setup() {
     fail: (error?: Error) => { failure = error }, writes: () => writes }
 }
 
+it('rejects an edit without writing when exit admission fails', async () => {
+  const test = await setup()
+  const writesBefore = test.writes()
+  const error = new Error('shutting down')
+  const begin = vi.spyOn(test.ctx.agents.exitAdmission, 'begin')
+  begin.mockImplementationOnce(() => { throw error })
+  const request = { id: test.created.id, action: 'update', patch: { title: 'Lost' } } as const
+  await expect(test.service.edit(request)).rejects.toBe(error)
+  const cause = 'unexpected admission failure'
+  begin.mockImplementationOnce(() => { throw cause })
+  await expect(test.service.edit(request)).rejects.toMatchObject({ message: 'Schedule admission failed', cause })
+  expect(test.writes()).toBe(writesBefore)
+  expect(await test.service.view({ id: test.created.id })).toEqual(test.created)
+})
+
 it('commits name, prompt, timing, and target in one write without changing receipts', async () => {
   const test = await setup()
   const before = test.writes()

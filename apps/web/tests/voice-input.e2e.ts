@@ -261,8 +261,8 @@ it.skipIf(webSnapshotMode() === 'record')('guides voice setup, records from stan
   }
   await input.hover()
   expect(await meter.isVisible()).toBe(false)
-  expect(await stop.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(controlBackground)
-  expect(await page.getByRole('button', { name: 'Cancel', exact: true })
+  await expect.poll(() => stop.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(controlBackground)
+  await expect.poll(() => page.getByRole('button', { name: 'Cancel', exact: true })
     .evaluate(element => getComputedStyle(element).backgroundColor)).toBe(controlBackground)
   await page.keyboard.press('Escape')
   await mic.waitFor()

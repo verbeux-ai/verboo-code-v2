@@ -8,6 +8,8 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/verboo-first-use-tour.e2e.ts",
+    "apps/web/tests/verboo-product-analytics.e2e.ts",
     "apps/web/tests/verboo-trial.e2e.ts",
     "apps/web/tests/verboo-stamina.e2e.ts",
     "apps/web/tests/verboo-connections.e2e.ts",
@@ -279,6 +281,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "./packages/host/verboo-analytics" },
     { "path": "./packages/bundle/verboo-app" },
     { "path": "./packages/extensions/verboo-connections" },
     { "path": "./packages/api/verboo-mcp" },

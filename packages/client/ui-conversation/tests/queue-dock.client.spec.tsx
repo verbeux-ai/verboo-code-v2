@@ -569,17 +569,34 @@ describe('QueueDock', () => {
     expect(group?.children[1]?.tagName).toBe('IMG')
   })
 
-  it('keeps the empty thumbnail placeholder when the image read fails', async () => {
-    const loadImage = vi.fn(() => Promise.reject(new Error('read denied')))
+  it('lets a failed queued-image preview be retried without changing the message', async () => {
+    const loadImage = vi.fn().mockRejectedValueOnce(new Error('read denied')).mockResolvedValueOnce('blob:recovered')
     const snap = snapshotWith([imageRow('i-broken', 'att-x')])
     const source = liveSession(snap)
-    const { container } = render(
-      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
+    const props = kitFor(snap, { loadImage })
+    const view = render(
+      <QueueDock {...props} useSession={source.useSession} useProjection={source.useProjection} />,
     )
+    const retry = await view.findByRole('button', { name: '无法加载图片预览。点击重试' })
+    fireEvent.click(retry)
+    await waitFor(() => { expect(view.getByRole('img', { name: '排队消息图片' }).getAttribute('src')).toBe('blob:recovered') })
+    expect(loadImage).toHaveBeenCalledTimes(2)
+    expect(props.updateQueue).not.toHaveBeenCalled()
+  })
 
-    await act(async () => { await Promise.resolve() })
-    expect(loadImage).toHaveBeenCalled()
-    expect(container.querySelector('img')).toBeNull()
+  it('retries a failed local queued-image preview without changing its submission', () => {
+    const pending = {
+      ...snapshotWith([]),
+      pendingSubmissions: [{ requestId: 'image-retry' as never, placement: 'queued' as const, time: 1,
+        text: 'queued', attachments: [{ type: 'image' as const, value: { previewUrl: 'blob:preview', name: 'image.png' } }] }],
+    }
+    const source = liveSession(pending)
+    const props = kitFor(pending)
+    const view = render(<QueueDock {...props} useSession={source.useSession} useProjection={source.useProjection} />)
+    fireEvent.error(view.getByRole('img', { name: '排队消息图片' }))
+    fireEvent.click(view.getByRole('button', { name: '无法加载图片预览。点击重试' }))
+    expect(view.getByRole('img', { name: '排队消息图片' }).getAttribute('src')).toBe('blob:preview')
+    expect(props.updateQueue).not.toHaveBeenCalled()
   })
 
   it('ignores a thumbnail resolution landing after unmount', async () => {
@@ -794,5 +811,26 @@ describe('QueueDock', () => {
       expect.objectContaining({ name: 'conversation.input.dock', id: 'queue', order: 20 }),
       QueueDock,
     )
+  })
+
+  it('reports only the queued-message steer button before forwarding its action', async () => {
+    const updateQueue = vi.fn(async () => {})
+    const reportControlClick = vi.fn()
+    const scope = { get: () => ({ updateQueue, input: { for: () => ({ notify: vi.fn() }) } }) }
+    let injection: ((sessionId: SessionId) => QueueDockInjected) | undefined
+    const register = (entry: { inject?: (sessionId: SessionId) => QueueDockInjected }) => {
+      injection = entry.inject
+      return () => undefined
+    }
+    queueDockEntry.apply({
+      slots: { inject: (_name: string, registerEntry: () => () => void) => registerEntry(), register },
+      sessions: { scope: () => scope }, uiConversation: { reportControlClick },
+    } as never)
+    if (injection === undefined) throw new Error('queue registration did not expose its injection')
+    const controls = injection('session-root' as SessionId)
+    await controls.updateQueue(iid('item'), { kind: 'steer' })
+    await controls.updateQueue(iid('item'), { kind: 'remove' })
+    expect(reportControlClick).toHaveBeenCalledExactlyOnceWith('session-root', 'queue_steer_button')
+    expect(updateQueue).toHaveBeenCalledTimes(2)
   })
 })

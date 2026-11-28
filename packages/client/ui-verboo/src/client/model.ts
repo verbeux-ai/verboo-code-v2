@@ -10,6 +10,7 @@ import type {
   ConnectionId,
   Plans,
   PlanId,
+  ProductError,
   Result,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type {
@@ -43,6 +44,10 @@ export interface ProductSnapshot {
   connections: Connections | null
   plansFailed: boolean
   connectionsFailed: boolean
+  /** Safe category for the latest failed plans read, when known. */
+  plansFailureReason?: ProductError | 'unexpected' | undefined
+  /** Safe category for the latest failed connections read, when known. */
+  connectionsFailureReason?: ProductError | 'unexpected' | undefined
   loadingPlans: boolean
   loadingConnections: boolean
   busy: string | null
@@ -317,6 +322,8 @@ export class ProductModel {
           accountFailed: false,
           plansFailed: false,
           connectionsFailed: false,
+          plansFailureReason: undefined,
+          connectionsFailureReason: undefined,
           busy: null,
           handoff: null,
           connectedTarget: null,
@@ -491,7 +498,7 @@ export class ProductModel {
   loadPlans(): Promise<void> {
     if (this.planRequest) return this.planRequest
     const generation = this.generation
-    this.patch({ loadingPlans: true, plansFailed: false })
+    this.patch({ loadingPlans: true, plansFailed: false, plansFailureReason: undefined })
     const task = (async () => {
       try {
         const result = await this.api.plans()
@@ -506,10 +513,10 @@ export class ProductModel {
             loadingPlans: false,
             ...(changed ? { handoff: null } : {}),
           })
-        } else this.patch({ plansFailed: true, loadingPlans: false })
+        } else this.patch({ plansFailed: true, loadingPlans: false, plansFailureReason: result.code })
       } catch (_error) {
         if (generation === this.generation)
-          this.patch({ plansFailed: true, loadingPlans: false })
+          this.patch({ plansFailed: true, loadingPlans: false, plansFailureReason: 'unexpected' })
       }
     })().finally(() => {
       if (this.planRequest === task) this.planRequest = undefined
@@ -524,7 +531,7 @@ export class ProductModel {
   loadConnections(): Promise<void> {
     if (this.connectionRequest) return this.connectionRequest
     const generation = this.generation
-    this.patch({ loadingConnections: true, connectionsFailed: false })
+    this.patch({ loadingConnections: true, connectionsFailed: false, connectionsFailureReason: undefined })
     const task = (async () => {
       try {
         const result = await this.api.connections()
@@ -564,10 +571,10 @@ export class ProductModel {
               : {}),
           })
         } else
-          this.patch({ connectionsFailed: true, loadingConnections: false })
+          this.patch({ connectionsFailed: true, loadingConnections: false, connectionsFailureReason: result.code })
       } catch (_error) {
         if (generation === this.generation)
-          this.patch({ connectionsFailed: true, loadingConnections: false })
+          this.patch({ connectionsFailed: true, loadingConnections: false, connectionsFailureReason: 'unexpected' })
       }
     })().finally(() => {
       if (this.connectionRequest === task) this.connectionRequest = undefined

@@ -24,7 +24,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, openSettings, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -606,16 +606,12 @@ describe('web e2e: long Chat scroll contract', () => {
         const { page } = world
         await page.setViewportSize({ width: 1280, height: 720 })
         await page.emulateMedia({ reducedMotion: scenario.reduced ? 'reduce' : 'no-preference' })
+        // Settings no longer offers the presentation, so this suite seeds the
+        // detailed mode whose flat rows it measures.
+        await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed', collapseTiming: 'next-input' })
         await openSeed(page, fixture, bodyMarker)
-        await openSettings(page, 'en')
-        const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-        const timing = dialog.getByText('When to Collapse Work Details', { exact: true }).locator('../..')
-        await timing.getByRole('button').click()
-        await page.getByRole('menuitem', { name: 'On next message', exact: true }).click()
-        const details = dialog.getByText('Work details', { exact: true }).locator('../..')
-        await details.getByRole('button').click()
-        await page.getByRole('menuitem', { name: 'Detailed', exact: true }).click()
-        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
+          .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'next-input' })
         const thoughts = page.locator('[data-chat-turn="8"] [data-variant="think"]')
         await expect.poll(() => thoughts.count()).toBe(6)
         for (let index = 0; index < 6; index++) {
@@ -630,10 +626,11 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(page)
         if (scenario.name === 'visible-steps' || scenario.name === 'large-input') {
           const offset = 20
+          // Position on the last step itself: a Turn now holds one process group, so
+          // the group's top is no longer the last step's row.
           await thoughts.last().getByRole('button').first().evaluate((button, offset) => {
             const host = button.closest<HTMLElement>('[data-conversation-scroll]')!
-            const group = button.closest<HTMLElement>('[data-chat-group-key]')!
-            host.scrollTop += group.getBoundingClientRect().top - host.getBoundingClientRect().top - offset
+            host.scrollTop += button.getBoundingClientRect().top - host.getBoundingClientRect().top - offset
             host.dispatchEvent(new Event('scroll'))
           }, offset)
           await nextPaint(page)
@@ -664,12 +661,6 @@ describe('web e2e: long Chat scroll contract', () => {
         expect(before.groupHeight).toBeGreaterThan(before.visibleHeight * 3)
         if (scenario.bodyParagraphs === 32) expect(before.visibleSteps).toBe(0)
         else expect(before.visibleSteps).toBeGreaterThan(0)
-        if (scenario.name === 'cancel-all-during-fold') {
-          await openSettings(page, 'en')
-          const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
-          await settings.getByText('Work details', { exact: true }).locator('../..').getByRole('button').click()
-          await page.getByRole('menuitem', { name: 'Verbose', exact: true }).waitFor()
-        }
         const release = holdTextAfter(world, 0)
         const finishGate = Promise.withResolvers<undefined>()
         const finishBlocked = Promise.withResolvers<undefined>()
@@ -721,12 +712,9 @@ describe('web e2e: long Chat scroll contract', () => {
             if (closing.length > 0) closingHeight ??= height
             if (!raceApplied && closingHeight !== undefined && height > 0 && height < closingHeight - 1) {
               if (race === 'cancel-all-during-fold') {
-                const verbose = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-                  .find(element => element.textContent?.trim() === 'Verbose')
-                if (verbose !== undefined) {
-                  raceApplied = true
-                  verbose.click()
-                }
+                // Only mark the frame here: the presentation write belongs to the
+                // Node side, which the page cannot reach from inside evaluate.
+                raceApplied = true
               } else if (race === 'content-growth-during-fold') {
                 // Controlled layout growth exercises ResizeObserver overlap, not Session-event delivery.
                 raceApplied = true
@@ -772,6 +760,11 @@ describe('web e2e: long Chat scroll contract', () => {
                   await page.clock.runFor(16)
                   return page.locator('[data-fold-race-applied]').count()
                 }, { timeout: 10_000 }).toBe(1)
+                // Cancelling needs the never-folding presentation; Settings no
+                // longer offers it, so the suite writes the value itself.
+                if (scenario.name === 'cancel-all-during-fold') {
+                  await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'verbose' })
+                }
               }
               await expect.poll(async () => {
                 await page.clock.runFor(16)
@@ -868,9 +861,8 @@ describe('web e2e: long Chat scroll contract', () => {
           expect(samples.some(sample => sample.raceApplied)).toBe(true)
           expect(last.folding).toBe(false)
           expect(last.spacer).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
-          expect(await page.getByRole('dialog', { name: 'Settings', exact: true })
-            .getByText('Work details', { exact: true }).locator('../..')
-            .getByRole('button', { name: 'Verbose', exact: true }).count()).toBe(1)
+          // The race writes the mode directly, so no Settings dialog is involved.
+          expect(await page.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
           expect(await page.locator('[data-input-fold]').count()).toBe(0)
           assertClean(world)
           return
@@ -916,79 +908,6 @@ describe('web e2e: long Chat scroll contract', () => {
     }, 180_000)
   }
 
-  it.skipIf(MODE === 'record')('resets transcript height when switching from Verbose back to Standard during a reply', async () => {
-    const fixture = createChatScrollFixture({ markerPrefix: 'MODE', title: 'CHAT_MODE_HEIGHT', turns: 8 })
-    await mkdir(fileURLToPath(new URL('../../../.artifacts/screenshots/chat-mode-height/', import.meta.url)), { recursive: true })
-    await withScrollWorld({
-      failureShot: 'screenshots/chat-mode-height/web-e2e-chat-mode-height',
-      replay: [replayEntry(textStream('CHAT_MODE_REPLY', 'CHAT_MODE_DONE', 2))],
-      seeds: [{ fixture, id: 'chat-mode-height-e2e' }],
-    }, async (world) => {
-      const { page } = world
-      await page.setViewportSize({ width: 1280, height: 720 })
-      await page.emulateMedia({ reducedMotion: 'no-preference' })
-      const selectPreference = async (title: string, choice: string): Promise<void> => {
-        await openSettings(page, 'en')
-        const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-        const row = dialog.getByText(title, { exact: true }).locator('../..')
-        await row.getByRole('button').click()
-        await page.getByRole('menuitem', { name: choice, exact: true }).click()
-        await row.getByRole('button', { name: choice, exact: true }).waitFor()
-        if (title === 'Work details') {
-          await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-            .toMatchObject({ transcriptView: choice.toLowerCase() })
-        }
-        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-        await expect.poll(() => page.locator('[data-chat-motion="collapse"], [data-chat-motion="reveal"]').count()).toBe(0)
-        await nextPaint(page)
-      }
-      const returnToBottom = async (): Promise<void> => {
-        await wheelTranscript(page, -600)
-        await page.getByRole('button', { name: 'Back to bottom', exact: true }).click()
-        await expectBottom(page)
-      }
-      const geometry = () => page.locator('[data-conversation-scroll]').evaluate(host => ({
-        height: host.scrollHeight,
-        viewport: host.clientHeight,
-        spacer: host.querySelector<HTMLElement>('[data-chat-turn-spacer]')!.getBoundingClientRect().height,
-      }))
-      await selectPreference('Work details', 'Standard')
-      await openSeed(page, fixture, fixture.markers.assistant(8))
-      // Hold a live reply so preference changes exercise the same fold animation as incoming content.
-      const release = holdTextAfter(world, 1)
-      let replyStarted = false
-      try {
-        await page.locator('[data-composer-input][contenteditable="true"]').last().fill('CHAT_MODE_NEXT_INPUT')
-        await page.getByRole('button', { name: 'Send message', exact: true }).click()
-        await page.getByText('CHAT_MODE_REPLY', { exact: false }).waitFor()
-        replyStarted = true
-        await selectPreference('When to Collapse Work Details', 'On next message')
-        await page.locator('[data-chat-flow][data-chat-motion=""]').waitFor()
-        await returnToBottom()
-        const standard = await geometry()
-        expect(standard.height).toBeGreaterThan(standard.viewport)
-        expect(standard.spacer).toBe(0)
-        for (let cycle = 0; cycle < 2; cycle += 1) {
-          await selectPreference('Work details', 'Verbose')
-          await expect.poll(async () => (await geometry()).height)
-            .toBeGreaterThan(standard.height + GEOMETRY_TOLERANCE)
-          await returnToBottom()
-          await selectPreference('Work details', 'Standard')
-          await expect.poll(async () => (await geometry()).spacer).toBe(0)
-          await expect.poll(async () => Math.abs((await geometry()).height - standard.height))
-            .toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
-          await expectBottom(page)
-          await expectMarkerAboveComposer(page, 'CHAT_MODE_REPLY')
-        }
-      } finally {
-        const settled = replyStarted ? world.scaffold.whenTurnSettled() : undefined
-        release()
-        await settled
-      }
-      assertClean(world)
-    })
-  })
-
   it.skipIf(MODE === 'record')('keeps a running Session stationary when returning with output held', async () => {
     const fixtureA = createChatScrollFixture({ markerPrefix: 'RETURN_A', title: 'CHAT_RUNNING_RETURN_A' })
     const fixtureB = createChatScrollFixture({ markerPrefix: 'RETURN_B', title: 'CHAT_RUNNING_RETURN_B', turns: 32 })
@@ -1024,18 +943,12 @@ describe('web e2e: long Chat scroll contract', () => {
       const { page } = world
       await page.setViewportSize({ width: 1280, height: 720 })
       await page.emulateMedia({ reducedMotion: 'no-preference' })
-      await openSettings(page, 'en')
-      const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-      for (const [title, choice] of [
-        ['Work details', 'Standard'],
-        ['When to Collapse Work Details', 'On next message'],
-      ] as const) {
-        await dialog.getByText(title, { exact: true }).locator('../..').getByRole('button').click()
-        await page.getByRole('menuitem', { name: choice, exact: true }).click()
-      }
+      // Settings no longer offers the presentation, so this suite seeds the
+      // detailed mode it exercises instead of selecting it through the dialog.
+      await world.scaffold.ctx.settings.update('ui-chat', { transcriptView: 'detailed', collapseTiming: 'next-input' })
+      await page.reload({ waitUntil: 'load' })
       await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-        .toMatchObject({ transcriptView: 'standard' })
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        .toMatchObject({ transcriptView: 'detailed', collapseTiming: 'next-input' })
       await openSeed(page, fixtureA, fixtureA.markers.assistant(fixtureA.turns))
       await expectBottom(page)
 
@@ -1393,14 +1306,6 @@ describe('web e2e: long Chat scroll contract', () => {
     }, async (world) => {
       await world.page.emulateMedia({ reducedMotion: 'no-preference' })
       await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
-      await openSettings(world.page, 'en')
-      await world.page.getByRole('dialog', { name: 'Settings', exact: true })
-        .getByText('Work details', { exact: true }).locator('../..')
-        .getByRole('button', { name: 'Detailed', exact: true }).click()
-      await world.page.getByRole('menuitem', { name: 'Standard', exact: true }).click()
-      await expect.poll(() => world.scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value)
-        .toMatchObject({ transcriptView: 'standard' })
-      await world.page.keyboard.press('Escape')
       const gates = parts.slice(1).map(() => Promise.withResolvers<undefined>())
       const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
         let index = -1

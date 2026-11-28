@@ -2,7 +2,7 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Ran code and called tools" [expanded]
+- button "2 actions" [expanded]
 - button "Code Create a file with the optional editor"
 - button "Tool call str_replace_editor · create"
 - paragraph: DONE

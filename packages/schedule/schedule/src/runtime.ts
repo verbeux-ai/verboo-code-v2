@@ -70,6 +70,7 @@ export class ScheduleRuntime {
   private readonly executing = new Set<ScheduleId>()
   private stopping = false
   private requested = false
+  private readonly unsubscribeAdmission: () => void
 
   /**
    * @param ctx - Host services used to resume and enqueue.
@@ -88,7 +89,11 @@ export class ScheduleRuntime {
     private readonly changed: () => void,
     private readonly limits: ScheduleRuntimeLimits,
     private readonly resolveAgent: (sessionId: SessionIdType) => Promise<Agent>,
-  ) {}
+  ) {
+    this.unsubscribeAdmission = ctx.agents.exitAdmission.onReopen(() => {
+      if (this.requested && !this.stopping) this.requestDrive()
+    })
+  }
 
   /**
    * Recompute the nearest obligation after startup or a durable change.
@@ -108,6 +113,9 @@ export class ScheduleRuntime {
         }
       })
     } catch (error: unknown) {
+      // A reversible exit lease can briefly block a due delivery. Keep the
+      // request pending and resume it if that lease is cancelled or expires.
+      if (this.ctx.agents.exitAdmission.isFrozen) return
       // Ancestor unloading closes initiator admission before runtime cleanup runs.
       this.requested = false
       this.ctx.logger.warn(`schedule: dispatch stopped: ${String(error)}`)
@@ -126,6 +134,7 @@ export class ScheduleRuntime {
   /** Stop the timer and drain an accepted delivery before storage closes. */
   async dispose(): Promise<void> {
     this.stopping = true
+    this.unsubscribeAdmission()
     this.clearTimer()
     // requestDrive reports execution failures; teardown only waits for quiescence.
     await this.running?.catch(() => undefined)
@@ -167,6 +176,12 @@ export class ScheduleRuntime {
         this.settle(held, committed, sent.execution)
       }
     }))
+  }
+
+  /** Whether a schedule delivery or its transaction is in flight. */
+  get exitActivity(): 'idle' | 'busy' | 'unknown' {
+    if (this.stopping) return 'unknown'
+    return this.running !== undefined || this.requested || this.executing.size > 0 ? 'busy' : 'idle'
   }
 
   /**

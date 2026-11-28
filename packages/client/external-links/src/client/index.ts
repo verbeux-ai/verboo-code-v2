@@ -66,6 +66,16 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+interface NativeCardSetup {
+  operation: string
+  url: string
+  clientSecret: string
+  publishableKey: string
+  locale: string
+  theme: 'light' | 'dark'
+  labels: { title: string; description: string; close: string; loading: string; failed: string }
+}
+
 declare global {
   /** Desktop bridge installed by the Tauri initialization script. */
   var __VERBOO_DESKTOP__: {
@@ -73,8 +83,16 @@ declare global {
     readonly protocolVersion: number
     /** Host-reported runtime identity shown in the account sheet. */
     deviceInfo?(): Promise<string>
+    /** Ask the desktop notification backend for permission after explicit opt-in. */
+    notificationPermission?(): Promise<boolean>
+    /** Send a generic completion notification when the window is out of focus. */
+    notifyTaskComplete?(title: string, body: string): Promise<boolean>
     /** Quit the native application after the user holds the shortcut. */
     quit?(this: void): Promise<void>
+    /** Present a separate, unprivileged payment WebView until the user closes the modal. */
+    openCardSetup?(setup: NativeCardSetup): Promise<boolean>
+    /** Dismiss the native payment modal associated with an invalidated operation. */
+    closeCardSetup?(operation: string): Promise<void>
     /**
      * Open a destination in the system browser.
      * @param url - absolute URL the bridge allowlist accepts.

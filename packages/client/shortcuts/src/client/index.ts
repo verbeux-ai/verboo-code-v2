@@ -21,6 +21,13 @@ declare module '@deepseek-ai/cordis' {
     /** Window-local application commands and effective keycap catalog. */
     shortcuts: Shortcuts
   }
+  interface Events {
+    /**
+     * Open the user-facing shortcut reference and editor.
+     * @mode emit
+     */
+    'shortcuts/open-reference'(): void
+  }
 }
 
 /** Cordis keyboard provider; Desktop startup requires its native keyboard bridge. */

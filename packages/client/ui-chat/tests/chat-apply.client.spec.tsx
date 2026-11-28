@@ -204,29 +204,17 @@ describe('Chat apply wiring', () => {
     expect(winners()).toEqual({ activity: ActivityPill, usage: UsagePill })
   })
 
-  it.each([
-    { desktop: false, initial: 'detailed', choice: 'standard' },
-    { desktop: true, initial: 'standard', choice: 'detailed' },
-  ] as const)('mirrors the Host transcript preference into its Settings row (desktop: $desktop)', async ({ desktop, initial, choice }) => {
-    if (desktop) {
-      vi.stubGlobal('dshDesktop', {})
-      onTestFinished(() => { vi.unstubAllGlobals() })
-    }
+  it('exposes only the timing and folded-reply choices to the Settings row', async () => {
     const b = await bench()
     onTestFinished(() => b.runtime.dispose())
     const row = b.runtime.slots.entries('settings.general.item')
       .find(entry => entry.options.id === 'transcript-view')!
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
-
-    expect(face.hooks.transcriptView.getSnapshot()).toBe(initial)
-    face.setTranscriptView(choice)
-    expect(face.hooks.transcriptView.getSnapshot()).toBe(choice)
-    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', choice)
-
-    b.chatSettings.publish({
-      status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
-    })
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
+    // The work-details presentation is fixed, so the row carries no mode face.
+    expect(Object.hasOwn(face.hooks, 'transcriptView')).toBe(false)
+    expect(Object.hasOwn(face, 'setTranscriptView')).toBe(false)
+    expect(face.setCollapseTiming).toBeTypeOf('function')
+    expect(face.setFoldedReplies).toBeTypeOf('function')
   })
 
   it('restores saved collapse timing when the Chat plugin remounts', async () => {
@@ -242,7 +230,7 @@ describe('Chat apply wiring', () => {
       expect(hooks.collapseTiming.getSnapshot()).toBe('next-input')
       expect(b.chatSettings.set).toHaveBeenCalledExactlyOnceWith('collapseTiming', 'next-input')
       b.chatSettings.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'standard', performanceUsage: 'detailed', collapseTiming: 'next-input' }, revision: 1, writable: true })
-      expect(hooks.transcriptView.getSnapshot()).toBe('standard')
+      // A saved mode from another build never reaches this row.
       expect(hooks.collapseTiming.getSnapshot()).toBe('next-input')
       expect(b.runtime.slots.entries('settings.general.item').map(entry => entry.options.id))
         .toEqual(['transcript-view', 'link-opening', 'composer-enter', 'performance-usage'])
@@ -256,7 +244,6 @@ describe('Chat apply wiring', () => {
       const remountedHooks = remounted.hooks as TranscriptViewRowInjected['hooks']
       expect(remountedHooks.collapseTiming).not.toBe(hooks.collapseTiming)
       expect(remountedHooks.collapseTiming.getSnapshot()).toBe('next-input')
-      expect(remountedHooks.transcriptView.getSnapshot()).toBe('standard')
       expect(b.chatSettings.set).toHaveBeenCalledExactlyOnceWith('collapseTiming', 'next-input')
       expect(b.runtime.slots.entries('settings.general.item').map(entry => entry.options.id))
         .toEqual(['transcript-view', 'link-opening', 'composer-enter', 'performance-usage'])

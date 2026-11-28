@@ -147,10 +147,16 @@ export class ReactLoopAgent implements Agent {
     this.scope = createScope(loopCtx, this)
     this.ctx = this.scope.ctx
     this.model = new AgentModel(projections.modelSelection, session, options)
-    this.inbox = new ReactLoopInbox(projections.inbox, session, this.dispatch)
+    this.inbox = new ReactLoopInbox(projections.inbox, session, this.dispatch,
+      () => { this.loopCtx.agents.exitAdmission.assertAdmission() })
     this.phase = { kind: 'idle', lastTurn }
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
     this.systemPrompt = new SystemPromptProjection(session)
+  }
+
+  /** Report work that exit can interrupt. The Session retains staged input. */
+  get exitActivity(): 'idle' | 'busy' {
+    return this.phase.kind === 'idle' ? 'idle' : 'busy'
   }
 
   get status(): AgentStatus {
@@ -168,6 +174,7 @@ export class ReactLoopAgent implements Agent {
   }
 
   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void {
+    this.loopCtx.agents.exitAdmission.assertAdmission()
     // Waking input cannot join an aborted activity, so it starts the next turn.
     // Captured before the insertion so a reentrant cancel from a splice observer cannot reclassify it.
     const wakingAfterAbort = wakeup && this.phase.kind !== 'idle' && this.phase.abort.signal.aborted
@@ -197,6 +204,7 @@ export class ReactLoopAgent implements Agent {
   }
 
   runMaintenance<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    this.loopCtx.agents.exitAdmission.assertAdmission()
     if (this.phase.kind !== 'idle') throw new Error(`agent "${this.id}" already has active work`)
     const done = Promise.withResolvers<void>()
     const maintenance: Phase = {

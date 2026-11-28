@@ -13,6 +13,14 @@
   color: var(--dsw-alias-label-primary);
   background: transparent;
   padding: 0 14px;
+  /* Every variant recolors through aliases; one shared transition keeps the
+     hover swap soft across all of them, and the transform stays instant so a
+     press reads as immediate rather than animated. */
+  transition: var(--dsw-motion-colors), transform var(--dsw-motion-instant) var(--dsw-ease-standard);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .button:disabled {

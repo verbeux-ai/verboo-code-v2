@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { withFileLock, writeFileAtomic } from '../src/index.ts'
 
 const state = vi.hoisted(() => ({
+  beforeLink: undefined as ((source: string, dest: string) => Promise<void>) | undefined,
   afterClaim: undefined as ((claim: string) => Promise<void>) | undefined,
   claimFailure: undefined as string | undefined,
   claimRemovalFails: false,
@@ -22,6 +23,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    link: (async (source, dest) => {
+      await state.beforeLink?.(String(source), String(dest))
+      if (state.lockPermissionFailures > 0 && String(dest).endsWith('.lock')) {
+        state.lockPermissionFailures -= 1
+        if (state.releaseLockBeforeProbe) await actual.rm(String(dest))
+        throw Object.assign(new Error('EPERM: injected exclusive-create failure'), { code: 'EPERM' })
+      }
+      return actual.link(source, dest)
+    }) as typeof actual.link,
     rename: (async (...args: Parameters<typeof actual.rename>) => {
       state.renameAttempts += 1
       const code = state.renameFailures.shift()
@@ -49,11 +59,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         await state.afterClaim?.(String(path))
         return
       }
-      if (state.lockPermissionFailures > 0 && String(path).endsWith('.lock')) {
-        state.lockPermissionFailures -= 1
-        if (state.releaseLockBeforeProbe) await actual.rm(String(path))
-        throw Object.assign(new Error('EPERM: injected exclusive-create failure'), { code: 'EPERM' })
-      }
       return (actual.writeFile as (path: unknown, ...args: never[]) => Promise<void>)(path, ...rest)
     }) as typeof actual.writeFile,
   }
@@ -64,6 +69,7 @@ const scratchDirs: string[] = []
 afterEach(async () => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  state.beforeLink = undefined
   state.afterClaim = undefined
   state.claimFailure = undefined
   state.claimRemovalFails = false
@@ -291,6 +297,32 @@ describe('withFileLock', () => {
       called = true
     })).rejects.toThrow(/ENOENT|ENOTDIR|not a directory/i)
     expect(called).toBe(false)
+  })
+
+  it('publishes only a complete owner record, so interruption before publication cannot leave an empty lock', async () => {
+    const dir = await scratch()
+    const target = join(dir, 'document')
+    let observed = false
+    state.beforeLink = async (source, dest) => {
+      expect(await readFile(source, 'utf8')).toBe(record(process.pid))
+      await expect(stat(dest)).rejects.toMatchObject({ code: 'ENOENT' })
+      observed = true
+    }
+    await withFileLock(target, async () => {
+      expect(await readFile(`${target}.lock`, 'utf8')).toBe(record(process.pid))
+    })
+    expect(observed).toBe(true)
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it('falls back to exclusive creation on filesystems without hard-link support', async () => {
+    const dir = await scratch()
+    const target = join(dir, 'document')
+    state.beforeLink = async () => { throw Object.assign(new Error('unsupported'), { code: 'ENOTSUP' }) }
+    await withFileLock(target, async () => {
+      expect(await readFile(`${target}.lock`, 'utf8')).toBe(record(process.pid))
+    })
+    expect(await readdir(dir)).toEqual([])
   })
 
   it('takes over a lock whose holder exited', async () => {

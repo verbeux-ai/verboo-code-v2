@@ -370,7 +370,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-verboo-product`
 
 - `inject`: `deepseekAccount`
-- `source`: [`packages/api/verboo-product/src/index.ts:32`](../packages/api/verboo-product/src/index.ts)
+- `source`: [`packages/api/verboo-product/src/index.ts:53`](../packages/api/verboo-product/src/index.ts)
 
 ```ts config-catalog
 /** Public product deployment configuration; provider credentials remain server-side. */
@@ -381,6 +381,16 @@ export interface Config {
   routerBaseURL?: string
   /** Allow cleartext loopback endpoints for local integration fixtures. */
   allowLoopbackHttp?: boolean
+  /** Deadline for loading connected accounts and the provider catalog. */
+  connectionListTimeoutMs?: number
+  /**
+   * Deadline for one provider tool search. Semantic search over a toolkit's
+   * catalog answers well past the general per-attempt ceiling, and the caller
+   * cannot retry a search that already spent its budget.
+   */
+  connectionSearchTimeoutMs?: number
+  /** Deadline for one provider execution, including the backend's ownership checks. */
+  connectionExecutionTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-verboo-product -->
@@ -1874,6 +1884,36 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-product-telemetry-otel -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
+<a id="deepseek-aidsh-host-verboo-analytics"></a>
+
+## `@deepseek-ai/dsh-host-verboo-analytics`
+
+- `inject`: `credentials` · `deepseekAccount` · `sessionProjections`
+- `source`: [`packages/host/verboo-analytics/src/index.ts:21`](../packages/host/verboo-analytics/src/index.ts)
+
+```ts config-catalog
+/** Public collector configuration; all destination credentials stay on the server. */
+export interface Config {
+  /** Origin of the Verboo API that owns product consent and event receipts. */
+  apiOrigin?: string
+  /** Origin of the account router used by the shared deployment configuration. */
+  routerBaseURL?: string
+  /** Permit an HTTP loopback origin for isolated local tests. */
+  allowLoopbackHttp?: boolean
+  /** Product surface recorded on admitted events. */
+  surface?: ProductSurface
+  /** Public build version attached to admitted events. */
+  appVersion?: string
+  /** Delay in milliseconds between retries of pending deliveries. */
+  retryIntervalMs?: number
+}
+
+/** Surfaces assigned by the application composition, never inferred from a UA. */
+export type ProductSurface = 'desktop' | 'cli' | 'dashboard'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-verboo-analytics -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 <a id="deepseek-aidsh-host-webserver"></a>
@@ -4774,10 +4814,18 @@ export interface Config {
 - `source`: [`packages/extensions/verboo-connections/src/index.ts:10`](../packages/extensions/verboo-connections/src/index.ts)
 
 ```ts config-catalog
-/** Bounded execution time for a connected service tool. */
+/** Bounded execution time for a connected service tool and its discovery surface. */
 export interface Config {
   /** Maximum duration in milliseconds of one connected service tool execution. */
   timeoutMs: number
+  /** Most provider tools one search makes callable. */
+  discoveryMaxTools: number
+  /** Most connections one search queries. */
+  discoveryMaxTargets: number
+  /** Largest argument schema, in bytes, declared to the model. */
+  discoveryMaxSchemaBytes: number
+  /** Longest tool description declared to the model. */
+  discoveryMaxDescriptionChars: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-verboo-connections -->

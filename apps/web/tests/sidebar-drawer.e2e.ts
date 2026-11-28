@@ -242,7 +242,7 @@ it('overlays the conversation and closes after navigation without losing its sid
       await expect.poll(() => frame.getAttribute('data-sidebar-collapsed')).toBe('true')
       const sidebar = page.locator('[data-slot="sidebar"]')
       const original = await sidebar.elementHandle()
-      const main = page.locator('[data-slot="main"]').locator('..')
+      const main = page.locator('[data-slot="main"]:visible').locator('..')
       const closed = await main.boundingBox()
       // A long test-owned duration keeps the transition available until its
       // animation clock is sampled and finished explicitly.
@@ -531,7 +531,7 @@ it('overlays the conversation and closes after navigation without losing its sid
         const collapseSidebar = pointerPage.getByRole('button', { name: 'Collapse sidebar', exact: true })
         await collapseSidebar.focus()
         await collapseSidebar.hover()
-        for (const button of await pointerWorkspaceButtons.all()) expect(await button.isVisible()).toBe(false)
+        for (const button of await pointerWorkspaceButtons.all()) await expect.poll(() => button.isVisible()).toBe(false)
         await pointerWorkspace.hover()
         for (const button of await pointerWorkspaceButtons.all()) await button.waitFor()
         await pointerWorkspace.click()

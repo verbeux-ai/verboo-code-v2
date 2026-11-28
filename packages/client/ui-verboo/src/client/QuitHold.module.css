@@ -17,3 +17,10 @@
   font-size: 14px;
   font-weight: 600;
 }
+
+.mascot {
+  display: block;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+}

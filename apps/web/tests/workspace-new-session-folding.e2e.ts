@@ -96,6 +96,7 @@ describe('web e2e: blank New Session folding quota', () => {
     // stationary pointer, so the row that ends up there follows the layout,
     // not the scenario; hover the row the golden records instead.
     await sidebar.getByRole('treeitem').nth(7).hover()
+    await expect.poll(() => sidebar.getByRole('button', { name: `Workspace actions for ${basename(scaffold.workspaceCwd)}`, includeHidden: true }).isVisible()).toBe(false)
     await compareOrRefreshGolden(
       join(EXPECTED_DIR, 'first-batch.expected.md'),
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),

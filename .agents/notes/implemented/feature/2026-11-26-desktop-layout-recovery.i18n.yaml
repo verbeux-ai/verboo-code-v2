@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-26-desktop-layout-recovery.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-26-desktop-layout-recovery.md
+/agent-note-desktop-layout-recovery:
+  en: a4bebe7005904353
+  zh: 787f013312a7e595
+/agent-note-desktop-layout-recovery/problem:
+  en: dc20cc90b38383f6
+  zh: 07c51cd4adf48fd9
+/agent-note-desktop-layout-recovery/decision:
+  en: f5eacc42f8a2cc69
+  zh: 710dd738d95508c4
+/agent-note-desktop-layout-recovery/alternatives-considered:
+  en: 86a6a5fbce24a593
+  zh: 078bd0b0d149e864
+/agent-note-desktop-layout-recovery/consequences:
+  en: 135dab3739259a9d
+  zh: 999cda619aafa492
+/agent-note-desktop-layout-recovery/related:
+  en: 2b2903fa50b4ae61
+  zh: 99d1a35868c489e9

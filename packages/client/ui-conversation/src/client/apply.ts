@@ -552,6 +552,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               conversation.releaseDraftAttachments(drafts)
               return t('attachment.dropBlocked')
             }
+            for (const reference of references) {
+              uiConversation.beginProductAction(reference.appearance === 'folder' ? 'attachment_folder' : 'attachment_file')('completed')
+            }
+            for (const draft of drafts) {
+              uiConversation.beginProductAction(draft.kind === 'image' ? 'attachment_image' : 'attachment_file')('completed')
+            }
             return null
           } catch (error: unknown) {
             if (error instanceof UnsupportedImageMediaTypeError) return t('image.unsupportedType')
@@ -578,7 +584,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               span: { ...selection, draftRev: snapshot.draftRev },
             })
           },
-        stop: () => { stop(sessionId) },
+        stop: () => { uiConversation.reportControlClick(sessionId, 'stop_button'); stop(sessionId) },
         promptHistoryActive: () => historyState.index >= 0 && shell.snapshot.draft === historyState.recalledText,
         promptHistory: (direction) => {
           const binding = sessions.binding(sessionId)

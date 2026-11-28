@@ -11,10 +11,10 @@
 - button "Copy"
 - status: Completed
 - button "Completed in {{duration}}" [expanded]
-- button "Ran commands" [expanded]
-- button "Think The user wants me to run a simple bash command and reply with \"DONE\"."
+- button "1 action" [expanded]
+- button "Think"
 - button "Bash Echo the test string"
-- button "Think The command executed successfully and output \"WEB_E2E_OK\". I just need to reply with \"DONE\"."
+- button "Think"
 - paragraph: DONE
 - button "Copy"
 - button "Good response"

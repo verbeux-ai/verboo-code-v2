@@ -1,5 +1,5 @@
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
-import { useEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import {
   Menu,
   Modal,
@@ -15,11 +15,45 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarProps, ProductProps } from './contracts.ts'
 import { Brand, BrandMark } from './Brand.tsx'
 import { Glyph } from './Glyph.tsx'
+import { DesktopUpdate } from './DesktopUpdate.tsx'
+import { sidebarConversationRows } from './panes/ConversationSwitcher.tsx'
 import css from './Product.module.css'
 const panels = {
+  analytics: 'verboo.analytics' as MainPanelId,
   connections: 'verboo.connections' as MainPanelId,
   plan: 'verboo.plan' as MainPanelId,
   preferences: 'verboo.preferences' as MainPanelId,
+}
+
+/**
+ * Open account navigation above the sidebar control in expanded and collapsed layouts.
+ * @param options - profile identity, sidebar layout and navigation actions.
+ * @returns the account control and its navigation menu.
+ */
+export function AccountMenu({ name, wide, selected, go, t }: {
+  name: string | null | undefined
+  wide: boolean
+  selected: MainPanelId | null
+  go: (id: MainPanelId) => void
+  t: SidebarProps['t']
+}) {
+  const [open, setOpen] = useState(false)
+  return <Menu
+    open={open} onClose={() => { setOpen(false) }} side="top" portal align="start" autoFocus
+    className={css.profileMenu} listClassName={css.profileMenuList}
+    anchor={<Tooltip portal label={t('account')} disabled={wide}>
+      <button className={css.profileShortcut} data-active={selected === panels.preferences || selected === panels.analytics}
+        aria-label={t('account')} aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+        <span className={css.avatar}>{name?.slice(0, 1).toLocaleUpperCase() ?? <Glyph name="circle-user-round" size={18} />}</span>
+        {wide && <><span className={css.profileName}>{name ?? t('account')}</span><Glyph name="settings-2" size={17} /></>}
+      </button>
+    </Tooltip>}
+    items={[
+      { id: 'preferences', label: t('preferences'), icon: <Glyph name="settings-2" size={16} /> },
+      { id: 'analytics', label: t('analytics'), icon: <Glyph name="chart-no-axes-combined" size={16} /> },
+    ]}
+    onSelect={(id) => { setOpen(false); if (id === 'preferences' || id === 'analytics') go(panels[id]) }}
+  />
 }
 
 function ConversationRow({
@@ -81,7 +115,11 @@ function ConversationRow({
     </div>
   )
 }
-function ProjectGroup({
+/** Render a project with an accessible animated conversation list.
+ * @param options - project data, session rows, navigation actions and close behavior.
+ * @returns the project disclosure and its action menu.
+ */
+export function ProjectGroup({
   workspace,
   sessions,
   current,
@@ -97,6 +135,18 @@ function ProjectGroup({
   close: () => void
 }) {
   const [menu, setMenu] = useState(false)
+  const [expanded, setExpanded] = useState(true)
+  const expandedRef = useRef(true)
+  const listId = useId()
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const toggle = () => {
+    const next = !expandedRef.current
+    expandedRef.current = next
+    if (!next && listRef.current?.contains(document.activeElement)) toggleRef.current?.focus()
+    if (listRef.current) listRef.current.inert = !next
+    setExpanded(next)
+  }
   const [action, setAction] = useState<'rename' | 'remove' | null>(null)
   const [title, setTitle] = useState(workspace.title)
   const [busy, setBusy] = useState(false)
@@ -116,10 +166,13 @@ function ProjectGroup({
     }
   }
   return (
-    <details className={css.projectGroup} open>
-      <summary>
-        <Glyph name="folder" size={16} />
-        <span>{workspaceDisplayTitle(workspace.title,props.t('workspace'))}</span>
+    <div className={css.projectGroup}>
+      <div className={css.projectHeader}>
+        <button type="button" className={css.projectToggle} ref={toggleRef}
+          aria-expanded={expanded} aria-controls={listId} onClick={toggle}>
+          <Glyph name="folder" size={16} />
+          <span>{workspaceDisplayTitle(workspace.title,props.t('workspace'))}</span>
+        </button>
         <Menu
           open={menu}
           onClose={() =>{  setMenu(false) }}
@@ -162,29 +215,33 @@ function ProjectGroup({
             setAction(id === 'rename' ? 'rename' : 'remove')
           }}
         />
-      </summary>
-      <div className={css.sessionList}>
-        {query === '' && (
-          <button
-            className={css.projectStart}
-            onClick={() => {
-              props.openWorkspace(workspace.workspaceId)
-              close()
-            }}
-          >
-            <Glyph name="plus" size={13} />
-            {props.t('newTask')}
-          </button>
-        )}
-        {sessions.map(session => (
-          <ConversationRow
-            key={session.id}
-            session={session}
-            active={current === session.id}
-            props={props}
-            close={close}
-          />
-        ))}
+      </div>
+      <div className={css.projectDisclosure} data-expanded={expanded}>
+        <div className={css.projectDisclosureInner} id={listId} ref={listRef} aria-hidden={!expanded}>
+          <div className={css.sessionList}>
+            {query === '' && (
+              <button
+                className={css.projectStart}
+                onClick={() => {
+                  props.openWorkspace(workspace.workspaceId)
+                  close()
+                }}
+              >
+                <Glyph name="plus" size={13} />
+                {props.t('newTask')}
+              </button>
+            )}
+            {sessions.map(session => (
+              <ConversationRow
+                key={session.id}
+                session={session}
+                active={current === session.id}
+                props={props}
+                close={close}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       <Modal
         open={action !== null}
@@ -244,13 +301,14 @@ function ProjectGroup({
           )}
         </div>
       </Modal>
-    </details>
+    </div>
   )
 }
 /** Product navigation reads the canonical Workspace and Session controllers. */
 export function Sidebar(props: SidebarProps) {
   const { t, collapsed, drawer, toggleSidebar, usePanelInfo } = props
   const state = props.useProduct(s => s)
+  const desktopUpdate = props.useDesktopUpdate(s => s)
   const extras = props.useNavigation(s => s)
   const selected = usePanelInfo(s => s.activePanelId)
   const ref = useRef<HTMLDivElement>(null)
@@ -274,24 +332,6 @@ export function Sidebar(props: SidebarProps) {
   const current = Object.values(sessions.byId).find(
     s => (s.retainedBy.mainView ?? 0) > 0,
   )?.id
-  // The New Conversation page keeps navigation on screen: no Session is
-  // selected yet, or the current one has never been prompted. There is nothing
-  // to give the width to, so the rail is not offered and a collapsed arrival
-  // expands once.
-  const newConversation = selected === null
-    && (current === undefined || sessions.byId[current]?.blank === true)
-  // The expand runs at most once per arrival on the New Conversation page: the
-  // injected toggle is a fresh closure per render, so an effect that depended
-  // on its identity would re-fire and could oscillate with the layout store.
-  const toggleRef = useRef(toggleSidebar)
-  toggleRef.current = toggleSidebar
-  const expandedForNewConversation = useRef(false)
-  useEffect(() => {
-    if (!newConversation) { expandedForNewConversation.current = false; return }
-    if (!collapsed || expandedForNewConversation.current) return
-    expandedForNewConversation.current = true
-    toggleRef.current()
-  }, [newConversation, collapsed])
   const [adding, setAdding] = useState(false)
   const [projectError, setProjectError] = useState(false)
   const [query, setQuery] = useState('')
@@ -324,17 +364,8 @@ export function Sidebar(props: SidebarProps) {
       : (active?.name ?? t('noPlan'))
   const needle = query.trim().toLocaleLowerCase()
   const rows = (ids: readonly SessionId[]) =>
-    ids
-      .filter(id => workspaces.archivedSessionIds.includes(id) === archived)
-      .map(id => sessions.byId[id])
-      .filter(s => s !== undefined)
-      .filter(
-        s =>
-          s.origin !== 'subagent' &&
-          (!s.blank || s.id === current) &&
-          (needle === '' ||
-            s.displayTitle.toLocaleLowerCase().includes(needle)),
-      )
+    sidebarConversationRows(ids, sessions, workspaces, current, archived)
+      .filter(s => needle === '' || s.displayTitle.toLocaleLowerCase().includes(needle))
   const owned = new Set(workspaces.items.flatMap(w => w.sessionIds))
   const ungrouped = rows(sessions.ids.filter(id => !owned.has(id)))
   const content = (
@@ -344,21 +375,19 @@ export function Sidebar(props: SidebarProps) {
       style={wide ? { width: !drawer && collapsed ? lastWideWidth.current : props.width } : undefined}>
       <div className={css.sidebarHead}>
         {wide ? <Brand t={t} /> : <BrandMark />}
-        {newConversation ? null : (
-          <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
-            <button
-              className={css.iconButton}
-              aria-label={t(collapsed ? 'expand' : 'collapse')}
-              onClick={toggleSidebar}
-              data-sidebar-toggle
-            >
-              <Glyph
-                name={collapsed ? 'panel-left-open' : 'panel-left-close'}
-                size={17}
-              />
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip portal label={t(collapsed ? 'expand' : 'collapse')}>
+          <button
+            className={css.iconButton}
+            aria-label={t(collapsed ? 'expand' : 'collapse')}
+            onClick={toggleSidebar}
+            data-sidebar-toggle
+          >
+            <Glyph
+              name={collapsed ? 'panel-left-open' : 'panel-left-close'}
+              size={17}
+            />
+          </button>
+        </Tooltip>
       </div>
       <Tooltip portal label={t('newTask')} disabled={wide}>
         <button
@@ -403,6 +432,7 @@ export function Sidebar(props: SidebarProps) {
             data-active={selected === panels.connections}
             onClick={() =>{  go(panels.connections) }}
             aria-label={t('connections')}
+            data-verboo-tour-connections
             aria-current={selected === panels.connections ? 'page' : undefined}
           >
             <Glyph name="cable" />
@@ -463,6 +493,7 @@ export function Sidebar(props: SidebarProps) {
                 className={css.iconButton}
                 disabled={adding}
                 aria-label={t('addProject')}
+                data-verboo-tour-project
                 onClick={() => {
                   void openProject()
                 }}
@@ -534,7 +565,9 @@ export function Sidebar(props: SidebarProps) {
           </div>
         )}
       </div>
+      <DesktopUpdate state={desktopUpdate} t={t} install={props.installDesktopUpdate} retry={props.retryDesktopUpdate} />
       <footer className={css.sidebarFoot}>
+        {props.renderSlot('sidebar.footer.row', { wide })}
         <Tooltip portal label={t('plan')} disabled={wide}>
           <button
             className={css.planShortcut}
@@ -555,29 +588,7 @@ export function Sidebar(props: SidebarProps) {
             )}
           </button>
         </Tooltip>
-        <Tooltip portal label={t('preferences')} disabled={wide}>
-          <button
-            className={css.profileShortcut}
-            data-active={selected === panels.preferences}
-            onClick={() =>{  go(panels.preferences) }}
-            aria-label={t('preferences')}
-            aria-current={selected === panels.preferences ? 'page' : undefined}
-          >
-            <span className={css.avatar}>
-              {state.profile?.name?.slice(0, 1).toLocaleUpperCase() ?? (
-                <Glyph name="circle-user-round" size={18} />
-              )}
-            </span>
-            {wide && (
-              <>
-                <span className={css.profileName}>
-                  {state.profile?.name ?? t('account')}
-                </span>
-                <Glyph name="settings-2" size={17} />
-              </>
-            )}
-          </button>
-        </Tooltip>
+        <AccountMenu name={state.profile?.name} wide={wide} selected={selected} go={go} t={t} />
       </footer>
     </div>
   )

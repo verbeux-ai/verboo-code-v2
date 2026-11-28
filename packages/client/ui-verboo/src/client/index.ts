@@ -2,6 +2,7 @@
 // The Desktop bridge's global declaration is owned by the link service that routes through it.
 import type {} from '@deepseek-ai/dsh-client-external-links/client'
 import type { Context } from '@deepseek-ai/cordis'
+import { focusedBinding } from './panes/focused-binding.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -22,22 +23,32 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
+import type { FirstUseInjected, OpenAiStatus, ProductInjected, PreferenceSnapshot } from './contracts.ts'
 import { en, pt, zh, ja, es, fr, de, ru } from './locales.ts'
 import { Config } from '../config.ts'
+import type {} from '@deepseek-ai/dsh-host-verboo-analytics/remote'
+import type { ProductAnalyticsStatus, ProductFeature, ProductModelDetails } from '@deepseek-ai/dsh-host-verboo-analytics/types'
+import { modelDimensions } from './model-dimensions.ts'
+import { captureFeatureConsent, type FeatureConsent } from './feature-consent.ts'
 export { Config } from '../config.ts'
 import { ExternalNavigation, ExternalNavigationError } from './navigation.ts'
+import { AnalyticsPage, type AnalyticsActions } from './Analytics.tsx'
 import { DesktopQuitHold } from './QuitHold.tsx'
 import { ProductModel } from './model.ts'
 import { TrialModel } from './trial-model.ts'
 import { TrialDock, TrialModal, type TrialInjected } from './Trial.tsx'
+import { createUpdateSource } from './update-source.ts'
+import { createUpdateAnalytics } from './update-analytics.ts'
+import { createConnectionAnalytics } from './connection-analytics.ts'
 import { createStaminaResource } from './stamina-resource.ts'
+import { createUsageWindowsResource } from './usage-windows-resource.ts'
 import { createSubscriptionUsageResource } from './subscription-usage-resource.ts'
 import { StaminaButtonFill } from './StaminaLiquid.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StaminaModelState } from './stamina-selection.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
-import { StaminaDebug, type StaminaDebugInjected } from './StaminaDebug.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { ProductAction } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SubscriptionUsage } from './SubscriptionUsage.tsx'
 import { OpenAiSignInOverlay as OpenAiSignInDialog } from './OpenAiSignIn.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -46,14 +57,17 @@ import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
+import { FirstUseTour } from './FirstUseTour.tsx'
 import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
+import { BillingModel, type BillingApi } from './billing-model.ts'
+import { BillingToolRow, billingToolNames } from './BillingToolRow.tsx'
+import type { BillingInjected } from './contracts.ts'
+import type { Result } from '@deepseek-ai/dsh-api-verboo-product/types'
 import { PreferencesPage, Feedback } from './Pages.tsx'
 import { ConnectionsPage } from './Connections.tsx'
 import { installPanes } from './panes/install.ts'
-import { leaves } from './panes/layout.ts'
 import { selectStaminaForModel } from './stamina-selection.ts'
-import type { ConversationAppearanceInjected } from './ConversationAppearance.tsx'
 
 /** Product replacement for optional diagnostic readouts. */
 function OmittedDiagnostic() { return null }
@@ -62,6 +76,7 @@ export const inject = [
   'slots',
   'configForms',
   'modelDirectories',
+  'commandUi',
   'layout',
   'uiWorkspace',
   'workspaces',
@@ -75,12 +90,14 @@ export const inject = [
   'remote.session',
   'remote.verboo',
   'remote.verbooMcp',
+  'remote.verbooAnalytics',
   'resources',
   'remoteAccess',
   'contextMenus',
   'connection',
   'sessions',
   'conversation',
+  'uiConversation',
 ]
 /**
  * Install product UI without changing the engine, Session persistence or chat transport.
@@ -99,7 +116,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     () => ctx.theme.overrideIcons('verboo-code', icons),
     'Verboo: icon family',
   )
-  const panes = installPanes(ctx, config)
+  const panes = installPanes(ctx, config, (axis) => {
+    const consent = captureProductConsent()
+    observeFeature(axis === 'x' ? 'pane_split_right' : 'pane_split_down', 'started', consent)
+  })
   const navigationEntries = createSnapshotStore<
     readonly { id: MainPanelId; label: string }[]
   >([])
@@ -122,14 +142,26 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       navigationEntries.set([])
     }
   })
+  const widthForm = ctx.configForms.get<Pick<Config, 'conversationWidth'>>('ui-verboo')
   const preferenceValue = (): PreferenceSnapshot => ({
     theme: ctx.theme.getTheme().preference,
+    fontSizes: ctx.theme.getTheme().fontSizes,
+    conversationWidth: widthForm.getSnapshot().value?.conversationWidth ?? config.conversationWidth,
+    canSetConversationWidth: widthForm.getSnapshot().status === 'ready',
     locale: ctx.locale.getLocale().active,
     languages: ctx.locale
       .getLocale()
       .locales.map(l => ({ id: l.id, label: l.label })),
   })
   const preferences = createSnapshotStore(preferenceValue())
+  ctx.effect(() => widthForm.subscribe(() => { preferences.set(preferenceValue()) }), 'Verboo: conversation width preference')
+  ctx.effect(() => ctx.remote.$on('api-session/turn-completed', () => {
+    if (localStorage.getItem('dsh.verboo.notifications.v1') !== 'on') return
+    const native = globalThis.__VERBOO_DESKTOP__
+    if (!native?.notifyTaskComplete) return
+    const t = ctx.locale.bind('verboo')
+    void native.notifyTaskComplete(t('settingsNotificationTitle'), t('settingsNotificationBody')).catch(() => {})
+  }), 'Verboo: completed task notification')
   ctx.on('theme/change', () =>{  preferences.set(preferenceValue()) })
   ctx.on('locale/change', () =>{  preferences.set(preferenceValue()) })
   const metadata = (): AccountClientMetadata => ({
@@ -142,6 +174,46 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const navigation = new ExternalNavigation(() => ctx.get('externalLinks'))
   const open = (url: string) => navigation.open(url)
   ctx.effect(() => () =>{  navigation.release() }, 'Verboo: browser reservations')
+  // Fixed categories only: never send a provider label, server name, or URL.
+  const captureProductConsent = (): FeatureConsent | undefined => captureFeatureConsent(analyticsStatus.getSnapshot())
+  const observeFeature = (feature: ProductFeature, outcome: 'started' | 'completed' | 'failed' | 'cancelled', consent: FeatureConsent | undefined, model?: ProductModelDetails): void => {
+    if (!consent) return
+    try {
+      const request = ctx.remote.verbooAnalytics.feature(feature, outcome, consent.subjectId, consent.revision, consent.proof, model)
+      void request.catch(() => {})
+    } catch (_error) { /* Optional measurement cannot interrupt the product action. */ }
+  }
+  const trackFeatureOperation = async <T>(
+    feature: 'mcp' | 'checkout', request: () => Promise<T>, completed: (value: T) => boolean, enabled = true,
+  ): Promise<T> => {
+    if (!enabled) return request()
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return request()
+    const sameOwner = () => owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision
+    try {
+      const value = await request()
+      if (sameOwner()) observeFeature(feature, completed(value) ? 'completed' : 'failed', consent)
+      return value
+    } catch (error) {
+      if (sameOwner()) observeFeature(feature, 'failed', consent)
+      throw error
+    }
+  }
+  const trackProductOperation = async <T>(
+    action: ProductAction, request: () => Promise<T>, completed: (value: T) => boolean,
+  ): Promise<T> => {
+    const observe = ctx.uiConversation.beginProductAction(action)
+    try {
+      const value = await request()
+      observe(completed(value) ? 'completed' : 'failed')
+      return value
+    } catch (error) {
+      observe('failed')
+      throw error
+    }
+  }
   const model = new ProductModel(
     {
       profile: async () => {
@@ -177,7 +249,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       connect: async (slug, label) => {
-        const r = await ctx.remote.verboo.connect(slug, label)
+        const r = await trackProductOperation('integration_connect', () => trackFeatureOperation('mcp', () => ctx.remote.verboo.connect(slug, label), result => result.ok && result.value.ok), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       disconnect: async (id) => {
@@ -189,7 +261,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       saveMcpServer: async (input) => {
-        const r = await ctx.remote.verbooMcp.save(input)
+        const r = await trackProductOperation('mcp_configure', () => trackFeatureOperation('mcp', () => ctx.remote.verbooMcp.save(input), result => result.ok && result.value.ok), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       deleteMcpServer: async (name) => {
@@ -201,11 +273,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       signInMcpServer: async (name) => {
-        const r = await ctx.remote.verbooMcp.signIn(name)
+        const r = await trackProductOperation('mcp_connect', () => ctx.remote.verbooMcp.signIn(name), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       setMcpToken: async (name, token) => {
-        const r = await ctx.remote.verbooMcp.setToken(name, token)
+        const r = await trackProductOperation('mcp_connect', () => ctx.remote.verbooMcp.setToken(name, token), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       signOutMcpServer: async (name) => {
@@ -213,11 +285,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       probeMcpServer: async (input, signal) => {
-        const r = await ctx.remote.verbooMcp.probe(input, signal)
+        const r = await trackProductOperation('mcp_probe', () => ctx.remote.verbooMcp.probe(input, signal), result => result.ok && result.value.ok)
         return r.ok ? r.value : { ok: false, code: 'contract_error' as const, message: r.error.message }
       },
       billing: async (id, purchase) => {
-        const r = await ctx.remote.verboo.billingURL(id, purchase)
+        const r = await trackFeatureOperation('checkout', () => ctx.remote.verboo.billingURL(id, purchase), result => result.ok && result.value.ok, purchase)
         return r.ok ? r.value : { ok: false, code: 'request_failed' }
       },
       open,
@@ -265,31 +337,117 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }
   }, 'Verboo: trial attention')
   ctx.effect(() => {
-    let selectedSession: SessionId | null = null
+    let selectedBinding: unknown
     let stopModel: (() => void) | undefined
     const sync = () => {
-      const layout = panes.getSnapshot().layout
-      const session = leaves(layout.root).find(pane => pane.id === layout.focused)?.sessionId ?? null
-      if (session !== selectedSession) {
+      // Restored pane IDs may precede their Session scope and retained binding.
+      const { session, binding } = focusedBinding(panes.getSnapshot(), ctx.sessions)
+      if (binding !== selectedBinding) {
         stopModel?.()
-        selectedSession = session
-        stopModel = session === null ? undefined : ctx.modelDirectories.directoryFor(session).store.subscribe(sync)
+        stopModel = undefined
+        selectedBinding = binding
+        if (binding !== undefined && session !== null)
+          stopModel = ctx.modelDirectories.directoryFor(session).store.subscribe(sync)
       }
-      const selected = session === null ? null : ctx.modelDirectories.directoryFor(session).store.getSnapshot().current
+      const selected = binding === undefined || session === null ? null
+        : ctx.modelDirectories.directoryFor(session).store.getSnapshot().current
       const group = selectStaminaForModel(model.state.getSnapshot().plans, selected, undefined).group
       trial.selectGroup(group?.id ?? null)
     }
     const stopPanes = panes.subscribe(sync)
     const stopAccount = model.state.subscribe(sync)
+    const stopSessions = ctx.sessions.list.subscribe(sync)
     sync()
-    return () => { stopPanes(); stopAccount(); stopModel?.() }
+    return () => { stopPanes(); stopAccount(); stopSessions(); stopModel?.() }
   }, 'Verboo: focused trial group')
+  const billingResult = async <T>(response: Promise<{ ok: true; value: Result<T> } | { ok: false }>): Promise<Result<T>> => {
+    const result = await response
+    if (result.ok) return result.value
+    return { ok: false, code: 'request_failed' }
+  }
+  const desktopPayments = globalThis.__VERBOO_DESKTOP__
+  const presentCardSetup = desktopPayments?.openCardSetup
+  const openCardSetup: BillingApi['openCardSetup'] = presentCardSetup && (async (operation, setup, labels, signal) => {
+    if (signal.aborted) return false
+    const close = () => { void desktopPayments?.closeCardSetup?.(operation).catch(() => {}) }
+    signal.addEventListener('abort', close, { once: true })
+    try {
+      return await presentCardSetup({
+        ...setup, operation, labels, locale: ctx.locale.getLocale().active,
+        theme: ctx.theme.getTheme().active.colorScheme,
+      })
+    } finally {
+      signal.removeEventListener('abort', close)
+    }
+  })
+  const billing = new BillingModel({
+    options: (id, interval) => billingResult(ctx.remote.verboo.billingOptions(id, interval)),
+    quote: (id, interval) => billingResult(ctx.remote.verboo.quotePurchase(id, interval)),
+    confirm: id => billingResult(ctx.remote.verboo.confirmPurchase(id)),
+    current: signal => billingResult(ctx.remote.verboo.currentPurchase(signal)),
+    reopen: id => billingResult(ctx.remote.verboo.resumePurchase(id)),
+    retry: id => billingResult(ctx.remote.verboo.retryPurchase(id)),
+    abandon: id => billingResult(ctx.remote.verboo.abandonPurchase(id)),
+    terms: () => billingResult(ctx.remote.verboo.billingTermsURL()),
+    dismiss: id => billingResult(ctx.remote.verboo.dismissPurchase(id)),
+    quoteChange: (id, plan, interval, removeTier) => billingResult(ctx.remote.verboo.quotePlanChange(id, plan, interval, removeTier)),
+    confirmChange: id => billingResult(ctx.remote.verboo.confirmPlanChange(id)),
+    currentChange: (id, signal) => billingResult(ctx.remote.verboo.currentBillingChange(id, signal)),
+    changeStatus: (id, signal) => billingResult(ctx.remote.verboo.billingChangeStatus(id, signal)),
+    update: (id, action) => billingResult(ctx.remote.verboo.updateSubscription(id, action, ctx.locale.getLocale().active)),
+    currentLifecycle: (id, signal, check) => billingResult(ctx.remote.verboo.currentSubscriptionLifecycle(id, check, signal)),
+    invoices: id => billingResult(ctx.remote.verboo.billingInvoices(id)),
+    portal: id => billingResult(ctx.remote.verboo.billingPortal(id)),
+    startCardUpdate: (id, request, embedded) => billingResult(ctx.remote.verboo.startBillingCardUpdate(id, request, embedded)),
+    currentCardUpdate: (id, signal) => billingResult(ctx.remote.verboo.currentBillingCardUpdate(id, signal)),
+    ...(openCardSetup && { openCardSetup }),
+    open, refreshPlans: async () => { await model.loadPlans() },
+  }, model.state)
+  ctx.effect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void billing.refresh()
+      else billing.pause()
+    }
+    const returnFromPortal = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void billing.refresh(true)
+      else billing.pause()
+    }
+    const adopt = () => { billing.adopt(); refresh() }
+    const stop = model.state.subscribe(adopt)
+    const timer = setInterval(refresh, config.refreshIntervalMs)
+    document.addEventListener('visibilitychange', returnFromPortal)
+    window.addEventListener('online', refresh)
+    window.addEventListener('offline', refresh)
+    window.addEventListener('focus', returnFromPortal)
+    adopt()
+    return () => {
+      billing.dispose()
+      clearInterval(timer)
+      stop()
+      document.removeEventListener('visibilitychange', returnFromPortal)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('offline', refresh)
+      window.removeEventListener('focus', returnFromPortal)
+    }
+  }, 'Verboo: billing reconciliation')
+  const inBrowser = (work: () => Promise<void>) => {
+    if (billing.state.getSnapshot().busy) return
+    try {
+      navigation.reserve()
+      void work().finally(() => { navigation.release() })
+    } catch (_error) { model.reportNavigationFailure(true) }
+  }
+  const desktopUpdate = createUpdateSource()
   const stamina = createStaminaResource(
     signal => ctx.remote.verboo.getStamina(signal),
     model.state,
     config.staminaRefreshIntervalMs,
   )
   ctx.effect(() => ctx.resources.register(stamina.provider), 'Verboo: account stamina')
+  const allowance = createUsageWindowsResource(
+    signal => ctx.remote.verboo.getUsageWindows(signal), model.state, config.usageWindowsRefreshIntervalMs,
+  )
+  ctx.effect(() => ctx.resources.register(allowance.provider), 'Verboo: account allowance')
   const subscriptionUsage = createSubscriptionUsageResource(
     signal => ctx.remote.llmOpenaiAccount.usage(signal),
     model.state,
@@ -341,6 +499,254 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     subscriptionUsage.refresh()
   }
   const externalStatus = createSnapshotStore<OpenAiStatus>({ signedIn: false })
+  const analyticsStatus = createSnapshotStore<ProductAnalyticsStatus | null>(null)
+  let analyticsOwner: string | undefined
+  let analyticsRevision = 0
+  ctx.effect(() => {
+    const observe = createUpdateAnalytics(captureProductConsent, observeFeature)
+    return desktopUpdate.state.subscribe(() => { observe(desktopUpdate.state.getSnapshot()) })
+  }, 'Verboo: desktop update analytics')
+  ctx.effect(() => desktopUpdate.start(), 'Verboo: desktop update status')
+  ctx.effect(() => {
+    if (globalThis.__VERBOO_UPDATE__ === undefined) return () => {}
+    const connection = (ctx.get('connection') as ConnectionHandle).state
+    let active = true
+    const observe = createConnectionAnalytics(captureProductConsent,
+      (consent) => { queueMicrotask(() => {
+        if (active && connection.getSnapshot() === 'connected') observeFeature('desktop_connection_recovered', 'completed', consent)
+      }) })
+    observe(connection.getSnapshot())
+    const unsubscribe = connection.subscribe(() => { observe(connection.getSnapshot()) })
+    return () => { active = false; unsubscribe() }
+  }, 'Verboo: connection recovery analytics')
+  let analyticsReading = false
+  let analyticsDisposed = false
+  const featureObserver = (feature: 'model_switch' | 'plan' | 'goal' | 'mcp' | 'checkout') => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    return (outcome: 'completed' | 'failed') => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(feature, outcome, consent)
+      }
+    }
+  }
+  ctx.effect(() => ctx.modelDirectories.observeModelSwitch(() => featureObserver('model_switch')), 'Verboo: model switch analytics')
+  ctx.effect(() => ctx.modelDirectories.observeModelChoices((selected) => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    const dimensions = modelDimensions(selected)
+    if (!owner || !consent || !dimensions) return undefined
+    return () => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature('model_choice', 'completed', consent, dimensions)
+      }
+    }
+  }), 'Verboo: model choice analytics')
+  ctx.effect(() => ctx.commandUi.observeFeatureCommands(featureObserver), 'Verboo: command feature analytics')
+  ctx.effect(() => ctx.uiConversation.observeProductActions((action) => {
+    if (!globalThis.__VERBOO_DESKTOP__) return undefined
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    if (!owner || !consent) return undefined
+    observeFeature(action, 'started', consent)
+    return (outcome) => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(action, outcome, consent)
+      }
+    }
+  }), 'Verboo: product action analytics')
+  ctx.effect(() => ctx.uiConversation.observeControlClicks((control) => {
+    observeFeature(control, 'started', captureProductConsent())
+  }), 'Verboo: conversation control analytics')
+  ctx.effect(() => ctx.uiConversation.observeMessageSubmissions((feature, selected) => {
+    const owner = model.state.getSnapshot().profile?.id
+    const consent = captureProductConsent()
+    const revision = analyticsRevision
+    const dimensions = modelDimensions(selected)
+    if (!owner || !consent) return undefined
+    return () => {
+      if (!analyticsDisposed && owner === model.state.getSnapshot().profile?.id && revision === analyticsRevision) {
+        observeFeature(feature, 'started', consent, dimensions)
+      }
+    }
+  }), 'Verboo: message submission analytics')
+  const analyticsStateMatches = (revision: number): boolean => revision === analyticsRevision && !analyticsDisposed
+  const refreshAnalytics = async (): Promise<void> => {
+    const snapshot = model.state.getSnapshot()
+    const owner = snapshot.profile?.id ?? undefined
+    if (owner !== analyticsOwner) {
+      analyticsOwner = owner
+      analyticsRevision++
+      analyticsStatus.set(null)
+    }
+    if (owner === undefined || analyticsReading || analyticsDisposed) return
+    const revision = analyticsRevision
+    analyticsReading = true
+    try {
+      const result = await ctx.remote.verbooAnalytics.status()
+      if (analyticsStateMatches(revision)) analyticsStatus.set(result.ok ? result.value : null)
+    } catch (_error) {
+      if (analyticsStateMatches(revision)) analyticsStatus.set(null)
+    } finally { analyticsReading = false }
+  }
+  ctx.effect(() => {
+    const unsubscribe = model.state.subscribe(() => { void refreshAnalytics() })
+    const timer = setInterval(() => { void refreshAnalytics() }, 15000)
+    void refreshAnalytics()
+    return () => { analyticsDisposed = true; analyticsRevision++; clearInterval(timer); unsubscribe() }
+  }, 'Verboo: analytics status')
+  ctx.effect(() => {
+    const busyForm = ctx.configForms.get<{ busyEnter: 'queue' | 'steer' }>('ui-conversation')
+    const appearanceForm = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
+    const toolsForm = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
+    const presetForm = ctx.configForms.get<{ selectedDefault: string }>('agent-preset-registry')
+    const last = new Map<string, string>()
+    const languages: Readonly<Record<string, ProductFeature>> = {
+      en: 'preference_language_en', pt: 'preference_language_pt', zh: 'preference_language_zh', ja: 'preference_language_ja',
+      es: 'preference_language_es', fr: 'preference_language_fr', de: 'preference_language_de', ru: 'preference_language_ru',
+    }
+    const themes: Readonly<Record<string, ProductFeature>> = {
+      light: 'preference_theme_light', dark: 'preference_theme_dark', system: 'preference_theme_system',
+    }
+    const presets = new Map<string, ProductFeature>([
+      ['cordis', 'preference_preset_cordis'], ['ptc', 'preference_preset_ptc'],
+      ['minimal', 'preference_preset_minimal'], ['standard', 'preference_preset_standard'],
+    ])
+    const report = () => {
+      const owner = model.state.getSnapshot().profile?.id
+      const consent = captureProductConsent()
+      if (!owner || !consent) return
+      const emit = (dimension: string, feature: ProductFeature | undefined) => {
+        if (feature === undefined) return
+        const key = `${owner}:${consent.revision}:${feature}`
+        if (last.get(dimension) === key) return
+        last.set(dimension, key)
+        observeFeature(feature, 'completed', consent)
+      }
+      const busy = busyForm.getSnapshot()
+      if (busy.status === 'ready') {
+        if (busy.value?.busyEnter === 'queue') emit('busy', 'preference_busy_queue')
+        else if (busy.value?.busyEnter === 'steer') emit('busy', 'preference_busy_steer')
+      }
+      const appearance = appearanceForm.getSnapshot()
+      if (appearance.status === 'ready' && typeof appearance.value?.minimalist === 'boolean') {
+        emit('minimalist', appearance.value.minimalist ? 'preference_minimalist_on' : 'preference_minimalist_off')
+      }
+      const tools = toolsForm.getSnapshot()
+      if (tools.status === 'ready' && typeof tools.value?.enabled === 'boolean') {
+        emit('coding_tools', tools.value.enabled ? 'preference_coding_tools_on' : 'preference_coding_tools_off')
+      }
+      const preset = presetForm.getSnapshot()
+      if (preset.status === 'ready' && typeof preset.value?.selectedDefault === 'string') {
+        emit('preset', presets.get(preset.value.selectedDefault) ?? 'preference_preset_other')
+      }
+      const preference = preferences.getSnapshot()
+      emit('theme', themes[preference.theme])
+      emit('language', languages[preference.locale.toLowerCase().split('-')[0] ?? ''] ?? 'preference_language_other')
+    }
+    const unsubscribeBusy = busyForm.subscribe(report)
+    const unsubscribeAppearance = appearanceForm.subscribe(report)
+    const unsubscribeTools = toolsForm.subscribe(report)
+    const unsubscribePreset = presetForm.subscribe(report)
+    const unsubscribePreferences = preferences.subscribe(report)
+    const unsubscribeStatus = analyticsStatus.subscribe(report)
+    const unsubscribeModel = model.state.subscribe(report)
+    report()
+    return () => {
+      unsubscribeBusy(); unsubscribeAppearance(); unsubscribeTools(); unsubscribePreset()
+      unsubscribePreferences(); unsubscribeStatus(); unsubscribeModel()
+    }
+  }, 'Verboo: preference analytics')
+  const addProject = async (): Promise<void> => {
+    const consent = captureProductConsent()
+    observeFeature('project_add', 'started', consent)
+    const picker = globalThis as typeof globalThis & {
+      __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> }
+    }
+    let created = false
+    try {
+      const path = picker.__DSH_DIRECTORY_PICKER__
+        ? await picker.__DSH_DIRECTORY_PICKER__.pick()
+        : await ctx.uiWorkspace.pickDirectory()
+      if (path === null) {
+        observeFeature('project_add', 'cancelled', consent)
+        return
+      }
+      const workspace = await ctx.workspaces.create({ path })
+      created = true
+      observeFeature('project_add', 'completed', consent)
+      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
+    } catch (error) {
+      if (!created) observeFeature('project_add', 'failed', consent)
+      throw error
+    }
+  }
+  const firstUse = createSnapshotStore({ visible: false, measurable: false })
+  const firstUseSetting = ctx.configForms.get<Pick<Config, 'firstUseTourSeen'>>('ui-verboo')
+  let firstUseDismissed = false
+  let firstUseReported = false
+  let firstUseStarted = false
+  const reportedSteps = new Set<string>()
+  const updateFirstUse = () => {
+    const account = model.state.getSnapshot()
+    const list = ctx.sessions.list.getSnapshot()
+    const settings = firstUseSetting.getSnapshot()
+    const visible = !firstUseDismissed && settings.status === 'ready' && !settings.value?.firstUseTourSeen
+      && account.view?.status === 'credential-stored' && account.profile !== null
+      && list.phase === 'ready' && list.ids.every(id => list.byId[id]?.blank)
+    const measurable = captureProductConsent() !== undefined
+    const previous = firstUse.getSnapshot()
+    if (previous.visible !== visible || previous.measurable !== measurable) firstUse.set({ visible, measurable })
+  }
+  if (globalThis.__VERBOO_DESKTOP__) {
+    ctx.effect(() => {
+      const unsubscribe = [
+        model.state.subscribe(updateFirstUse), ctx.sessions.list.subscribe(updateFirstUse),
+        analyticsStatus.subscribe(updateFirstUse), firstUseSetting.subscribe(updateFirstUse),
+      ]
+      updateFirstUse()
+      return () => { for (const stop of unsubscribe) stop() }
+    }, 'Verboo: first desktop tour')
+  }
+  const observeFirstUse = () => {
+    const consent = captureProductConsent()
+    if (firstUseReported || !firstUse.getSnapshot().visible || !consent) return
+    firstUseReported = true
+    observeFeature('desktop_first_use_guide', 'started', consent)
+  }
+  const firstUseFace: FirstUseInjected = {
+    hooks: { firstUse },
+    observeFirstUse,
+    startFirstUse: () => {
+      if (firstUseStarted || !firstUse.getSnapshot().visible) return
+      firstUseStarted = true
+      observeFirstUse()
+      observeFeature('desktop_first_use_task', 'started', captureProductConsent())
+    },
+    observeFirstUseStep: (step, outcome) => {
+      const consent = captureProductConsent()
+      const key = step + ':' + outcome
+      if (!consent || !firstUseStarted || reportedSteps.has(key)) return
+      reportedSteps.add(key)
+      observeFeature(step, outcome, consent)
+    },
+    backFirstUse: () => {
+      if (firstUseStarted) observeFeature('desktop_first_use_step_back', 'started', captureProductConsent())
+    },
+    finishFirstUse: (completed) => {
+      if (firstUseDismissed) return
+      observeFirstUse()
+      observeFeature(firstUseStarted ? 'desktop_first_use_task' : 'desktop_first_use_guide',
+        completed ? 'completed' : 'cancelled', captureProductConsent())
+      firstUseDismissed = true
+      updateFirstUse()
+      void firstUseSetting.set('firstUseTourSeen', true).catch(() => {})
+    },
+  }
   const externalDialogOpen = createSnapshotStore({ open: false })
   const reloadExternalStatus = async (): Promise<void> => {
     externalStatus.set(await openAiStatus())
@@ -388,23 +794,31 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         } else await model.refreshProfile()
       })().catch(() =>{  model.failAccount() })
     },
+    getProfileSettings: async () => {
+      const r = await ctx.remote.verboo.getProfileSettings()
+      return r.ok ? r.value : { ok: false, code: 'request_failed' }
+    },
+    updateProfileSettings: async (input) => {
+      const r = await ctx.remote.verboo.updateProfileSettings(input)
+      if (r.ok && r.value.ok) void model.refreshProfile()
+      return r.ok ? r.value : { ok: false, code: 'request_failed' }
+    },
+    updateAccountPassword: async (input) => {
+      const r = await ctx.remote.verboo.updateAccountPassword(input)
+      return r.ok ? r.value : { ok: false, code: 'failed' }
+    },
+    signOutAll: async (owner) => {
+      const r = await ctx.remote.verboo.signOutAll(owner)
+      if (!r.ok || !r.value.ok) return false
+      return model.state.getSnapshot().profile?.id === owner ? model.signOut() : true
+    },
     signOut: () => model.signOut(),
     startSession: () =>{  ctx.uiWorkspace.startSession() },
     openSession: (id) =>{  ctx.uiWorkspace.openSession(id) },
     openWorkspace: (id) => {
       void ctx.uiWorkspace.openWorkspace(id)
     },
-    addProject: async () => {
-      const picker = globalThis as typeof globalThis & {
-        __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> }
-      }
-      const path = picker.__DSH_DIRECTORY_PICKER__
-        ? await picker.__DSH_DIRECTORY_PICKER__.pick()
-        : await ctx.uiWorkspace.pickDirectory()
-      if (path === null) return
-      const workspace = await ctx.workspaces.create({ path })
-      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
-    },
+    addProject: () => addProject(),
     renameProject: async (id, title) => {
       await ctx.workspaces.rename(id, title)
     },
@@ -469,6 +883,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
     dismiss: () =>{  model.dismiss() },
     setTheme: (theme) =>{  ctx.theme.setTheme(theme) },
+    setFontSize: (role, size) => { ctx.theme.setFontSize(role, size) },
+    setConversationWidth: width => widthForm.set('conversationWidth', width),
+    openShortcuts: () => { ctx.emit('shortcuts/open-reference') },
     setLocale: (locale) =>{  ctx.locale.setLocale(locale) },
     retryModel: () => {
       void model.initializeModel()
@@ -479,6 +896,31 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       )
     },
   })
+  const billingFace = (): ProductInjected & BillingInjected => {
+    const product = face()
+    return { ...product, hooks: { ...product.hooks, billingPanel: billing.state },
+      choosePurchase: (plan) => { void billing.choose(plan) },
+      manageSubscription: (subscription) => { billing.manage(subscription); void billing.refresh() },
+      confirmPurchase: () => { inBrowser(() => billing.confirm()) },
+      retryPurchase: (id) => { inBrowser(() => billing.retryPurchase(id)) },
+      abandonPurchase: (id) => { void billing.abandonPurchase(id) },
+      openBillingTerms: () => { inBrowser(() => billing.openTerms()) },
+      reopenPurchase: (id) => { inBrowser(() => billing.reopen(id)) },
+      closePurchase: () => { void billing.closePurchase() },
+      refreshBilling: () => { void billing.refresh(true) },
+      previewPlanChange: (id, plan, removeTier) => { void billing.preview(id, plan, removeTier) },
+      confirmPlanChange: () => { void billing.confirmChange() },
+      reviewSubscriptionAction: (action) => { billing.reviewLifecycle(action) },
+      updateSubscription: (id) => { void billing.update(id) },
+      loadBillingInvoices: (id) => { void billing.loadInvoices(id) },
+      updateBillingCard: (id, labels) => {
+        if (labels && desktopPayments?.openCardSetup) void billing.updateCard(id, labels)
+        else inBrowser(() => billing.updateCard(id))
+      },
+      openBillingPortal: (id) => { inBrowser(() => billing.portal(id)) },
+      openBillingLink: (url) => { inBrowser(() => billing.open(url)) },
+    }
+  }
   const noStaminaModel = createSnapshotStore<StaminaModelState>({ current: null })
   const trialFace = (): ProductInjected & TrialInjected => {
     const product = face()
@@ -523,20 +965,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     const staminaModel = sessionId === undefined ? noStaminaModel : ctx.modelDirectories.directoryFor(sessionId).store
     return { ...product, hooks: { ...product.hooks, staminaModel } }
   }
-  const debugConfig = ctx.configForms.get<Pick<Config, 'staminaDebug'>>('ui-verboo')
-  const debugActions: StaminaDebugInjected = {
-    hooks: { staminaDebug: debugConfig },
-    refreshStamina: () => { stamina.refresh() },
-    async setStaminaDebug(enabled) {
-      try { return await debugConfig.set('staminaDebug', enabled) }
-      catch (_error) { return false } // The toggle reports an unsuccessful Host write inline.
-    },
-  }
-  const debugFace = (sessionId?: SessionId) => {
-    const product = staminaFace(sessionId)
-    return { ...product, ...debugActions, ...appearanceActions,
-      hooks: { ...product.hooks, ...debugActions.hooks, ...appearanceActions.hooks } }
-  }
   // The pill reads the external subscription's own record; a Verboo route
   // leaves it absent, so the dock never shows a borrowed number.
   const subscriptionUsageFace = (sessionId?: SessionId) => {
@@ -545,14 +973,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ...product,
       hooks: { ...product.hooks, subscriptionUsageAddress: model.state },
     }
-  }
-  const appearanceConfig = ctx.configForms.get<Pick<Config, 'minimalist'>>('ui-verboo')
-  const appearanceActions: ConversationAppearanceInjected = {
-    hooks: { conversationAppearance: appearanceConfig },
-    async setMinimalist(enabled) {
-      try { return await appearanceConfig.set('minimalist', enabled) }
-      catch (_error) { return false } // The preference reports an unsuccessful write inline.
-    },
   }
   ctx.remoteAccess.whenAccess('account/watch', function* () {
     const stream = ctx.remote.$stream<AccountView>({
@@ -592,10 +1012,14 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('sidebar', () =>
     ctx.slots.register(
-      { name: 'sidebar', locale: 'verboo', inject: () => {
-        const product = face()
-        return { ...product, hooks: { ...product.hooks, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
-      } },
+      { name: 'sidebar', locale: 'verboo',
+        // The product footer seat: rows such as the desktop update indicator
+        // sit above the plan shortcut.
+        children: { 'sidebar.footer.row': { kind: 'single', scope: 'root' } },
+        inject: () => {
+          const product = face()
+          return { ...product, installDesktopUpdate: (confirmed: boolean) => desktopUpdate.install(confirmed), retryDesktopUpdate: () => desktopUpdate.retry(), hooks: { ...product.hooks, desktopUpdate: desktopUpdate.state, executionConnection: (ctx.get('connection') as ConnectionHandle).state } }
+        } },
       Sidebar,
     ),
   )
@@ -649,6 +1073,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       Onboarding,
     )
     yield ctx.slots.register(
+      { name: 'shell.overlay', id: 'verboo.first-use', order: 101, locale: 'verboo', inject: () => firstUseFace },
+      FirstUseTour,
+    )
+    yield ctx.slots.register(
       {
         name: 'shell.overlay',
         id: 'verboo.feedback',
@@ -661,7 +1089,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('conversation.hero.intro', () =>
     ctx.slots.register(
-      { name: 'conversation.hero.intro', locale: 'verboo', inject: face },
+      { name: 'conversation.hero.intro', locale: 'verboo' },
       Hero,
     ),
   )
@@ -674,6 +1102,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.slots.inject('conversation.chat.assistant.mark', () =>
     ctx.slots.register({ name: 'conversation.chat.assistant.mark' }, AssistantMark),
   )
+  ctx.slots.inject('tool.call.toolview', function* () {
+    for (const key of billingToolNames) {
+      yield ctx.slots.register({ name: 'tool.call.toolview', key, locale: 'verboo' }, BillingToolRow)
+    }
+  })
   ctx.slots.inject('conversation.input.context', () =>
     ctx.slots.register({ name: 'conversation.input.context' }, OmittedDiagnostic),
   )
@@ -694,15 +1127,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       StaminaButtonFill,
     ),
   )
-  ctx.slots.inject('conversation.composer.dock', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.composer.dock', id: 'verboo.stamina-debug', order: 20, locale: 'verboo',
-        inject: debugFace,
-      },
-      StaminaDebug,
-    ),
-  )
   // The external subscription's reading stays absent until it has something to
   // say, so the dock keeps its resting height on a healthy window.
   ctx.slots.inject('conversation.composer.dock', () =>
@@ -715,6 +1139,26 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     ),
   )
   ctx.slots.inject('main', function* () {
+    const analyticsFace = (): ProductInjected & AnalyticsActions => ({
+      ...face(),
+      subscriptions: async (signal) => {
+        const result = await ctx.remote.verboo.getUsageSubscriptions(signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
+      summary: async (period, group, signal) => {
+        const result = await ctx.remote.verboo.getUsageSummary(period, group, signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
+      activity: async (signal) => {
+        const result = await ctx.remote.verboo.getUsageActivity(signal)
+        return result.ok ? result.value : { ok: false, code: 'request_failed' }
+      },
+      speed: signal => ctx.remote.verboo.watchUsageSpeed(signal),
+    })
+    yield ctx.slots.register(
+      { name: 'main', key: 'verboo.analytics', locale: 'verboo', inject: analyticsFace },
+      AnalyticsPage,
+    )
     yield ctx.slots.register(
       {
         name: 'main',
@@ -725,7 +1169,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       ConnectionsPage,
     )
     yield ctx.slots.register(
-      { name: 'main', key: 'verboo.plan', locale: 'verboo', inject: face },
+      { name: 'main', key: 'verboo.plan', locale: 'verboo',
+        inject: () => ({ ...billingFace(), refreshUsageWindows: allowance.refresh }) },
       PlanPage,
     )
     yield ctx.slots.register(
@@ -733,7 +1178,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         name: 'main',
         key: 'verboo.preferences',
         locale: 'verboo',
-        inject: debugFace,
+        inject: face,
       },
       PreferencesPage,
     )

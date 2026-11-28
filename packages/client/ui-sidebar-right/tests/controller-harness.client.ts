@@ -19,7 +19,7 @@ export const SESSION = 's-test' as SessionId
 const t = ((key: string) => key) as Parameters<typeof guideDefinition>[0]
 
 /** Construct a controller without publishing its Session or creating its surface. */
-export function controllerHarness() {
+export function controllerHarness(onProductOpen?: (category: 'terminal_open' | 'files_open' | 'document_open') => void) {
   const tabs = new SidebarRightTabRegistry(new Context())
   tabs.register(guideDefinition(t))
   tabs.register({
@@ -29,6 +29,7 @@ export function controllerHarness() {
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   const { controller, adopt, forget, show, measure } = createSidebarRightController(tabs, pin, {
     autoFullscreen: () => false,
+    ...(onProductOpen === undefined ? {} : { onProductOpen }),
     openWithFocus: (_sessionId, open) => { open() },
     closeWithFocus: (_sessionId, _paneId, close) => { close() },
   })

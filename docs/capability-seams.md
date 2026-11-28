@@ -7,9 +7,11 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_host_verboo_analytics["host-verboo-analytics"]
+  svc_verbooAnalytics["ctx.verbooAnalytics<br/>Consented Verboo product analytics"]
+  pkg_client_ui_verboo["client-ui-verboo"]
   pkg_openai_account["openai-account"]
   svc_openaiAccount["ctx.openaiAccount<br/>[OI] ChatGPT account"]
-  pkg_client_ui_verboo["client-ui-verboo"]
   pkg_llm_openai_account["llm-openai-account"]
   svc_llmOpenaiAccount["ctx.llmOpenaiAccount<br/>[OI] subscription routing"]
   pkg_api_verboo_mcp["api-verboo-mcp"]
@@ -403,6 +405,7 @@ flowchart LR
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_product_telemetry_otel --> svc_productTelemetry
+  pkg_host_verboo_analytics --> svc_verbooAnalytics
   pkg_host_webserver --> svc_webServer
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
@@ -643,6 +646,7 @@ flowchart LR
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
+  svc_verbooAnalytics --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_client_ui_verboo
   svc_verbooMcp --> pkg_verboo_connections
   svc_verbooProduct --> pkg_client_ui_verboo
@@ -669,6 +673,7 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.verbooAnalytics` | `service` | [`host-verboo-analytics`](../packages/host/verboo-analytics) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Owns product consent, metadata-only observations, and a durable receipt-checked delivery queue. |
 | `ctx.openaiAccount` | `service` | [`openai-account`](../packages/credentials/openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Stores the [OI] subscription grant and reports the plan facts product surfaces show. |
 | `ctx.llmOpenaiAccount` | `service` | [`llm-openai-account`](../packages/llm/llm-openai-account) | - | [`client-ui-verboo`](../packages/client/ui-verboo) | - | Routes the subscription models and reports the usage and limit readings the composer shows. |
 | `ctx.verbooMcp` | `service` | [`api-verboo-mcp`](../packages/api/verboo-mcp) | - | [`client-ui-verboo`](../packages/client/ui-verboo), [`verboo-connections`](../packages/extensions/verboo-connections) | - | Stores account-owned server definitions and reconciles their credential-backed MCP registrations. |

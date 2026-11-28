@@ -231,7 +231,7 @@ describe('the running window in a browser', () => {
     await entry.page.screenshot({ path: join(ARTIFACTS, 'progress-complete.png'), animations: 'disabled' })
 
     await entry.page.evaluate((message) => {
-      ;(window as typeof window & { __fail: (value: string) => void }).__fail(message)
+      ;(window as typeof window & { __fail: (value: { message: string; code: string }) => void }).__fail({ message, code: 'network' })
     }, copy.failed)
     await text(entry, 'status').toBe(copy.failed)
     await shown(entry, 'later', true)
@@ -270,12 +270,12 @@ describe('the running window in a browser', () => {
 })
 
 describe('the applied notice in a browser', () => {
-  it('thanks the user and closes itself', async () => {
-    const entry = await open('updated.html', '__VERBOO_UPDATED__', { ...COPY.pt!.applied, dwellMs: 800 })
+  it('thanks the user and closes on confirmation', async () => {
+    const entry = await open('updated.html', '__VERBOO_UPDATED__', COPY.pt!.applied)
     await expect.poll(async () => (await role(entry, 'title').textContent()) ?? '').toBe(COPY.pt!.applied.title)
-    await expect.poll(async () => (await role(entry, 'body').textContent()) ?? '').toContain('0.2.2-alpha.13')
+    await expect.poll(async () => (await role(entry, 'body').textContent()) ?? '').toContain(COPY.pt!.version)
     await entry.page.screenshot({ path: join(ARTIFACTS, 'applied.png'), animations: 'disabled' })
-    // It leaves on its own, so the user never has to dismiss a celebration.
+    await role(entry, 'ok').click()
     await expect.poll(() => commands(entry), { timeout: 6000 }).toEqual(['update_close'])
     await entry.page.close()
   })

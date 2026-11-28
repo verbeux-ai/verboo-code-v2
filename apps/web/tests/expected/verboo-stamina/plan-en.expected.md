@@ -1,19 +1,17 @@
 - main:
   - heading "Plans & subscription" [level=1]
-  - paragraph: Choose the plan that fits the way you work.
   - button "Refresh"
-  - region "Your subscriptions":
-    - heading "Your subscriptions" [level=2]
+  - region "My subscription":
+    - heading "My subscription" [level=2]
     - article:
       - heading "Unlimited" [level=3]
       - text: Active
-      - 'button "Manage subscription: Unlimited"': Manage subscription
+      - 'button "View subscription details: Unlimited"': View details
     - article:
       - heading "Testes" [level=3]
       - text: Active
-      - 'button "Manage subscription: Testes"': Manage subscription
+      - 'button "View subscription details: Testes"': View details
   - region "Explore plans":
     - heading "Explore plans" [level=2]
     - paragraph: No plans are available right now.
     - button "View plans on Verboo"
-  - paragraph: Secure checkout and subscription management in your browser.

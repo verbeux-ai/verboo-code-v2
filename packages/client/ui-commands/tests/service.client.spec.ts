@@ -8,6 +8,7 @@
  * lifecycle, and the directory invalidation event subscriptions.
  */
 import { Context } from '@deepseek-ai/cordis'
+import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
@@ -879,6 +880,66 @@ describe('matchEnter envelope policy (images)', () => {
 })
 
 describe('execute payload', () => {
+  it('observes a command outcome without exposing its text', async () => {
+    const b = await bench({ execute: () => Promise.resolve({ matched: true }) })
+    const ui = new UiConversation(b.ctx, b.sessions)
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    ui.observeProductActions(begin)
+    await b.warm(proj('s1'))
+    const match = b.source.matchSpace!(proj('s1'), '/goal')
+    if (match === undefined || match === 'handled' || !('claim' in match)) throw new Error('expected claim')
+    await match.claim.submit('SECRET COMMAND', new Context(), [])
+    expect(begin).toHaveBeenCalledExactlyOnceWith('command_submit')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+  })
+
+  it('observes only the fixed feature category without passing command text or blocking execution', async () => {
+    let fail = false
+    const b = await bench({ execute: () => Promise.resolve({ matched: true,
+      result: fail ? { kind: 'error', text: 'private error' } : { kind: 'success' } }) })
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    const stop = b.command.observeFeatureCommands(begin)
+    await b.warm(proj('s1'))
+    const outcome = b.source.matchSpace!(proj('s1'), '/goal')
+    if (outcome === undefined || outcome === 'handled' || !('claim' in outcome)) throw new Error('expected claim')
+    await expect(outcome.claim.submit('SECRET OBJECTIVE', new Context(), [])).resolves.toEqual({ kind: 'success' })
+    expect(begin).toHaveBeenCalledExactlyOnceWith('goal')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('completed')
+    begin.mockClear(); finish.mockClear(); fail = true
+    await outcome.claim.submit('SECRET OBJECTIVE', new Context(), [])
+    expect(begin).toHaveBeenCalledExactlyOnceWith('goal')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+    const replacement = vi.fn(() => { throw new Error('observer unavailable') })
+    b.command.observeFeatureCommands(replacement)
+    stop()
+    await expect(outcome.claim.submit('SECRET OBJECTIVE', new Context(), [])).resolves.toEqual({ kind: 'success' })
+    expect(replacement).toHaveBeenCalledExactlyOnceWith('goal')
+  })
+
+  it('observes explicit plan commands without including the submitted text', async () => {
+    const b = await bench()
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.command.observeFeatureCommands(begin)
+    await b.warm(proj('s1'))
+    await expect(b.source.matchEnter!(proj('s1'), '/plan', new AbortController().signal, { attachments: 0 })).resolves.toBe('handled')
+    await vi.waitFor(() => { expect(finish).toHaveBeenCalledExactlyOnceWith('completed') })
+    expect(begin).toHaveBeenCalledExactlyOnceWith('plan')
+  })
+
+  it('does not begin product observation for a subagent session', async () => {
+    const b = await bench({ addressed: sid('child') })
+    const finish = vi.fn()
+    const begin = vi.fn(() => finish)
+    b.command.observeFeatureCommands(begin)
+    const observe = b.command.beginFeatureObservation('goal', sid('child'))
+    observe('completed')
+    expect(begin).not.toHaveBeenCalled()
+    expect(finish).not.toHaveBeenCalled()
+  })
+
   it('claim.submit addresses the session; admitted outcomes stay off the composer (flow card owns them)', async () => {
     const { source, warm, executeCalls, executions } = await bench({
       execute: () => Promise.resolve({ matched: true }),

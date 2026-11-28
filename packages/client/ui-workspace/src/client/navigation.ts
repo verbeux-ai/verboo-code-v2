@@ -320,6 +320,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   openSession(target: SessionTarget): void {
     this.replaceMain(target, this.lifetime.signal, 'reveal')
+    this.ctx.get('uiConversation')?.beginProductAction('conversation_open')('completed')
   }
 
   openWorkspace(
@@ -363,6 +364,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
+    const observe = this.ctx.get('uiConversation')?.beginProductAction('conversation_new')
     const { agentPreset, ...draft } = options ?? {}
     const draftOptions = options === undefined ? undefined : draft
     const initializeDraft = draftOptions !== undefined && (draftOptions.prompt !== undefined
@@ -379,10 +381,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const target = workspaceId ?? currentWorkspaceId ?? recent
     if (target === undefined) {
       if (initializeDraft) {
+        observe?.('failed')
         this.notify({ kind: 'createFailed', message: this.ctx.locale.bind('workspace')('draft.workspaceRequired') })
         return
       }
       this.clearMain()
+      observe?.('completed')
       return
     }
     const opening = this.openWorkspace(target, initializeDraft ? (id) => {
@@ -390,9 +394,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       if (binding === undefined) this.draftPreparationFailed()
       this.prepareDraft(binding, draftOptions)
     } : undefined, agentPreset === undefined ? {} : { agentPreset })
-    void opening.catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    void opening.then(() => { observe?.('completed') },
+      (reason: unknown) => { observe?.('failed'); console.warn('new session failed:', reason) })
   }
 
   private prepareDraft(binding: SessionBinding, options: DraftInitializationOptions): void {

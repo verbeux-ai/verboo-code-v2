@@ -5,6 +5,7 @@ type SessionControllerRemoteEvent =
   | 'api-session/error'
   | 'api-session/removed'
   | 'api-session/status'
+  | 'api-session/turn-completed'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteEventSelection extends

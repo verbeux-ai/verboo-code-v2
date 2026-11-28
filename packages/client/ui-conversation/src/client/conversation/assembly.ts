@@ -29,6 +29,20 @@ import { UserTextRegistry } from './user-text-registry.ts'
 
 const STREAM_PUBLICATION_FRAMES = 4
 
+/** Fixed categories of an ordinary message submission, excluding message content. */
+export type ProductMessageInteraction = 'message_enter' | 'message_button' | 'message_queue_enter' | 'message_queue_button' | 'message_steer_enter' | 'message_steer_button'
+/** Locally observed model selection; product consumers decide which catalog IDs to retain. */
+export type ProductMessageModel = { readonly provider: string; readonly name: string; readonly effort?: string }
+/** Explicit Conversation controls observed without Session data. */
+export type ProductControlInteraction = 'stop_button' | 'queue_steer_button'
+/** Bounded action categories, without paths, commands, task contents, or account data. */
+export type ProductAction = 'terminal_open' | 'files_open' | 'document_open'
+  | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
+  | 'attachment_retry_image' | 'attachment_retry_file'
+  | 'schedule_create' | 'schedule_edit' | 'schedule_pause' | 'schedule_resume' | 'schedule_delete' | 'schedule_run'
+  | 'schedule_after' | 'schedule_at' | 'schedule_every' | 'schedule_daily' | 'schedule_weekly' | 'schedule_cron' | 'schedule_rrule'
+  | 'conversation_new' | 'conversation_open' | 'conversation_search' | 'command_submit' | 'integration_connect' | 'mcp_connect' | 'mcp_configure' | 'mcp_probe'
+
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
@@ -203,6 +217,95 @@ export class UiConversation extends Service {
   readonly interactions: ConversationInteractionRegistry
   private readonly bindings = new WeakMapWithValues<SessionBinding, BindingRecord>()
   private readonly images: HistoricalImageCache
+  private controlObserver: { token: symbol; notify: (control: ProductControlInteraction) => void } | undefined
+  private messageObserver: {
+    token: symbol
+    begin: (feature: ProductMessageInteraction, model: ProductMessageModel | undefined) => (() => void) | undefined
+  } | undefined
+  private actionObserver: { token: symbol; begin: (action: ProductAction) => ((outcome: 'completed' | 'failed' | 'cancelled') => void) | undefined } | undefined
+
+  /**
+   * Register an optional bounded interaction observer.
+   * @param begin - capture authorization when an action starts.
+   * @returns cleanup for this registration.
+   */
+  observeProductActions(begin: (action: ProductAction) => ((outcome: 'completed' | 'failed' | 'cancelled') => void) | undefined): () => void {
+    const token = Symbol('product-action-observer')
+    this.actionObserver = { token, begin }
+    return () => { if (this.actionObserver?.token === token) this.actionObserver = undefined }
+  }
+
+  /**
+   * Capture an action before it runs without exposing its arguments or identity.
+   * @param action - fixed action category.
+   * @returns a contained, at-most-once outcome callback.
+   */
+  beginProductAction(action: ProductAction): (outcome: 'completed' | 'failed' | 'cancelled') => void {
+    let finish: ReturnType<NonNullable<typeof this.actionObserver>['begin']>
+    try { finish = this.actionObserver?.begin(action) } catch (_error) { /* Optional observation cannot block the action. */ }
+    let settled = false
+    return (outcome) => {
+      if (settled) return
+      settled = true
+      try { finish?.(outcome) } catch (_error) { /* Optional observation cannot block the action. */ }
+    }
+  }
+
+  /**
+   * Capture permission when a message attempt starts, before command adjudication.
+   * @param begin - observer receiving only the fixed interaction category.
+   * @returns cleanup for this registration.
+   */
+  observeMessageSubmissions(
+    begin: (feature: ProductMessageInteraction, model: ProductMessageModel | undefined) => (() => void) | undefined,
+  ): () => void {
+    const token = Symbol('message-observer')
+    this.messageObserver = { token, begin }
+    return () => { if (this.messageObserver?.token === token) this.messageObserver = undefined }
+  }
+
+  /**
+   * Capture one local message attempt without passing its Session or content.
+   * @param sessionId - Session used locally to exclude subagents.
+   * @param source - user input gesture.
+   * @param mode - intended delivery while running.
+   * @param running - whether a turn is already running.
+   * @param model - selected model at the original gesture, when known.
+   * @returns an optional callback for an ordinary message after adjudication.
+   */
+  beginMessageSubmission(sessionId: SessionId, source: 'click' | 'enter', mode: 'queue' | 'steer', running: boolean, model?: ProductMessageModel): (() => void) | undefined {
+    try {
+      if (this.sessions.subagentAddress(sessionId) !== undefined) return undefined
+      const feature: ProductMessageInteraction = !running
+        ? source === 'enter' ? 'message_enter' : 'message_button'
+        : mode === 'queue'
+          ? source === 'enter' ? 'message_queue_enter' : 'message_queue_button'
+          : source === 'enter' ? 'message_steer_enter' : 'message_steer_button'
+      return this.messageObserver?.begin(feature, model)
+    } catch (_error) { return undefined }
+  }
+
+  /**
+   * Observe explicit Conversation button clicks without receiving Session data.
+   * @param notify - optional product observer receiving a fixed control category.
+   * @returns cleanup for this observer registration.
+   */
+  observeControlClicks(notify: (control: ProductControlInteraction) => void): () => void {
+    const token = Symbol('control-click-observer')
+    this.controlObserver = { token, notify }
+    return () => { if (this.controlObserver?.token === token) this.controlObserver = undefined }
+  }
+
+  /**
+   * Observe a button click only for a root Session.
+   * @param sessionId - local Session used to exclude subagents; never sent to the observer.
+   * @param control - fixed control category.
+   */
+  reportControlClick(sessionId: SessionId, control: ProductControlInteraction): void {
+    try {
+      if (this.sessions.subagentAddress(sessionId) === undefined) this.controlObserver?.notify(control)
+    } catch (_error) { /* Optional measurement cannot prevent stopping. */ }
+  }
 
   /**
    * @param ctx - owning Client context.

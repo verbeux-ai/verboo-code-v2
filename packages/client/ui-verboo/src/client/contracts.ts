@@ -3,20 +3,30 @@ import type {
   HostObservable,
   InjectFace,
   PropsLocale,
+  PropsRenderSlots,
   PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { FontRole, FontSizes, ThemePreference } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { BillingState, CardSetupLabels, LifecycleAction } from './billing-model.ts'
 import type { ProductSnapshot } from './model.ts'
+import type { DesktopUpdateState } from './update-source.ts'
 import type {
+  BillingSubscriptionId,
   ConnectionId,
+  Plan,
+  PurchaseAttemptId,
+  Subscription,
   PlanId,
   StaminaStatus,
+  UsageWindowsStatus,
+  ProfileSettings, PasswordResult, Result,
 } from '@deepseek-ai/dsh-api-verboo-product/types'
 import type { McpServerInput } from '@deepseek-ai/dsh-api-verboo-mcp/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Key } from './locales.ts'
+import type { ConversationWidth } from '../config.ts'
 import type {} from '@deepseek-ai/dsh-openai-account/remote'
 import type { SubscriptionUsage } from './subscription-usage-resource.ts'
 import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client'
@@ -29,6 +39,9 @@ export type ExecutionProps = PropsRuntime<'conversation.composer.dock'> & PropsL
 /** Theme and language choices observed by product components. */
 export interface PreferenceSnapshot {
   theme: ThemePreference
+  fontSizes: FontSizes
+  conversationWidth: ConversationWidth
+  canSetConversationWidth: boolean
   locale: string
   languages: readonly { id: string; label: string }[]
 }
@@ -56,6 +69,10 @@ export interface ProductInjected {
   reopen(): void
   cancel(): void
   retryAccount(): void
+  getProfileSettings(): Promise<Result<ProfileSettings>>
+  updateProfileSettings(input: { owner: string; name?: string; publicProfile?: boolean }): Promise<Result<ProfileSettings>>
+  updateAccountPassword(input: { owner: string; currentPassword?: string; newPassword: string }): Promise<PasswordResult>
+  signOutAll(owner: string): Promise<boolean>
   signOut(): Promise<boolean>
   startSession(): void
   openSession(id: SessionId): void
@@ -111,6 +128,9 @@ export interface ProductInjected {
   billing(id: PlanId | null, purchase: boolean): void
   dismiss(): void
   setTheme(theme: 'light' | 'dark' | 'system'): void
+  setFontSize(role: FontRole, size: number): void
+  setConversationWidth(width: ConversationWidth): Promise<boolean>
+  openShortcuts(): void
   setLocale(locale: string): void
   retryModel(): void
   help(): void
@@ -120,17 +140,60 @@ export type ProductProps = PropsLocale<'verboo'> & InjectFace<ProductInjected>
 /** Product capabilities and the central page renderer. */
 export type PageProps = ProductProps & PropsRuntime<'main'>
 /** Product capabilities and the navigation renderer. */
-export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & InjectFace<ExecutionInjected>
-/** Product capabilities and the conversation introduction renderer. */
-export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
+export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.footer.row'>
+  & InjectFace<ExecutionInjected & {
+    hooks: { desktopUpdate: HostObservable<DesktopUpdateState> }
+    installDesktopUpdate(confirmed: boolean): Promise<void>
+    retryDesktopUpdate(): Promise<void>
+  }>
+export type FirstUseStep = `desktop_first_use_step_${'project' | 'model' | 'message' | 'split' | 'tools' | 'connections'}`
+
+/** Desktop tour visibility and privacy-gated interaction observations. */
+export interface FirstUseInjected {
+  hooks: { firstUse: HostObservable<{ visible: boolean; measurable: boolean }> }
+  observeFirstUse(): void
+  startFirstUse(): void
+  observeFirstUseStep(step: FirstUseStep, outcome: 'started' | 'completed' | 'cancelled'): void
+  backFirstUse(): void
+  finishFirstUse(completed: boolean): void
+}
+
+export type FirstUseProps = PropsLocale<'verboo'> & InjectFace<FirstUseInjected>
+export type HeroProps = PropsLocale<'verboo'> & PropsRuntime<'conversation.hero.intro'>
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     verboo: Key
   }
+
   interface ResourceProtocolMap {
     /** Public stamina for the account encoded in the resource address. */
     'verboo-stamina': StaminaStatus[]
+    /** Public allowance windows for the account encoded in this address. */
+    'verboo-usage-windows': UsageWindowsStatus[]
     /** Usage reading of the external subscription serving the account's ChatGPT route. */
     'verboo-subscription-usage': SubscriptionUsage
   }
+}
+
+
+/** Inline billing actions bound to the current product account. */
+export interface BillingInjected {
+  hooks: { billingPanel: HostObservable<BillingState> }
+  choosePurchase(plan: Plan): void
+  manageSubscription(subscription: Subscription | null): void
+  confirmPurchase(): void
+  reopenPurchase(id: PurchaseAttemptId): void
+  retryPurchase(id: PurchaseAttemptId): void
+  abandonPurchase(id: PurchaseAttemptId): void
+  openBillingTerms(): void
+  closePurchase(): void
+  refreshBilling(): void
+  previewPlanChange(id: BillingSubscriptionId, plan: Plan, removeTier?: boolean): void
+  confirmPlanChange(): void
+  reviewSubscriptionAction(action: LifecycleAction | null): void
+  updateSubscription(id: BillingSubscriptionId): void
+  loadBillingInvoices(id: BillingSubscriptionId): void
+  updateBillingCard(id: BillingSubscriptionId, labels?: CardSetupLabels): void
+  openBillingPortal(id: BillingSubscriptionId): void
+  openBillingLink(url: string): void
 }

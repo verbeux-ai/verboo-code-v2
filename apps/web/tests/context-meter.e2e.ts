@@ -31,7 +31,7 @@ describe.skipIf(webSnapshotMode() === 'record').each([
         const card = page.locator('[data-composer-card]')
         expect(await card.evaluate(element =>
           element.parentElement!.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom,
-        )).toBe(0)
+        )).toBe(4)
         const prompts = fixtureUserPrompts(await readFile(fixture, 'utf8'))
         expect(prompts).toHaveLength(1)
         const settled = scaffold.whenTurnSettled()

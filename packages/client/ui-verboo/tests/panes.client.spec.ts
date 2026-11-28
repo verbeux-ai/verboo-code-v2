@@ -13,6 +13,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/clie
 import { type PanePersistence, PaneController } from '../src/client/panes/controller.ts'
 import { leaves, minimumSize, neighbor, readLayout, rectangles } from '../src/client/panes/layout.ts'
 import type { PaneLayout, PaneNode } from '../src/client/panes/layout.ts'
+import { focusedBinding } from '../src/client/panes/focused-binding.ts'
 
 const a = 'conversation-a' as SessionId
 const b = 'conversation-b' as SessionId
@@ -177,6 +178,26 @@ describe('independent Verboo conversation panes', () => {
     expect(retained).toEqual([a, b])
     expect(controller.focused().sessionId).toBe(b)
     expect(controller.state.getSnapshot().references.size).toBe(2)
+  })
+
+  it('only resolves the restored model after the focused pane retains its session', () => {
+    const { controller, list } = fixture({ initial: undefined, save: vi.fn() }, 'pending')
+    const directory = vi.fn()
+    const binding = { sessionId: b } as SessionBinding
+    const sessions = {
+      scope: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? {} : undefined,
+      binding: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? binding : undefined,
+    } as unknown as Pick<ISessions, 'scope' | 'binding'>
+    const sync = () => {
+      const current = focusedBinding(controller.state.getSnapshot(), sessions)
+      if (current.binding !== undefined) directory(current.session)
+    }
+    const off = controller.state.subscribe(sync)
+    controller.restore({ version: 1, root: { kind: 'pane', id: 'b', sessionId: b }, focused: 'b' })
+    expect(directory).not.toHaveBeenCalled()
+    list.update((state) => { state.phase = 'ready' })
+    expect(directory).toHaveBeenCalledWith(b)
+    off()
   })
 
   it('does not navigate after a pending new conversation was superseded', async () => {

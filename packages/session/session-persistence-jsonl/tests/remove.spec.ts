@@ -5,7 +5,7 @@
  * cases stay here rather than in the shared contract because the layout is
  * this backend's own.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { chmod, mkdtemp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -16,6 +16,20 @@ import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { encodeSegment, generationLogPath, logSuffix, projectDir, sessionDir } from '../src/format.ts'
 import { meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
+
+const removalFault = vi.hoisted(() => ({ path: '' }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    rm: async (...args: Parameters<typeof fs.rm>) => {
+      if (String(args[0]) === removalFault.path) {
+        throw Object.assign(new Error('filesystem refused deletion'), { code: 'EACCES' })
+      }
+      return fs.rm(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -44,6 +58,7 @@ async function listIds(persistence: SessionPersistence): Promise<string[]> {
 }
 
 afterEach(async () => {
+  removalFault.path = ''
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
@@ -136,7 +151,24 @@ describe('JsonlSessionPersistence.remove', () => {
     await expect(stat(sessionDir(root, header.cwd, header.id))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('rejects when the filesystem refuses the deletion and keeps the session listed', async () => {
+  it('preserves the session and reports a filesystem refusal on every platform', async () => {
+    const { persistence, root } = await mount()
+    const header = meta('refused', '/projects/zeta')
+    await writeLog(persistence, header)
+    const dir = sessionDir(root, header.cwd, header.id)
+    removalFault.path = dir
+
+    await expect(persistence.remove(header.id)).rejects.toMatchObject({ code: 'EACCES' })
+    await expect(stat(dir)).resolves.toBeDefined()
+    expect(await listIds(persistence)).toEqual(['refused'])
+
+    removalFault.path = ''
+    await persistence.remove(header.id)
+    expect(await listIds(persistence)).toEqual([])
+    await expect(stat(dir)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects when the filesystem refuses the deletion and keeps the session listed', async () => {
     const { persistence, root } = await mount()
     const header = meta('stubborn', '/projects/zeta')
     await writeLog(persistence, header)

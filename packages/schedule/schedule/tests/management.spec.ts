@@ -57,6 +57,22 @@ it('manages Host tasks globally with Host-generated ids', async () => {
   })
 })
 
+it('rejects scheduling when exit admission fails, preserving Error causes and wrapping other failures', async () => {
+  const test = await setup()
+  const failure = new Error('admission unavailable')
+  const begin = vi.spyOn(test.ctx.agents.exitAdmission, 'begin')
+  const request = { title: 'Task', prompt: 'Prompt', timing: { kind: 'rrule' as const, rrule: daily }, target: { kind: 'new' as const } }
+  begin.mockImplementationOnce(() => { throw failure })
+  await expect(test.service.create(request)).rejects.toBe(failure)
+  begin.mockImplementationOnce(() => {
+    throw 'unexpected admission failure'
+  })
+  await expect(test.service.create(request)).rejects.toMatchObject({
+    message: 'Schedule admission failed', cause: 'unexpected admission failure',
+  })
+  expect((await test.service.list({})).total).toBe(0)
+})
+
 it('keeps committed mutations successful when a change observer throws', async () => {
   const test = await setup()
   const warn = vi.spyOn(test.ctx.logger, 'warn')

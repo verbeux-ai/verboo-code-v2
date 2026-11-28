@@ -8,6 +8,8 @@
     "src"
   ],
   "references": [
+    { "path": "../../host/verboo-analytics" },
+    { "path": "../ui-commands" },
     {
       "path": "../resources"
     },
@@ -88,6 +90,9 @@
     },
     {
       "path": "../ui-context-menu"
+    },
+    {
+      "path": "../ui-tool"
     },
     {
       "path": "../../api/session-controller/tsconfig.client.json"

@@ -143,6 +143,68 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
+  it('contains product action observers and settles an operation at most once', async () => {
+    const { uiConversation } = await bootRegistries()
+    const finish = vi.fn()
+    const first = uiConversation.observeProductActions(() => finish)
+    const begin = vi.fn(() => finish)
+    const second = uiConversation.observeProductActions(begin)
+    first()
+    const settle = uiConversation.beginProductAction('attachment_upload_file')
+    expect(begin).toHaveBeenCalledExactlyOnceWith('attachment_upload_file')
+    settle('failed'); settle('completed')
+    expect(finish).toHaveBeenCalledExactlyOnceWith('failed')
+    second()
+    uiConversation.beginProductAction('schedule_create')('completed')
+    expect(begin).toHaveBeenCalledTimes(1)
+    uiConversation.observeProductActions(() => { throw new Error('observer failed') })
+    expect(() => { uiConversation.beginProductAction('terminal_open')('completed') }).not.toThrow()
+    uiConversation.observeProductActions(() => () => { throw new Error('observer failed') })
+    expect(() => { uiConversation.beginProductAction('terminal_open')('completed') }).not.toThrow()
+  })
+
+  it('classifies message gestures and delivery mode without passing a session or content', async () => {
+    const { uiConversation } = await bootRegistries()
+    const report = vi.fn()
+    const begin = vi.fn(() => report)
+    const dispose = uiConversation.observeMessageSubmissions(begin)
+    for (const [source, mode, running, expected] of [
+      ['enter', 'queue', false, 'message_enter'], ['click', 'queue', false, 'message_button'],
+      ['enter', 'queue', true, 'message_queue_enter'], ['click', 'queue', true, 'message_queue_button'],
+      ['enter', 'steer', true, 'message_steer_enter'], ['click', 'steer', true, 'message_steer_button'],
+    ] as const) {
+      const complete = uiConversation.beginMessageSubmission(SESSION_ID, source, mode, running)
+      expect(begin).toHaveBeenLastCalledWith(expected, undefined)
+      complete?.()
+    }
+    expect(report).toHaveBeenCalledTimes(6)
+    dispose()
+    expect(uiConversation.beginMessageSubmission(SESSION_ID, 'enter', 'queue', false)).toBeUndefined()
+  })
+
+  it('observes Stop clicks for root sessions without exposing the session and preserves replacement observers', async () => {
+    const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const { sessions } = fakeSessions(ctx)
+    const child = 'child-session' as SessionId
+    vi.spyOn(sessions, 'subagentAddress').mockImplementation(id => id === child ? {} as never : undefined)
+    const uiConversation = new UiConversation(ctx, sessions)
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = uiConversation.observeControlClicks(first)
+    const disposeSecond = uiConversation.observeControlClicks(second)
+    disposeFirst()
+    uiConversation.reportControlClick(SESSION_ID, 'stop_button')
+    uiConversation.reportControlClick(child, 'queue_steer_button')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledExactlyOnceWith('stop_button')
+    disposeSecond()
+    uiConversation.reportControlClick(SESSION_ID, 'stop_button')
+    expect(second).toHaveBeenCalledTimes(1)
+    uiConversation.observeControlClicks(() => { throw new Error('analytics unavailable') })
+    expect(() => { uiConversation.reportControlClick(SESSION_ID, 'stop_button') }).not.toThrow()
+  })
+
   it('publishes open turns without an active view and detaches when the Session scope ends', async () => {
     const { uiConversation, binding } = await bootRegistries()
     const conversation = uiConversation.binding(binding)

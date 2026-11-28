@@ -190,6 +190,11 @@ export class LocalJobRegistry extends JobRegistry {
     this.pumpPollMs = resolved.pumpPollMs
     this.selfCtx = ctx
     this.hub = new JobEventHub(this.layers, (message) => { ctx.logger.warn(message) })
+    ctx.inject(['agents'], (agentCtx) => {
+      agentCtx.effect(() => agentCtx.agents.exitAdmission.registerRequired('jobs', () =>
+        [...this.store.values()].some(job => job.status === 'running' || job.status === 'stopping') ? 'busy' : 'idle'),
+      'jobs.exitAdmission()')
+    })
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
   }
 
@@ -205,106 +210,109 @@ export class LocalJobRegistry extends JobRegistry {
   }
 
   start(spec: JobSpec): JobId {
-    const owner = this.resolveOwner(spec.owner)
-    if (!this.servesOwner(owner)) {
-      throw new Error('background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)')
-    }
-    if (spec.kind.length === 0) throw new Error('invalid job kind: expected a non-empty string')
-    if (spec.label.length === 0) throw new Error('invalid job label: expected a non-empty string')
-    if (spec.outputLimitBytes !== undefined
-      && (!Number.isSafeInteger(spec.outputLimitBytes) || spec.outputLimitBytes <= 0)) {
-      throw new Error(`invalid outputLimitBytes: expected a positive safe integer, got ${JSON.stringify(spec.outputLimitBytes)}`)
-    }
-    if (owner !== undefined) this.ensureOwnerCleanup(owner)
+    const release = this.ctx.get('agents')?.exitAdmission.begin()
+    try {
+      const owner = this.resolveOwner(spec.owner)
+      if (!this.servesOwner(owner)) {
+        throw new Error('background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)')
+      }
+      if (spec.kind.length === 0) throw new Error('invalid job kind: expected a non-empty string')
+      if (spec.label.length === 0) throw new Error('invalid job label: expected a non-empty string')
+      if (spec.outputLimitBytes !== undefined
+        && (!Number.isSafeInteger(spec.outputLimitBytes) || spec.outputLimitBytes <= 0)) {
+        throw new Error(`invalid outputLimitBytes: expected a positive safe integer, got ${JSON.stringify(spec.outputLimitBytes)}`)
+      }
+      if (owner !== undefined) this.ensureOwnerCleanup(owner)
 
-    const active = this.activeJobCount(owner)
-    if (active >= this.maxConcurrentJobsPerOwner) {
-      throw new Error(
-        `background job limit reached for this owner (limit: ${this.maxConcurrentJobsPerOwner}); use job_kill to stop an unneeded job, wait for it to finish, then retry`,
-      )
-    }
+      const active = this.activeJobCount(owner)
+      if (active >= this.maxConcurrentJobsPerOwner) {
+        throw new Error(
+          `background job limit reached for this owner (limit: ${this.maxConcurrentJobsPerOwner}); use job_kill to stop an unneeded job, wait for it to finish, then retry`,
+        )
+      }
 
-    // The producer uses the same short UUID identity as controls and durable lifecycle records.
-    // Retry a collision while this registry still holds an earlier id.
-    let id: JobId
-    do {
-      id = JobId(`${spec.kind}-${randomUUID().replaceAll('-', '').slice(0, 16)}`)
-    } while (this.store.has(id))
-    const toolCall = spec.toolCall === undefined ? undefined : { ...spec.toolCall }
-    const ring = new OutputRing()
-    const state: ProducerState = { progress: undefined, job: undefined }
-    const handle: JobHandle = {
-      id,
-      append: (text, options) => { this.appendRing(state, ring, text, options, 'producer') },
-      updateProgress: (line) => { this.updateProgress(state, line) },
-    }
-    const hooks = spec.run(handle)
+      // The producer uses the same short UUID identity as controls and durable lifecycle records.
+      // Retry a collision while this registry still holds an earlier id.
+      let id: JobId
+      do {
+        id = JobId(`${spec.kind}-${randomUUID().replaceAll('-', '').slice(0, 16)}`)
+      } while (this.store.has(id))
+      const toolCall = spec.toolCall === undefined ? undefined : { ...spec.toolCall }
+      const ring = new OutputRing()
+      const state: ProducerState = { progress: undefined, job: undefined }
+      const handle: JobHandle = {
+        id,
+        append: (text, options) => { this.appendRing(state, ring, text, options, 'producer') },
+        updateProgress: (line) => { this.updateProgress(state, line) },
+      }
+      const hooks = spec.run(handle)
 
-    let markSettled!: () => void
-    const settled = new Promise<void>((resolve) => { markSettled = resolve })
-    const job: TrackedJob = {
-      id,
-      toolCall,
-      kind: spec.kind,
-      label: spec.label,
-      outputLimitBytes: spec.outputLimitBytes,
-      owner,
-      cancel: hooks.cancel.bind(hooks),
-      status: 'running',
-      ring,
-      modelCursor: 0,
-      resultDelivered: false,
-      state,
-      detail: undefined,
-      result: undefined,
-      startedAt: Date.now(),
-      finishedAt: undefined,
-      killReason: undefined,
-      settleCause: undefined,
-      settled,
-      markSettled,
-      waitResolvers: new Set(),
-      pump: undefined,
-      spillPaths: [],
-    }
-    // Binding the shared producer state is the commit: writes staged inside
-    // the starter are already in the ring and `state`, and every later handle
-    // call reaches the registered record for its terminal checks and signals.
-    state.job = job
-    this.store.set(id, job)
-    this.recordSessionEvent(job)
-    // Registration is complete and cannot fail from here, so the visible set
-    // has genuinely changed. The announcement precedes the pump because the
-    // pump drains its sources once synchronously, and that drain may append
-    // and announce output: a job's first event is always `registered`.
-    this.emit({ type: 'registered', job: this.view(job) }, owner)
+      let markSettled!: () => void
+      const settled = new Promise<void>((resolve) => { markSettled = resolve })
+      const job: TrackedJob = {
+        id,
+        toolCall,
+        kind: spec.kind,
+        label: spec.label,
+        outputLimitBytes: spec.outputLimitBytes,
+        owner,
+        cancel: hooks.cancel.bind(hooks),
+        status: 'running',
+        ring,
+        modelCursor: 0,
+        resultDelivered: false,
+        state,
+        detail: undefined,
+        result: undefined,
+        startedAt: Date.now(),
+        finishedAt: undefined,
+        killReason: undefined,
+        settleCause: undefined,
+        settled,
+        markSettled,
+        waitResolvers: new Set(),
+        pump: undefined,
+        spillPaths: [],
+      }
+      // Binding the shared producer state is the commit: writes staged inside
+      // the starter are already in the ring and `state`, and every later handle
+      // call reaches the registered record for its terminal checks and signals.
+      state.job = job
+      this.store.set(id, job)
+      this.recordSessionEvent(job)
+      // Registration is complete and cannot fail from here, so the visible set
+      // has genuinely changed. The announcement precedes the pump because the
+      // pump drains its sources once synchronously, and that drain may append
+      // and announce output: a job's first event is always `registered`.
+      this.emit({ type: 'registered', job: this.view(job) }, owner)
 
-    // The producer's settlement or a registry-forced one ends the pump; the
-    // pump's final drain then lands before this registry trims the ring.
-    const producerDone = hooks.done.then(
-      outcome => ({ outcome, producerReported: true }),
-      (error: unknown): { outcome: JobOutcome; producerReported: boolean } => {
-        // Contain a producer contract violation (`done` rejected) so cleanup and waiters cannot hang.
-        this.selfCtx.logger.warn(`jobs: job ${job.id} producer done promise rejected (producer contract violation): ${String(error)}`)
-        return { outcome: { status: 'failed', detail: String(error) }, producerReported: false }
-      },
-    )
-    if (spec.output !== undefined && spec.output.length > 0) {
-      job.pump = startPump(
-        spec.output.map(source => this.guardSource(job, source)),
-        {
-          append: (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
-          spill: (index, path) => { job.spillPaths[index] = path },
+      // The producer's settlement or a registry-forced one ends the pump; the
+      // pump's final drain then lands before this registry trims the ring.
+      const producerDone = hooks.done.then(
+        outcome => ({ outcome, producerReported: true }),
+        (error: unknown): { outcome: JobOutcome; producerReported: boolean } => {
+          // Contain a producer contract violation (`done` rejected) so cleanup and waiters cannot hang.
+          this.selfCtx.logger.warn(`jobs: job ${job.id} producer done promise rejected (producer contract violation): ${String(error)}`)
+          return { outcome: { status: 'failed', detail: String(error) }, producerReported: false }
         },
-        this.pumpPollMs,
-        Promise.race([producerDone, settled]),
       )
-    }
-    void producerDone.then(async ({ outcome, producerReported }) => {
-      if (job.pump !== undefined) await job.pump.done
-      this.settle(job, outcome, job.settleCause ?? 'producer', producerReported)
-    })
-    return id
+      if (spec.output !== undefined && spec.output.length > 0) {
+        job.pump = startPump(
+          spec.output.map(source => this.guardSource(job, source)),
+          {
+            append: (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
+            spill: (index, path) => { job.spillPaths[index] = path },
+          },
+          this.pumpPollMs,
+          Promise.race([producerDone, settled]),
+        )
+      }
+      void producerDone.then(async ({ outcome, producerReported }) => {
+        if (job.pump !== undefined) await job.pump.done
+        this.settle(job, outcome, job.settleCause ?? 'producer', producerReported)
+      })
+      return id
+    } finally { release?.() }
   }
 
   list(caller?: SessionId): JobView[] {
