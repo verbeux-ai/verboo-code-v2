@@ -12,9 +12,12 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 
-vi.mock('ws', () => ({ default: function mockSocket(url: string, options: unknown) {
-  const Socket = globalThis.WebSocket as unknown as new (url: string, options: unknown) => object
-  return new Socket(url, options)
+const { createSocket } = vi.hoisted(() => ({
+  createSocket: vi.fn<(url: string, options: { origin: string }) => EventTarget>(),
+}))
+
+vi.mock('ws', () => ({ default: function mockSocket(url: string, options: { origin: string }) {
+  return createSocket(url, options)
 } }))
 
 class FixtureAccount extends DeepSeekAccount {
@@ -42,6 +45,7 @@ const contexts: Context[] = []
 const roots: string[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()
+  createSocket.mockReset()
   while (contexts.length) await contexts.pop()!.fiber.dispose()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -189,7 +193,7 @@ describe('live account generation speed', () => {
       send(value: string) { this.sent.push(value) }
       close() { this.closed = true; this.dispatchEvent(new Event('close')) }
     }
-    vi.stubGlobal('WebSocket', FakeSocket)
+    createSocket.mockImplementationOnce((url, options) => new FakeSocket(url, options))
     const f = fixture(Response.json({ data: { ticket: 'private-ticket', expiresAt: '2026-11-26T12:01:00Z' } }))
     const abort = new AbortController()
     const iterator = f.product.watchUsageSpeed(abort.signal)[Symbol.asyncIterator]()
@@ -213,7 +217,7 @@ describe('live account generation speed', () => {
       send(_value: string) {}
       close() { this.dispatchEvent(new Event('close')) }
     }
-    vi.stubGlobal('WebSocket', FakeSocket)
+    createSocket.mockImplementationOnce(url => new FakeSocket(url))
     const f = fixture(Response.json({ data: { ticket: 'private-ticket' } }))
     const iterator = f.product.watchUsageSpeed(new AbortController().signal)[Symbol.asyncIterator]()
     const next = iterator.next()

@@ -5,6 +5,8 @@ import { Glyph } from './Glyph.tsx'
 import type { Key } from './locales.ts'
 import css from './Product.module.css'
 
+type AppearanceProps = Pick<PageProps, 't' | 'setFontSize' | 'setTheme' | 'setConversationWidth'>
+
 const fontPresets = [
   { text: 10, code: 10, terminal: 10 },
   { text: 12, code: 10, terminal: 11 },
@@ -29,7 +31,7 @@ function closestFontPreset(sizes: PreferenceSnapshot['fontSizes']): number {
 }
 
 /** Appearance preferences and an inline sample of the selected theme, size and width. */
-export function AppearanceSettings({ props, preference }: { props: PageProps; preference: PreferenceSnapshot }) {
+export function AppearanceSettings({ props, preference }: { props: AppearanceProps; preference: PreferenceSnapshot }) {
   const { t, setFontSize, setTheme, setConversationWidth } = props
   const [pendingWidth, setPendingWidth] = useState<ConversationWidth | null>(null)
   const [widthFailed, setWidthFailed] = useState(false)

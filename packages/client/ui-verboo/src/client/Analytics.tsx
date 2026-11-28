@@ -15,7 +15,8 @@ export interface AnalyticsActions {
   activity(signal: AbortSignal): Promise<Result<UsageActivityDay[]>>
   speed(signal: AbortSignal): AsyncIterable<SpeedFrame>
 }
-type Props = PageProps & AnalyticsActions
+type Props = Pick<PageProps, 't' | 'useProduct' | 'usePreferences' | 'useResource' | 'refreshStamina' | 'retryAccount' | 'start'>
+  & AnalyticsActions
 const periods: readonly { id: UsagePeriod; key: Key }[] = [
   { id: '24h', key: 'analytics24h' }, { id: '7d', key: 'analytics7d' },
   { id: '30d', key: 'analytics30d' }, { id: 'current_month', key: 'analyticsCurrentMonth' },
