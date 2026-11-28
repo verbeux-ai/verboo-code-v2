@@ -4,6 +4,7 @@
  * relocated Node or Electron carrier; CARRIER=sdk selects the standalone executable.
  * NODE/CLI/ASSETS under the same prefix select Desktop command and skill resources outside ASAR.
  * API=openai-completions selects a development gateway instead of the default Messages API.
+ * VERBOO_CODE_CI_API_KEY selects the authenticated Verboo Code Router in CI.
  */
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile, chmod } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -20,7 +21,13 @@ const carrier = process.env.DSH_OFFICE_TEST_CARRIER ?? 'npm'
 const executable = process.env.DSH_OFFICE_TEST_EXECUTABLE ?? process.execPath
 const entry = process.env.DSH_OFFICE_TEST_ENTRY ?? join(repo, 'apps/cli/lib/bin.js')
 
-it.skipIf(!process.env.DEEPSEEK_API_KEY || process.platform === 'win32')(`agent discovers and executes the ${carrier} Office CLI without Node on PATH`, async () => {
+const verboo = Boolean(process.env.VERBOO_CODE_CI_API_KEY?.trim())
+const developmentGateway = !verboo && process.env.DSH_OFFICE_TEST_API === 'openai-completions'
+const provider = verboo ? 'verboo-live' : developmentGateway ? 'office-test' : 'deepseek-official'
+const model = verboo ? 'qwen3.8-27b' : process.env.MODEL_NAME ?? 'deepseek-v4-flash'
+const scenario = `agent discovers and executes the ${carrier} Office CLI without Node on PATH`
+
+it.skipIf((!verboo && !process.env.DEEPSEEK_API_KEY) || process.platform === 'win32')(scenario, async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh office discovery '))
   try {
     await writeFile(join(root, 'input.docx'), zipSync({
@@ -32,7 +39,13 @@ it.skipIf(!process.env.DEEPSEEK_API_KEY || process.platform === 'win32')(`agent 
     const node = process.env.DSH_OFFICE_TEST_NODE, cli = process.env.DSH_OFFICE_TEST_CLI
     const assetRoot = process.env.DSH_OFFICE_TEST_ASSETS
     await writeFile(patch, JSON.stringify([
-      ...(process.env.DSH_OFFICE_TEST_API === 'openai-completions' ? [{ id: 'llm-deepseek', disabled: true }, { id: 'llm-pi-ai', config: { providers: { 'office-test': { api: 'openai-completions', apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: process.env.DEEPSEEK_BASE_URL, compat: { thinkingFormat: 'deepseek' }, models: [{ id: process.env.MODEL_NAME ?? 'deepseek-v4-flash', contextWindow: 128000, maxTokens: 8000 }] } } } }] : []),
+      ...(developmentGateway ? [
+        { id: 'llm-deepseek', disabled: true },
+        { id: 'llm-pi-ai', config: { providers: { 'office-test': {
+          api: 'openai-completions', apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: process.env.DEEPSEEK_BASE_URL,
+          compat: { thinkingFormat: 'deepseek' }, models: [{ id: model, contextWindow: 128000, maxTokens: 8000 }],
+        } } } },
+      ] : []),
       { id: 'session-persistence-jsonl', config: { root: join(root, 'sessions'), compression: 'none' } },
       { id: 'skill-office', disabled: false },
       { id: 'skill-office', config: { ...assetRoot === undefined ? {} : { assetRoot }, ...node === undefined ? {} : { node }, ...cli === undefined ? {} : { cli } } },
@@ -55,6 +68,7 @@ it.skipIf(!process.env.DEEPSEEK_API_KEY || process.platform === 'win32')(`agent 
     expect(lookup.exitCode, 'the fixture must not expose Node or the Office CLI through PATH').not.toBe(0)
     const child = execa(executable, [
       ...carrier === 'sdk' ? [] : [entry], '--profile', 'sdk', '--patch', patch,
+      ...(verboo ? ['--patch', join(repo, 'scripts', 'verboo-live-model.patch.yml')] : []),
     ], {
       cwd: root, env: {
         PATH: path, DSH_HOME: join(root, 'home'), DSH_AGENTS_HOME: join(root, 'agents'),
@@ -84,7 +98,7 @@ it.skipIf(!process.env.DEEPSEEK_API_KEY || process.platform === 'win32')(`agent 
       }
     })
     try {
-      send(1, 'initialize', { cwd: root, provider: process.env.DSH_OFFICE_TEST_API === 'openai-completions' ? 'office-test' : 'deepseek-official', model: process.env.MODEL_NAME ?? 'deepseek-v4-flash', maxTokens: 8000 })
+      send(1, 'initialize', { cwd: root, provider, model, maxTokens: 8000 })
       const result = await child
       const diagnostic = `${result.stderr}\n${result.stdout}`
       expect(protocolError, diagnostic).toBeUndefined()
