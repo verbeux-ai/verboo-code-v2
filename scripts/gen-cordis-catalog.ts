@@ -1018,7 +1018,6 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PurchaseProgress: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   PurchaseQuote: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   PurchaseRecommendation: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
-  Subscription: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   SubscriptionLifecycleProgress: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   SubscriptionCardUpdate: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
   SubscriptionCancellation: 'Billing projections are documented in packages/api/verboo-product/src/types.ts',
