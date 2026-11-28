@@ -25,7 +25,8 @@ const testDir = await mkdtemp(join(tmpdir(), 'verboo-quiet-update-'))
 const hostHome = join(dataDir, 'home')
 const fixture = join(hostHome, 'update-test-profile.txt')
 
-const powershell = command => execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 30_000 })
+const powershell = command => execute('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 30_000 })
+const appProcesses = "Get-Process | Where-Object ProcessName -EQ 'verboo-code-desktop'"
 const psString = value => "'" + value.replaceAll("'", "''") + "'"
 const root = 'https://github.com/verbeux-ai/verboo-code-v2/releases/download/'
 const fileName = version => 'Verboo-Code-v2-' + version + '-Windows-x64-Setup.exe'
@@ -127,17 +128,17 @@ async function waitForInterface() {
 }
 
 async function appPids() {
-  const { stdout } = await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id')
+  const { stdout } = await powershell(appProcesses + ' | Select-Object -ExpandProperty Id')
   return stdout.trim().split(/\s+/).filter(Boolean).map(Number)
 }
 
 async function closeApp() {
-  await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }')
+  await powershell(appProcesses + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
   await until('graceful desktop exit', async () => (await appPids()).length === 0)
 }
 
 async function observeWindows(windowLog, readyFile) {
-  const watcher = watch('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', [
+  const watcher = watch('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', [
     "Set-Content -LiteralPath " + psString(readyFile) + " -Value started",
     'while ($true) {',
     "  Get-Process | Where-Object { $_.MainWindowTitle -like '*Verboo Code Setup*' } | ForEach-Object { Add-Content -LiteralPath " + psString(windowLog) + " -Value $_.MainWindowTitle }",
@@ -186,14 +187,14 @@ Write-Output 'PASS: the official silent installer upgraded the standard Windows 
     "  if ($LASTEXITCODE -ne 0) { throw 'Unable to grant the test user access to its fixture' }",
     "  $credential = [pscredential]::new(($env:COMPUTERNAME + '\\' + $name), $password)",
     "  $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"' + " + psString(worker) + " + '\"'",
-    "  $worker = Start-Process -FilePath (Get-Command powershell.exe).Source -Credential $credential -LoadUserProfile -ArgumentList $arguments -WorkingDirectory " + psString(testDir) +
+    "  $worker = Start-Process -FilePath (Get-Command pwsh.exe).Source -Credential $credential -LoadUserProfile -ArgumentList $arguments -WorkingDirectory " + psString(testDir) +
       " -RedirectStandardOutput " + psString(join(testDir, 'standard.stdout')) + " -RedirectStandardError " + psString(join(testDir, 'standard.stderr')) + " -PassThru",
     "  if (-not $worker.WaitForExit(240000)) { Stop-Process -Id $worker.Id -Force; throw 'Standard-user fixture timed out' }",
     "  Get-Content -LiteralPath " + psString(join(testDir, 'standard.stdout')),
     "  if ($worker.ExitCode -ne 0) { Get-Content -LiteralPath " + psString(join(testDir, 'standard.stderr')) + "; throw 'Standard-user installer smoke failed' }",
     '} finally { Remove-LocalUser -Name $name }',
   ].join('\n')
-  const { stdout } = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 275_000 })
+  const { stdout } = await execute('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 275_000 })
   console.log(stdout.trim())
 }
 
@@ -262,7 +263,7 @@ try {
     standardUserError = error
     console.error('Standard-user check:', error.stdout?.trim(), error.stderr?.trim())
   } finally {
-    await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | Stop-Process -Force')
+    await powershell(appProcesses + ' | Stop-Process -Force')
   }
 
   for (const scenario of ['restart-now', 'next-open-offline']) {
@@ -314,9 +315,10 @@ try {
   }
   if (standardUserError) throw standardUserError
 } catch (error) {
-  const { stdout } = await powershell("Get-Process -Name 'verboo-code-desktop','msedgewebview2' -ErrorAction SilentlyContinue | " +
+  await powershell("Get-Process | Where-Object { $_.ProcessName -in 'verboo-code-desktop','msedgewebview2' } | " +
     "Select-Object -Property Id,ProcessName,MainWindowTitle | Out-String -Width 200")
-  console.log('Native process state:', stdout.trim())
+    .then(({ stdout }) => console.log('Native process state:', stdout.trim()))
+    .catch(diagnostic => console.error('Cannot read native process state:', diagnostic.message))
   throw error
 } finally {
   await stopObserver?.()
@@ -324,7 +326,7 @@ try {
     server.closeAllConnections()
     await new Promise(done => server.close(done))
   }
-  await powershell('Get-Process -Name verboo-code-desktop -ErrorAction SilentlyContinue | Stop-Process -Force; Remove-ItemProperty -LiteralPath ' +
-    psString(webviewKey) + " -Name '*' -ErrorAction SilentlyContinue")
+  await powershell(appProcesses + ' | Stop-Process -Force; Remove-ItemProperty -LiteralPath ' +
+    psString(webviewKey) + " -Name '*' -ErrorAction SilentlyContinue").catch(error => console.error('Windows cleanup:', error.message))
   await rm(testDir, { recursive: true, force: true, maxRetries: 3 })
 }
