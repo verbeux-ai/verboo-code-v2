@@ -15,8 +15,8 @@ const oldVersion = '0.2.2-alpha.42'
 const newVersion = '0.2.2-alpha.43'
 const title = 'Verboo Code'
 const executable = 'verboo-code-desktop.exe'
-const uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Verboo Code'
-const webviewKey = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+const uninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Verboo Code'
+const webviewKey = 'HKCU:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments'
 const appDir = join(process.env.LOCALAPPDATA, title)
 const dataDir = join(process.env.APPDATA, 'ai.verbeux.verboo-code')
 const appFile = join(appDir, executable)
@@ -83,7 +83,7 @@ async function runInstaller(file, args) {
 }
 
 async function installedVersion() {
-  const { stdout } = await powershell('(Get-ItemProperty -LiteralPath ' + psString(uninstallKey) + ').DisplayVersion')
+  const { stdout } = await powershell('(Get-ItemProperty -LiteralPath ' + psString(uninstallKey) + ' -ErrorAction Stop).DisplayVersion')
   return stdout.trim()
 }
 
@@ -145,6 +145,55 @@ async function observeWindows(windowLog, readyFile) {
   ].join('\n')], { windowsHide: true, stdio: 'ignore' })
   await until('Windows setup-window observer', async () => (await readFile(readyFile, 'utf8')).trim() === 'started')
   return async () => { watcher.child.kill(); await watcher.finished }
+}
+
+async function checkStandardUserInstaller(previous, target) {
+  await writeFile(join(testDir, 'standard-user.json'), JSON.stringify({
+    previous: previous.packageFile, target: target.packageFile, previousVersion: oldVersion, targetVersion: newVersion,
+  }))
+  const worker = join(testDir, 'standard-user.ps1')
+  await writeFile(worker, String.raw`
+$ErrorActionPreference = 'Stop'
+$principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Expected a non-administrator account' }
+$setup = Get-Content (Join-Path $PSScriptRoot 'standard-user.json') -Raw | ConvertFrom-Json
+$profileRoot = [Environment]::GetFolderPath('LocalApplicationData')
+$marker = Join-Path $profileRoot 'Verboo Code update test.txt'
+$registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Verboo Code'
+Set-Content -LiteralPath $marker -Value 'test profile preserved'
+$baseline = Start-Process -FilePath $setup.previous -ArgumentList '/S' -Wait -PassThru
+if ($baseline.ExitCode -ne 0 -or (Get-ItemProperty -LiteralPath $registry).DisplayVersion -ne $setup.previousVersion) {
+  throw 'Standard-user baseline installation failed'
+}
+$upgrade = Start-Process -FilePath $setup.target -ArgumentList '/S','/UPDATE','/R' -PassThru
+if (-not $upgrade.WaitForExit(150000)) { throw 'The standard-user installer did not finish' }
+if ($upgrade.ExitCode -ne 0 -or (Get-ItemProperty -LiteralPath $registry).DisplayVersion -ne $setup.targetVersion) {
+  throw 'Silent installer failed under a standard Windows account'
+}
+if ((Get-Content -LiteralPath $marker -Raw).Trim() -ne 'test profile preserved') { throw 'Test profile file was lost' }
+Write-Output 'PASS: the official silent installer upgraded the standard Windows account without administrator rights.'
+`)
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "$name = 'VerbooTest' + [guid]::NewGuid().ToString('N').Substring(0, 8)",
+    "$password = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + '!A9') -AsPlainText -Force",
+    "New-LocalUser -Name $name -Password $password | Out-Null",
+    'try {',
+    "  $sid = (Get-LocalUser -Name $name).SID.Value",
+    "  Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $name",
+    "  & icacls " + psString(testDir) + " /grant ('*' + $sid + ':(OI)(CI)M') | Out-Null",
+    "  if ($LASTEXITCODE -ne 0) { throw 'Unable to grant the test user access to its fixture' }",
+    "  $credential = [pscredential]::new(($env:COMPUTERNAME + '\\' + $name), $password)",
+    "  $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"' + " + psString(worker) + " + '\"'",
+    "  $worker = Start-Process -FilePath (Get-Command powershell.exe).Source -Credential $credential -LoadUserProfile -ArgumentList $arguments -WorkingDirectory " + psString(testDir) +
+      " -RedirectStandardOutput " + psString(join(testDir, 'standard.stdout')) + " -RedirectStandardError " + psString(join(testDir, 'standard.stderr')) + " -PassThru",
+    "  if (-not $worker.WaitForExit(240000)) { Stop-Process -Id $worker.Id -Force; throw 'Standard-user fixture timed out' }",
+    "  Get-Content -LiteralPath " + psString(join(testDir, 'standard.stdout')),
+    "  if ($worker.ExitCode -ne 0) { Get-Content -LiteralPath " + psString(join(testDir, 'standard.stderr')) + "; throw 'Standard-user installer smoke failed' }",
+    '} finally { Remove-LocalUser -Name $name }',
+  ].join('\n')
+  const { stdout } = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 275_000 })
+  console.log(stdout.trim())
 }
 
 let server
@@ -247,6 +296,7 @@ try {
     console.log('PASS: ' + scenario + ' installed the signed version without Setup, retained the user file, and restored the Verboo interface.')
     await closeApp()
   }
+  await checkStandardUserInstaller(previous, target)
 } finally {
   await stopObserver?.()
   if (server) {

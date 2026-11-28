@@ -32,6 +32,7 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> ../.desktop-build/tauri/target
           key: x86_64-pc-windows-msvc-windows-latest
+          cache-on-failure: true
       - name: Verify signed upgrade and relaunch with the native Windows installer
         shell: pwsh
         run: node apps/desktop/tauri/tests/fixtures/windows-quiet-updater-native.mjs
