@@ -133,8 +133,14 @@ export type SidebarProps = ProductProps & PropsRuntime<'sidebar'> & PropsRenderS
     installDesktopUpdate(confirmed: boolean): Promise<void>
     retryDesktopUpdate(): Promise<void>
   }>
-/** Product capabilities and the conversation introduction renderer. */
-export type HeroProps = ProductProps & PropsRuntime<'conversation.hero.intro'>
+/** The desktop introduction and its optional first-use actions. */
+export interface FirstUseInjected {
+  hooks: { firstUse: HostObservable<{ visible: boolean; measurable: boolean }> }
+  observeFirstUse(): void
+  dismissFirstUse(): void
+  prepareFirstProject(prompt: string): Promise<void>
+}
+export type HeroProps = PropsLocale<'verboo'> & PropsRuntime<'conversation.hero.intro'> & InjectFace<FirstUseInjected>
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     verboo: Key
