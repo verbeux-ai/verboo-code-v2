@@ -207,7 +207,7 @@ import { VIEWER_ENDPOINT_CLASSES } from './packages/experimental/liveshare/src/e
  * @returns the stand-in module's file path.
  */
 function remoteStubFor(packageName: string): string {
-  const file = fileURLToPath(new URL(`./scripts/generated-remote-stubs/${packageName.slice('@deepseek-ai/'.length)}.ts`, import.meta.url))
+  const file = fileURLToPath(new URL(`./.dsh-build/generated-remote-stubs/${packageName.slice('@deepseek-ai/'.length)}.ts`, import.meta.url))
   mkdirSync(dirname(file), { recursive: true })
   // Methods come from the endpoint classification the repo already maintains, so
   // an assembled Client exposes the same namespace.method surface the real build
@@ -217,8 +217,12 @@ function remoteStubFor(packageName: string): string {
   const namespace = packageName.slice('@deepseek-ai/dsh-'.length)
   const methods = Object.keys(VIEWER_ENDPOINT_CLASSES)
     .filter(endpoint => endpoint.startsWith(`${namespace}/`))
-    .map(endpoint => `${namespace}/${endpoint.slice(namespace.length + 1)}`)
-    .map(endpoint => `'${endpoint}': { invocation: { kind: 'direct' }, parameters: [] }`)
+    .map(endpoint => `${JSON.stringify(endpoint)}: {
+      service: ${JSON.stringify(namespace)},
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: { mode: 'strict', typeSymbol: 'unknown', create: () => z.unknown(), jsonSchema: {} },
+    }`)
   const methodEntries = methods.length === 0 ? '' : methods.join(',\n    ') + ','
   writeFileSync(file, `import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import { z } from 'zod'
