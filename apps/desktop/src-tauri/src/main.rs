@@ -444,6 +444,18 @@ fn main() {
                             }
                             eprintln!("Verboo Code: native_page_loaded");
                             let _title = window.set_title("Verboo Code");
+                            if std::env::var_os("VERBOO_NATIVE_SMOKE_RESTART").is_some() {
+                                // Test-branch-only: invoke the same bridge action as Restart now.
+                                let _ = window.eval(r#"(() => {
+                                  if (window.__verbooSmokeTimer) return;
+                                  window.__verbooSmokeTimer = setInterval(async () => {
+                                    const updater = window.__VERBOO_UPDATE__;
+                                    if (!updater || (await updater.getState()).phase !== 'ready') return;
+                                    clearInterval(window.__verbooSmokeTimer);
+                                    await updater.install(false);
+                                  }, 250);
+                                })()"#);
+                            }
                         }
                     })
                     .on_navigation({

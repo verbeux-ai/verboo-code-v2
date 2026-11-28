@@ -16,17 +16,17 @@ const newVersion = '0.2.2-alpha.43'
 const title = 'Verboo Code'
 const executable = 'verboo-code-desktop.exe'
 const uninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Verboo Code'
-const webviewKey = 'HKCU:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments'
 const appDir = join(process.env.LOCALAPPDATA, title)
 const dataDir = join(process.env.APPDATA, 'ai.verbeux.verboo-code')
 const appFile = join(appDir, executable)
-const devtoolsPort = 19222
+const staged = join(process.env.LOCALAPPDATA, 'ai.verbeux.verboo-code', 'pending-update')
 const testDir = await mkdtemp(join(tmpdir(), 'verboo-quiet-update-'))
 const hostHome = join(dataDir, 'home')
 const fixture = join(hostHome, 'update-test-profile.txt')
 
 const powershell = command => execute('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 30_000 })
 const appProcesses = "Get-Process | Where-Object ProcessName -EQ 'verboo-code-desktop'"
+const automationEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'))
 const psString = value => "'" + value.replaceAll("'", "''") + "'"
 const root = 'https://github.com/verbeux-ai/verboo-code-v2/releases/download/'
 const fileName = version => 'Verboo-Code-v2-' + version + '-Windows-x64-Setup.exe'
@@ -88,43 +88,25 @@ async function installedVersion() {
   return stdout.trim()
 }
 
-async function renderer(expression) {
-  const response = await fetch('http://127.0.0.1:' + devtoolsPort + '/json/list', { signal: AbortSignal.timeout(3000) })
-    .catch(error => { throw new Error('WebView2 debug endpoint: ' + (error.cause?.code ?? error.message)) })
-  const targets = await response.json()
-  const target = targets.find(page => page.type === 'page' && page.url.startsWith('http://127.0.0.1:'))
-  if (!target) return undefined
-  return await new Promise((done, reject) => {
-    const socket = new WebSocket(target.webSocketDebuggerUrl)
-    const timeout = setTimeout(() => { socket.close(); reject(new Error('WebView IPC timed out')) }, 3500)
-    socket.addEventListener('open', () => socket.send(JSON.stringify({
-      id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise: true },
-    })))
-    socket.addEventListener('error', () => {
-      clearTimeout(timeout)
-      reject(new Error('WebView IPC closed'))
-    })
-    socket.addEventListener('message', event => {
-      const reply = JSON.parse(event.data)
-      if (reply.id !== 1) return
-      clearTimeout(timeout)
-      socket.close()
-      if (reply.result?.exceptionDetails) {
-        const detail = reply.result.exceptionDetails
-        reject(new Error(detail.exception?.value ?? detail.exception?.description ?? detail.text))
-      }
-      else done(reply.result?.result?.value)
-    })
-  })
-}
-
-const ready = String.raw`!!window.__VERBOO_DESKTOP__ &&
-  !document.querySelector('[data-dsh-boot]') &&
-  Array.from(document.querySelectorAll('button')).some(button => !button.disabled &&
-    /sign in with verboo|continue with verboo/i.test(button.textContent))`
-
 async function waitForInterface() {
-  await until('Verboo sign-in interface in native WebView2', () => renderer(ready))
+  await until('Verboo sign-in interface through Windows UI Automation', async () => {
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      'Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes',
+      '$enabled = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsEnabledProperty, $true)',
+      appProcesses + ' | ForEach-Object {',
+      '  if ($_.MainWindowHandle -ne 0) {',
+      '    $window = [Windows.Automation.AutomationElement]::FromHandle($_.MainWindowHandle)',
+      '    $elements = $window.FindAll([Windows.Automation.TreeScope]::Descendants, $enabled)',
+      "    foreach ($item in $elements) { if ($item.Current.Name -match '(Sign in|Continue) with Verboo') { Write-Output 'SIGN_IN_READY'; break } }",
+      '  }',
+      '}',
+    ].join('\n')
+    const { stdout } = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      env: automationEnv, timeout: 25_000,
+    })
+    return stdout.includes('SIGN_IN_READY')
+  })
 }
 
 async function appPids() {
@@ -159,7 +141,15 @@ $ErrorActionPreference = 'Stop'
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Expected a non-administrator account' }
 $setup = Get-Content (Join-Path $PSScriptRoot 'standard-user.json') -Raw | ConvertFrom-Json
-$profileRoot = [Environment]::GetFolderPath('LocalApplicationData')
+$accountSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$profileKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + $accountSid
+$env:USERPROFILE = [Environment]::ExpandEnvironmentVariables((Get-ItemProperty -LiteralPath $profileKey).ProfileImagePath)
+$env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+$env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+$env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
+$env:TMP = $env:TEMP
+New-Item -Path $env:APPDATA,$env:TEMP -ItemType Directory -Force | Out-Null
+$profileRoot = $env:LOCALAPPDATA
 $marker = Join-Path $profileRoot 'Verboo Code update test.txt'
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Verboo Code'
 Set-Content -LiteralPath $marker -Value 'test profile preserved'
@@ -202,7 +192,6 @@ let server
 let release
 let packageRequests = 0
 let stopObserver
-const debugArguments = '--remote-debugging-port=' + devtoolsPort
 try {
   const identity = await powershell('$p = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()); $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)')
   console.log('Runner user token has administrator rights:', identity.stdout.trim())
@@ -239,10 +228,6 @@ try {
   assert.deepEqual(await cargo.finished, { code: 0, signal: null })
   const testApp = resolve('apps/desktop/.desktop-build/tauri/target/x86_64-pc-windows-msvc/release', executable)
 
-  process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = debugArguments
-  await powershell("$ErrorActionPreference = 'Stop'; New-Item -Path " + psString(webviewKey) + " -Force | Out-Null; New-ItemProperty -Path " +
-    psString(webviewKey) + " -Name '*' -Value " + psString(debugArguments) + " -PropertyType String -Force | Out-Null")
-
   const manualLog = join(testDir, 'manual.log')
   stopObserver = await observeWindows(manualLog, join(testDir, 'manual.ready'))
   const manual = watch(previous.packageFile, [], { stdio: 'ignore' })
@@ -274,20 +259,22 @@ try {
     const previousHash = await digest(appFile)
     await mkdir(hostHome, { recursive: true })
     await writeFile(fixture, 'data-sentinel:' + scenario)
-    const desktop = watch(appFile, [], { cwd: appDir, stdio: 'inherit' })
-    desktop.finished.then(result => console.log(scenario + ' source process exited:', result)).catch(() => {})
-    await waitForInterface()
-    await until('signed package ready in the actual desktop updater', async () =>
-      (await renderer('window.__VERBOO_UPDATE__?.getState()'))?.phase === 'ready', 180_000)
-    console.log(scenario + ': signed update downloaded and staged.')
-    const requestCount = packageRequests
+    const requestsBefore = packageRequests
     const windows = join(testDir, scenario + '.log')
     stopObserver = await observeWindows(windows, join(testDir, scenario + '.ready'))
-    if (scenario === 'restart-now') {
-      await renderer('window.__VERBOO_UPDATE__.install(false)').catch(error => {
-        if (!/WebView IPC (closed|timed out)/.test(error.message)) throw error
-      })
-    } else {
+    const desktop = watch(appFile, [], {
+      cwd: appDir, stdio: 'inherit',
+      env: { ...process.env, ...(scenario === 'restart-now' ? { VERBOO_NATIVE_SMOKE_RESTART: '1' } : {}) },
+    })
+    desktop.finished.then(result => console.log(scenario + ' source process exited:', result)).catch(() => {})
+    if (scenario === 'next-open-offline') {
+      await waitForInterface()
+      await until('signed package staged by the native updater', async () => {
+        const packageFile = await stat(join(staged, 'package'))
+        const manifest = await stat(join(staged, 'manifest.json'))
+        return packageFile.size === target.bytes && manifest.size > 0
+      }, 180_000)
+      console.log(scenario + ': signed update downloaded and staged.')
       await closeApp()
       await desktop.finished
       server.closeAllConnections()
@@ -309,7 +296,7 @@ try {
     assert.equal(visibleInstaller, '', 'silent upgrade must display no Setup window')
     assert.notEqual(await digest(appFile), previousHash, 'real executable replaced')
     assert.equal(await readFile(fixture, 'utf8'), 'data-sentinel:' + scenario, 'per-user data preserved')
-    assert.equal(packageRequests, requestCount, 'install uses staged package without another download')
+    assert.equal(packageRequests, requestsBefore + 1, 'the signed update was fetched once')
     console.log('PASS: ' + scenario + ' installed the signed version without Setup, retained the user file, and restored the Verboo interface.')
     await closeApp()
   }
@@ -326,7 +313,6 @@ try {
     server.closeAllConnections()
     await new Promise(done => server.close(done))
   }
-  await powershell(appProcesses + ' | Stop-Process -Force; Remove-ItemProperty -LiteralPath ' +
-    psString(webviewKey) + " -Name '*' -ErrorAction SilentlyContinue").catch(error => console.error('Windows cleanup:', error.message))
+  await powershell(appProcesses + ' | Stop-Process -Force').catch(error => console.error('Windows cleanup:', error.message))
   await rm(testDir, { recursive: true, force: true, maxRetries: 3 })
 }
