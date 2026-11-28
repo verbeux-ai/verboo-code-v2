@@ -58,6 +58,7 @@ async function fixture(
     inferenceMalformed: false,
     inferenceStatus: 200,
     inferenceStatuses: [] as number[],
+    inferenceRetryVeto: false,
     profileStatus: 200,
     profileGate: null as Promise<void> | null,
     rejectRefresh: false,
@@ -135,6 +136,8 @@ async function fixture(
       state.inferences++
       const status = state.inferenceStatuses.shift() ?? state.inferenceStatus
       if (status !== 200) {
+        if (state.inferenceRetryVeto)
+          res.setHeader('x-should-retry', 'false')
         res
           .writeHead(status)
           .end('{"error":{"message":"fixture rejection"}}')
@@ -770,6 +773,36 @@ it('preserves a valid account when the gateway rejects an entitlement', async ()
   expect((await app.ctx.deepseekAccount.getState()).status).toBe(
     'credential-stored',
   )
+})
+
+it.each([
+  [503, true, 'ACCOUNT_REQUEST_RETRY_STOPPED', false],
+  [503, false, 'SERVER', true],
+  [429, true, 'ACCOUNT_REQUEST_RETRY_STOPPED', false],
+  [403, true, 'AUTH_FORBIDDEN', false],
+] as const)('keeps the application retry decision for HTTP %s with retry veto %s', async (status, veto, code, retryable) => {
+  const app = await fixture()
+  await app.login()
+  app.state.inferenceStatuses.push(status)
+  app.state.inferenceRetryVeto = veto
+  const provider = 'deepseek-account'
+  const model = 'max/qwen3.6-27b'
+  const chunks: StreamChunk[] = []
+  for await (const chunk of app.ctx.llm.stream({ provider, model, messages: [] }))
+    chunks.push(chunk)
+
+  expect(chunks.at(-1)).toMatchObject({
+    type: 'finish',
+    reason: {
+      kind: 'error',
+      failure: code === 'ACCOUNT_REQUEST_RETRY_STOPPED' ? { code, status } : { code },
+    },
+  })
+  const policy = app.ctx.llm.providerRetryPolicy(provider)
+  if (policy.mode !== 'normal') throw new Error('Expected the account route to use bounded retries')
+  expect(policy.retryableCodes.includes(code)).toBe(retryable)
+  expect(app.state.inferences).toBe(1)
+  expect(app.state.refreshes).toBe(0)
 })
 
 it('authenticates ciphertext and keeps issuer or installation keys separate', async () => {

@@ -48,6 +48,7 @@ import {
 import type {
   GenerateOptions,
   ImageAttachmentAccess,
+  LlmFailure,
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
@@ -119,6 +120,8 @@ export interface PiAiAdapterOptions {
    * @returns headers to pass to pi-ai after applying Harness attribution.
    */
   prepareHeaders?: (request: PiAiRequestHeaderContext, headers: Headers) => Headers
+  /** Classify a failed HTTP response before pi-ai flattens it to error text. */
+  classifyHttpFailure?: (status: number, headers: Headers) => LlmFailure | undefined
   /** Observe safe malformed-response facts without prompt or tool arguments. */
   onMalformedResponse?: (diagnostic: MalformedToolCallDiagnostic & { provider: string; model: string }) => void
   /** Resolve the optional durable attachment service at request time. */
@@ -465,6 +468,13 @@ export class PiAiAdapter extends LlmAdapter {
       const reportMalformed = (diagnostic: MalformedToolCallDiagnostic): void => {
         this.config.onMalformedResponse?.({ provider: options.provider, model: options.model, ...diagnostic })
       }
+      const classifyHttpFailure = this.config.classifyHttpFailure
+      let httpFailure: LlmFailure | undefined
+      const classifyFetch: typeof fetch | undefined = classifyHttpFailure === undefined ? undefined : async (input, init) => {
+        const response = await fetch(input, init)
+        httpFailure = response.ok ? undefined : classifyHttpFailure(response.status, response.headers)
+        return response
+      }
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
@@ -472,6 +482,7 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        ...classifyFetch === undefined ? {} : { fetch: classifyFetch },
         ...inspection === undefined ? {} : { onProviderStreamEvent: (data: unknown) => { inspection.observe(data) } },
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id,
@@ -491,7 +502,11 @@ export class PiAiAdapter extends LlmAdapter {
             && result.value.reason.kind !== 'max-tokens') {
             throw new LlmError('OpenAI-compatible response reused a tool-call id', 'MALFORMED_RESPONSE')
           }
-          yield result.value
+          if (httpFailure !== undefined && result.value.type === 'finish' && result.value.reason.kind === 'error') {
+            yield { type: 'finish', reason: { kind: 'error', failure: httpFailure } }
+          } else {
+            yield result.value
+          }
         }
       } catch (error: unknown) {
         if (inspection?.duplicate && error instanceof LlmError && error.code === 'MALFORMED_RESPONSE'
