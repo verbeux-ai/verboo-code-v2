@@ -1,232 +1,31 @@
-name: Release Verboo Code desktop
+name: Verify Windows quiet updater (isolated)
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-    inputs:
-      verify_only:
-        description: Build and verify installers without publishing a release or updating the feed.
-        type: boolean
-        required: false
-        default: false
-      omit_macos_arm64:
-        description: Skip Apple Silicon when its hosted runner is unavailable; ARM users will not receive this release.
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
 
-concurrency:
-  group: verboo-desktop-release-${{ github.event.release.tag_name || github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  build:
-    name: Build ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64) && '{"include":[{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}' || '{"include":[{"runner":"xcode-27","target":"aarch64-apple-darwin","label":"macOS-Apple-Silicon","bundles":"app"},{"runner":"macos-15-intel","target":"x86_64-apple-darwin","label":"macOS-Intel","bundles":"app"},{"runner":"windows-latest","target":"x86_64-pc-windows-msvc","label":"Windows-x64","bundles":"nsis","directory":"D:\\v"},{"runner":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","label":"Linux-x64","bundles":"appimage,deb"}]}') }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.97.0
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    defaults:
-      run:
-        working-directory: ${{ matrix.directory || github.workspace }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Use a short Windows source path for NSIS
-        if: runner.os == 'Windows'
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          if (Test-Path 'D:\v') { throw 'The private Windows build directory already exists' }
-          git clone --no-hardlinks $env:GITHUB_WORKSPACE 'D:\v'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C 'D:\v' checkout --detach $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-node@v4
         with:
           node-version: 26.4.0
-      - name: Require Apple distribution signing and notarization credentials
-        if: runner.os == 'macOS'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: node apps/desktop/tauri/macos-release.mjs --check
-      - uses: pnpm/action-setup@v4
       - uses: dtolnay/rust-toolchain@1.97.0
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ${{ matrix.directory || github.workspace }}/apps/desktop/src-tauri -> ../.desktop-build/tauri/target
-          key: ${{ matrix.target }}-${{ matrix.runner }}
-          cache-on-failure: true
-      - name: Verify the pinned Rust toolchain
-        run: |
-          rustc --version
-          cargo --version
-          rustup show active-toolchain
-      - name: Validate the release tag and committed product version
-        run: node apps/desktop/tauri/publish-release.mjs --check
-      - name: Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
-            libssl-dev libgtk-3-dev libayatana-appindicator3-dev build-essential \
-            pkg-config squashfs-tools desktop-file-utils libfuse2 musl-tools rpm
-      - name: Install the locked dependency graph
-        run: pnpm install --frozen-lockfile
-      - name: Build the product
-        run: pnpm run build:artifacts
-      - name: Build all platform system binaries for distribution
-        if: runner.os != 'Windows'
-        run: pnpm --dir native/system run build:native
-      - name: Check the built contracts
-        run: pnpm run build:check
-      - name: Test desktop lifecycle
-        run: node --test apps/desktop/tauri/tests/bridge.test.mjs apps/desktop/tauri/tests/startup-error.test.mjs apps/desktop/tauri/tests/host.test.mjs apps/desktop/tauri/tests/collect-release.test.mjs apps/desktop/tauri/tests/release.test.mjs apps/desktop/tauri/tests/pack-runtime.test.mjs apps/desktop/tauri/tests/publish-release.test.mjs apps/desktop/tauri/tests/create-dmg.test.mjs apps/desktop/tauri/tests/publish-feed.test.mjs apps/desktop/tauri/tests/macos-signing.test.mjs
-      - name: Test update window and ChatGPT connection
-        run: >-
-          pnpm exec vitest run apps/desktop/tests/update-window.spec.ts
-          packages/api/remotes/tests/openai.client.spec.ts
-          packages/client/ui-verboo/tests/subscription-usage-composition.client.spec.ts
-          packages/client/ui-verboo/tests/subscription-usage.client.spec.tsx
-          packages/experimental/liveshare/tests/endpoint-classification.client.spec.ts
-      - name: Test compiled application Remote assembly
-        run: pnpm exec vitest run --config vitest.e2e.config.ts packages/api/remotes/tests/built-lib.e2e.ts
-      - name: Prepare native test resources
-        run: pnpm --filter @deepseek-ai/dsh-desktop run prepare:tauri
-      - name: Test native process ownership
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
-      - name: Package the desktop runtime and installer
-        if: runner.os != 'macOS'
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-          NO_STRIP: 'true'
-        run: pnpm run build:desktop --skip-build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Use TCP for Apple ticket requests on the hosted Intel runner
-        if: runner.os == 'macOS' && matrix.target == 'x86_64-apple-darwin'
-        # GitHub confirmed intermittent HTTP/3 failures: https://github.com/actions/runner-images/issues/14924
-        # This disposable runner keeps HTTPS over TCP; all notarization checks remain required.
-        run: |
-          printf '%s\n' 'block return out quick proto udp from any to any port 443' | sudo /sbin/pfctl -f -
-          sudo /sbin/pfctl -E
-      - name: Sign, notarize and verify the macOS installer and updater
-        if: runner.os == 'macOS'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: node apps/desktop/tauri/macos-release.mjs --target ${{ matrix.target }}
-      - name: Package and verify RPM prerelease metadata
-        if: runner.os == 'Linux'
-        env:
-          RELEASE_TARGET: ${{ matrix.target }}
-        run: |
-          node --input-type=module <<'JS'
-          import { execFileSync } from 'node:child_process'
-          import { readFileSync, readdirSync } from 'node:fs'
-          import { join, resolve } from 'node:path'
-          const product = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'))
-          const [, version, prerelease] = /^(\d+\.\d+\.\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(product.version) ?? []
-          if (!version) throw Error('Unsupported RPM product version')
-          const release = prerelease ? `0.${prerelease.replaceAll('-', '_')}` : '1'
-          const config = JSON.stringify({ version, bundle: { linux: { rpm: { release } } } })
-          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'bundle', '--ci', '--verbose', '--target', process.env.RELEASE_TARGET, '--bundles', 'rpm', '--config', config], { stdio: 'inherit' })
-          const directory = `apps/desktop/.desktop-build/tauri/target/${process.env.RELEASE_TARGET}/release/bundle/rpm`
-          const files = readdirSync(directory).filter(name => name.endsWith('.rpm'))
-          if (files.length !== 1) throw Error('Expected one RPM installer')
-          const rpmPath = resolve(directory, files[0])
-          const identity = execFileSync('rpm', ['-qp', '--queryformat', '%{VERSION}-%{RELEASE}', rpmPath], { encoding: 'utf8' }).trim()
-          if (identity !== `${version}-${release}`) throw Error('RPM version identity mismatch')
-          execFileSync('pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'tauri', 'signer', 'sign', '--app-version', product.version, rpmPath], { stdio: 'inherit' })
-          console.log(`Verified RPM ${identity}; product ${product.version}`)
-          JS
-      - name: Verify the installed Windows runtime
-        if: runner.os == 'Windows'
+          workspaces: apps/desktop/src-tauri -> ../.desktop-build/tauri/target
+          key: x86_64-pc-windows-msvc-windows-latest
+      - name: Verify signed upgrade and relaunch with the native Windows installer
         shell: pwsh
-        run: |
-          $installers = @(Get-ChildItem 'apps/desktop/.desktop-build/tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe')
-          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
-          $destination = Join-Path $env:RUNNER_TEMP ('verboo-install-' + [guid]::NewGuid().ToString('N'))
-          try {
-            $installed = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
-            if ($installed.ExitCode -ne 0) { throw "Windows installation failed: $($installed.ExitCode)" }
-            $runtime = Join-Path $destination 'runtime'
-            $env:VERBOO_TEST_CLI_MANIFEST = Join-Path $runtime 'application/node_modules/@deepseek-ai/dsh/package.json'
-            $env:VERBOO_TEST_HOST_MODULE = Join-Path $runtime 'host.mjs'
-            & (Join-Path $runtime 'node.exe') --test 'apps/desktop/tauri/tests/host.test.mjs'
-            if ($LASTEXITCODE -ne 0) { throw 'Installed Windows profile smoke failed' }
-          } finally {
-            $uninstaller = Join-Path $destination 'uninstall.exe'
-            if (Test-Path $uninstaller) {
-              $uninstalled = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
-              if ($uninstalled.ExitCode -ne 0) { throw "Windows uninstallation failed: $($uninstalled.ExitCode)" }
-            }
-          }
-      - name: Collect installer artifacts
-        env:
-          RELEASE_LABEL: ${{ matrix.label }}
-          RELEASE_TARGET: ${{ matrix.target }}
-        run: node apps/desktop/tauri/collect-release.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.label }}
-          path: ${{ matrix.directory || github.workspace }}/apps/desktop/.desktop-build/tauri/release-assets/*
-          if-no-files-found: error
-          retention-days: 14
-
-  publish:
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          merge-multiple: true
-          path: release-assets
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26.4.0
-      - name: Verify the complete installer set without publishing
-        if: github.event_name == 'workflow_dispatch' && inputs.verify_only
-        env:
-          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ inputs.omit_macos_arm64 || false }}
-        run: node apps/desktop/tauri/verify-release.mjs release-assets
-      - name: Verify the selected installer set and attach it to the release
-        if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
-        run: node apps/desktop/tauri/publish-release.mjs release-assets
-      - name: Publish the update feed the installed app reads
-        if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERBOO_RELEASE_OMIT_MACOS_ARM64: ${{ github.event_name == 'workflow_dispatch' && inputs.omit_macos_arm64 || false }}
-        run: node apps/desktop/tauri/publish-feed.mjs update-feed/latest.json
+        run: node apps/desktop/tauri/tests/fixtures/windows-quiet-updater-native.mjs
