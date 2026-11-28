@@ -500,6 +500,7 @@ export function Sidebar(props: SidebarProps) {
                 className={css.iconButton}
                 disabled={adding}
                 aria-label={t('addProject')}
+                data-verboo-tour-project
                 onClick={() => {
                   void openProject()
                 }}

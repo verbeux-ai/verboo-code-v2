@@ -1,56 +1,75 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ComponentProps } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
-import { Hero } from '../src/client/Hero.tsx'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { FirstUseProps } from '../src/client/contracts.ts'
+import { FirstUseTour } from '../src/client/FirstUseTour.tsx'
 import { pt } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  })
+})
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
-function fixture(visible: boolean, measurable: boolean) {
+function fixture(visible = true, measurable = true) {
   const actions = {
     observeFirstUse: vi.fn(),
-    dismissFirstUse: vi.fn(),
-    prepareFirstProject: vi.fn<(prompt: string) => Promise<void>>().mockResolvedValue(undefined),
+    startFirstUse: vi.fn(),
+    advanceFirstUse: vi.fn(),
+    finishFirstUse: vi.fn(),
   }
-  const props: Partial<ComponentProps<typeof Hero>> = {
-    t: key => pt[key as keyof typeof pt] ?? key,
+  const props: FirstUseProps = {
+    t: (key, args) => (pt[key as keyof typeof pt] ?? key).replace(/\{(\w+)\}/g, (token, field: string) => {
+      const values = args as Record<string, string> | undefined
+      return values?.[field] ?? token
+    }),
     useFirstUse: select => select({ visible, measurable }),
     ...actions,
   }
-  return { props: props as ComponentProps<typeof Hero>, actions }
+  return { props, actions }
 }
 
-it('keeps the regular introduction after first use', () => {
-  const { props, actions } = fixture(false, true)
-  render(<Hero {...props} />)
-  screen.getByRole('heading', { name: pt.homeTitle })
-  expect(screen.queryByRole('button', { name: pt.firstUseOpen })).toBeNull()
-  expect(actions.observeFirstUse).not.toHaveBeenCalled()
-})
-
-it('keeps setup available without measurement and waits for authorization to record the view', async () => {
+it('opens a skippable welcome and waits for analytics authorization to count the view', () => {
   const { props, actions } = fixture(true, false)
-  const view = render(<Hero {...props} />)
+  const view = render(<FirstUseTour {...props} />)
+  expect(screen.getByRole('dialog', { name: pt.firstUseWelcome })).toBeTruthy()
+  expect(screen.getByText(pt.firstUseThanks)).toBeTruthy()
   expect(actions.observeFirstUse).not.toHaveBeenCalled()
-  view.rerender(<Hero {...props} useFirstUse={select => select({ visible: true, measurable: true })} />)
+  view.rerender(<FirstUseTour {...props} useFirstUse={select => select({ visible: true, measurable: true })} />)
   expect(actions.observeFirstUse).toHaveBeenCalledOnce()
-
-  fireEvent.click(screen.getByRole('button', { name: pt.firstUseOpen }))
-  await waitFor(() => expect(actions.prepareFirstProject).toHaveBeenCalledExactlyOnceWith(pt.firstUsePrompt))
-  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: pt.firstUseOpen }).disabled).toBe(false))
   fireEvent.click(screen.getByRole('button', { name: pt.firstUseLater }))
-  expect(actions.dismissFirstUse).toHaveBeenCalledOnce()
+  expect(actions.finishFirstUse).toHaveBeenCalledWith(false)
+  expect(actions.startFirstUse).not.toHaveBeenCalled()
 })
 
-it('allows a new attempt after the project could not be opened', async () => {
-  const { props, actions } = fixture(true, true)
-  actions.prepareFirstProject.mockRejectedValueOnce(new Error('fixture'))
-  render(<Hero {...props} />)
-  const open = screen.getByRole('button', { name: pt.firstUseOpen })
-  fireEvent.click(open)
-  expect((await screen.findByRole('status')).textContent).toBe(pt.firstUseFailed)
-  fireEvent.click(open)
-  await waitFor(() => expect(actions.prepareFirstProject).toHaveBeenCalledTimes(2))
-  expect(screen.queryByRole('status')).toBeNull()
+it('starts on request, supports stepping back, and completes only on the last step', () => {
+  const { props, actions } = fixture()
+  render(<FirstUseTour {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseStart }))
+  expect(actions.startFirstUse).toHaveBeenCalledOnce()
+  expect(screen.getByRole('dialog', { name: pt.firstUseProjectTitle })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseNext }))
+  expect(screen.getByRole('dialog', { name: pt.firstUseModelTitle })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseBack }))
+  expect(screen.getByRole('dialog', { name: pt.firstUseProjectTitle })).toBeTruthy()
+  for (let step = 0; step < 4; step++) fireEvent.click(screen.getByRole('button', { name: pt.firstUseNext }))
+  expect(screen.getByRole('dialog', { name: pt.firstUseToolsTitle })).toBeTruthy()
+  expect(actions.finishFirstUse).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseDone }))
+  expect(actions.advanceFirstUse).toHaveBeenLastCalledWith('desktop_first_use_step_tools')
+  expect(actions.finishFirstUse).toHaveBeenCalledExactlyOnceWith(true)
+})
+
+it('closes a running tour with Escape', () => {
+  const { props, actions } = fixture()
+  render(<FirstUseTour {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: pt.firstUseStart }))
+  fireEvent.keyDown(screen.getByRole('dialog', { name: pt.firstUseProjectTitle }), { key: 'Escape' })
+  expect(actions.finishFirstUse).toHaveBeenCalledExactlyOnceWith(false)
 })

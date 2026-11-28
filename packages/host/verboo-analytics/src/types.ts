@@ -42,6 +42,8 @@ export type ProductFeature = 'conversation' | 'model_switch' | 'tool' | 'browser
   | 'desktop_update_download' | 'desktop_update_install' | 'desktop_update_error'
   | 'desktop_response_error' | 'desktop_connection_recovered'
   | 'desktop_first_use_guide' | 'desktop_first_use_task'
+  | 'desktop_first_use_step_project' | 'desktop_first_use_step_model' | 'desktop_first_use_step_message'
+  | 'desktop_first_use_step_split' | 'desktop_first_use_step_tools'
   | 'terminal_open' | 'files_open' | 'document_open'
   | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
   | 'attachment_retry_image' | 'attachment_retry_file'

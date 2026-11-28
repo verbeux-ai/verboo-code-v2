@@ -57,6 +57,7 @@ import { tokens, icons } from './theme.ts'
 import { Sidebar, Leading, PanelIcon } from './Sidebar.tsx'
 import { Onboarding } from './Onboarding.tsx'
 import { Hero, RunningIndicator } from './Hero.tsx'
+import { FirstUseTour } from './FirstUseTour.tsx'
 import { AssistantMark } from './Brand.tsx'
 import { PlanPage } from './Plans.tsx'
 import { BillingModel, type BillingApi } from './billing-model.ts'
@@ -644,7 +645,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       unsubscribePreferences(); unsubscribeStatus(); unsubscribeModel()
     }
   }, 'Verboo: preference analytics')
-  const addProject = async (beforeOpen?: (sessionId: SessionId) => void): Promise<void> => {
+  const addProject = async (): Promise<void> => {
     const consent = captureProductConsent()
     observeFeature('project_add', 'started', consent)
     const picker = globalThis as typeof globalThis & {
@@ -662,20 +663,24 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const workspace = await ctx.workspaces.create({ path })
       created = true
       observeFeature('project_add', 'completed', consent)
-      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId, beforeOpen)
+      await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
     } catch (error) {
       if (!created) observeFeature('project_add', 'failed', consent)
       throw error
     }
   }
   const firstUse = createSnapshotStore({ visible: false, measurable: false })
+  const firstUseSetting = ctx.configForms.get<Pick<Config, 'firstUseTourSeen'>>('ui-verboo')
   let firstUseDismissed = false
   let firstUseReported = false
-  let firstUseOpening = false
+  let firstUseStarted = false
+  const reportedSteps = new Set<string>()
   const updateFirstUse = () => {
     const account = model.state.getSnapshot()
     const list = ctx.sessions.list.getSnapshot()
-    const visible = !firstUseDismissed && account.view?.status === 'credential-stored' && account.profile !== null
+    const settings = firstUseSetting.getSnapshot()
+    const visible = !firstUseDismissed && settings.status === 'ready' && !settings.value?.firstUseTourSeen
+      && account.view?.status === 'credential-stored' && account.profile !== null
       && list.phase === 'ready' && list.ids.every(id => list.byId[id]?.blank)
     const measurable = captureProductConsent() !== undefined
     const previous = firstUse.getSnapshot()
@@ -683,12 +688,13 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   if (globalThis.__VERBOO_DESKTOP__) {
     ctx.effect(() => {
-      const stopAccount = model.state.subscribe(updateFirstUse)
-      const stopSessions = ctx.sessions.list.subscribe(updateFirstUse)
-      const stopConsent = analyticsStatus.subscribe(updateFirstUse)
+      const unsubscribe = [
+        model.state.subscribe(updateFirstUse), ctx.sessions.list.subscribe(updateFirstUse),
+        analyticsStatus.subscribe(updateFirstUse), firstUseSetting.subscribe(updateFirstUse),
+      ]
       updateFirstUse()
-      return () => { stopAccount(); stopSessions(); stopConsent() }
-    }, 'Verboo: first project guide')
+      return () => { for (const stop of unsubscribe) stop() }
+    }, 'Verboo: first desktop tour')
   }
   const observeFirstUse = () => {
     const consent = captureProductConsent()
@@ -699,42 +705,26 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const firstUseFace: FirstUseInjected = {
     hooks: { firstUse },
     observeFirstUse,
-    dismissFirstUse: () => {
+    startFirstUse: () => {
+      if (firstUseStarted || !firstUse.getSnapshot().visible) return
+      firstUseStarted = true
       observeFirstUse()
+      observeFeature('desktop_first_use_task', 'started', captureProductConsent())
+    },
+    advanceFirstUse: (step) => {
+      const consent = captureProductConsent()
+      if (!consent || !firstUseStarted || reportedSteps.has(step)) return
+      reportedSteps.add(step)
+      observeFeature(step, 'completed', consent)
+    },
+    finishFirstUse: (completed) => {
+      if (firstUseDismissed) return
+      observeFirstUse()
+      observeFeature(firstUseStarted ? 'desktop_first_use_task' : 'desktop_first_use_guide',
+        completed ? 'completed' : 'cancelled', captureProductConsent())
       firstUseDismissed = true
       updateFirstUse()
-      observeFeature('desktop_first_use_guide', 'cancelled', captureProductConsent())
-    },
-    prepareFirstProject: async (prompt) => {
-      if (firstUseOpening || !firstUse.getSnapshot().visible) return
-      firstUseOpening = true
-      observeFirstUse()
-      const consent = captureProductConsent()
-      const owner = model.state.getSnapshot().profile?.id
-      observeFeature('desktop_first_use_task', 'started', consent)
-      let applied = false
-      let prepared = false
-      try {
-        await addProject((sessionId) => {
-          if (owner !== model.state.getSnapshot().profile?.id) return
-          const binding = ctx.sessions.binding(sessionId)
-          if (binding === undefined) throw new Error('First project session is unavailable')
-          const result = ctx.conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'keep' })
-          if (result === 'blocked') throw new Error('First project draft is unavailable')
-          applied = result === 'applied'
-          prepared = true
-        })
-        observeFeature('desktop_first_use_task', applied ? 'completed' : 'cancelled', consent)
-        if (prepared) {
-          firstUseDismissed = true
-          updateFirstUse()
-        }
-      } catch (error) {
-        observeFeature('desktop_first_use_task', 'failed', consent)
-        throw error
-      } finally {
-        firstUseOpening = false
-      }
+      void firstUseSetting.set('firstUseTourSeen', true).catch(() => {})
     },
   }
   const externalDialogOpen = createSnapshotStore({ open: false })
@@ -1056,6 +1046,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       Onboarding,
     )
     yield ctx.slots.register(
+      { name: 'shell.overlay', id: 'verboo.first-use', order: 101, locale: 'verboo', inject: () => firstUseFace },
+      FirstUseTour,
+    )
+    yield ctx.slots.register(
       {
         name: 'shell.overlay',
         id: 'verboo.feedback',
@@ -1068,7 +1062,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   ctx.slots.inject('conversation.hero.intro', () =>
     ctx.slots.register(
-      { name: 'conversation.hero.intro', locale: 'verboo', inject: () => firstUseFace },
+      { name: 'conversation.hero.intro', locale: 'verboo' },
       Hero,
     ),
   )

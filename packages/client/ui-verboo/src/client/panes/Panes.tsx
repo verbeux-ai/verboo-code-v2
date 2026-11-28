@@ -448,7 +448,7 @@ function PaneButtons({
 }) {
   const shortcuts = paneShortcutKeys()
   return (
-    <div className={css.actions}>
+    <div className={css.actions} data-verboo-tour-split>
       <Tooltip label={t('paneSplitRight')} shortcutKeys={shortcuts.right} portal>
         <button
           type="button"
