@@ -66,6 +66,10 @@ async function platformFixture() {
       respond(res, 200, { data: [] })
       return
     }
+    if (req.url === '/api/me/trial-status') {
+      respond(res, 200, { data: { asOf: new Date().toISOString(), paidGroupIds: [PLAN, OTHER_PLAN], trials: [] } })
+      return
+    }
     if (req.url === '/api/me/connections?catalog=all') {
       respond(res, 200, { data: { available: false, toolkits: [], accounts: [] } })
       return
@@ -120,10 +124,21 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
   let failures = 0
   async function navigate(name: RegExp) {
     await page.setViewportSize({ width: 1280, height: 960 })
+    await page.locator('[data-sidebar-drawer]').waitFor({ state: 'detached' })
     const open = page.getByRole('button', { name: /^(Open navigation|Abrir navegação)$/ }).first()
     if (await open.isVisible()) await open.click()
     const button = page.getByRole('button', { name }).first()
     await button.click()
+  }
+  async function openPreferences() {
+    await navigate(/^(Verboo account|Conta Verboo)$/)
+    await page.getByRole('menuitem', { name: /^(Preferences|Preferências)$/ }).click()
+  }
+  async function setLanguage(locale: string) {
+    await openPreferences()
+    const preferences = page.locator('[data-verboo-page="preferences"]')
+    await preferences.getByRole('button', { name: /^(General|Geral)$/ }).click()
+    await preferences.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
   }
   async function showContent(width: number) {
     await page.setViewportSize({ width, height: 960 })
@@ -189,7 +204,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[data-verboo-onboarding]').waitFor({ state: 'hidden' })
     if (DEBUG) {
-      await page.getByRole('button', { name: /^(Preferences|Preferências)$/ }).click()
+      await openPreferences()
       await page.getByRole('checkbox', { name: 'Stamina (debug)' }).click()
       await page.waitForFunction(() => {
         const input = document.querySelector<HTMLInputElement>('input[type=checkbox]')
@@ -254,8 +269,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
 
   it('keeps stamina off plan, connection and preference pages across themes and viewport sizes', async () => {
     for (const locale of ['en', 'pt']) {
-      await navigate(/^(Preferences|Preferências)$/)
-      await page.getByLabel(/^(Language|Idioma)$/).selectOption(locale)
+      await setLanguage(locale)
       await navigate(/^(My plan|Meu plano)$/)
       const region = page.locator('[data-verboo-page="plan"]')
       await region.waitFor()
@@ -294,8 +308,8 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
           await page.screenshot({ path: join(ARTIFACTS, `plan-${locale}-${theme}-${width}.png`), animations: 'disabled' })
         }
       }
-      for (const [name, id] of [[/^(Connections|Conexões)$/, 'connections'], [/^(Preferences|Preferências)$/, 'preferences']] as const) {
-        await navigate(name)
+      for (const [open, id] of [[() => navigate(/^(Connections|Conexões)$/), 'connections'], [openPreferences, 'preferences']] as const) {
+        await open()
         await page.locator(`[data-verboo-page="${id}"]`).waitFor()
         expect(await page.locator('[data-verboo-stamina-liquid]:visible').count()).toBe(0)
         expect(await page.getByText('Stamina', { exact: true }).count()).toBe(0)
@@ -303,8 +317,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     }
   })
   it('surrounds Send with a purple ring while retaining the water inside', async () => {
-    await navigate(/^(Preferences|Preferências)$/)
-    await page.getByLabel(/^(Language|Idioma)$/).selectOption('en')
+    await setLanguage('en')
     await openConversation()
     await chooseModel('Fixture model')
     const primary = page.locator('[data-composer-primary]')
@@ -336,19 +349,20 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
         const selector = await model.boundingBox()
         return button !== null && water !== null && outline !== null && selector !== null
           && button.width === 42 && button.height === 42
-          && water.width === 34 && water.height === 34
+          && water.width === 36 && water.height === 36
           && outline.width === 42 && outline.height === 42
           && selector.x + selector.width <= button.x
           && button.x + button.width <= width && button.y + button.height <= 960
       }).toBe(true)
       expect(await ring.evaluate(node => parseFloat(getComputedStyle(node).borderTopWidth))).toBeGreaterThanOrEqual(1)
+      await editor.fill('Unsent ring fixture draft')
+      await expect.poll(() => primary.isEnabled()).toBe(true)
       expect(await primary.evaluate((node) => {
         const box = node.getBoundingClientRect()
         return node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
       })).toBe(true)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       expect(await liquid.locator('[data-stamina-water]').evaluate(node => (node as HTMLElement).style.height)).toBe('50%')
-      await editor.fill('Unsent ring fixture draft')
       await page.keyboard.press('Tab')
       await primary.focus()
       expect(await primary.evaluate(node => node.matches(':focus-visible'))).toBe(true)
@@ -359,7 +373,7 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await navigate(/^(My plan|Meu plano)$/)
   })
   it('shows empty and full liquid without preventing an otherwise valid send', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
     const primary = page.getByRole('button', { name: /^(Send message|Enviar mensagem)$/ })
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     const editor = page.locator('[data-composer-input]')
@@ -383,8 +397,9 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await navigate(/^(My plan|Meu plano)$/)
   })
   it('preserves confirmed liquid during failure, automatically recovers, and hides an unselected account', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
     const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
+    await liquid.waitFor()
     platform.state.down = true
     await expect.poll(() => liquid.getAttribute('data-stale'), { timeout: 10000 }).toBe('true')
     expect(await liquidFraction(liquid)).toBeCloseTo(0.5, 2)
@@ -397,13 +412,14 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
     await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(0.5, 2)
   })
   it('discards the old account response while switching to another selected account', async () => {
-    await navigate(/^(Workspace|Área de trabalho)$/)
+    await openConversation()
+    const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
+    await liquid.waitFor()
     platform.state.holdNext = true
     await expect.poll(() => platform.state.held !== undefined, { timeout: 10000 }).toBe(true)
     const account = scaffold.ctx.deepseekAccount
     if (!('setFixtureAccount' in account) || typeof account.setFixtureAccount !== 'function') throw new Error('Fixture account control is unavailable')
     Reflect.apply(account.setFixtureAccount, account, [ACCOUNT_B])
-    const liquid = page.locator('[data-verboo-stamina] [data-verboo-stamina-liquid]')
     await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(1, 2)
     platform.state.held!()
     await expect.poll(() => liquidFraction(liquid), { timeout: 10000 }).toBeCloseTo(1, 2)
@@ -469,12 +485,12 @@ describe.skipIf(MODE === 'record')('Verboo stamina in the built application', ()
       expect(debugBox!.x + debugBox!.width).toBeLessThanOrEqual(390)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: join(ARTIFACTS, 'debug-server-reading-compact.png'), animations: 'disabled' })
-      await navigate(/^(Preferences|Preferências)$/)
+      await openPreferences()
       const toggle = page.getByRole('checkbox', { name: 'Stamina (debug)' })
       await toggle.click()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
       await page.reload({ waitUntil: 'load' })
-      await navigate(/^(Preferences|Preferências)$/)
+      await openPreferences()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(false)
       await toggle.click()
       await expect.poll(() => toggle.isChecked(), { timeout: 5000 }).toBe(true)
