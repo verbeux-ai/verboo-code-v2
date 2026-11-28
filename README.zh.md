@@ -4,6 +4,22 @@
 
 Verboo Code 是基于 Tauri 的桌面编程应用，提供 Verboo 登录、账号模型、项目与工具连接。它使用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 引擎及其 Cordis 插件架构。
 
+[了解 Verboo Code](https://verboo.ai/?utm_source=github&utm_medium=referral&utm_campaign=readme) · [下载 macOS、Windows 或 Linux 版本](https://verboo.ai/download?utm_source=github&utm_medium=referral&utm_campaign=readme) · [更新记录](https://verboo.ai/updates)
+
+[![Discord 社区](https://img.shields.io/badge/Community-Discord-5865F2?logo=discord)](https://discord.gg/e2tcxmDd7h)
+
+![Verboo Code 桌面 Agent 正在处理项目任务](.github/assets/verboo-code-demo.gif)
+
+## 模型与基准测试
+
+| 模型示例 | 上下文窗口 |
+| --- | ---: |
+| DeepSeek V4.1 Flash | 1,048,576 token |
+| HY4 Flash | 1,048,576 token |
+| Qwen 3.8 27b | 262,144 token |
+
+可用模型取决于你的方案。参见[实时模型目录](https://verboo.ai/en/api)，以及仓库中的[长会话基准测试](benchmarks/long-session-browser/README.zh.md)和[流式重连基准测试](benchmarks/active-stream-reconnect/README.zh.md)。
+
 <a id="run"></a>
 
 <a id="run-from-source"></a>

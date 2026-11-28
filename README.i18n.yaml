@@ -3,8 +3,11 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
 /verboo-code:
-  en: e017ba27f5ecc893
-  zh: b6d5614738945b3e
+  en: ee5b851464f5ea72
+  zh: 23d39b7f2afa8417
+/verboo-code/models-and-benchmarks:
+  en: f7121a9b9303710d
+  zh: 648d0d39870c0ac4
 /verboo-code/development:
   en: 8d1dd42ac5f4fb4e
   zh: 1fac7d25a747e8f7
