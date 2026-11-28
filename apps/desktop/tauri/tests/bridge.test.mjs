@@ -77,6 +77,25 @@ test('hands a completed quit hold to the native shutdown owner', async (t) => {
   assert.ok(allowed.includes('quit_after_hold'), 'native ACL must allow the completed gesture')
 })
 
+test('authorizes task notifications from the owned application window', async (t) => {
+  const { dom, requests } = page(t, '<main>workspace</main>')
+  const desktop = dom.window.__VERBOO_DESKTOP__
+  await desktop.notificationPermission()
+  await desktop.notifyTaskComplete('Task complete', 'The test task finished.')
+  const notifications = requests.filter(({ command }) => command.startsWith('desktop_notification_'))
+  assert.deepEqual(notifications.map(({ command }) => command), [
+    'desktop_notification_permission', 'desktop_notification_send',
+  ])
+  assert.equal(notifications[1].args.title, 'Task complete')
+  assert.equal(notifications[1].args.body, 'The test task finished.')
+
+  const permissions = await readFile(new URL('../../src-tauri/permissions/desktop.toml', import.meta.url), 'utf8')
+  const allowed = JSON.parse(permissions.match(/^commands\.allow = (.+)$/m)[1])
+  for (const { command } of notifications) {
+    assert.ok(allowed.includes(command), `desktop-native must allow ${command}`)
+  }
+})
+
 test('exposes validated update snapshots, subscribes to changes and unregisters', async (t) => {
   const { dom, requests } = page(t, '<main>workspace</main>')
   const originalInvoke = dom.window.__TAURI_INTERNALS__.invoke
