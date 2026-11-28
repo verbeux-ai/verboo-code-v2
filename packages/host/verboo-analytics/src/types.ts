@@ -1,4 +1,6 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { z } from 'zod'
+import type { eventSchema } from './storage.ts'
 
 /** Opaque server-issued identity for a product consent scope. */
 export type ProductAnalyticsSubject = Branded<'ProductAnalyticsSubject'>
@@ -31,26 +33,10 @@ export interface ProductAnalyticsStatus {
 export type ProductSurface = 'desktop' | 'cli' | 'dashboard'
 
 /** Fixed feature dimensions; tool names, arguments and URLs are excluded. */
-export type ProductFeature = 'conversation' | 'model_switch' | 'tool' | 'browser' | 'mcp' | 'plan' | 'goal' | 'checkout' | 'pane_split_right' | 'pane_split_down' | 'stop_button' | 'project_add'
-  | 'message_enter' | 'message_button' | 'message_queue_enter' | 'message_queue_button' | 'message_steer_enter' | 'message_steer_button'
-  | 'preference_busy_queue' | 'preference_busy_steer' | 'model_choice' | 'queue_steer_button'
-  | 'preference_coding_tools_on' | 'preference_coding_tools_off'
-  | 'preference_preset_cordis' | 'preference_preset_ptc' | 'preference_preset_minimal' | 'preference_preset_standard' | 'preference_preset_other'
-  | 'preference_theme_light' | 'preference_theme_dark' | 'preference_theme_system' | 'preference_minimalist_on' | 'preference_minimalist_off'
-  | 'preference_language_en' | 'preference_language_pt' | 'preference_language_zh' | 'preference_language_ja'
-  | 'preference_language_es' | 'preference_language_fr' | 'preference_language_de' | 'preference_language_ru' | 'preference_language_other'
-  | 'desktop_update_download' | 'desktop_update_install' | 'desktop_update_error'
-  | 'desktop_response_error' | 'desktop_connection_recovered'
-  | 'desktop_first_use_guide' | 'desktop_first_use_task'
-  | 'desktop_first_use_step_project' | 'desktop_first_use_step_model' | 'desktop_first_use_step_message'
-  | 'desktop_first_use_step_split' | 'desktop_first_use_step_tools' | 'desktop_first_use_step_connections'
-  | 'desktop_first_use_step_back'
-  | 'terminal_open' | 'files_open' | 'document_open'
-  | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
-  | 'attachment_retry_image' | 'attachment_retry_file'
-  | 'schedule_create' | 'schedule_edit' | 'schedule_pause' | 'schedule_resume' | 'schedule_delete' | 'schedule_run'
-  | 'schedule_after' | 'schedule_at' | 'schedule_every' | 'schedule_daily' | 'schedule_weekly' | 'schedule_cron' | 'schedule_rrule'
-  | 'conversation_new' | 'conversation_open' | 'conversation_search' | 'command_submit' | 'integration_connect' | 'mcp_connect' | 'mcp_configure' | 'mcp_probe'
+export type ProductFeature = Exclude<
+  NonNullable<z.output<typeof eventSchema>['feature']>,
+  'desktop_response_attempt'
+>
 
 /** Bounded model dimensions from first-party or official account catalogs. */
 export interface ProductModelDetails {
