@@ -44,7 +44,11 @@ function fixture(read: () => ProductSnapshot = () => product) {
       return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
     }),
     useProduct: selector => selector(read()),
-    usePreferences: selector => selector({ locale: 'pt-BR', theme: 'system', languages: [] }),
+    usePreferences: selector => selector({
+      locale: 'pt-BR', theme: 'system', languages: [],
+      fontSizes: { text: 14, code: 13, terminal: 13 },
+      conversationWidth: 'standard', canSetConversationWidth: true,
+    }),
     useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
     start: vi.fn(), retryAccount: vi.fn(), refreshStamina: vi.fn(), summary: summaryRead, activity,
     subscriptions: vi.fn<AnalyticsActions['subscriptions']>().mockResolvedValue({ ok: true, data: subscriptions }),
