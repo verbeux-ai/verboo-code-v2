@@ -7,8 +7,8 @@
  * attributes, plus the common data/helper forms that feed them.
  */
 
-import { globSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, globSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import ts from 'typescript'
 
 const root = resolve(import.meta.dirname, '..')
@@ -101,13 +101,110 @@ function looksLikeNaturalText(text: string): boolean {
   return /\s|[\u3400-\u9fff]/u.test(normalized) || /^[A-Z]/.test(normalized)
 }
 
+function dictionaryKeys(text: string): ReadonlySet<string> {
+  const dictionary = ts.createSourceFile('locales.ts', text, ts.ScriptTarget.Latest)
+  const objects = new Map<string, ts.ObjectLiteralExpression>()
+  let rootName: string | undefined
+  for (const statement of dictionary.statements) {
+    if (ts.isTypeAliasDeclaration(statement) && statement.name.text === 'Key'
+      && ts.isTypeOperatorNode(statement.type) && statement.type.operator === ts.SyntaxKind.KeyOfKeyword
+      && ts.isTypeQueryNode(statement.type.type) && ts.isIdentifier(statement.type.type.exprName)) {
+      rootName = statement.type.type.exprName.text
+    }
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue
+    for (const { name, initializer } of statement.declarationList.declarations) {
+      const object = initializer && ts.isAsExpression(initializer) ? initializer.expression : initializer
+      if (ts.isIdentifier(name) && object && ts.isObjectLiteralExpression(object)) objects.set(name.text, object)
+    }
+  }
+  const keys = new Set<string>()
+  const seen = new Set<string>()
+  const collect = (name: string): void => {
+    if (seen.has(name)) return
+    seen.add(name)
+    for (const property of objects.get(name)?.properties ?? []) {
+      if (ts.isSpreadAssignment(property) && ts.isIdentifier(property.expression)) collect(property.expression.text)
+      if (ts.isPropertyAssignment(property)) {
+        const key = propertyName(property.name)
+        if (key !== undefined) keys.add(key)
+      }
+    }
+  }
+  if (rootName !== undefined) collect(rootName)
+  return keys
+}
+
+function localeKeyImport(source: ts.SourceFile): ts.Identifier | undefined {
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
+      || statement.moduleSpecifier.text !== './locales.ts') continue
+    const bindings = statement.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings)) continue
+    const imported = bindings.elements.find(element => (element.propertyName ?? element.name).text === 'Key')
+    if (imported) return imported.name
+  }
+  return undefined
+}
+
+function localChecker(source: ts.SourceFile): ts.TypeChecker {
+  const options: ts.CompilerOptions = { noResolve: true, noLib: true, jsx: ts.JsxEmit.Preserve }
+  const host = ts.createCompilerHost(options)
+  host.getSourceFile = name => name === source.fileName ? source : undefined
+  // Only lexical bindings are needed. Imported packages and declarations are
+  // unnecessary, so the gate can run before workspace artifacts are built.
+  return ts.createProgram([source.fileName], options, host).getTypeChecker()
+}
+
+function identifierUses(source: ts.SourceFile, checker: ts.TypeChecker): Map<ts.Symbol, ts.Identifier[]> {
+  const uses = new Map<ts.Symbol, ts.Identifier[]>()
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) {
+      const symbol = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node
+        ? checker.getShorthandAssignmentValueSymbol(node.parent)
+        : checker.getSymbolAtLocation(node)
+      if (symbol) {
+        const existing = uses.get(symbol)
+        if (existing) existing.push(node)
+        else uses.set(symbol, [node])
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return uses
+}
+
+function directTranslationKey(
+  declaration: ts.VariableDeclaration,
+  checker: ts.TypeChecker,
+  uses: ReadonlyMap<ts.Symbol, readonly ts.Identifier[]>,
+): boolean {
+  if (!ts.isIdentifier(declaration.name) || !ts.isVariableDeclarationList(declaration.parent)
+    || !(declaration.parent.flags & ts.NodeFlags.Const)) return false
+  const statement = declaration.parent.parent
+  if (!ts.isVariableStatement(statement) || !ts.isBlock(statement.parent)) return false
+  const symbol = checker.getSymbolAtLocation(declaration.name)
+  const references = symbol ? uses.get(symbol)?.filter(use => use !== declaration.name) ?? [] : []
+  // Require every read of this binding to supply a key to the local translator.
+  return references.length > 0 && references.every((use) => {
+    const call = use.parent
+    if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression)
+      || call.expression.text !== 't' || call.arguments[0] !== use) return false
+    const translator = checker.getSymbolAtLocation(call.expression)
+    return translator?.declarations?.some(binding => ts.isBindingElement(binding)
+      && ts.isObjectBindingPattern(binding.parent)
+      && (binding.propertyName === undefined || propertyName(binding.propertyName) === 't')) === true
+  })
+}
+
 /**
  * Find hard-coded product copy in one Client source file.
  * @param file - repository-relative path used in diagnostics.
  * @param sourceText - TypeScript or TSX source.
+ * @param localeSource - The sibling locale dictionary, when available.
  * @returns violations in source order.
  */
-export function findUiI18nViolations(file: string, sourceText: string): UiI18nViolation[] {
+export function findUiI18nViolations(file: string, sourceText: string, localeSource?: string): UiI18nViolation[] {
   if (localeOwner(file)) return []
   const source = ts.createSourceFile(
     file,
@@ -117,6 +214,11 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
     file.endsWith('.tsx') ? ts.ScriptKind.TSX : file.endsWith('.js') ? ts.ScriptKind.JS : ts.ScriptKind.TS,
   )
   const violations = new Map<number, UiI18nViolation>()
+  const keyImport = localeKeyImport(source)
+  const keys = keyImport && localeSource !== undefined ? dictionaryKeys(localeSource) : undefined
+  const checker = keys?.size ? localChecker(source) : undefined
+  const keySymbol = keyImport && checker?.getSymbolAtLocation(keyImport)
+  const uses = checker ? identifierUses(source, checker) : undefined
 
   const report = (
     node: ts.Node,
@@ -143,9 +245,10 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
     node: ts.Expression,
     reason: string,
     naturalOnly = false,
+    translatedKey = false,
   ): void => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-      report(node, node.text, reason, naturalOnly)
+      if (!translatedKey || !keys?.has(node.text)) report(node, node.text, reason, naturalOnly)
       return
     }
     if (ts.isTemplateExpression(node)) {
@@ -167,12 +270,12 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
       || ts.isSatisfiesExpression(node)
       || ts.isNonNullExpression(node)
     ) {
-      collectExpression(node.expression, reason, naturalOnly)
+      collectExpression(node.expression, reason, naturalOnly, translatedKey)
       return
     }
     if (ts.isConditionalExpression(node)) {
-      collectExpression(node.whenTrue, reason, naturalOnly)
-      collectExpression(node.whenFalse, reason, naturalOnly)
+      collectExpression(node.whenTrue, reason, naturalOnly, translatedKey)
+      collectExpression(node.whenFalse, reason, naturalOnly, translatedKey)
       return
     }
     if (ts.isBinaryExpression(node)) {
@@ -235,6 +338,12 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
     return false
   }
 
+  const returnsLocaleKey = (node: ts.ReturnStatement): boolean => {
+    const owner = ts.findAncestor(node.parent, ts.isFunctionLike)
+    return keySymbol !== undefined && owner?.type !== undefined && ts.isTypeReferenceNode(owner.type)
+      && checker?.getSymbolAtLocation(owner.type.typeName) === keySymbol
+  }
+
   const visit = (node: ts.Node): void => {
     if (ts.isJsxText(node)) report(node, node.text, 'JSX text')
 
@@ -278,7 +387,8 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
       const name = propertyName(node.name)
       if (name !== undefined && (COPY_NAME.test(name) || COPY_SUFFIX.test(name))) {
-        collectExpression(node.initializer, `${name} value`)
+        const translated = checker !== undefined && uses !== undefined && directTranslationKey(node, checker, uses)
+        collectExpression(node.initializer, `${name} value`, false, translated)
       }
     }
 
@@ -292,7 +402,7 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
     if (ts.isReturnStatement(node) && node.expression !== undefined) {
       const name = enclosingFunctionName(node)
       if (name !== undefined && (COPY_NAME.test(name) || COPY_SUFFIX.test(name))) {
-        collectExpression(node.expression, `${name} return value`)
+        collectExpression(node.expression, `${name} return value`, false, returnsLocaleKey(node))
       } else if (file.endsWith('.tsx') && hasExplicitStringReturn(node)) {
         collectExpression(node.expression, 'string return value', true)
       }
@@ -343,8 +453,15 @@ function main(): void {
       `verify-client-ui-i18n: discovery narrowed to ${files.length} source file(s); expected at least ${MINIMUM_CLIENT_UI_SOURCES}.`,
     )
   }
-  const violations = files.flatMap(file =>
-    findUiI18nViolations(file, readFileSync(resolve(root, file), 'utf8')))
+  const dictionaries = new Map<string, string | undefined>()
+  const violations = files.flatMap((file) => {
+    const path = resolve(root, file)
+    const dictionaryPath = resolve(dirname(path), 'locales.ts')
+    if (!dictionaries.has(dictionaryPath)) {
+      dictionaries.set(dictionaryPath, existsSync(dictionaryPath) ? readFileSync(dictionaryPath, 'utf8') : undefined)
+    }
+    return findUiI18nViolations(file, readFileSync(path, 'utf8'), dictionaries.get(dictionaryPath))
+  })
   if (violations.length > 0) {
     console.error(`verify-client-ui-i18n: ${violations.length} hard-coded UI string(s):`)
     for (const violation of violations) {

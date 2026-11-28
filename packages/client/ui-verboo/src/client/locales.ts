@@ -104,6 +104,9 @@ export const en = {
   settingsWidthWide: 'Wide',
   settingsLivePreview: 'Live preview',
   settingsPreviewMessage: 'We can start with the main flow.',
+  settingsPreviewGlyph: 'A',
+  settingsPreviewCode: 'const ready = true',
+  settingsPreviewCommand: 'pnpm test',
   settingsFontSizes: 'Font sizes',
   settingsTextSize: 'Conversations',
   settingsCodeSize: 'Code',
@@ -676,6 +679,9 @@ export type Key = keyof typeof en
 /** Brazilian Portuguese product copy. */
 export const pt: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'Texto, código e terminal',
   settingsFontVerySmall: 'Muito pequeno',
   settingsFontSmall: 'Pequeno',
@@ -1351,6 +1357,9 @@ export const pt: Record<Key, string> = {
 /** Simplified Chinese product copy. */
 export const zh: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: '文字、代码和终端',
   settingsFontVerySmall: '极小',
   settingsFontSmall: '小',
@@ -1925,6 +1934,9 @@ export const zh: Record<Key, string> = {
 /** Japanese product copy. */
 export const ja: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'テキスト・コード・ターミナル',
   settingsFontVerySmall: '最小',
   settingsFontSmall: '小',
@@ -2499,6 +2511,9 @@ export const ja: Record<Key, string> = {
 /** Spanish product copy. */
 export const es: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'Texto, código y terminal',
   settingsFontVerySmall: 'Muy pequeño',
   settingsFontSmall: 'Pequeño',
@@ -3054,6 +3069,9 @@ export const es: Record<Key, string> = {
 /** French product copy. */
 export const fr: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'Texte, code et terminal',
   settingsFontVerySmall: 'Très petit',
   settingsFontSmall: 'Petit',
@@ -3628,6 +3646,9 @@ export const fr: Record<Key, string> = {
 /** German product copy. */
 export const de: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'Text, Code und Terminal',
   settingsFontVerySmall: 'Sehr klein',
   settingsFontSmall: 'Klein',
@@ -4202,6 +4223,9 @@ export const de: Record<Key, string> = {
 /** Russian product copy. */
 export const ru: Record<Key, string> = {
   ...en,
+  settingsPreviewGlyph: en.settingsPreviewGlyph,
+  settingsPreviewCode: en.settingsPreviewCode,
+  settingsPreviewCommand: en.settingsPreviewCommand,
   settingsFontPreview: 'Текст, код и терминал',
   settingsFontVerySmall: 'Очень маленький',
   settingsFontSmall: 'Маленький',
