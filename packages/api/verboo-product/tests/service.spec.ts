@@ -780,16 +780,14 @@ describe('subscription billing', () => {
       expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/portal')
       expect(options?.method).toBe('POST')
       const headers = new Headers(options?.headers)
-      const records = output.mock.calls.filter(([tag]) => tag === '[verboo-journey]').map(([, value]) => JSON.parse(String(value)))
-      expect(records.map(record => record.outcome)).toEqual(['started', expected])
-      for (const record of records) {
-        expect(record).toMatchObject({
-          stage: 'payment_portal',
-          journeyId: headers.get('x-verboo-journey-id'),
-          operationId: headers.get('x-verboo-operation-id'),
-          requestId: headers.get('x-request-id'),
-        })
-      }
+      const records = output.mock.calls.filter(([tag]) => tag === '[verboo-journey]').map(([, value]): unknown => JSON.parse(String(value)))
+      expect(records).toMatchObject(['started', expected].map(outcome => ({
+        outcome,
+        stage: 'payment_portal',
+        journeyId: headers.get('x-verboo-journey-id'),
+        operationId: headers.get('x-verboo-operation-id'),
+        requestId: headers.get('x-request-id'),
+      })))
       expect(JSON.stringify(records)).not.toMatch(/session_private|fixture-token|stripe\.com/)
     } finally {
       output.mockRestore()
@@ -808,7 +806,9 @@ describe('subscription billing', () => {
     const [address, write] = f.fetch.mock.calls[0] ?? []
     expect(address).toBe('https://code.verboo.ai/api/me/subscriptions/' + subscription + '/card-update')
     expect(write?.method).toBe('POST')
-    expect(JSON.parse(String(write?.body))).toEqual({ requestId: id })
+    const body = write?.body
+    if (typeof body !== 'string') throw new Error('Expected a serialized card update request')
+    expect(JSON.parse(body)).toEqual({ requestId: id })
     expect(new Headers(write?.headers).get('x-verboo-operation-id')).toBe(id)
     await expect(f.product.currentBillingCardUpdate(subscription, f.signal))
       .resolves.toEqual({ ok: true, data: { id, status: 'confirmed', url: null } })
@@ -830,7 +830,9 @@ describe('subscription billing', () => {
         embedded: { ...embedded, url: 'https://code.verboo.ai/api/desktop/card-setup' },
       },
     })
-    expect(JSON.parse(String(f.fetch.mock.calls[0]?.[1]?.body))).toEqual({ requestId: id, presentation: 'embedded' })
+    const body = f.fetch.mock.calls[0]?.[1]?.body
+    if (typeof body !== 'string') throw new Error('Expected a serialized card update request')
+    expect(JSON.parse(body)).toEqual({ requestId: id, presentation: 'embedded' })
     await expect(f.product.startBillingCardUpdate(subscription, id)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
     await expect(f.product.startBillingCardUpdate(subscription, id, true)).resolves.toMatchObject({ ok: false, code: 'request_failed' })
     await expect(f.product.currentBillingCardUpdate(subscription, f.signal))

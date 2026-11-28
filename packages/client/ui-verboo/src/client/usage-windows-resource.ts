@@ -35,7 +35,7 @@ export function usageWindowsAddress(account: Account): string {
  * @returns The resource provider and a command to refresh active readers.
  */
 export function createUsageWindowsResource(read: ClientRemote['verboo']['getUsageWindows'],
-  account: ObservableSnapshot<Account>, intervalMs: number): { provider: ResourceProvider<'verboo-usage-windows'>; refresh(): void } {
+  account: ObservableSnapshot<Account>, intervalMs: number): { provider: ResourceProvider<'verboo-usage-windows'>; refresh(this: void): void } {
   const refreshers = new Set<() => void>()
   const failure = (reason: Failure): RemoteResult<UsageWindowsStatus[]> => ({
     ok: false, error: new RemoteError('verboo/usage-windows-unavailable', 'Allowance refresh is unavailable.', { reason }),
