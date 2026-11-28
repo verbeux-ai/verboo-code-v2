@@ -44,7 +44,7 @@
         "https://raw.githubusercontent.com/verbeux-ai/verboo-code-v2/update-feed/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }
