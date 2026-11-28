@@ -14,7 +14,7 @@ function fixture(visible: boolean, measurable: boolean) {
     prepareFirstProject: vi.fn<(prompt: string) => Promise<void>>().mockResolvedValue(undefined),
   }
   const props: Partial<ComponentProps<typeof Hero>> = {
-    t: key => pt[key],
+    t: key => pt[key as keyof typeof pt] ?? key,
     useFirstUse: select => select({ visible, measurable }),
     ...actions,
   }
