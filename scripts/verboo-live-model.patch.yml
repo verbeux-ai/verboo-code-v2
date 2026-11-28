@@ -1,0 +1,15 @@
+# Real integration uses an isolated Verboo Code test account and the public Router.
+- id: llm-deepseek
+  disabled: true
+
+- id: llm-pi-ai
+  config:
+    providers:
+      verboo-live:
+        api: openai-completions
+        apiKeyEnv: VERBOO_CODE_CI_API_KEY
+        baseURL: https://code.verboo.ai/router/v1
+        models:
+          - id: qwen3.8-27b
+            contextWindow: 128000
+            maxTokens: 8000

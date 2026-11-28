@@ -930,7 +930,7 @@ describe('CI workflow', () => {
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: { targets: 'node24-linux-x64,node24-win-x64', ci: true },
       secrets: {
-        DEEPSEEK_API_KEY_EXTERNAL: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
+        VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}',
       },
     })
     expect(aggregate.needs).toEqual(['python-sdk', 'python-runtime'])
@@ -1058,7 +1058,7 @@ describe('CI workflow', () => {
 })
 
 describe('Runtime and LLM e2e Blacksmith routing', () => {
-  it('routes DeepSeek e2e only through the Linux Blacksmith switch', () => {
+  it('routes Verboo Code e2e only through the Linux Blacksmith switch', () => {
     const job = workflowJob(loadWorkflow('.github/workflows/e2e.yml'), 'e2e')
     for (const mode of ['', 'selfhosted', 'unexpected', 'blacksmith']) {
       expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_LINUX: mode, DSH_CI_FAILOVER_WINDOWS: 'blacksmith' } }))
@@ -1114,11 +1114,11 @@ describe('bubblewrap preparation script', () => {
   })
 })
 
-describe('DeepSeek e2e workflow', () => {
+describe('Verboo Code e2e workflow', () => {
   it('prepares bubblewrap from the pinned payload without a package transaction', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
 
     const steps = e2e.steps.filter(isRecord)
     expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
@@ -1130,10 +1130,40 @@ describe('DeepSeek e2e workflow', () => {
   it('bounds profile subprocess fan-out to the tested e2e default', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
 
-    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E tests (real DeepSeek API)')
+    const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E profiles without provider credentials')
     expect(step).toMatchObject({ env: { DSH_E2E_MAX_WORKERS: 6 } })
+  })
+
+  it('authenticates the shared live model through the Verboo Code Router', () => {
+    const e2e = workflowJob(loadWorkflow('.github/workflows/e2e.yml'), 'e2e')
+    const key = '${{ secrets.VERBOO_CODE_CI_API_KEY }}'
+    if (!Array.isArray(e2e.steps)) throw new TypeError('Verboo Code e2e workflow must define steps')
+    const steps = e2e.steps.filter(isRecord)
+    const preflight = steps.find(step => step.name === 'Preflight (authenticate to Verboo Code)')
+    expect(preflight).toMatchObject({ env: { VERBOO_CODE_CI_API_KEY: key } })
+    expect(preflight?.run).toContain('https://code.verboo.ai/router/v1/models')
+    expect(preflight?.run).toContain("redirect: 'error'")
+    const live = steps.find(step => step.name === 'E2E tests (authenticated Verboo Code Router)')
+    expect(live?.env).toMatchObject({ VERBOO_CODE_CI_API_KEY: key })
+    expect(live?.run).toContain('apps/cli/tests/profiles/sdk/office-cli.e2e.ts')
+    expect(steps.findIndex(step => step.name === 'Preflight (authenticate to Verboo Code)')).toBeLessThan(
+      steps.findIndex(step => step.name === 'E2E tests (authenticated Verboo Code Router)'),
+    )
+    expect(JSON.stringify(steps)).not.toContain('secrets.DEEPSEEK_API_KEY_EXTERNAL')
+    expect(String(e2e.if)).toContain('github.event.pull_request.head.repo.full_name == github.repository')
+    expect(String(e2e.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
+    expect(String(e2e.if)).not.toContain('head.repo.fork')
+    expect(yaml.load(readFileSync(resolve(root, 'scripts/verboo-live-model.patch.yml'), 'utf8'))).toMatchObject([
+      { id: 'llm-deepseek', disabled: true },
+      {
+        id: 'llm-pi-ai', config: { providers: { 'verboo-live': {
+          api: 'openai-completions', apiKeyEnv: 'VERBOO_CODE_CI_API_KEY', baseURL: 'https://code.verboo.ai/router/v1',
+          models: [{ id: 'qwen3.8-27b' }],
+        } } },
+      },
+    ])
   })
 })
 
@@ -1253,7 +1283,7 @@ describe('Python release workflows', () => {
       release: { type: 'boolean', default: false },
     })
     expect(call.secrets).toMatchObject({
-      DEEPSEEK_API_KEY_EXTERNAL: { required: false },
+      VERBOO_CODE_CI_API_KEY: { required: false },
     })
     expect(workflow.concurrency).toMatchObject({
       group: 'build-single-exe-${{ github.workflow }}-${{ github.ref }}',
@@ -1297,19 +1327,19 @@ describe('Python release workflows', () => {
     expect(cleanVenvWindows).toMatchObject({ if: "runner.os == 'Windows'", shell: 'pwsh' })
     expect(JSON.stringify(cleanVenvWindows)).toContain('Scripts\\\\python.exe')
     expect(realApiPreflightPosix).toMatchObject({
-      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
+      env: { VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}' },
     })
-    expect(String(realApiPreflightPosix.if)).toContain('inputs.ci')
-    expect(String(realApiPreflightPosix.if)).toContain('head.repo.fork')
-    expect(String(realApiPreflightPosix.if)).toContain('dependabot[bot]')
     expect(realApiPreflightWindows).toMatchObject({ shell: 'pwsh' })
-    for (const step of [installedRealApiPosix, installedRealApiWindows]) {
+    for (const step of [realApiPreflightPosix, realApiPreflightWindows, installedRealApiPosix, installedRealApiWindows]) {
       expect(step).toMatchObject({
         env: {
-          DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
-          DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic',
+          VERBOO_CODE_CI_API_KEY: '${{ secrets.VERBOO_CODE_CI_API_KEY }}',
         },
       })
+      expect(String(step.if)).toContain('inputs.ci')
+      expect(String(step.if)).toContain('github.event.pull_request.head.repo.full_name == github.repository')
+      expect(String(step.if)).toContain("github.event.pull_request.user.login != 'dependabot[bot]'")
+      expect(String(step.if)).not.toContain('head.repo.fork')
     }
     expect(JSON.stringify(installedRealApiPosix)).toContain('--scenario sdk-live')
     expect(JSON.stringify(installedRealApiPosix)).toContain('-u DSH_RUNTIME_MODE')
