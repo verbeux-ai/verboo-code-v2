@@ -366,11 +366,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     return { ok: false, code: 'request_failed' }
   }
   const desktopPayments = globalThis.__VERBOO_DESKTOP__
-  const presentCardSetup = desktopPayments?.openCardSetup?.bind(desktopPayments)
-  const dismissCardSetup = desktopPayments?.closeCardSetup?.bind(desktopPayments)
+  const presentCardSetup = desktopPayments?.openCardSetup
   const openCardSetup: BillingApi['openCardSetup'] = presentCardSetup && (async (operation, setup, labels, signal) => {
     if (signal.aborted) return false
-    const close = () => { void dismissCardSetup?.(operation).catch(() => {}) }
+    const close = () => { void desktopPayments?.closeCardSetup?.(operation).catch(() => {}) }
     signal.addEventListener('abort', close, { once: true })
     try {
       return await presentCardSetup({

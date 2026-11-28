@@ -7,16 +7,7 @@ import { describe, expect, it } from 'vitest'
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (path: string) => readFile(join(DESKTOP, path), 'utf8')
 
-const UPDATE_COMMANDS = ['update_snapshot', 'update_restart', 'update_retry'] as const
-
-function expectInOrder(source: string, tokens: readonly string[]): void {
-  let previous = -1
-  for (const token of tokens) {
-    const position = source.indexOf(token, previous + 1)
-    expect(position, token).toBeGreaterThan(previous)
-    previous = position
-  }
-}
+const UPDATE_COMMANDS = ['updates_status', 'updates_restart', 'updates_dismiss'] as const
 
 describe('the product update bridge', () => {
   it('registers and grants the update commands used by the owned product window', async () => {
@@ -36,50 +27,38 @@ describe('the product update bridge', () => {
     }
   })
 
-  it('validates the snapshot and subscribes to the same progress event the updater emits', async () => {
+  it('reports the phases used by the sidebar and polls while a download is active', async () => {
     const [bridge, update] = await Promise.all([
       read('tauri/bridge.js'),
       read('src-tauri/src/update.rs'),
     ])
-    for (const phase of ['checking', 'downloading', 'ready', 'installing', 'error']) {
-      expect(update).toMatch(new RegExp(`set_snapshot\\([^,]+, "${phase}",`))
-      expect(bridge).toContain(`'${phase}'`)
+    for (const phase of ['checking', 'downloading', 'ready', 'error']) {
+      expect(update).toContain(`phase: "${phase}"`)
     }
-    expect(update).toContain("CustomEvent('verboo-update-state'")
-    expect(bridge).toContain("updateState(await invoke('update_snapshot'))")
-    expect(bridge).toContain('state = updateState(event.detail)')
-    expect(bridge).toContain("addEventListener('verboo-update-state', onState)")
-    expect(bridge).toContain("removeEventListener('verboo-update-state', onState)")
+    expect(bridge).toContain("phase === 'checking' || phase === 'downloading'")
+    expect(bridge).toContain('listener(next)')
   })
 })
 
 describe('the staged update flow', () => {
   it('records the target before installation and clears it if installation fails', async () => {
     const update = await read('src-tauri/src/update.rs')
-    expectInOrder(update, [
-      'fn install_pending_inner(',
-      'write_recovery_marker(app, &downloaded.update.version)',
-      'write_marker(app, APPLIED_FILE, &downloaded.update.version)',
-      'downloaded.update.install(&downloaded.bytes)',
-      'Err(error) => {',
-      'config_file(app, APPLIED_FILE)',
-      'std::fs::remove_file(path)',
-      'retire_failed_cache(&root, Some(&marker))',
-    ])
+    const marker = update.indexOf('write_marker(app, APPLIED_FILE, version)')
+    const install = update.indexOf('update.install(bytes)', marker)
+    const failure = update.indexOf('Err(error) => {', install)
+    expect(marker).toBeGreaterThan(0)
+    expect(install).toBeGreaterThan(marker)
+    expect(failure).toBeGreaterThan(install)
+    expect(update.indexOf('remove_file(app, APPLIED_FILE)', failure)).toBeGreaterThan(failure)
+    expect(update.indexOf('discard_staged(app)', failure)).toBeGreaterThan(failure)
   })
 
-  it('checks the staged package against the selected signed update before stopping the Host', async () => {
+  it('checks that the staged version still matches the offered update before applying it', async () => {
     const update = await read('src-tauri/src/update.rs')
-    expectInOrder(update, ['fn read_verified_package(', 'read_bounded(', 'update.verify(&bytes)'])
-    expectInOrder(update, [
-      'pub async fn update_restart(',
-      'crate::owned_window(&window, &host)?',
-      'inner.downloaded.take()',
-      'lock_verification_gate(&coordination_root(&app)?)',
-      'read_verified_package(&root, &downloaded.update)',
-      'stop_host.stop()',
-      'downloaded.update.install(&bytes)',
-    ])
+    const restart = update.slice(update.indexOf('pub async fn updates_restart'))
+    expect(restart).toContain('staged(&app)')
+    expect(restart).toContain('update.version != version')
+    expect(restart.indexOf('update.version != version')).toBeLessThan(restart.indexOf('install_and_restart(&app'))
   })
 
   it('applies a staged update on the next launch and checks for updates in the background', async () => {
@@ -88,8 +67,10 @@ describe('the staged update flow', () => {
       read('src-tauri/src/update.rs'),
     ])
     expect(main).toContain('update::install(&app.handle())')
-    expectInOrder(main, ['update::install_pending(&app', 'update::show_applied(&app)', 'update::spawn(&app)'])
-    expectInOrder(update, ['pub fn install_pending(', 'install_pending_inner(app)'])
-    expectInOrder(update, ['pub fn spawn(', 'std::thread::spawn', 'monitor_or_download(app.clone())', 'update_background_failed'])
+    expect(main).toContain('update::spawn(&app)')
+    expect(update).toContain('apply_staged(app)')
+    expect(update).toContain('std::thread::spawn')
+    expect(update).toContain('update_check_failed')
+    expect(update).not.toContain('startup_failure')
   })
 })

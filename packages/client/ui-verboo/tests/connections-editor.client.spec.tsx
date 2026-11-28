@@ -162,10 +162,7 @@ describe('summary and section states', () => {
     const { props, state } = fixture()
     state.connections = { available: false, toolkits: [], accounts: [] }
     render(<ConnectionsPage {...props} />)
-    const notice = within(screen.getByRole('alert'))
-    expect(notice.getByText(pt.readConnectionsTitle)).toBeTruthy()
-    fireEvent.click(notice.getByRole('button', { name: pt.retry }))
-    expect(props.loadConnections).toHaveBeenCalledOnce()
+    expect(screen.getAllByText(/As conexões estão indisponíveis/).length).toBeGreaterThan(0)
   })
 
   it('tells the user to finish authorizing in the browser during a handoff', () => {

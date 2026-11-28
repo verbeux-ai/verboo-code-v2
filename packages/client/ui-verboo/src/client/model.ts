@@ -175,10 +175,7 @@ export interface ProductApi {
    */
   signOutMcpServer(this: void, name: string): Promise<McpResult<CustomMcpServerView>>
 }
-/** Create an empty product snapshot before any account reads.
- * @returns a fresh snapshot with no account, plan, or connection data.
- */
-export const createProductSnapshot = (): ProductSnapshot => ({
+const initial = (): ProductSnapshot => ({
   view: null,
   profile: null,
   profilePreviouslyVerified: false,
@@ -215,7 +212,7 @@ export class ProductModel {
   /**
    * Observable current-account state; invalidated on identity replacement.
    */
-  readonly state = createSnapshotStore<ProductSnapshot>(createProductSnapshot())
+  readonly state = createSnapshotStore<ProductSnapshot>(initial())
   private generation = 0
   private profileRequest: Promise<void> | undefined
   private planRequest: Promise<void> | undefined
@@ -274,7 +271,7 @@ export class ProductModel {
     this.planRequest = undefined
     this.connectionRequest = undefined
     this.mcpRequest = undefined
-    this.state.set(createProductSnapshot())
+    this.state.set(initial())
   }
   /**
    * Apply a newer account observation without regressing an OAuth attempt.

@@ -212,7 +212,7 @@ function LifecycleResult({ state, subscription, locale, t }: Pick<SubscriptionPr
     (accessUntil ? ' · ' + t('billingAccessUntil', { date: day(accessUntil, locale) }) : '')} />
 }
 
-function ChangeForm(props: SubscriptionProps & { candidatePlans: Plan[]; canChoose: boolean; onBack(this: void): void }) {
+function ChangeForm(props: SubscriptionProps & { candidatePlans: Plan[]; canChoose: boolean; onBack(): void }) {
   const { state, subscription, candidatePlans, canChoose, locale, t } = props
   const [removeTier, setRemoveTier] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -317,8 +317,8 @@ function SubscriptionActionDialog(props: SubscriptionProps & {
   candidatePlans: Plan[]
   canChoosePlan: boolean
   accessUntil: string | null
-  close(this: void): void
-  onBack(this: void): void
+  close(): void
+  onBack(): void
 }) {
   const { action, state, subscription, accessUntil, t, locale } = props
   const id = subscription.id as BillingSubscriptionId
@@ -442,7 +442,7 @@ export function SubscriptionPanel(props: SubscriptionProps & { expanded: boolean
   const accessUntil = cancellation?.accessUntil ?? subscription.renewsAt
   const accessEnds = cancellation?.accessUntil != null || subscription.cancelAtEnd ||
     subscription.status === 'canceled' || subscription.status === 'incomplete_expired'
-  const periodKey: Key = accessEnds ? 'ends' : subscription.billing === null ? 'billingPeriodEnd' : 'renews'
+  const periodLabel = accessEnds ? 'ends' : subscription.billing === null ? 'billingPeriodEnd' : 'renews'
   const pendingCancellation = cancellation?.localStatus === 'pending' || (cancellation != null && cancellation.collectionStatus !== 'stopped')
   const changePending = state.change !== null && !endChange.has(state.change.status)
   const lifecyclePending = progress != null && progress.status !== 'confirmed'
@@ -473,7 +473,7 @@ export function SubscriptionPanel(props: SubscriptionProps & { expanded: boolean
     {!showsActions && <>
       <dl className={styles.billingFacts}>
         <dt>{t('status')}</dt><dd>{props.statusLabel}</dd>
-        {accessUntil && <><dt>{t(periodKey)}</dt><dd>{day(accessUntil, locale)}</dd></>}
+        {accessUntil && <><dt>{t(periodLabel)}</dt><dd>{day(accessUntil, locale)}</dd></>}
         {subscription.billing && <>
           <dt>{t('billingCurrentPrice')}</dt>
           <dd>{price(subscription.billing.amountMinor, subscription.billing.currency, locale)} {t(subscription.billing.interval === 'year' ? 'yearly' : 'monthly')}</dd>

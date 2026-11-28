@@ -1813,12 +1813,3 @@ export function acknowledgeReloadConnectionLoss(
   const reloadWarnings = tripwire.warnings.splice(warningStart)
   tripwire.warnings.push(...reloadWarnings.filter(text => !/connection lost/i.test(text)))
 }
-
-/** Open the product navigation so grouped conversations are visible.
- * @param page - the built Verboo product window.
- * @returns after opening the navigation, or immediately when it is already open.
- */
-export async function expandProductNavigation(page: Page): Promise<void> {
-  const open = page.getByRole('button', { name: /^(Open navigation|Abrir navegação)$/ }).first()
-  if (await open.isVisible()) await open.click()
-}

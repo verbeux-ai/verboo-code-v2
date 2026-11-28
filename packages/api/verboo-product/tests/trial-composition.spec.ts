@@ -118,12 +118,11 @@ it('reopens the Host and reconciles a lost card response to the original canonic
         let raw = ''
         for await (const chunk of req) raw += String(chunk)
         checkoutBodies.push(raw)
-        const request: unknown = JSON.parse(raw)
-        if (typeof request !== 'object' || request === null || !('requestId' in request) ||
-            typeof request.requestId !== 'string') throw new Error('Expected the original checkout request ID')
+        const request = JSON.parse(raw)
         requestId = request.requestId
         expect(req.headers['x-request-id']).toBe(requestId)
-        expect(request).toMatchObject({ checkoutQuoteId: 'private-card-quote', quotedPaymentMethod: 'card' })
+        expect(request.checkoutQuoteId).toBe('private-card-quote')
+        expect(request.quotedPaymentMethod).toBe('card')
         if (rejectCheckout) {
           res.writeHead(422, { 'x-verboo-checkout-not-started': 'true' }).end('{}')
           return
@@ -175,7 +174,7 @@ it('reopens the Host and reconciles a lost card response to the original canonic
   cleanup.push(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => { resolve() })) })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('fixture listener missing')
-  const origin = 'http://127.0.0.1:' + address.port.toString()
+  const origin = 'http://127.0.0.1:' + address.port
   const home = await mkdtemp(join(tmpdir(), 'verboo-card-composition-'))
   cleanup.push(() => rm(home, { recursive: true, force: true }))
   const path = join(home, 'cordis.yml')

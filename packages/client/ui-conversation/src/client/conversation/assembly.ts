@@ -36,12 +36,12 @@ export type ProductMessageModel = { readonly provider: string; readonly name: st
 /** Explicit Conversation controls observed without Session data. */
 export type ProductControlInteraction = 'stop_button' | 'queue_steer_button'
 /** Bounded action categories, without paths, commands, task contents, or account data. */
-export type ProductAction = 'terminal_open' | 'files_open' | 'document_open' | 'command_submit' | 'integration_connect'
-  | `attachment_${'image' | 'file' | 'folder' | 'upload_image' | 'upload_file' | 'retry_image' | 'retry_file'}`
-  | `schedule_${'create' | 'edit' | 'pause' | 'resume' | 'delete' | 'run'}`
-  | `schedule_${'after' | 'at' | 'every' | 'daily' | 'weekly' | 'cron' | 'rrule'}`
-  | `conversation_${'new' | 'open' | 'search'}`
-  | `mcp_${'connect' | 'configure' | 'probe'}`
+export type ProductAction = 'terminal_open' | 'files_open' | 'document_open'
+  | 'attachment_image' | 'attachment_file' | 'attachment_folder' | 'attachment_upload_image' | 'attachment_upload_file'
+  | 'attachment_retry_image' | 'attachment_retry_file'
+  | 'schedule_create' | 'schedule_edit' | 'schedule_pause' | 'schedule_resume' | 'schedule_delete' | 'schedule_run'
+  | 'schedule_after' | 'schedule_at' | 'schedule_every' | 'schedule_daily' | 'schedule_weekly' | 'schedule_cron' | 'schedule_rrule'
+  | 'conversation_new' | 'conversation_open' | 'conversation_search' | 'command_submit' | 'integration_connect' | 'mcp_connect' | 'mcp_configure' | 'mcp_probe'
 
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {

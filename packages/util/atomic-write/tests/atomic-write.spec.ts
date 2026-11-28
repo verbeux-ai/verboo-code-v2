@@ -23,7 +23,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
-    link: async (source: Parameters<typeof actual.link>[0], dest: Parameters<typeof actual.link>[1]) => {
+    link: (async (source, dest) => {
       await state.beforeLink?.(String(source), String(dest))
       if (state.lockPermissionFailures > 0 && String(dest).endsWith('.lock')) {
         state.lockPermissionFailures -= 1
@@ -31,7 +31,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         throw Object.assign(new Error('EPERM: injected exclusive-create failure'), { code: 'EPERM' })
       }
       return actual.link(source, dest)
-    },
+    }) as typeof actual.link,
     rename: (async (...args: Parameters<typeof actual.rename>) => {
       state.renameAttempts += 1
       const code = state.renameFailures.shift()

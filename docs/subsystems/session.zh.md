@@ -1332,25 +1332,6 @@ Types: [SessionId](core.zh.md)
 
 Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
-<a id="api-sessionturn-completed--emit"></a>
-
-#### `api-session/turn-completed` — emit
-
-A live top-level turn completed successfully.
-
-```ts cordis-catalog
-/**
- * A live top-level turn completed successfully.
- * @mode emit
- * @param sessionId - completed Session identity.
- */
-'api-session/turn-completed'(sessionId: SessionId): void
-```
-
-Types: [SessionId](core.zh.md)
-
-Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
-
 <a id="session-events"></a>
 
 ### `session/*` events

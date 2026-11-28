@@ -29,7 +29,7 @@ const subscriptionKey = (status: string): Key =>
 
 function SubscriptionRow({ subscription, locale, t, manage, expanded, panelId }: PlanActions & {
   subscription: Subscription
-  manage(this: void): void
+  manage(): void
   locale: string
   expanded: boolean
   panelId: string
@@ -105,7 +105,7 @@ function PlanCard({ plan, current, locale, t, choose, busy, hasSubscription }: P
   current: boolean
   busy: boolean
   hasSubscription: boolean
-  choose(this: void, plan: Plan, trigger: HTMLButtonElement): void
+  choose(plan: Plan, trigger: HTMLButtonElement): void
   locale: string
 }) {
   const blockedFeatures = [

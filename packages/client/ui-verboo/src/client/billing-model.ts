@@ -385,7 +385,7 @@ export class BillingModel {
    * @returns after the native dialog closes or the hosted page is opened.
    */
   async updateCard(subscription: BillingSubscriptionId, labels?: CardSetupLabels): Promise<void> {
-    const openCardSetup = this.api.openCardSetup?.bind(this.api)
+    const openCardSetup = this.api.openCardSetup
     const embedded = openCardSetup !== undefined && labels !== undefined
     await this.perform(async (owns) => {
       const state = this.state.getSnapshot()

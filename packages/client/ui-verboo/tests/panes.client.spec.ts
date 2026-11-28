@@ -183,11 +183,11 @@ describe('independent Verboo conversation panes', () => {
   it('only resolves the restored model after the focused pane retains its session', () => {
     const { controller, list } = fixture({ initial: undefined, save: vi.fn() }, 'pending')
     const directory = vi.fn()
-    const binding = { sessionId: b }
+    const binding = { sessionId: b } as SessionBinding
     const sessions = {
       scope: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? {} : undefined,
       binding: (id: SessionId) => id === b && controller.state.getSnapshot().references.has('b') ? binding : undefined,
-    }
+    } as unknown as Pick<ISessions, 'scope' | 'binding'>
     const sync = () => {
       const current = focusedBinding(controller.state.getSnapshot(), sessions)
       if (current.binding !== undefined) directory(current.session)

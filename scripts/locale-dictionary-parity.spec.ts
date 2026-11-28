@@ -130,8 +130,7 @@ function dictionariesIn(file: string): Dictionary[] {
       const literal = unwrap(decl.initializer)
       if (literal === undefined || !ts.isObjectLiteralExpression(literal)) continue
       if (localeOf(decl.name.text) === undefined) continue
-      const templates = templatesOf(literal, moduleConsts)
-      found.push({ file: rel, name: decl.name.text, keys: keysOf(literal, moduleConsts), templates })
+      found.push({ file: rel, name: decl.name.text, keys: keysOf(literal), templates: templatesOf(literal) })
     }
   }
 
@@ -198,32 +197,10 @@ function dictionariesIn(file: string): Dictionary[] {
   return found
 }
 
-/** Properties of the dictionary and the shared local blocks it selects explicitly. */
-function dictionaryProperties(
-  literal: ts.ObjectLiteralExpression,
-  moduleConsts?: ReadonlyMap<string, ts.Expression>,
-): ts.ObjectLiteralElementLike[] {
-  const properties: ts.ObjectLiteralElementLike[] = []
-  for (const property of literal.properties) {
-    if (ts.isSpreadAssignment(property) && ts.isIdentifier(property.expression)) {
-      // A full-language fallback cannot substitute for shipped translations.
-      const name = property.expression.text
-      const shared = localeOf(name) === undefined ? unwrap(moduleConsts?.get(name)) : undefined
-      if (shared !== undefined && ts.isObjectLiteralExpression(shared)) properties.push(...shared.properties)
-      continue
-    }
-    properties.push(property)
-  }
-  return properties
-}
-
-/** Literal templates, including shared defaults before local overrides. */
-function templatesOf(
-  literal: ts.ObjectLiteralExpression,
-  moduleConsts?: ReadonlyMap<string, ts.Expression>,
-): Readonly<Record<string, string>> {
+/** Literal templates; shared spread dictionaries are checked at their own declaration. */
+function templatesOf(literal: ts.ObjectLiteralExpression): Readonly<Record<string, string>> {
   const templates: Record<string, string> = {}
-  for (const property of dictionaryProperties(literal, moduleConsts)) {
+  for (const property of literal.properties) {
     if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.initializer)) continue
     if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
       templates[property.name.text] = property.initializer.text
@@ -233,13 +210,13 @@ function templatesOf(
 }
 
 /** Declared property names of an object literal, sorted. */
-function keysOf(literal: ts.ObjectLiteralExpression, moduleConsts?: ReadonlyMap<string, ts.Expression>): string[] {
-  const keys = new Set<string>()
-  for (const prop of dictionaryProperties(literal, moduleConsts)) {
+function keysOf(literal: ts.ObjectLiteralExpression): string[] {
+  const keys: string[] = []
+  for (const prop of literal.properties) {
     if (!ts.isPropertyAssignment(prop)) continue
-    if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) keys.add(prop.name.text)
+    if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) keys.push(prop.name.text)
   }
-  return [...keys].sort()
+  return keys.sort()
 }
 
 /** Look through `satisfies`/`as`/parenthesized wrappers to the literal. */
@@ -332,22 +309,6 @@ function registrationProblems(file: string): string[] {
 }
 
 describe('shipped locale dictionaries', () => {
-  it('counts explicit shared copy and keeps a full-language fallback out of the parity check', () => {
-    const { factory } = ts
-    const entry = (key: string, value: string) => factory.createPropertyAssignment(key, factory.createStringLiteral(value))
-    const moduleConsts = new Map([
-      ['en', factory.createObjectLiteralExpression([entry('untranslated', 'English only')])],
-      ['sharedCopy', factory.createObjectLiteralExpression([entry('productName', 'Verboo Code'), entry('details', 'View details')])],
-    ])
-    const dictionary = factory.createObjectLiteralExpression([
-      factory.createSpreadAssignment(factory.createIdentifier('en')),
-      factory.createSpreadAssignment(factory.createIdentifier('sharedCopy')),
-      entry('details', 'Ver detalhes'),
-    ])
-    expect(keysOf(dictionary, moduleConsts)).toEqual(['details', 'productName'])
-    expect(templatesOf(dictionary, moduleConsts)).toEqual({ productName: 'Verboo Code', details: 'Ver detalhes' })
-  })
-
   it('registers every shipped language alongside every object-form bilingual dictionary', () => {
     expect(sourceFiles().flatMap(registrationProblems)).toEqual([])
   })

@@ -53,8 +53,6 @@ DOM 固定输入观察者在应用分发前收到输入法组合和消费标记�
 
 Desktop 原生菜单和内嵌 frame 使用与 DOM 输入相同的命令注册表。Preload 和 Client 将获焦 iframe 的名称或浏览器 webview 租约与原生输入匹配；Client 拒绝旧配置消息。浏览器 guest 的输入监听在租约释放时结束，无需等待 guest 销毁完成。原生菜单选择是显式操作，不依赖快捷键绑定。双键组合没有原生菜单快捷键，其键位仍显示在快捷键速查中。Windows 和 macOS Desktop 之外的终端 Ctrl+W/R 保留为局部输入。显式原生菜单操作保留模态检查；键盘绑定使用对应设备的分发策略。
 
-客户端功能发出 `shortcuts/open-reference` 事件，在当前窗口打开快捷键速查。
-
 </details>
 
 -----
