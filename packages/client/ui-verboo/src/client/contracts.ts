@@ -140,7 +140,8 @@ export interface FirstUseInjected {
   hooks: { firstUse: HostObservable<{ visible: boolean; measurable: boolean }> }
   observeFirstUse(): void
   startFirstUse(): void
-  advanceFirstUse(step: FirstUseStep): void
+  observeFirstUseStep(step: FirstUseStep, outcome: 'started' | 'completed' | 'cancelled'): void
+  backFirstUse(): void
   finishFirstUse(completed: boolean): void
 }
 

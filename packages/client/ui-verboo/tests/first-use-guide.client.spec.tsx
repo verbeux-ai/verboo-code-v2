@@ -21,7 +21,8 @@ function fixture(visible = true, measurable = true) {
   const actions = {
     observeFirstUse: vi.fn(),
     startFirstUse: vi.fn(),
-    advanceFirstUse: vi.fn(),
+    observeFirstUseStep: vi.fn(),
+    backFirstUse: vi.fn(),
     finishFirstUse: vi.fn(),
   }
   const props: FirstUseProps = {
@@ -65,7 +66,9 @@ it('starts on request, supports stepping back, and completes only on the last st
   expect(screen.getByText(pt.firstUseConnectionsBody)).toBeTruthy()
   expect(actions.finishFirstUse).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: pt.firstUseDone }))
-  expect(actions.advanceFirstUse).toHaveBeenLastCalledWith('desktop_first_use_step_connections')
+  expect(actions.observeFirstUseStep).toHaveBeenCalledWith('desktop_first_use_step_connections', 'started')
+  expect(actions.observeFirstUseStep).toHaveBeenLastCalledWith('desktop_first_use_step_connections', 'completed')
+  expect(actions.backFirstUse).toHaveBeenCalledOnce()
   expect(actions.finishFirstUse).toHaveBeenCalledExactlyOnceWith(true)
 })
 
@@ -74,5 +77,6 @@ it('closes a running tour with Escape', () => {
   render(<FirstUseTour {...props} />)
   fireEvent.click(screen.getByRole('button', { name: pt.firstUseStart }))
   fireEvent.keyDown(screen.getByRole('dialog', { name: pt.firstUseProjectTitle }), { key: 'Escape' })
+  expect(actions.observeFirstUseStep).toHaveBeenLastCalledWith('desktop_first_use_step_project', 'cancelled')
   expect(actions.finishFirstUse).toHaveBeenCalledExactlyOnceWith(false)
 })

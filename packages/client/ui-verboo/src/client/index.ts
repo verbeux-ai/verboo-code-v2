@@ -711,11 +711,15 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       observeFirstUse()
       observeFeature('desktop_first_use_task', 'started', captureProductConsent())
     },
-    advanceFirstUse: (step) => {
+    observeFirstUseStep: (step, outcome) => {
       const consent = captureProductConsent()
-      if (!consent || !firstUseStarted || reportedSteps.has(step)) return
-      reportedSteps.add(step)
-      observeFeature(step, 'completed', consent)
+      const key = step + ':' + outcome
+      if (!consent || !firstUseStarted || reportedSteps.has(key)) return
+      reportedSteps.add(key)
+      observeFeature(step, outcome, consent)
+    },
+    backFirstUse: () => {
+      if (firstUseStarted) observeFeature('desktop_first_use_step_back', 'started', captureProductConsent())
     },
     finishFirstUse: (completed) => {
       if (firstUseDismissed) return

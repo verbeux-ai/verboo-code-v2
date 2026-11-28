@@ -155,19 +155,32 @@ function GuidedSteps({ index, onBack, onNext, onClose, t }: {
 }
 
 /** Welcome new desktop users and explain the controls in their actual positions. */
-export function FirstUseTour({ t, useFirstUse, observeFirstUse, startFirstUse, advanceFirstUse, finishFirstUse }: FirstUseProps) {
+export function FirstUseTour({
+  t, useFirstUse, observeFirstUse, startFirstUse, observeFirstUseStep, backFirstUse, finishFirstUse,
+}: FirstUseProps) {
   const { visible, measurable } = useFirstUse(state => state)
   const [index, setIndex] = useState<number | null>(null)
+  const step = index === null ? undefined : steps[index]
+  useEffect(() => {
+    if (visible && measurable && step !== undefined) observeFirstUseStep(step.feature, 'started')
+  }, [visible, measurable, step, observeFirstUseStep])
   useEffect(() => {
     if (visible && measurable) observeFirstUse()
     if (!visible) setIndex(null)
   }, [visible, measurable, observeFirstUse])
   if (!visible) return null
-  const close = () => finishFirstUse(false)
-  if (index !== null) return <GuidedSteps index={index} t={t} onClose={close}
-    onBack={() => setIndex(Math.max(0, index - 1))}
+  const close = () => {
+    if (step !== undefined) observeFirstUseStep(step.feature, 'cancelled')
+    finishFirstUse(false)
+  }
+  if (index !== null && step !== undefined) return <GuidedSteps index={index} t={t} onClose={close}
+    onBack={() => {
+      if (index === 0) return
+      backFirstUse()
+      setIndex(index - 1)
+    }}
     onNext={() => {
-      advanceFirstUse((steps[index] ?? steps[0]).feature)
+      observeFirstUseStep(step.feature, 'completed')
       if (index === steps.length - 1) finishFirstUse(true)
       else setIndex(index + 1)
     }} />
